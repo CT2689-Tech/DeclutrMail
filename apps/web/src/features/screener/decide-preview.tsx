@@ -64,6 +64,7 @@ export type DecidePreviewCount = number | 'loading' | 'unavailable';
 export function DecidePreview({
   verb,
   row,
+  showSuggestion = true,
   inboxCount,
   inboxTotal = null,
   windowDays = null,
@@ -82,6 +83,8 @@ export function DecidePreview({
 }: {
   verb: ScreenerDecideVerb;
   row: ScreenerQueueRow;
+  /** Keep a suppressed row recommendation out of preview Details too. */
+  showSuggestion?: boolean;
   inboxCount: DecidePreviewCount;
   /**
    * QA-delete-20260829-01 — the TRUE un-windowed inbox count
@@ -333,7 +336,7 @@ export function DecidePreview({
   }
   // Engine recap — why the engine queued this sender, and how old that
   // read is (QA-archive-20260903-01).
-  if (row.recommendation != null) {
+  if (showSuggestion && row.recommendation != null) {
     facts.push({
       label: PREVIEW_DETAILS.whySuggested.label,
       value: (

@@ -140,6 +140,121 @@ describe('Needs first review in Senders', () => {
     );
   });
 
+  it('hides an empty-Inbox Later suggestion throughout the row and preview without removing Later', async () => {
+    const writes = vi.fn();
+    const emptyLater = {
+      ...row,
+      inboxCount: 0,
+      isProtected: false,
+      recommendation: {
+        verdict: 'later' as const,
+        confidence: 0.4,
+        reasoning: 'Save these messages for another time.',
+      },
+    };
+    const counts = { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };
+    installFetchStub([
+      { method: 'GET', path: '/api/actions/preview', respond: () => jsonOk({ data: { counts } }) },
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: () => {
+          writes();
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen presentation="senders" state={{ kind: 'ready', rows: [emptyLater] }} />
+      </QueryWrapper>,
+    );
+    expect(screen.queryByText('Later', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText('New', { exact: true })).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: `${row.senderName} — expand sender detail` }),
+    );
+    expect(screen.queryByText(/Why this is suggested/)).not.toBeInTheDocument();
+    expect(screen.queryByText(emptyLater.recommendation.reasoning)).not.toBeInTheDocument();
+    const toolbar = screen.getByRole('toolbar', { name: `Decide ${row.senderName}` });
+    for (const verb of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
+      expect(within(toolbar).getByRole('button', { name: verb })).toBeEnabled();
+    }
+    fireEvent.keyDown(window, { key: 'l' });
+    const confirm = await screen.findByRole('button', { name: `Later for ${row.senderName}` });
+    await screen.findByText('No emails match these choices.');
+    expect(confirm).toBeDisabled();
+    expect(screen.getByLabelText('Return to inbox')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Details', { exact: true }));
+    expect(screen.queryByText('Why suggested', { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText(emptyLater.recommendation.reasoning)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('region', { name: /^Preview · Later / })).not.toBeInTheDocument();
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it('updates the Later suggestion when the current Inbox count changes', () => {
+    const recommendation = {
+      verdict: 'later' as const,
+      confidence: 0.4,
+      reasoning: 'Save these messages for another time.',
+    };
+    const client = createTestQueryClient();
+    const ui = (inboxCount: number) => (
+      <QueryWrapper client={client}>
+        <ScreenerScreen
+          presentation="senders"
+          state={{ kind: 'ready', rows: [{ ...row, inboxCount, recommendation }] }}
+        />
+      </QueryWrapper>
+    );
+    const view = render(ui(2));
+    expect(screen.getByText('Later', { exact: true })).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: `${row.senderName} — expand sender detail` }),
+    );
+    expect(screen.getByText(recommendation.reasoning)).toBeInTheDocument();
+    view.rerender(ui(0));
+    expect(screen.queryByText(/Why this is suggested/)).not.toBeInTheDocument();
+    expect(screen.queryByText(recommendation.reasoning)).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole('toolbar')).getByRole('button', { name: 'Later' }),
+    ).toBeEnabled();
+    view.rerender(ui(2));
+    expect(screen.getByText(recommendation.reasoning)).toBeInTheDocument();
+    expect(screen.getByText(/Why this is suggested/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['keep', 'Keep'],
+    ['archive', 'Archive'],
+    ['unsubscribe', 'Unsubscribe'],
+  ] as const)('retains a %s recommendation at zero Inbox', (verdict, label) => {
+    const reasoning = 'Existing recommendation evidence.';
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen
+          presentation="senders"
+          state={{
+            kind: 'ready',
+            rows: [
+              {
+                ...row,
+                inboxCount: 0,
+                recommendation: { verdict, confidence: 0.9, reasoning },
+              },
+            ],
+          }}
+        />
+      </QueryWrapper>,
+    );
+    expect(screen.getByText(label, { exact: true })).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: `${row.senderName} — expand sender detail` }),
+    );
+    expect(screen.getByText(reasoning)).toBeInTheDocument();
+  });
+
   it('does not own action keys while inactive and discards an unconfirmed preview', async () => {
     const writes = vi.fn();
     installFetchStub([

@@ -103,6 +103,7 @@ export function ScreenerRow({
   onCancel: () => void;
   onRetryPreview?: (() => void) | undefined;
 }) {
+  const showSuggestion = row.inboxCount !== 0 || row.recommendation?.verdict !== 'later';
   // Hydration-safe clock — `null` on the server and the first client
   // render, so a day-boundary crossing can't make the server and the
   // browser disagree about "3 days ago" vs "4 days ago".
@@ -245,25 +246,26 @@ export function ScreenerRow({
               First seen {firstSeenAge ?? '…'}
             </span>
           )}
-          {row.recommendation != null ? (
-            <Pill tone={VERDICT_TONE[row.recommendation.verdict]}>
-              {verdictLabel(row.recommendation.verdict)}
-              {(() => {
-                const band = confidenceBand(
-                  row.recommendation.verdict,
-                  row.recommendation.confidence,
-                );
-                return band === null ? null : (
-                  <span>
-                    {' · '}
-                    {band}
-                  </span>
-                );
-              })()}
-            </Pill>
-          ) : (
-            <Pill>New</Pill>
-          )}
+          {showSuggestion &&
+            (row.recommendation != null ? (
+              <Pill tone={VERDICT_TONE[row.recommendation.verdict]}>
+                {verdictLabel(row.recommendation.verdict)}
+                {(() => {
+                  const band = confidenceBand(
+                    row.recommendation.verdict,
+                    row.recommendation.confidence,
+                  );
+                  return band === null ? null : (
+                    <span>
+                      {' · '}
+                      {band}
+                    </span>
+                  );
+                })()}
+              </Pill>
+            ) : (
+              <Pill>New</Pill>
+            ))}
         </div>
         {/* Chevron. */}
         <span
@@ -372,7 +374,7 @@ export function ScreenerRow({
               {row.messageCount.toLocaleString('en-US')} · {row.inboxCount.toLocaleString('en-US')}{' '}
               in inbox
             </span>
-            {row.recommendation != null && (
+            {showSuggestion && row.recommendation != null && (
               <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
                 <span style={{ fontWeight: 600, color: color.fgSoft }}>
                   Why this is suggested:{' '}
@@ -410,6 +412,7 @@ export function ScreenerRow({
             <DecidePreview
               verb={pendingVerb}
               row={row}
+              showSuggestion={showSuggestion}
               inboxCount={previewInboxCount}
               inboxTotal={previewInboxTotal}
               windowDays={previewWindowDays}

@@ -195,6 +195,41 @@ export const RowOutcomeUnknown: Story<typeof ScreenerRow> = {
   },
 };
 
+export const EmptyInboxLater: Story<typeof ScreenerRow> = {
+  render: () => (
+    <Shell>
+      <div
+        style={{ maxWidth: 900, margin: '24px auto', padding: '0 12px', boxSizing: 'border-box' }}
+      >
+        <ScreenerRow
+          {...rowBase}
+          row={{
+            ...rowBase.row,
+            inboxCount: 0,
+            recommendation: {
+              verdict: 'later',
+              confidence: 0.4,
+              reasoning: 'Save these messages for another time.',
+            },
+          }}
+          pendingVerb="later"
+          previewInboxCount={0}
+          wakeAt="2030-01-01T12:00:00.000Z"
+          onWakeAtChange={noop}
+        />
+      </div>
+    </Shell>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'No Later recommendation at zero Inbox. The explicit Later action, return control and disabled empty preview remain available.',
+      },
+    },
+  },
+};
+
 export const PreviewPending: Story<typeof ScreenerRow> = {
   render: () => (
     <Shell>
