@@ -44,6 +44,16 @@ cleanup/Undo using the existing distribution metric, exact snapshot sum/count
 means and a maximum across revisions. It creates no metric, dashboard or
 notification channel and does not modify PR #1100's routing files.
 
+Final semantic review found that intentionally queued Quiet work could otherwise
+page as stuck. After a successful resume publish, the worker now atomically
+merges its promised due time into existing selector metadata. Only untouched
+queued custom roots receive grace until that deadline plus 30 minutes. A lost
+callback still becomes overdue, even while Quiet remains active. Executing work
+uses its persisted provider-start transition; recovery uses its current attempt's
+start. Reverse/recovery/executing jobs ignore inherited Quiet hints. Malformed
+hints fall back to ordinary age, and raw pending counts/ages remain unchanged.
+This adds no table, migration, collected message field or provider request.
+
 The default command is an offline plan. Live verify/apply requires complete
 policy/channel/snooze reads, a fresh successful actions collection, valid
 native observations for Archive/Delete in both directions, no overlapping
@@ -55,6 +65,9 @@ that an actual alert email was delivered.
 ## Verification and release status
 
 - Negative control: both original crash/sync assertions failed before the fix.
+- Monitoring negative control: both Archive/Delete deadline regressions failed
+  against the old collector, and the new worker deadline assertion failed
+  against the old deferral path.
 - Worker suite: 84 tests passed, including four full-lifecycle crash/sync
   variants and existing Autopilot scope, protection, quiet, retry and Undo tests.
 - Workspace typechecks passed serially to limit memory use.
@@ -62,6 +75,9 @@ that an actual alert email was delivered.
   passed. Full lint passed with six existing unused-disable warnings; scoped
   lint and changed-file formatting passed. Existing action recovery suite:
   17 tests passed. Entitlement literal guard: two tests passed.
+- Focused API monitoring, queue and recovery checks: 31 tests passed. These cover
+  malformed hints, failed/successful extensions, the exact grace boundary, lost
+  resume delivery, resumed execution and latest recovery age.
 - Independent architecture, schema type-only, privacy and monitoring reviews
   cleared the final change. Review corrected provider object-order comparison,
   bounded pagination, active-snooze checks and the skipped-hook stale-snapshot

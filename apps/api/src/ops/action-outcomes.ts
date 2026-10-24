@@ -17,6 +17,33 @@ const REASONS = [
 const OUTCOMES = ['queued', 'executing', 'completed', 'failed', 'protected'] as const;
 export const ACTION_OVERDUE_SECONDS = 30 * 60;
 
+/** Only a published resume deadline on the untouched current attempt may postpone an alert.
+ * Raw pending age stays unchanged. A lost callback becomes overdue after the normal grace.
+ * Never infer a healthy deferral merely from the mailbox being in Quiet right now.
+ */
+function quietResumeAt() {
+  return sql`CASE WHEN a.status = 'queued' AND a.direction = 'forward'
+    AND a.recovery_attempt = 0 AND a.root_action_id IS NULL
+    AND a.verb IN ('archive', 'delete') AND a.selector->>'type' = 'sender'
+    AND jsonb_typeof(a.selector #> '{autopilot,ruleId}') = 'string'
+    AND length(a.selector #>> '{autopilot,ruleId}') > 0
+    AND jsonb_typeof(a.selector #> '{autopilot,previewId}') = 'string'
+    AND length(a.selector #>> '{autopilot,previewId}') > 0
+    AND jsonb_typeof(a.selector #> '{autopilot,ruleVersion}') = 'number'
+    AND a.selector #>> '{autopilot,ruleVersion}' ~ '^[1-9][0-9]*$'
+    AND jsonb_typeof(a.selector->'quietDeferredUntilMs') = 'number'
+    THEN CASE WHEN (a.selector->>'quietDeferredUntilMs')::numeric BETWEEN 0 AND 8640000000000000
+      THEN to_timestamp((a.selector->>'quietDeferredUntilMs')::double precision / 1000)
+      ELSE NULL END ELSE NULL END`;
+}
+
+function overdueSince() {
+  // markExecuting records the actual provider-start transition in updated_at.
+  // A normal resumed execution must not emit a transient overdue sample merely
+  // because its acceptance preceded a long Quiet window. It ignores the hint.
+  return sql`greatest(a.created_at, CASE WHEN a.status = 'executing' THEN a.updated_at ELSE ${quietResumeAt()} END)`;
+}
+
 /** One root job is one durable operation, not necessarily one bulk UI click. */
 export function actionOutcomeQuery(now: Date) {
   return sql`WITH roots AS (
@@ -26,11 +53,13 @@ export function actionOutcomeQuery(now: Date) {
       AND created_at <= ${now.toISOString()}::timestamptz
   ), latest AS (
     SELECT r.*, a.status, a.error_code, a.affected_count, a.updated_at,
+      ${overdueSince()} AS overdue_since,
       CASE WHEN a.status = 'done' AND a.error_code = 'LABEL_SENDER_PROTECTED' THEN 'protected'
            WHEN a.status = 'failed' AND a.error_code = 'RECOVERY_SENDER_PROTECTED' THEN 'protected'
            WHEN a.status = 'done' THEN 'completed' ELSE a.status::text END AS outcome
     FROM roots r JOIN LATERAL (
-      SELECT status, error_code, affected_count, updated_at FROM action_jobs
+      SELECT status, error_code, affected_count, updated_at, direction, verb,
+        recovery_attempt, root_action_id, selector, created_at FROM action_jobs
       WHERE id = r.id OR root_action_id = r.id
       ORDER BY recovery_attempt DESC LIMIT 1
     ) a ON true
@@ -39,7 +68,7 @@ export function actionOutcomeQuery(now: Date) {
     sum(CASE WHEN outcome = 'completed' THEN affected_count ELSE 0 END)::double precision AS confirmed_messages,
     count(*) FILTER (WHERE outcome = 'completed' AND affected_count = 0)::int AS completed_noops,
     count(*) FILTER (WHERE outcome IN ('queued', 'executing')
-      AND extract(epoch FROM (${now.toISOString()}::timestamptz - created_at)) >= ${ACTION_OVERDUE_SECONDS})::int AS overdue,
+      AND extract(epoch FROM (${now.toISOString()}::timestamptz - overdue_since)) >= ${ACTION_OVERDUE_SECONDS})::int AS overdue,
     max(extract(epoch FROM (${now.toISOString()}::timestamptz - created_at)))
       FILTER (WHERE outcome IN ('queued', 'executing'))::double precision AS oldest_pending_seconds,
     percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM (updated_at - created_at)))
@@ -58,9 +87,9 @@ export function actionOutcomeQuery(now: Date) {
 /** Older unresolved operations remain visible even after the acceptance window closes. */
 export function actionPendingQuery(now: Date) {
   return sql`SELECT direction, verb, count(*)::int AS pending,
-    count(*) FILTER (WHERE extract(epoch FROM (${now.toISOString()}::timestamptz - created_at)) >= ${ACTION_OVERDUE_SECONDS})::int AS overdue,
+    count(*) FILTER (WHERE extract(epoch FROM (${now.toISOString()}::timestamptz - ${overdueSince()})) >= ${ACTION_OVERDUE_SECONDS})::int AS overdue,
     max(extract(epoch FROM (${now.toISOString()}::timestamptz - created_at)))::double precision AS oldest_pending_seconds
-    FROM action_jobs WHERE status IN ('queued', 'executing')
+    FROM action_jobs a WHERE status IN ('queued', 'executing')
       AND verb IN ('archive', 'later', 'delete') AND created_at <= ${now.toISOString()}::timestamptz
     GROUP BY direction, verb`;
 }

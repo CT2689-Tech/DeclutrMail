@@ -135,6 +135,8 @@ export type LabelActionSelector = (
     }
   | { type: 'messages' }
 ) & {
+  /** Server-written due time after a successful Quiet resume publish; not a completion signal. */
+  quietDeferredUntilMs?: number;
   deleteUndo?: {
     version: 1;
     messageIds: string[];

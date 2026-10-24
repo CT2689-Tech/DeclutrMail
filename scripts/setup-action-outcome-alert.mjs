@@ -19,7 +19,7 @@ export function actionOutcomePolicy(channel) {
       documentation: {
         mimeType: 'text/markdown',
         content:
-          'Cleanup or Undo has been pending for at least 30 minutes. The last 15 minutes contain an overdue observation, sustained for 2 minutes. Inspect durable action_jobs, the latest recovery attempt and worker/provider failures before retrying. The snapshot mean is not an additive email total. A healthy revision cannot mask an overdue revision. Missing collection is unknown; the existing runtime-observations coverage policy detects collector silence. Incident closure is not proof that Gmail or Undo recovered.',
+          'Cleanup or Undo has exceeded its 30-minute execution grace. A published Quiet resume deadline starts that grace for untouched custom rules; raw pending age still includes the intentional wait. Recovery attempts use their own start time. The last 15 minutes contain an overdue observation, sustained for 2 minutes. Inspect durable action_jobs, the latest recovery attempt and worker/provider failures before retrying. The snapshot mean is not an additive email total. A healthy revision cannot mask an overdue revision. Missing collection is unknown; the existing runtime-observations coverage policy detects collector silence. Incident closure is not proof that Gmail or Undo recovered.',
       },
       conditions: [
         {

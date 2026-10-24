@@ -410,12 +410,23 @@ describe('LabelActionWorker approved custom Autopilot', () => {
       .update(mailboxAccounts)
       .set({ quietState: { enabled: true } })
       .where(eq(mailboxAccounts.id, mailboxId));
+    const beforeDeferral = Date.now();
     expect(await run(row)).toMatchObject({ deferredQuiet: true });
     expect(deferred).toHaveBeenCalledWith(
       { actionId: row.id, mailboxAccountId: mailboxId, idempotencyKey: row.idempotencyKey },
       300_000,
     );
     expect(await status(row)).toMatchObject({ status: 'queued', resolvedMessageIds: ['approved'] });
+    const due = (await status(row)).selector.quietDeferredUntilMs!;
+    expect(due).toBeGreaterThanOrEqual(beforeDeferral + 300_000);
+    expect(due).toBeLessThanOrEqual(Date.now() + 300_000);
+    expect((await status(row)).selector).toMatchObject(row.selector);
+    // A failed extension must retain only the previously published promise.
+    deferred.mockRejectedValueOnce(new Error('extension unavailable'));
+    await expect(run(row)).rejects.toThrow('extension unavailable');
+    expect((await status(row)).selector.quietDeferredUntilMs).toBe(due);
+    expect(await run(row)).toMatchObject({ deferredQuiet: true });
+    expect((await status(row)).selector.quietDeferredUntilMs).toBeGreaterThanOrEqual(due);
     await assertNoAction();
     await db
       .update(mailboxAccounts)
@@ -460,6 +471,7 @@ describe('LabelActionWorker approved custom Autopilot', () => {
     deferred.mockRejectedValueOnce(new Error('queue unavailable'));
     await expect(run(row)).rejects.toThrow('queue unavailable');
     expect((await status(row)).status).toBe('queued');
+    expect((await status(row)).selector.quietDeferredUntilMs).toBeUndefined();
     expect(await run(row)).toMatchObject({ deferredQuiet: true });
     await assertNoAction();
   });
