@@ -60,9 +60,14 @@ test('light appearance follows the app route and leaves public/dark paint unchan
 
     // Public navigation removes the layout marker, even while its CSS remains.
     await page.evaluate(() => document.querySelector('#dm-app-theme')!.remove());
-    const publicWithStyles = await page.screenshot({ animations: 'disabled' });
+    await expect.poll(readAppearance).toMatchObject({
+      background: 'rgb(246, 242, 235)',
+      card: 'rgb(255, 252, 248)',
+      accent: 'rgb(89, 65, 95)',
+    });
+    const publicWithStyles = await page.screenshot();
     await page.evaluate(() => document.querySelector<HTMLStyleElement>('#app-styles')!.remove());
-    expect((await page.screenshot({ animations: 'disabled' })).equals(publicWithStyles)).toBe(true);
+    expect((await page.screenshot()).equals(publicWithStyles)).toBe(true);
 
     // Dark mode must retain every pixel, including display type and shadows.
     await page.evaluate((css) => {
@@ -76,17 +81,17 @@ test('light appearance follows the app route and leaves public/dark paint unchan
       document.body.prepend(marker);
       document.documentElement.dataset.theme = 'dark';
     }, appTheme);
-    // Reduced motion still leaves a finite theme transition. Capture its end
-    // state so stylesheet removal cannot be compared with an earlier light frame.
+    // Reduced motion still allows a brief theme transition. Capture its
+    // settled palette so the exact image comparison cannot race that paint.
     await expect.poll(readAppearance).toMatchObject({
       background: 'rgb(30, 26, 33)',
       card: 'rgb(48, 42, 50)',
       accent: 'rgb(209, 184, 214)',
     });
-    const darkWithStyles = await page.screenshot({ animations: 'disabled' });
+    const darkWithStyles = await page.screenshot();
     expect((await readAppearance()).headingFont).toContain('Fraunces');
     await page.evaluate(() => document.querySelector('#app-styles')!.remove());
-    expect((await page.screenshot({ animations: 'disabled' })).equals(darkWithStyles)).toBe(true);
+    expect((await page.screenshot()).equals(darkWithStyles)).toBe(true);
 
     // Switching back to explicit light restores the approved palette.
     await page.evaluate((css) => {

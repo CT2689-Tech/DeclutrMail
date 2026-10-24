@@ -77,7 +77,9 @@ The corrected commit must pass the protected queue again.
 The next PR run passed both Activity paint cases, but the recently merged theme
 paint test failed its exact dark screenshot comparison. Trace frames show the
 baseline still painted light and the next frame painted dark. Main was merged
-to resolve this actual integration failure. The test now verifies the dark
-palette before its baseline and captures with finite animations finished. The
-exact pixel comparisons, contrast checks and production theme behavior are
-unchanged; this adds a bounded test stability fix to the release scope.
+to resolve this actual integration failure. The first timing correction passed PR CI. PR #1112 independently added palette
+waits for both public and dark baselines, so this branch aligns that shared test
+exactly with its queued commit `aadb9134e` to avoid competing fixes. That PR owns
+the shared theme test correction; the exact pixel comparisons, contrast checks
+and production theme behavior remain unchanged. No other code from that PR is
+introduced here. This dependency must settle through the normal queue.
