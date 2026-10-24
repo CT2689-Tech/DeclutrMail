@@ -106,7 +106,7 @@ export async function reconcileActionAlert({
   const [policies, channels, descriptor, snoozes] = await Promise.all([
     listAll(request, `${base}/alertPolicies`, 'alertPolicies'),
     listAll(request, `${base}/notificationChannels`, 'notificationChannels'),
-    request(`${base}/metricDescriptors/logging.googleapis.com%2Fuser%2Fops_action_overdue`),
+    request(`${base}/metricDescriptors/logging.googleapis.com/user/ops_action_overdue`),
     listAll(request, `${base}/snoozes`, 'snoozes'),
   ]);
   const overlaps = policies.filter(
