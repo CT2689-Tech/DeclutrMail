@@ -1,7 +1,6 @@
 'use client';
 
 import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
-import { EditorialKicker } from '@/features/editorial/page';
 
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
@@ -49,7 +48,6 @@ import { isFeatureEnabled } from '@/lib/flags';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { allProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
-import { senderSizeCell } from './sender-size';
 import {
   ActiveFilterChips,
   EMPTY_COMPOSE,
@@ -3119,15 +3117,8 @@ function SendersScreenContent({
           data-split={canSplit || undefined}
           style={reviewing ? { display: 'none' } : undefined}
         >
-          <header className={workspaceStyles.heading}>
-            <div>
-              <EditorialKicker>Cleanup</EditorialKicker>
-              <h1 className={workspaceStyles.title}>Senders</h1>
-              <p className={workspaceStyles.subtitle}>
-                See the pattern. Decide what deserves a place.
-              </p>
-            </div>
-            {navigation}
+          <header className={`${workspaceStyles.heading} ${workspaceStyles.directoryHeader}`}>
+            <h1 className={workspaceStyles.title}>Senders</h1>
             <Button
               onClick={startGuided}
               disabled={
@@ -3142,18 +3133,20 @@ function SendersScreenContent({
                   ? 'Review these senders'
                   : 'Start guided review'}
             </Button>
+            {navigation}
+            {actionMailboxId && activeMailbox?.readiness === 'ready' ? (
+              <div className={workspaceStyles.reportBand}>
+                <InboxReportFirstLanding
+                  compact
+                  mailboxId={actionMailboxId}
+                  {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
+                  senderNames={reportSenderNames}
+                  onResolved={noteReportResolved}
+                />
+              </div>
+            ) : null}
           </header>
           <AiInlinePrompt />
-          {actionMailboxId && activeMailbox?.readiness === 'ready' ? (
-            <div className={workspaceStyles.reportBand}>
-              <InboxReportFirstLanding
-                mailboxId={actionMailboxId}
-                {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
-                senderNames={reportSenderNames}
-                onResolved={noteReportResolved}
-              />
-            </div>
-          ) : null}
           <div className={workspaceStyles.listColumn}>
             <section
               aria-label="Sender search and filters"
@@ -3196,27 +3189,13 @@ function SendersScreenContent({
                 />
                 <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
               </div>
-              {senders.some((row) => senderSizeCell(row.sizeBytes)) && (
-                <p
-                  data-testid="sender-size-note"
-                  style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}
-                >
-                  {WS5_COPY['f2.note']} {WS5_COPY['f2.estimates']}
-                </p>
-              )}
-
-              {/* Hero — the screen's one big number: senders matching the
-            active filters, mailbox-wide (BE-honest). On the untouched
-            default it says what that default is, because no chip does. */}
+              {/* Mailbox-wide matching total; keep freshness and scope explicit. */}
               {senders.length > 0 && (
                 <div className={workspaceStyles.summary}>
                   <div data-testid="senders-hero" aria-busy={countsMayBeStale}>
                     <span
+                      className={workspaceStyles.senderTotal}
                       style={{
-                        ...tokens.typography.stat,
-                        color: color.fg,
-                        fontVariantNumeric: 'tabular-nums',
-                        // The count may be one response behind mid-refetch.
                         opacity: countsMayBeStale ? 0.55 : 1,
                         transition: `opacity ${motion.fast} ${motion.ease}`,
                       }}
@@ -3226,9 +3205,8 @@ function SendersScreenContent({
                     <span
                       style={{
                         fontFamily: font.sans,
-                        fontSize: text.lg,
+                        fontSize: text.sm,
                         color: color.fgMuted,
-                        marginLeft: 10,
                       }}
                     >
                       {isDefaultCompose(compose) && !hasQuery ? 'active ' : ''}
@@ -3258,7 +3236,7 @@ function SendersScreenContent({
                 needsReconnect={mailboxNeedsReconnect}
               />
 
-              <LaunchFilterRow mailboxId={me.activeMailboxId} onApply={setCompose} />
+              <LaunchFilterRow compact mailboxId={me.activeMailboxId} onApply={setCompose} />
               <ActiveFilterChips state={compose} onChange={setCompose} onClear={clearCompose} />
             </section>
             {showIntro && active && !reviewing && (

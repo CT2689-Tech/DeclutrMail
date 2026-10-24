@@ -252,6 +252,49 @@
   justify-content: space-between;
 }
 
+/* Only Senders' collapsed entry is quiet. Expanded report and actions retain
+   their existing presentation and owner. */
+.dm-report[data-compact] {
+  container-type: normal;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.dm-report[data-compact]::before {
+  display: none;
+}
+.dm-report[data-compact] .dm-report-strip {
+  border-bottom: 1px solid var(--dm-line-soft);
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+}
+.dm-report[data-compact] button {
+  min-height: 44px;
+  padding: 0 4px 0 12px;
+  border: 0;
+  background: transparent;
+  color: var(--dm-fg-soft);
+  font-size: 12px;
+  text-decoration: underline;
+}
+.dm-report-reopen-short {
+  display: none;
+}
+@media (max-width: 480px) {
+  .dm-report[data-compact] .dm-report-strip {
+    border: 0;
+  }
+  .dm-report[data-compact] .dm-report-strip > span,
+  .dm-report-reopen-long {
+    display: none;
+  }
+  .dm-report-reopen-short {
+    display: inline;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dm-report [data-reveal],
   .dm-report.is-revealed [data-reveal] {

@@ -45,6 +45,8 @@ function inboxReportQueryKey(mailboxId: string) {
 /** WS2's FirstLandingSlot renders this on the first ready /senders landing. */
 export function InboxReportFirstLanding(props: {
   mailboxId: string;
+  /** Quiet collapsed entry in the Senders header; expanded report is unchanged. */
+  compact?: boolean;
   mailboxEmail?: string;
   senderNames?: Readonly<Record<string, { name: string }>>;
   onResolved(shown: boolean): void;
@@ -230,6 +232,7 @@ export function InboxReportFirstLanding(props: {
   return (
     <InboxReportPanel
       report={report}
+      compact={props.compact ?? false}
       mailboxId={mailboxId}
       mailboxEmail={mailboxEmail}
       {...(senderNames ? { senderNames } : {})}

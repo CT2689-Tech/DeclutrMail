@@ -2,13 +2,16 @@
 
 import { tokens } from '@declutrmail/shared';
 import { track } from '@/lib/posthog';
+import styles from './sender-workspace.module.css';
 import type { ComposeState } from './filters';
 import { composeForLaunchFilter, LAUNCH_FILTERS, type LaunchFilterId } from './launch-filters';
 
 export function LaunchFilterRow({
   mailboxId,
   onApply,
+  compact = false,
 }: {
+  compact?: boolean;
   mailboxId: string | null;
   onApply: (next: ComposeState) => void;
 }) {
@@ -16,6 +19,7 @@ export function LaunchFilterRow({
     <div
       role="group"
       aria-label="Filter shortcuts"
+      className={compact ? styles.compactShortcuts : undefined}
       style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
     >
       <span style={{ alignSelf: 'center', color: tokens.color.fgMuted, fontSize: tokens.text.sm }}>
@@ -39,7 +43,12 @@ export function LaunchFilterRow({
           aria-label={`Apply filter: ${filter.label}`}
           onClick={() => apply(filter.id, mailboxId, onApply)}
         >
-          {filter.label}
+          <span className={compact ? styles.shortcutLong : undefined}>{filter.label}</span>
+          {compact && (
+            <span className={styles.shortcutShort}>
+              {filter.id === 'mostly_unread_90' ? 'Mostly unread' : 'Has unsubscribe'}
+            </span>
+          )}
         </button>
       ))}
     </div>

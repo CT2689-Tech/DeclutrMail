@@ -205,6 +205,7 @@ export function InboxReportPanel({
   report,
   mailboxEmail,
   dismissed = false,
+  compact = false,
   resetDate = '',
   onDismiss,
   onReopen,
@@ -224,6 +225,7 @@ export function InboxReportPanel({
   report: InboxReportDto;
   mailboxEmail?: string | undefined;
   dismissed?: boolean;
+  compact?: boolean;
   resetDate?: string;
   onDismiss: () => void;
   onReopen: () => void;
@@ -288,12 +290,20 @@ export function InboxReportPanel({
       className="dm-report is-revealed"
       aria-label={WS5_COPY['report.eyebrow']}
       data-variant={report.variant}
+      data-compact={compact && dismissed ? true : undefined}
     >
       {dismissed ? (
         <div className="dm-report-strip">
           <span>{WS5_COPY['report.reopen.strip']}</span>
           <button type="button" onClick={onReopen}>
-            {WS5_COPY['report.reopen.button']}
+            {compact ? (
+              <>
+                <span className="dm-report-reopen-long">View report</span>
+                <span className="dm-report-reopen-short">Inbox Report</span>
+              </>
+            ) : (
+              WS5_COPY['report.reopen.button']
+            )}
           </button>
         </div>
       ) : (

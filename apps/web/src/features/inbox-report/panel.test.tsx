@@ -419,6 +419,23 @@ describe('InboxReportCard', () => {
 });
 
 describe('Inbox Report action preview recovery', () => {
+  it('keeps the compact dismissed report entry wired to the existing reopen owner', () => {
+    const onReopen = vi.fn();
+    const view = render(
+      <InboxReportPanel report={full} compact dismissed onDismiss={() => {}} onReopen={onReopen} />,
+    );
+    const report = screen.getByRole('region', { name: 'Your Inbox Report' });
+    expect(report).toHaveAttribute('data-compact', 'true');
+    fireEvent.click(report.querySelector('button')!);
+    expect(onReopen).toHaveBeenCalledTimes(1);
+    view.rerender(
+      <InboxReportPanel report={full} compact onDismiss={() => {}} onReopen={onReopen} />,
+    );
+    expect(screen.getByRole('button', { name: 'Close Inbox Report' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Your Inbox Report' })).not.toHaveAttribute(
+      'data-compact',
+    );
+  });
   it('blocks a disappeared sender and offers a working route to review senders', async () => {
     const onFixConfirmed = vi.fn();
     installFetchStub([
