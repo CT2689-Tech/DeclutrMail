@@ -1,10 +1,10 @@
 # ADR-0047: Capacitor remote-URL shell for the mobile prototype
 
-- **Status:** Proposed — prototype only; the founder ratifies or rejects
+- **Status:** Accepted 2026-10-24 — the shell is the basis of the final app (see Amendment)
 - **Date:** 2026-10-24
 - **Deciders:** chintan.a.thakkar@gmail.com (to ratify); Claude (author)
 - **Related D-decisions:** D164, D173, D246
-- **Related ADRs:** ADR-0018 (phone dialect; rejects native as out of scope)
+- **Related ADRs:** ADR-0018 (phone dialect; rejects native as out of scope), ADR-0048 (swipe grammar)
 
 ## Context
 
@@ -86,3 +86,22 @@ in every ordinary browser.
 - `apps/mobile/README.md`
 - `docs/log/learnings/2026-10-24-d173-mobile-reuse-premise-stale.md`
 - `docs/log/founder-followups/2026-10-24-native-app-tier1-decisions.md`
+
+## Amendment (2026-10-24)
+
+The founder chose to launch web, iOS and Android together as one final scope, not
+a prototype followed by later versions. The Capacitor shell is therefore the basis
+of the shipped app, and ADR-0047 no longer means "prototype only".
+
+The items listed above as not decided are now decided; each gets its own ADR as
+its work package lands:
+
+- **Billing:** in-app purchase plus web, one entitlement record.
+- **Push:** yes, with privacy-safe payloads. This reverses D164 and D246.
+- **Gestures:** ADR-0048.
+- **Sign-in:** a PKCE-bound system-browser handoff on the existing Google client.
+
+Still true: this ADR does not decide store privacy labels (generated from
+`gmail-data-inventory.ts`, Tier 1b) or CSP and CORS changes, and the dev-only
+native settings must be removed before any store build. See
+`docs/execution/mobile-launch-plan-2026-10-24.md`.

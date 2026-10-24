@@ -1,9 +1,11 @@
-### 2026-10-24 — Decide native sign-in, billing path and developer accounts
-**Source:** session (mobile prototype, ADR-0047)
-**Why:** The prototype runs through the dev test-login only. A store-bound build needs three decisions that CLAUDE.md §2.0 reserves for the founder, and the developer accounts have enrollment lead time.
+### 2026-10-24 — Account type, push credentials and store-purchase provider for the mobile launch
+**Source:** session (mobile launch, ADR-0047, mobile-launch-plan-2026-10-24.md)
+**Why:** Billing (in-app purchase plus web), push, the swipe grammar and the sign-in design are decided. These items are not, and each needs you or a credential.
 **How:**
-1. Sign-in: approve or reject a one-time-code handoff so a system-browser Google sign-in can reach the WebView (a new auth surface; Tier 1).
-2. Billing: choose free-tier-only in the app, in-app purchase through a third provider, or external link-out where the store allows it. Check each store's current rules first; they are changing.
-3. Accounts: enroll Apple Developer and Google Play, as an individual or as an entity. This decides the seller name shown and, for Play, how long production access takes.
-**Verifies by:** ADR-0047 gains an Accepted amendment naming the three choices, and both store accounts exist.
+1. Developer accounts: enroll Apple Developer and Google Play, as an individual or as an entity. This sets the seller name and, for Play, how long production access takes.
+2. Push: create a Firebase project and an APNs key; hand them over through the secrets inventory, never in chat.
+3. Store purchases: choose between verifying store receipts and notifications ourselves, or a subscription service. Check fees and terms first; they are unverified.
+4. Ask Google whether a new OAuth client in the existing project needs re-verification. The handoff design needs no new client, so this can run in parallel.
+5. Set a first-30-days activation target and a monthly budget for the launch campaign.
+**Verifies by:** both store accounts exist, the push credentials are in the secrets inventory, and the subscription-provider choice is recorded in the billing ADR.
 **Status:** Open
