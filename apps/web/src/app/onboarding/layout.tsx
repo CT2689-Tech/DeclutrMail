@@ -26,6 +26,7 @@ import { headers } from 'next/headers';
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { ServerOnboardingBoundary } from '@/features/onboarding/server-onboarding-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
+import '@/features/theme/app-light-theme.css';
 
 export default async function OnboardingLayout({ children }: { children: ReactNode }) {
   const requestHeaders = await headers();
@@ -34,6 +35,7 @@ export default async function OnboardingLayout({ children }: { children: ReactNo
   return (
     <>
       <ThemeScript nonce={nonce} />
+      <span id="dm-app-theme" hidden />
       <ServerOnboardingBoundary cookieHeader={cookieHeader}>{children}</ServerOnboardingBoundary>
       {/* D147 consent ask — onboarding is a fresh visitor's first app
           surface, so the analytics opt-in must be answerable here too. */}
