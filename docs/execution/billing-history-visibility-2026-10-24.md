@@ -82,14 +82,39 @@ refunds, legal tax-document generation and payment-method changes are excluded.
   existing product tokens/anchors retained, filters labelled and named, focus and
   responsive behavior preserved in source. This does not claim browser validation.
 
+## Resumed browser verification
+
+The user unlocked the Mac. Built-in browser checks passed on the production build
+of runtime candidate `5a2193bc`, with isolated synthetic auth and current-plan
+routes. A workspace-owned local fixture proxy supplied only the invoice list,
+per-click document response and failure/delay cases; this is not a live provider
+PDF rehearsal. The real empty-history endpoint was also exercised.
+
+Verified complimentary Pro with no subscription; Payment history anchor and
+keyboard focus; paid-status and native-calendar date filters; no matches and
+Clear filters; mouse, keyboard and 320px downloads (three valid synthetic PDFs);
+502 history failure and Try again recovery; partial records retained; current-plan
+failure with independently accessible invoices; 2.6s loading then client recovery;
+dark/light themes; and leaving/reopening Billing through bottom Account navigation.
+The 320px page had no horizontal overflow and kept the Download control above the
+bottom navigation. Stable and delayed reads had no console or hydration errors.
+Screenshots and privacy-safe download events are in the task's local history-repair
+evidence folder; no real account data is committed here.
+
+The independent reviewer inspected source and desktop/phone/error evidence and
+reported no remaining merge blocker. The synthetic grant/tier were restored,
+grant/subscription counts returned to zero, temporary services were stopped, and
+the three temporary download files were removed. No source runtime change followed
+this successful walkthrough. The original candidate's normal PR CI, CodeQL and all
+four authenticated browser lanes passed; this documentation refresh precedes the
+final candidate checks.
+
 ## Remaining release gates
 
-Codex's built-in browser reports the Mac is locked. The user has been asked to
-unlock it. Local production-build desktop/320px keyboard, retry, navigation and
-invoice-download browser smoke remains pending. Do not mark the PR ready or queue
-it until that required smoke passes. Then finish protected PR/queue/main checks,
-exact Vercel and Cloud Run serving verification, and authenticated live history
-inspection. Confirm visible account identity before examining its records.
+Finish the protected PR/queue/main checks and normal deployment. Verify exact
+Vercel and Cloud Run serving identities, then authenticated live history and its
+honest empty/populated result. Confirm visible account identity before examining
+its records. Synthetic download success does not establish live provider delivery.
 
 No production billing or Gmail state has been changed. The reported account's
 actual payment history has not been inferred from the missing UI. The earlier
