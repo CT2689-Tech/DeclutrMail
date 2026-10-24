@@ -56,7 +56,7 @@ export function useInvoices(options?: { enabled?: boolean }) {
  * comes back as a 502-class error instead, never as "not found".
  */
 export function useInvoiceDocument() {
-  return useMutation<string, Error, string>({
+  return useMutation<void, Error, string>({
     onError: billingMutationFailure('invoice-document'),
     mutationFn: async (invoiceId: string) => {
       const envelope = await apiGet<unknown>(
@@ -66,10 +66,9 @@ export function useInvoiceDocument() {
       if (!parsed.success) {
         throw new BillingPayloadError('GET /api/billing/invoices/:id/document');
       }
-      return parsed.data.url;
-    },
-    onSuccess: (url) => {
-      window.location.assign(url);
+      // Navigate within the request; returning the bearer URL would retain it
+      // in TanStack's mutation data even though it is absent from query data.
+      window.location.assign(parsed.data.url);
     },
   });
 }

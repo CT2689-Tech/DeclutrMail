@@ -1,10 +1,8 @@
 'use client';
 
-import { useBillingSubscription } from './api/use-billing-subscription';
 import { InvoiceHistory } from './invoice-history';
 
-/** Mount provider invoice reads only for a workspace with billing history. */
+/** History has its own authenticated, billing-enabled read; current access is independent. */
 export function BillingInvoiceHistoryGate() {
-  const subscription = useBillingSubscription();
-  return <InvoiceHistory enabled={subscription.data?.subscription != null} />;
+  return <InvoiceHistory />;
 }

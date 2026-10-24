@@ -531,11 +531,19 @@ export function BillingScreen({
   // poll failure must NOT swap the screen for the error state — its
   // "no charge was made" copy would be false, and the poll self-heals.
   if (view.kind === 'read_failed') {
-    return <BillingErrorState onRetry={() => subscriptionQuery.refetch()} />;
+    return (
+      <BillingErrorState onRetry={() => subscriptionQuery.refetch()}>
+        {invoiceHistory ?? <InvoiceHistory />}
+      </BillingErrorState>
+    );
   }
   // Malformed 200 body — honest ignorance, never TIER_MANIFEST[garbage].
   if (view.kind === 'unknown') {
-    return <BillingUnknownState onRetry={() => subscriptionQuery.refetch()} />;
+    return (
+      <BillingUnknownState onRetry={() => subscriptionQuery.refetch()}>
+        {invoiceHistory ?? <InvoiceHistory />}
+      </BillingUnknownState>
+    );
   }
 
   function startPending(
@@ -714,10 +722,6 @@ export function BillingScreen({
   // pending money action's banner owns the screen's story until the
   // webhook resolves it, and billing-dark has no rows to describe.
   const nonBacking = view.kind === 'plan' ? plan.nonBacking : null;
-  // Has this workspace ever had a subscription of any kind? An
-  // EXISTENCE question, not a plan fact, so it may read both arms of
-  // the derived view: a cancelled row still owes its owner receipts.
-  const hasBillingHistory = plan.backing.state !== 'none' || plan.nonBacking !== null;
 
   // ONE notice slot. Highest priority first; the rest wait behind "+N".
   // A pending money action always leads — it is never the collapsed one.
@@ -887,7 +891,7 @@ export function BillingScreen({
           ...(!billingDark && paymentMethodSub
             ? [{ href: '#payment', label: 'Payment details' }]
             : []),
-          ...(!billingDark && hasBillingHistory ? [{ href: '#invoices', label: 'Invoices' }] : []),
+          ...(!billingDark ? [{ href: '#invoices', label: 'Payment history' }] : []),
           { href: '#change-plan', label: 'Compare plans' },
         ]}
       />
@@ -977,7 +981,7 @@ export function BillingScreen({
           fetching last year's receipts is the commonest reason to open
           this page after leaving. Billing-dark carries no rows to read
           and never fetches. */}
-      {invoiceHistory ?? <InvoiceHistory enabled={!billingDark && hasBillingHistory} />}
+      {!billingDark ? (invoiceHistory ?? <InvoiceHistory />) : null}
 
       <PlanPicker
         currentTier={plan.entitlementTier}
@@ -2446,7 +2450,7 @@ function LoadingState() {
   );
 }
 
-function BillingErrorState({ onRetry }: { onRetry: () => void }) {
+function BillingErrorState({ onRetry, children }: { onRetry: () => void; children: ReactNode }) {
   return (
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
       <BillingPageHeader />
@@ -2456,6 +2460,7 @@ function BillingErrorState({ onRetry }: { onRetry: () => void }) {
         description="Try again to confirm your current billing details."
         onRetry={onRetry}
       />
+      {children}
     </div>
   );
 }
@@ -2466,7 +2471,7 @@ function BillingErrorState({ onRetry }: { onRetry: () => void }) {
  * screen shows nothing rather than something wrong (no invented tier,
  * price, or status).
  */
-function BillingUnknownState({ onRetry }: { onRetry: () => void }) {
+function BillingUnknownState({ onRetry, children }: { onRetry: () => void; children: ReactNode }) {
   return (
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
       <BillingPageHeader />
@@ -2476,6 +2481,7 @@ function BillingUnknownState({ onRetry }: { onRetry: () => void }) {
         description="The billing service returned details we couldn’t read. Try again in a moment."
         onRetry={onRetry}
       />
+      {children}
     </div>
   );
 }

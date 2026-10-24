@@ -542,6 +542,9 @@ export interface BillingProvider {
    */
   listInvoices(providerSubscriptionId: string): Promise<ProviderInvoicePage>;
 
+  /** Provider-owned history for a server-resolved workspace customer, including one-time payments. */
+  listCustomerInvoices(providerCustomerId: string): Promise<ProviderInvoicePage>;
+
   /**
    * D119 / ADR-0035 — mint a document URL for one invoice, per click.
    *

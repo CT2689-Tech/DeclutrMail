@@ -104,6 +104,8 @@ describe('BillingService', () => {
   let paddlePause: ReturnType<typeof vi.fn>;
   let reconcileWorkspace: ReturnType<typeof vi.fn>;
   let paddleListInvoices: ReturnType<typeof vi.fn>;
+  let paddleListCustomerInvoices: ReturnType<typeof vi.fn>;
+  let paddleInvoiceTransaction: ReturnType<typeof vi.fn>;
   let paddleInvoiceDocumentUrl: ReturnType<typeof vi.fn>;
   let paddlePaymentMethodSession: ReturnType<typeof vi.fn>;
   let razorpayListInvoices: ReturnType<typeof vi.fn>;
@@ -135,6 +137,12 @@ describe('BillingService', () => {
     paddleClearScheduledCancellation = vi.fn().mockResolvedValue(undefined);
     paddlePause = vi.fn().mockResolvedValue(undefined);
     paddleListInvoices = vi.fn().mockResolvedValue({ invoices: [], truncated: false, omitted: 0 });
+    paddleListCustomerInvoices = vi
+      .fn()
+      .mockResolvedValue({ invoices: [], truncated: false, omitted: 0 });
+    paddleInvoiceTransaction = vi
+      .fn()
+      .mockResolvedValue({ invoices: [], truncated: false, omitted: 0 });
     paddleInvoiceDocumentUrl = vi.fn().mockResolvedValue('https://paddle.example/doc.pdf');
     paddlePaymentMethodSession = vi
       .fn()
@@ -149,6 +157,8 @@ describe('BillingService', () => {
       clearScheduledCancellation: paddleClearScheduledCancellation,
       pauseSubscription: paddlePause,
       listInvoices: paddleListInvoices,
+      listCustomerInvoices: paddleListCustomerInvoices,
+      invoiceTransaction: paddleInvoiceTransaction,
       invoiceDocumentUrl: paddleInvoiceDocumentUrl,
       paymentMethodSession: paddlePaymentMethodSession,
     } as unknown as PaddleAdapter;
@@ -166,6 +176,9 @@ describe('BillingService', () => {
       clearScheduledCancellation: vi.fn(),
       pauseSubscription: vi.fn(),
       listInvoices: razorpayListInvoices,
+      listCustomerInvoices: vi
+        .fn()
+        .mockResolvedValue({ invoices: [], truncated: false, omitted: 0 }),
       invoiceDocumentUrl: vi.fn().mockResolvedValue(null),
       paymentMethodSession: vi
         .fn()
@@ -1972,6 +1985,141 @@ describe('BillingService', () => {
         },
       ]);
     }
+
+    it('retains an expired one-time Pass invoice without a subscription or customer mapping', async () => {
+      await db.insert(entitlementGrants).values({
+        email: 'buyer@example.com',
+        tier: 'plus',
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn_pass_legacy',
+        reason: 'paid Pass',
+        grantedBy: 'webhook',
+        expiresAt: new Date(0),
+        revokedAt: new Date(1),
+      });
+      paddleInvoiceTransaction.mockResolvedValue({
+        invoices: [{ ...PADDLE_ROW, id: 'txn_pass_legacy' }],
+        truncated: false,
+        omitted: 0,
+      });
+      const result = await service.listInvoices(principal.workspaceId);
+      expect(result.invoices.map((row) => row.id)).toEqual(['txn_pass_legacy']);
+      expect(paddleInvoiceTransaction).toHaveBeenCalledWith('txn_pass_legacy');
+      await service.invoiceDocument(principal.workspaceId, 'txn_pass_legacy');
+      expect(paddleInvoiceDocumentUrl).toHaveBeenCalledWith('txn_pass_legacy');
+    });
+
+    it('loads customer-only history and deduplicates documents also returned for a subscription', async () => {
+      await seedBothRails();
+      await db.insert(billingCustomers).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerCustomerId: 'ctm_owned',
+        region: 'international',
+      });
+      paddleListCustomerInvoices.mockResolvedValue({
+        invoices: [PADDLE_ROW],
+        truncated: false,
+        omitted: 0,
+      });
+      paddleListInvoices.mockResolvedValue({
+        invoices: [PADDLE_ROW],
+        truncated: false,
+        omitted: 0,
+      });
+      const result = await service.listInvoices(principal.workspaceId);
+      expect(paddleListCustomerInvoices).toHaveBeenCalledWith('ctm_owned');
+      expect(result.invoices.filter((row) => row.id === PADDLE_ROW.id)).toHaveLength(1);
+    });
+
+    it('never reads another workspace customer or paid Pass transaction', async () => {
+      const [other] = await db.insert(workspaces).values({ name: 'Other' }).returning();
+      await db.insert(users).values({ workspaceId: other!.id, email: 'other@example.com' });
+      await db.insert(billingCustomers).values({
+        workspaceId: other!.id,
+        provider: 'paddle',
+        providerCustomerId: 'ctm_other',
+        region: 'international',
+      });
+      await db.insert(entitlementGrants).values({
+        email: 'other@example.com',
+        tier: 'plus',
+        source: 'pass',
+        provider: 'paddle',
+        providerTransactionId: 'txn_other',
+        reason: 'paid',
+        grantedBy: 'webhook',
+      });
+      expect((await service.listInvoices(principal.workspaceId)).invoices).toEqual([]);
+      await expect(
+        service.invoiceDocument(principal.workspaceId, 'txn_other'),
+      ).rejects.toMatchObject({ code: 'NOT_FOUND' });
+      expect(paddleListCustomerInvoices).not.toHaveBeenCalled();
+      expect(paddleInvoiceTransaction).not.toHaveBeenCalled();
+      expect(paddleInvoiceDocumentUrl).not.toHaveBeenCalled();
+    });
+
+    it('bounds historical Pass reads and never treats a capped absence as a missing invoice', async () => {
+      await db.insert(entitlementGrants).values(
+        Array.from({ length: 11 }, (_, index) => ({
+          email: 'buyer@example.com',
+          tier: 'plus' as const,
+          source: 'pass',
+          provider: 'paddle',
+          providerTransactionId: `txn_pass_${index}`,
+          reason: 'paid',
+          grantedBy: 'webhook',
+          expiresAt: new Date(0),
+        })),
+      );
+      expect((await service.listInvoices(principal.workspaceId)).truncated).toBe(true);
+      expect(paddleInvoiceTransaction).toHaveBeenCalledTimes(10);
+      await expect(
+        service.invoiceDocument(principal.workspaceId, 'txn_not_loaded'),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+      expect(paddleInvoiceDocumentUrl).not.toHaveBeenCalled();
+    });
+
+    it('retains legacy invoices when a customer history read fails and marks the list partial', async () => {
+      await seedBothRails();
+      await db.insert(billingCustomers).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerCustomerId: 'ctm_owned',
+        region: 'international',
+      });
+      paddleListCustomerInvoices.mockRejectedValue(
+        new AppException({ code: 'BILLING_PROVIDER_ERROR' }),
+      );
+      paddleListInvoices.mockResolvedValue({
+        invoices: [PADDLE_ROW],
+        truncated: false,
+        omitted: 0,
+      });
+      const result = await service.listInvoices(principal.workspaceId);
+      expect(result.invoices.map((row) => row.id)).toEqual([PADDLE_ROW.id]);
+      expect(result.unavailableProviders).toEqual(['paddle']);
+    });
+
+    it('bounds a stalled rail, retains healthy history and skips unread scopes', async () => {
+      await seedBothRails();
+      await db.insert(billingCustomers).values({
+        workspaceId: principal.workspaceId,
+        provider: 'paddle',
+        providerCustomerId: 'ctm_slow',
+        region: 'international',
+      });
+      // Even a misbehaving adapter that ignores abort must not hold the response.
+      paddleListCustomerInvoices.mockImplementation(() => new Promise(() => {}));
+      razorpayListInvoices.mockResolvedValue({ invoices: [RZP_ROW], truncated: false, omitted: 0 });
+      const started = Date.now();
+      const result = await service.listInvoices(principal.workspaceId);
+      expect(Date.now() - started).toBeLessThan(3_000);
+      expect(result.invoices.map((invoice) => invoice.id)).toEqual(['inv_1']);
+      expect(result.unavailableProviders).toEqual(['paddle']);
+      expect(paddleListInvoices).not.toHaveBeenCalled();
+    });
 
     it('unions invoices across BOTH rails, including a canceled row — the tax need outlives the subscription', async () => {
       await seedBothRails();

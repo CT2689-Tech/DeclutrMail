@@ -812,11 +812,138 @@ describe('PaddleAdapter checkout + cancel', () => {
       });
     }
 
+    it('scopes customer history, excludes unfinished checkouts and discloses another page', async () => {
+      const row = {
+        id: 'txn_one_time',
+        customer_id: 'ctm_owned',
+        status: 'completed',
+        created_at: '2026-07-30T18:00:27.000Z',
+        currency_code: 'USD',
+        details: { totals: { grand_total: '1900' } },
+      };
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [row, { ...row, id: 'txn_unpaid', status: 'ready' }],
+            meta: { pagination: { has_more: true } },
+          }),
+          { status: 200 },
+        ),
+      );
+      vi.stubGlobal('fetch', fetchSpy);
+      const result = await makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listCustomerInvoices(
+        'ctm_owned',
+      );
+      expect(result.invoices.map((invoice) => invoice.id)).toEqual(['txn_one_time']);
+      expect(result.truncated).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const url = new URL(String(fetchSpy.mock.calls[0]?.[0]));
+      expect(url.searchParams.get('customer_id')).toBe('ctm_owned');
+      expect(url.searchParams.get('per_page')).toBe('30');
+    });
+
+    it('rejects customer history that contains a foreign customer', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            transactionsResponse([
+              { id: 'txn_foreign', customer_id: 'ctm_other', status: 'completed' },
+            ]),
+          ),
+      );
+      await expect(
+        makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listCustomerInvoices('ctm_owned'),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+    });
+
+    it('offers downloads only for provider-supported nonzero invoices', async () => {
+      const row = {
+        id: 'txn_complete',
+        subscription_id: 'sub_owned',
+        status: 'completed',
+        created_at: '2026-07-30T18:00:27.000Z',
+        currency_code: 'USD',
+        details: { totals: { grand_total: '1900' } },
+      };
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            transactionsResponse([
+              row,
+              { ...row, id: 'txn_paid', status: 'paid' },
+              { ...row, id: 'txn_zero', details: { totals: { grand_total: '0' } } },
+              { ...row, id: 'txn_manual', status: 'billed', collection_mode: 'manual' },
+              { ...row, id: 'txn_automatic', status: 'billed', collection_mode: 'automatic' },
+            ]),
+          ),
+      );
+      const result = await makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listInvoices(
+        'sub_owned',
+      );
+      expect(
+        result.invoices.filter((invoice) => invoice.documentAvailable).map((invoice) => invoice.id),
+      ).toEqual(['txn_complete', 'txn_manual']);
+    });
+
+    it.each([undefined, null, 'sub_foreign'])(
+      'rejects subscription responses with unproven ownership: %s',
+      async (subscriptionId) => {
+        vi.stubGlobal(
+          'fetch',
+          vi
+            .fn()
+            .mockResolvedValue(
+              transactionsResponse([
+                { id: 'txn_unknown', subscription_id: subscriptionId, status: 'completed' },
+              ]),
+            ),
+        );
+        await expect(
+          makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listInvoices('sub_owned'),
+        ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+      },
+    );
+
+    it('rejects empty customer, subscription and transaction scopes before HTTP', async () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+      await expect(adapter.listInvoices('')).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
+      });
+      await expect(adapter.listCustomerInvoices('')).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
+      });
+      await expect(adapter.invoiceTransaction('')).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('rejects a mismatched transaction when resolving a legacy Pass invoice', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(JSON.stringify({ data: { id: 'txn_foreign' } }), { status: 200 }),
+          ),
+      );
+      await expect(
+        makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).invoiceTransaction('txn_owned'),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+    });
+
     it('drops a subscription_payment_method_change transaction from the list', async () => {
       const fetchSpy = vi.fn().mockResolvedValue(
         transactionsResponse([
           {
             id: 'txn_paid',
+            subscription_id: 'sub_01paddle000001',
             status: 'paid',
             billed_at: '2026-07-30T18:00:27.000Z',
             currency_code: 'USD',
@@ -824,6 +951,7 @@ describe('PaddleAdapter checkout + cancel', () => {
           },
           {
             id: 'txn_card_verify',
+            subscription_id: 'sub_01paddle000001',
             status: 'ready',
             origin: 'subscription_payment_method_change',
             billed_at: null,
@@ -849,6 +977,7 @@ describe('PaddleAdapter checkout + cancel', () => {
         transactionsResponse([
           {
             id: 'txn_zero_other',
+            subscription_id: 'sub_01paddle000001',
             status: 'billed',
             billed_at: '2026-07-30T18:00:27.000Z',
             currency_code: 'USD',

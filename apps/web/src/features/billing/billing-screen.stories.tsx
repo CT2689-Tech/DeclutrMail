@@ -12,7 +12,7 @@ import { useEffect, useState, type ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { tokens } from '@declutrmail/shared';
-import type { BillingSubscription } from '@declutrmail/shared/contracts';
+import type { BillingSubscription, BillingInvoiceList } from '@declutrmail/shared/contracts';
 
 import { AuthProvider } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY, type Me } from '@/features/auth/api/use-me';
@@ -80,11 +80,24 @@ const PRO_SUB: BillingSubscription = {
   },
 };
 
-function makeClient(me: Me, billing: BillingSubscription | null): QueryClient {
+function makeClient(
+  me: Me,
+  billing: BillingSubscription | null,
+  history?: BillingInvoiceList,
+): QueryClient {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
   });
   client.setQueryData(ME_QUERY_KEY, me);
+  client.setQueryData(
+    billingKeys.invoices(),
+    history ?? {
+      invoices: [],
+      unavailableProviders: [],
+      truncated: false,
+      omittedRows: 0,
+    },
+  );
   if (billing) {
     client.setQueryData(billingKeys.subscription(), billing);
   }
@@ -428,6 +441,41 @@ export const CompedPro: Story<typeof BillingScreen> = {
           foundingMember: false,
           pendingCheckout: null,
           subscription: null,
+        },
+      ),
+      { pricingV2: true },
+    ),
+};
+
+/** Current complimentary access must not hide a receipt from an older purchase. */
+export const CompedProWithPaymentHistory: Story<typeof BillingScreen> = {
+  render: () =>
+    frame(
+      makeClient(
+        { ...meFixture('pro', null), pricingV2: true, passEnabled: true },
+        {
+          complimentary: { tier: 'pro', expiresAt: null },
+          tier: 'pro',
+          foundingMember: false,
+          pendingCheckout: null,
+          subscription: null,
+        },
+        {
+          invoices: [
+            {
+              id: 'txn_previous_pass',
+              provider: 'paddle',
+              issuedAt: '2026-05-01T00:00:00.000Z',
+              amount: '1900',
+              currencyCode: 'USD',
+              status: 'paid',
+              hostedUrl: null,
+              documentAvailable: true,
+            },
+          ],
+          unavailableProviders: [],
+          truncated: false,
+          omittedRows: 0,
         },
       ),
       { pricingV2: true },
