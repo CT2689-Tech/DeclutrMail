@@ -23,11 +23,12 @@ test('light appearance follows the app route and leaves public/dark paint unchan
     res.end(`<!doctype html><html><head><meta charset="utf-8">
       <style>${tokens}</style><style id="app-styles">${appTheme}</style>
       </head><body><span id="dm-app-theme" hidden></span>
-      <main><h1 style="font-family:var(--dm-font-display)">Senders</h1>
+      <main><h1 style="font-family:var(--dm-font-display);font-weight:400">Senders</h1>
+      <h3 style="font-weight:400">Your progress</h3>
       <span class="dm-sidebar-logo"><span style="font-family:var(--dm-font-display)">DeclutrMail</span></span>
       <p style="color:var(--dm-fg-muted)">Review your senders</p></main>
       <section role="dialog" aria-label="Archive preview" style="background:var(--dm-card)">
-      <h2 style="font-family:var(--dm-font-display)">Archive preview</h2>
+      <h2 style="font-family:var(--dm-font-display);font-weight:400">Archive preview</h2>
       <button style="background:var(--dm-primary);color:var(--dm-fg-inverse)">Archive</button>
       <p style="background:var(--dm-primary);color:var(--dm-fg-inverse-muted)">Review before applying</p>
       </section></body></html>`);
@@ -44,6 +45,7 @@ test('light appearance follows the app route and leaves public/dark paint unchan
           card: style('[role="dialog"]').backgroundColor,
           accent: style('button').backgroundColor,
           headingFont: style('h1').fontFamily,
+          headingWeights: ['h1', 'h2', 'h3'].map((selector) => style(selector).fontWeight),
           dialogFont: style('h2').fontFamily,
           brandFont: style('.dm-sidebar-logo > span').fontFamily,
         };
@@ -53,6 +55,7 @@ test('light appearance follows the app route and leaves public/dark paint unchan
     expect(light.card).toBe('rgb(255, 255, 255)');
     expect(light.accent).toBe('rgb(111, 86, 138)');
     expect(light.headingFont).toContain('Geist');
+    expect(light.headingWeights).toEqual(['600', '600', '600']);
     expect(light.dialogFont).toBe(light.headingFont);
     expect(light.brandFont).toContain('Fraunces');
     const contrast = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze();
@@ -64,6 +67,7 @@ test('light appearance follows the app route and leaves public/dark paint unchan
       background: 'rgb(246, 242, 235)',
       card: 'rgb(255, 252, 248)',
       accent: 'rgb(89, 65, 95)',
+      headingWeights: ['400', '400', '400'],
     });
     const publicWithStyles = await page.screenshot();
     await page.evaluate(() => document.querySelector<HTMLStyleElement>('#app-styles')!.remove());
@@ -87,6 +91,7 @@ test('light appearance follows the app route and leaves public/dark paint unchan
       background: 'rgb(30, 26, 33)',
       card: 'rgb(48, 42, 50)',
       accent: 'rgb(209, 184, 214)',
+      headingWeights: ['400', '400', '400'],
     });
     const darkWithStyles = await page.screenshot();
     expect((await readAppearance()).headingFont).toContain('Fraunces');

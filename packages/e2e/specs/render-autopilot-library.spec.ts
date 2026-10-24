@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import type { AddressInfo } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page } from '@playwright/test';
+import { expectNoUncontainedViewportEscape, expectNoViewportOverflow } from '../helpers/a11y';
 
 const webRoot = fileURLToPath(new URL('../../../apps/web', import.meta.url));
 const requireFromShared = createRequire(new URL('../../shared/package.json', import.meta.url));
@@ -34,14 +35,14 @@ const { outputFiles } = await esbuild.build({
     {
       name: 'isolated-review-boundaries',
       setup(build: FixtureBuild) {
-        build.onResolve({ filter: /(?:auth-provider|posthog|next\/link)$/ }, () => ({
+        build.onResolve({ filter: /(?:auth-provider|posthog|lib\/sentry|next\/link)$/ }, () => ({
           path: 'boundaries',
           namespace: 'review',
         }));
         build.onLoad({ filter: /.*/, namespace: 'review' }, () => ({
           loader: 'tsx',
           resolveDir: webRoot,
-          contents: `export const useOptionalAuth=()=>({me:{activeMailboxId:'fixture-mailbox',tier:'pro'}});export const getActiveMailboxEmail=()=> 'fixture@example.invalid';export const track=async()=>undefined;export default function Link(props){return <a {...props}/>}`,
+          contents: `export const useOptionalAuth=()=>({me:{activeMailboxId:'fixture-mailbox',tier:'pro'}});export const getActiveMailboxEmail=()=> 'fixture@example.invalid';export const track=async()=>undefined;export const addBreadcrumb=()=>undefined;export const captureFeatureException=()=>undefined;export default function Link(props){return <a {...props}/>}`,
         }));
         build.onResolve({ filter: /api\/autopilot-sender-rules$/ }, () => ({
           path: 'transport',
@@ -68,7 +69,7 @@ const { outputFiles } = await esbuild.build({
         build.onLoad({ filter: /.*/, namespace: 'sender-preset' }, () => ({
           loader: 'ts',
           resolveDir: webRoot,
-          contents: `export const postPauseAll=async()=>({data:{pausedCount:9}});`,
+          contents: `export * from './src/lib/api/autopilot.ts';export const postPauseAll=async()=>({data:{pausedCount:9}});`,
         }));
       },
     },
@@ -77,6 +78,10 @@ const { outputFiles } = await esbuild.build({
 const client = outputFiles.find((file) => file.path.endsWith('.js'))!.text;
 const css =
   readFileSync(new URL('../../shared/src/styles/tokens.css', import.meta.url), 'utf8') +
+  readFileSync(
+    new URL('../../../apps/web/src/features/theme/app-light-theme.css', import.meta.url),
+    'utf8',
+  ) +
   outputFiles.find((file) => file.path.endsWith('.css'))!.text;
 const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"></head><body><div id="root"></div><script src="/fixture.js"></script></body></html>`;
 // Build with --list and this variable to serve the same fixture in Codex's built-in browser.
@@ -89,6 +94,27 @@ if (process.env.DM_AUTOPILOT_LIBRARY_DIR) {
     ['fixture.css', css],
   ])
     writeFileSync(`${dir}/${name}`, value!);
+}
+
+for (const width of [320, 375, 1280]) {
+  for (const theme of ['light', 'dark']) {
+    test(`expanded presets fit the ${width}px ${theme} Automations page`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 812 });
+      await page.goto(`${url}?scenario=route&theme=${theme}`);
+      await expect(page.getByRole('heading', { name: 'Autopilot', exact: true })).toBeVisible();
+      await expectNoViewportOverflow(page);
+      await expectNoUncontainedViewportEscape(page);
+      const disclosure = page.getByText(/^Preset rules ·/);
+      await disclosure.click();
+      await expect(page.getByRole('heading', { name: 'Preset rules', exact: true })).toBeVisible();
+      await expectNoViewportOverflow(page);
+      await expectNoUncontainedViewportEscape(page);
+      await expect(page.getByRole('heading', { name: 'Pending suggestions' })).toBeVisible();
+      await disclosure.click();
+      await expect(page.getByRole('heading', { name: 'Preset rules', exact: true })).toBeHidden();
+      await expectNoUncontainedViewportEscape(page);
+    });
+  }
 }
 let server: ReturnType<typeof createServer>;
 let url: string;
