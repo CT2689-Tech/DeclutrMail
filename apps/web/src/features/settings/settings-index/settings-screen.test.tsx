@@ -238,7 +238,7 @@ describe('SettingsScreen', () => {
       ['Protected senders', '/settings/senders'],
       ['Privacy & data', '/settings/privacy'],
       ['Help & glossary', '/settings/help'],
-      [/billing/i, '/billing'],
+      ['Plan & billing', '/billing'],
     ] as const) {
       expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
     }
@@ -895,14 +895,14 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     const toggle = await screen.findByRole('switch', {
-      name: /^enable weekly value receipt$/i,
+      name: /^enable weekly activity summary$/i,
     });
     await userEvent.click(toggle);
 
     await waitFor(() => expect(patches).toEqual([{ weeklyReceipt: true }]));
     await waitFor(() =>
       expect(
-        screen.getByRole('switch', { name: /^disable weekly value receipt$/i }),
+        screen.getByRole('switch', { name: /^disable weekly activity summary$/i }),
       ).toBeInTheDocument(),
     );
   });
@@ -970,7 +970,10 @@ describe('SettingsScreen', () => {
     // The flag being off is deterministic — a retry would be noise.
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
     // The billing link still works — /billing owns the rest.
-    expect(screen.getByRole('link', { name: /billing/i })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('link', { name: 'Plan & billing' })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
   });
 
   it('does not claim billing is disabled on a 503 that is not BILLING_DISABLED', async () => {
@@ -1544,7 +1547,7 @@ describe('SettingsScreen', () => {
       await screen.findByRole('heading', { name: 'Delete account and data' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Privacy & data' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /billing/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Plan & billing' })).toBeInTheDocument();
     // The empty Gmail-accounts state, not a broken list.
     expect(screen.getByText('No Gmail accounts connected yet.')).toBeInTheDocument();
     // No active mailbox ⇒ no session-scoped sync poll ⇒ no 409 risk.

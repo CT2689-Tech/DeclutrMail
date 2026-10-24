@@ -115,7 +115,8 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
   expect(html).toContain('aria-pressed="true"');
   expect(html).toContain('>Annual');
   expect(html).toContain(annualLine('plus'));
-  expect(html).toContain(annualLine('pro'));
+  expect(html).not.toContain(annualLine('pro'));
+  expect(html).toContain('Current access');
   expect(html).not.toContain('Loading billing');
 
   // The app shell can start this read while billing/loading.tsx is still
@@ -158,7 +159,8 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
     const annual = container.querySelector('[data-testid="cycle-toggle"] [aria-pressed="true"]');
     expect(annual?.textContent).toContain('Annual');
     expect(container.textContent).toContain(annualLine('plus'));
-    expect(container.textContent).toContain(annualLine('pro'));
+    expect(container.textContent).not.toContain(annualLine('pro'));
+    expect(container.textContent).toContain('Current access');
     expect(container.textContent).not.toContain('Loading billing');
   } finally {
     await act(async () => root?.unmount());

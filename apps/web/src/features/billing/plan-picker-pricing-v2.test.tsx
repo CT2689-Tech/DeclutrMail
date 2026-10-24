@@ -128,7 +128,7 @@ describe('PlanPicker launch pricing', () => {
       </QueryWrapper>,
     );
 
-    expect(screen.getByRole('button', { name: 'Subscribe to Plus' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy Plus separately' })).toBeInTheDocument();
     const panel = await screen.findByTestId('checkout-panel');
     expect(panel).toHaveTextContent(fillStory(WS1_COPY['checkout.title']));
     expect(panel).toHaveTextContent(fillStory(WS1_COPY['checkout.plus.summary']));

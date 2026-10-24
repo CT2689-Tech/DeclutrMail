@@ -525,7 +525,9 @@ function PlanSummary({ state }: { state: PlanSummaryState }) {
           </Button>
         </>
       )}
-      <p>Usage, payment details and invoices are in Plan &amp; billing.</p>
+      <Link className={styles.planLink} href="/billing">
+        View plan &amp; billing
+      </Link>
     </aside>
   );
 }

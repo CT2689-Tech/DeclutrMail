@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import type { BriefPrefs } from '@declutrmail/shared/contracts';
 import { SelectWell, SettingsRow, SettingsRowStatus, SettingsSaveError } from '../settings-list';
 
@@ -73,7 +74,7 @@ export function BriefPrefsCard({
   return (
     <>
       <SettingsRow
-        label="Daily brief ready at"
+        label={`${BRIEF_NAME} ready at`}
         // The zone is the one thing that changes what the user picks.
         detail={timezone ?? 'Timezone not detected yet.'}
       >
@@ -84,7 +85,7 @@ export function BriefPrefsCard({
           value={state.prefs.hour}
           disabled={pending}
           onChange={(e) => onChange(Number(e.target.value))}
-          aria-label="Daily brief delivery hour"
+          aria-label={`${BRIEF_NAME} delivery hour`}
         >
           {HOURS.map((hour) => (
             <option key={hour} value={hour}>

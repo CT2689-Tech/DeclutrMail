@@ -50,6 +50,7 @@ import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
 import { useFoundingRemaining } from './api/use-founding-remaining';
 import {
+  chargedPlanPrice,
   formatBillingDate,
   isDeferredDowngrade,
   sharedAnnualMonthsFree,
@@ -200,6 +201,7 @@ const PRE_CLAIM_REJECTIONS = new Set([
 
 export function PlanPicker({
   currentTier,
+  currentAccess,
   grantingSub,
   disabled,
   initialIntent = null,
@@ -222,6 +224,12 @@ export function PlanPicker({
   onPlanChangeFailedKnown,
 }: {
   currentTier: TierId;
+  /** Display facts from the current-plan projection; separate from checkout eligibility. */
+  currentAccess?: {
+    kind: 'tier' | 'pass';
+    priceLabel: string;
+    subscription: SubscriptionRecord | null;
+  };
   /** The BACKING subscription in a granting status (active/past_due AND
    *  tier === entitlement), or null — resolved by the screen's derive
    *  layer (A6). Drives change-vs-checkout routing (D117/D120): a
@@ -312,6 +320,15 @@ export function PlanPicker({
   onPlanChangeFailedKnown: (attemptId: string) => void;
 }) {
   const isPhone = useIsAtMost('xs');
+  const displayedSubscription =
+    currentAccess === undefined ? grantingSub : currentAccess.subscription;
+  const includedAccess =
+    currentAccess !== undefined &&
+    currentAccess.subscription === null &&
+    currentTier !== 'free' &&
+    currentAccess.kind === 'tier';
+  const currentOfferTier =
+    displayedSubscription?.tier ?? (currentTier === 'free' || includedAccess ? currentTier : null);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [cycle, setCycle] = useState<BillingCycle>(
     pricingV2 ? 'annual' : (initialIntent?.cycle ?? 'annual'),
@@ -700,10 +717,10 @@ export function PlanPicker({
         )}
       </div>
 
-      {currentTier !== 'free' && grantingSub === null ? (
+      {currentTier !== 'free' && displayedSubscription === null ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
-          Choosing “Subscribe” starts a new paid subscription, even when you already have access to
-          a higher plan. Review its price and included features before checkout.
+          Your current access is shown above. Buying a subscription starts a separate recurring
+          payment. Review the price and renewal details before checkout.
         </p>
       ) : null}
 
@@ -751,17 +768,39 @@ export function PlanPicker({
           alignItems: 'stretch',
         }}
       >
-        {STRIP_TIER_IDS.map((id) =>
-          pricingV2 && id === 'pro' && id !== currentTier ? (
+        {STRIP_TIER_IDS.map((id) => {
+          // Pro is no longer sold at launch. An existing Pro subscription is
+          // a readout of its own cycle, rather than an annual purchase quote.
+          const cardCycle =
+            pricingV2 && id === 'pro' && displayedSubscription?.tier === 'pro'
+              ? displayedSubscription.cycle
+              : cycle;
+          return pricingV2 && id === 'pro' && id !== currentOfferTier ? (
             <ProWaitlistCard key={id} disabled={disabled} />
           ) : (
             <PlanCard
               key={id}
               tierId={id}
-              cycle={cycle}
-              isCurrent={id === currentTier}
+              cycle={cardCycle}
+              isCurrent={id === currentOfferTier}
               isUpgrade={TIER_RANK[id] > TIER_RANK[currentTier]}
-              currentCycle={grantingSub?.cycle ?? null}
+              currentCycle={displayedSubscription?.cycle ?? null}
+              accessLabel={
+                includedAccess && id === currentTier ? currentAccess.priceLabel : undefined
+              }
+              currentPriceLabel={
+                displayedSubscription?.tier === id && displayedSubscription.cycle === cardCycle
+                  ? chargedPlanPrice(
+                      displayedSubscription.tier,
+                      displayedSubscription.cycle,
+                      displayedSubscription.provider,
+                      displayedSubscription.foundingMember,
+                      displayedSubscription.providerPriceId,
+                      displayedSubscription.chargedUsdCents,
+                      displayedSubscription.chargedCurrency,
+                    )
+                  : undefined
+              }
               canSwitchCycle={pricingV2 ? false : grantingSub?.provider === 'paddle'}
               isSelected={id === selected}
               disabled={disabled}
@@ -787,8 +826,8 @@ export function PlanPicker({
                   : null
               }
             />
-          ),
-        )}
+          );
+        })}
       </div>
 
       {passSelected && !disabled ? (
@@ -1070,6 +1109,8 @@ function PlanCard({
   isCurrent,
   isUpgrade,
   currentCycle,
+  accessLabel,
+  currentPriceLabel,
   isSelected,
   disabled,
   canSwitchCycle,
@@ -1088,6 +1129,10 @@ function PlanCard({
   isUpgrade: boolean;
   /** The granting subscription's billing cycle, or null without one. */
   currentCycle: BillingCycle | null;
+  /** Non-subscription access has no recurring catalog price. */
+  accessLabel?: string | undefined;
+  /** Existing subscription amount, only for its exact tier and billing cycle. */
+  currentPriceLabel?: string | null | undefined;
   isSelected: boolean;
   disabled: boolean;
   /** Whether the rail supports a self-serve cycle switch (Paddle). */
@@ -1131,7 +1176,9 @@ function PlanCard({
   //
   // `currentCycle` is null when no subscription grants the current plan.
   // Free and complimentary plans have no billing cycle to compare.
-  const isCurrentPlan = isCurrent && (!hasGrantingSubscription || currentCycle === cycle);
+  const isCurrentPlan =
+    isCurrent && (accessLabel !== undefined || tierId === 'free' || currentCycle === cycle);
+  const separatePurchase = !hasGrantingSubscription && tierId !== 'free' && !isUpgrade;
   // CTA per card state. Every non-current card gets one so the row
   // reads as equals; the current card's only action is switching its
   // billing cycle via the toggle.
@@ -1139,7 +1186,7 @@ function PlanCard({
     ? hasGrantingSubscription && canSwitchCycle && currentCycle !== null && currentCycle !== cycle
       ? `Switch to ${cycle} billing`
       : !hasGrantingSubscription && tierId === 'plus'
-        ? `Subscribe to ${tier.name}`
+        ? `Buy ${tier.name} separately`
         : null
     : tierId === 'free'
       ? hasGrantingSubscription
@@ -1149,7 +1196,7 @@ function PlanCard({
         ? `Switch to ${tier.name}`
         : isUpgrade
           ? `Upgrade to ${tier.name}`
-          : `Subscribe to ${tier.name}`;
+          : `Buy ${tier.name} separately`;
 
   return (
     <div
@@ -1178,7 +1225,11 @@ function PlanCard({
         >
           {tier.name}
         </span>
-        {isCurrentPlan ? <Pill tone="primary">Current plan</Pill> : null}
+        {isCurrentPlan ? (
+          <Pill tone="primary">
+            {accessLabel !== undefined ? 'Current access' : 'Current plan'}
+          </Pill>
+        ) : null}
       </span>
       <span
         style={{
@@ -1189,8 +1240,8 @@ function PlanCard({
           fontVariantNumeric: 'tabular-nums',
         }}
       >
-        {price ? `${price.amount}${price.per}` : '—'}
-        {price?.note ? (
+        {accessLabel ?? currentPriceLabel ?? (price ? `${price.amount}${price.per}` : '—')}
+        {accessLabel === undefined && currentPriceLabel == null && price?.note ? (
           <span
             style={{ color: color.fgMuted, fontSize: text.sm, fontWeight: 400, letterSpacing: 0 }}
           >
@@ -1218,7 +1269,7 @@ function PlanCard({
         // text each card carries.
         <div style={{ marginTop: 'auto', paddingTop: 12 }}>
           <Button
-            tone={tierId === 'free' ? 'default' : 'primary'}
+            tone={tierId === 'free' || separatePurchase ? 'default' : 'primary'}
             style={{ width: '100%' }}
             onClick={onSelect}
             ariaLabel={cta}
