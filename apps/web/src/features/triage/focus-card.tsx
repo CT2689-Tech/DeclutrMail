@@ -76,7 +76,7 @@ export function TriageFocusCard({
   active?: boolean;
 }) {
   const isNarrow = useIsAtMost('xs');
-  const logoSize = isNarrow ? 48 : LOGO;
+  const logoSize = guided ? (isNarrow ? 40 : 48) : isNarrow ? 48 : LOGO;
   const actionsDisabled = busy || inlinePreviewGates(inlinePreview).blocked;
   const facts = focusFacts(row);
 
@@ -109,7 +109,11 @@ export function TriageFocusCard({
           flexDirection: 'column',
           alignItems: 'center',
           textAlign: 'center',
-          padding: isNarrow ? `${space[4]}px ${space[5]}px` : `${space[10]}px ${space[8]}px`,
+          padding: isNarrow
+            ? `${space[4]}px ${space[5]}px`
+            : guided
+              ? `${space[6]}px`
+              : `${space[10]}px ${space[8]}px`,
           background: color.card,
           borderRadius: radius.lg,
           border: `1px solid ${color.border}`,
@@ -121,9 +125,9 @@ export function TriageFocusCard({
         <div
           style={{
             display: 'flex',
-            flexDirection: isNarrow ? 'row' : 'column',
+            flexDirection: guided || isNarrow ? 'row' : 'column',
             alignItems: 'center',
-            gap: isNarrow ? space[3] : 0,
+            gap: guided || isNarrow ? space[3] : 0,
             width: '100%',
             minWidth: 0,
           }}
@@ -143,11 +147,17 @@ export function TriageFocusCard({
               hasMark={row.brandMark}
             />
           </span>
-          <div style={{ minWidth: 0, maxWidth: '100%', textAlign: isNarrow ? 'left' : 'center' }}>
+          <div
+            style={{
+              minWidth: 0,
+              maxWidth: '100%',
+              textAlign: guided || isNarrow ? 'left' : 'center',
+            }}
+          >
             <h2
               title={row.senderName}
               style={{
-                margin: isNarrow ? 0 : `${space[5]}px 0 0`,
+                margin: guided || isNarrow ? 0 : `${space[5]}px 0 0`,
                 maxWidth: '100%',
                 fontFamily: font.display,
                 fontSize: 'clamp(26px, 3vw, 34px)',
@@ -224,9 +234,9 @@ export function TriageFocusCard({
         <span
           data-dm-focus-count
           style={{
-            marginTop: isNarrow ? space[4] : space[8],
+            marginTop: guided || isNarrow ? space[4] : space[8],
             fontFamily: font.display,
-            fontSize: 'var(--dm-type-hero-stat)',
+            fontSize: guided ? 56 : 'var(--dm-type-hero-stat)',
             fontWeight: 400,
             lineHeight: 1,
             letterSpacing: '-0.03em',
@@ -234,11 +244,30 @@ export function TriageFocusCard({
             fontVariantNumeric: 'tabular-nums',
           }}
         >
-          {facts.count.toLocaleString('en-US')}
+          {guided
+            ? (row.inboxCount?.toLocaleString('en-US') ?? '—')
+            : facts.count.toLocaleString('en-US')}
         </span>
         <span style={{ marginTop: space[2], fontSize: text.md, color: color.fgMuted }}>
-          {facts.unit}
+          {guided
+            ? row.inboxCount == null
+              ? 'Current Inbox count unavailable'
+              : `${row.inboxCount === 1 ? 'email' : 'emails'} in Inbox now`
+            : facts.unit}
         </span>
+
+        {guided && (
+          <>
+            <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
+              {row.last90dMessages.toLocaleString('en-US')} received in the last 90 days
+            </p>
+            {row.inboxCount === 0 && (
+              <p style={{ margin: `${space[2]}px 0 0`, fontSize: text.sm, color: color.fgSoft }}>
+                Your Inbox is clear for this sender.
+              </p>
+            )}
+          </>
+        )}
 
         {guided && recommendedVerb(row.verdict, row.confidence) !== null && (
           <p style={{ margin: '16px 0 0', fontWeight: 600 }}>
@@ -248,7 +277,7 @@ export function TriageFocusCard({
         {facts.why !== null && (
           <p
             style={{
-              margin: `${isNarrow ? space[3] : space[5]}px 0 0`,
+              margin: `${guided || isNarrow ? space[3] : space[5]}px 0 0`,
               maxWidth: '36ch',
               fontSize: text.md,
               color: color.fgSoft,
@@ -341,7 +370,7 @@ export function TriageFocusCard({
           </div>
         )}
 
-        <div style={{ width: '100%', marginTop: isNarrow ? space[4] : space[8] }}>
+        <div style={{ width: '100%', marginTop: guided || isNarrow ? space[4] : space[8] }}>
           <ActionToolbar
             row={row}
             guided={guided}

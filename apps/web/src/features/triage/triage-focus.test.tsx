@@ -744,6 +744,41 @@ describe('focus mode — mobile', () => {
 });
 
 describe('Guided Review inside Senders', () => {
+  it.each([18, 1, 0])(
+    'leads guided review with %s current Inbox emails, keeping history separate',
+    async (inboxCount) => {
+      renderScreen(ready([{ ...GROUPON, inboxCount, last90dMessages: 191 }]), undefined, {
+        presentation: 'guided',
+      });
+      await screen.findByRole('button', { name: 'Archive (A)' });
+      expect(document.querySelector('[data-dm-focus-count]')).toHaveTextContent(String(inboxCount));
+      expect(
+        within(card()).getByText(`${inboxCount === 1 ? 'email' : 'emails'} in Inbox now`),
+      ).toBeInTheDocument();
+      expect(within(card()).getByText('191 received in the last 90 days')).toBeInTheDocument();
+      if (inboxCount === 0)
+        expect(
+          within(card()).getByText('Your Inbox is clear for this sender.'),
+        ).toBeInTheDocument();
+      else expect(within(card()).queryByText('Your Inbox is clear for this sender.')).toBeNull();
+      // The existing action owner still opens its mandatory preview, including at zero.
+      fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+      await screen.findByRole('dialog');
+      expect(useTriageStore.getState().pendingAction?.verb).toBe('Archive');
+    },
+  );
+  it('does not turn an unavailable Inbox count into zero or use historical volume as current', async () => {
+    const unknown = { ...GROUPON };
+    delete unknown.inboxCount;
+    renderScreen(ready([{ ...unknown, last90dMessages: 0, totalAllTime: 555 }]), undefined, {
+      presentation: 'guided',
+    });
+    await screen.findByRole('button', { name: 'Archive (A)' });
+    expect(document.querySelector('[data-dm-focus-count]')).toHaveTextContent('—');
+    expect(within(card()).getByText('Current Inbox count unavailable')).toBeInTheDocument();
+    expect(within(card()).getByText('0 received in the last 90 days')).toBeInTheDocument();
+    expect(within(card()).queryByText('Your Inbox is clear for this sender.')).toBeNull();
+  });
   it('uses the server order for Previous and Next without recording decisions', async () => {
     let writes = 0;
     addFetchHandlers([

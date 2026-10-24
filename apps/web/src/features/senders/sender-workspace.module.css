@@ -32,6 +32,36 @@
   flex-direction: column;
   gap: 16px;
 }
+.directoryHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+}
+.directoryHeader .title {
+  margin: 0;
+}
+.directoryHeader > button {
+  justify-self: end;
+}
+.directoryHeader > nav {
+  grid-column: 1 / -1;
+}
+.directoryHeader .reportBand {
+  margin-top: 12px;
+}
+.senderTotal {
+  color: var(--dm-fg);
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.compactShortcuts > span {
+  display: none;
+}
+.shortcutShort {
+  display: none;
+}
 .eyebrow {
   line-height: 1.5;
   font-size: 11px;
@@ -101,7 +131,7 @@
   gap: 16px;
   flex-wrap: wrap;
   border-block: 1px solid var(--dm-line-soft);
-  padding: 16px 0;
+  padding: 8px 0;
 }
 .results {
   container: sender-list / inline-size;
@@ -364,6 +394,33 @@
   }
 }
 @media (max-width: 480px) {
+  .directoryHeader > button {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    min-height: 44px;
+  }
+  .directoryHeader > nav {
+    grid-row: 2;
+  }
+  .directoryHeader .reportBand:has(:global([data-compact])) {
+    grid-row: 1;
+    grid-column: 2;
+    margin-top: 0;
+  }
+  .compactShortcuts {
+    gap: 6px !important;
+  }
+  .compactShortcuts .shortcutLong {
+    display: none;
+  }
+  .compactShortcuts .shortcutShort {
+    display: inline;
+  }
+  .compactShortcuts button {
+    padding-inline: 8px !important;
+    font-size: 11px !important;
+  }
   .workspace {
     padding: 20px 16px 32px;
   }
