@@ -56,8 +56,9 @@ in every ordinary browser.
 
 ### Neutral
 
-- `appId` is the placeholder `com.declutrmail.proto`; the bundle id cannot change
-  after the first store upload.
+- `appId` was the placeholder `com.declutrmail.proto`. It is now `com.declutrmail.app`
+  (the sign-in return scheme too, ADR-0049); the bundle id cannot change after the
+  first store upload.
 
 ## Not decided here (Tier 1 — founder first)
 
@@ -99,7 +100,8 @@ its work package lands:
 - **Billing:** in-app purchase plus web, one entitlement record.
 - **Push:** yes, with privacy-safe payloads. This reverses D164 and D246.
 - **Gestures:** ADR-0048.
-- **Sign-in:** a PKCE-bound system-browser handoff on the existing Google client.
+- **Sign-in:** a PKCE-bound system-browser handoff on the existing Google client
+  (ADR-0049, proposed, awaiting founder review).
 
 Still true: this ADR does not decide store privacy labels (generated from
 `gmail-data-inventory.ts`, Tier 1b) or CSP and CORS changes, and the dev-only

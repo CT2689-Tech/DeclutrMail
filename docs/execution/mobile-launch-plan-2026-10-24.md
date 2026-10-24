@@ -91,7 +91,7 @@ Needs from you: a Firebase project and an APNs key.
 | Work package               | What                                                                | I can do here                                 | Needs you or the calendar                              |
 | -------------------------- | ------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------ |
 | WP1 Swipe grammar          | One shared hook, Triage and Senders                                 | Done, committed                               | Device check: up-swipe vs scroll, Android edge-swipe   |
-| WP2 Native sign-in         | Endpoints, web and shell plumbing, tests                            | Code, tests, docs                             | Real-device sign-in; Google answer on verification     |
+| WP2 Native sign-in         | Endpoints, web and shell plumbing, tests                            | Done, committed (ADR-0049, awaiting review)   | Real-device sign-in; Google answer on verification     |
 | WP3 Store billing          | Provider adapter, notifications, entitlement mapping, shell paywall | Code, tests, docs                             | Store products, sandbox purchases, provider account    |
 | WP4 Push                   | Tokens, prefs, producers, delivery                                  | Code, tests, docs, migration                  | Firebase and APNs credentials                          |
 | WP5 Native features and CI | Haptics, biometric lock, deep links, release pipeline               | Config, pipeline files, web association files | A Mac or CI runner for iOS; installing from TestFlight |
