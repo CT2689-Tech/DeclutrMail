@@ -4715,6 +4715,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     // generic "Included with your account" would leave the reader
     // guessing why they were never charged.
     mockTier = 'pro';
+    mockPassEnabled = true;
     mockCleanupRemaining = null;
     stubSubscription(() =>
       jsonOk({
@@ -4728,7 +4729,7 @@ describe('BillingScreen — one billing story (A6)', () => {
         },
       }),
     );
-    renderScreen();
+    renderScreen(null, undefined, { pricingV2: true });
 
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Pro')).toBeInTheDocument();
@@ -4740,6 +4741,11 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
     const comparison = screen.getByTestId('plan-option-pro');
     expect(comparison).toHaveTextContent('Complimentary');
+    const pass = screen.getByTestId('pass-offer-card');
+    expect(pass).toHaveTextContent('optional purchase');
+    expect(
+      comparison.compareDocumentPosition(pass) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(comparison).toHaveTextContent('Current access');
     expect(comparison.textContent).not.toMatch(/\$|\/yr|\/mo/);
     // No subscription exists, so nothing here may offer to manage one.

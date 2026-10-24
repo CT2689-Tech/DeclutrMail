@@ -982,7 +982,13 @@ export function BillingScreen({
       <PlanPicker
         currentTier={plan.entitlementTier}
         currentAccess={{
-          kind: passCoversPlan(plan) ? 'pass' : 'tier',
+          kind: passCoversPlan(plan)
+            ? 'pass'
+            : backingSub === null &&
+                plan.complimentary?.source !== 'pass' &&
+                plan.complimentary?.tier === plan.entitlementTier
+              ? 'complimentary'
+              : 'tier',
           priceLabel: currentPlanPriceLabel(plan, visitorLocale),
           subscription: backingSub,
         }}

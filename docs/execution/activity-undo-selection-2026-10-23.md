@@ -73,3 +73,11 @@ tooltip now reads “Select for Undo”; the glossary baseline and release check
 remain unchanged. The shared (946), config (38), events (76) and Activity (126) tests passed
 serially after the tooltip correction, with changed-file lint and formatting.
 The corrected commit must pass the protected queue again.
+
+The next PR run passed both Activity paint cases, but the recently merged theme
+paint test failed its exact dark screenshot comparison. Trace frames show the
+baseline still painted light and the next frame painted dark. Main was merged
+to resolve this actual integration failure. The test now verifies the dark
+palette before its baseline and captures with finite animations finished. The
+exact pixel comparisons, contrast checks and production theme behavior are
+unchanged; this adds a bounded test stability fix to the release scope.
