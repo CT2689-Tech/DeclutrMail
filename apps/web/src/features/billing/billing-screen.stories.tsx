@@ -416,7 +416,7 @@ export const ProWithoutSubscription: Story<typeof BillingScreen> = {
     ),
 };
 
-/** Complimentary Pro: subscribing to a lower paid tier is not an upgrade. */
+/** Complimentary Pro: extra purchases stay secondary to current access. */
 export const CompedPro: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
