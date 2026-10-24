@@ -1,0 +1,68 @@
+/* Approved app appearance. The server-rendered route marker scopes the
+   palette before hydration and disappears with the route layout. Keeping
+   tokens on html also themes body portals (dialogs, menus and toasts).
+   No theme attribute means the existing light-mode default. */
+html:not([data-theme='dark']):has(#dm-app-theme) {
+  --dm-app-brand-font: var(--dm-font-display);
+  --dm-type-page-title: clamp(28px, 3vw, 36px);
+  --dm-type-section-title: 24px;
+  --dm-type-stat: 30px;
+  --dm-radius-md: 8px;
+  --dm-radius-lg: 12px;
+  --dm-radius-xl: 16px;
+  --dm-editorial-accent: var(--dm-primary);
+
+  --dm-bg: #f7f6f9;
+  --dm-paper: #f1eff4;
+  --dm-card: #ffffff;
+  --dm-muted-bg: #f0eef3;
+  --dm-fg: #2b2730;
+  --dm-fg-soft: #5e5866;
+  --dm-fg-muted: #6b6473;
+  --dm-border: #d8d3de;
+  --dm-line: #e1dde5;
+  --dm-line-soft: #ebe8ef;
+  --dm-primary: #6f568a;
+  --dm-primary-deep: #59436f;
+  --dm-primary-soft: #6f568a10;
+  --dm-primary-border: #6f568a4d;
+  --dm-primary-wash: #f1ecf6;
+  --dm-lilac: #d1b8d6;
+  --dm-mint: var(--dm-lilac);
+  --dm-nav-bg: #2b2630;
+  --dm-nav-fg: #f4edf1;
+  --dm-nav-muted: #d3c4d2;
+  --dm-nav-active: #d1b8d620;
+  --dm-nav-marker: #c9b0d4;
+  --dm-fg-inverse: #ffffff;
+  --dm-fg-inverse-soft: #ffffffde;
+  --dm-fg-inverse-muted: #ffffffcc;
+  --dm-dash-accent: #6f568a;
+  --dm-dash-accent-soft: #6f568a10;
+  --dm-dash-accent-border: #6f568a4d;
+  --dm-fill: #2d263007;
+  --dm-fill-hover: #2d26300e;
+  --dm-ring: #6f568a;
+  --dm-shadow-card: none;
+  --dm-shadow-lift: 0 2px 8px #0000000a;
+  --dm-shadow-button: none;
+  --dm-shadow-pop: 0 8px 32px #2d26301a;
+  --dm-shadow-modal: 0 20px 80px #2d263033;
+  --dm-scrim: #2d263066;
+}
+
+/* Cache the original display face on html before changing app content
+   on body: the locked brand wordmark keeps its original Fraunces face. */
+html:not([data-theme='dark']):has(#dm-app-theme) body {
+  --dm-font-display: var(--dm-font-sans);
+  --font-display: var(--dm-font-display);
+}
+
+html:not([data-theme='dark']):has(#dm-app-theme) :is(h1, h2, h3) {
+  font-style: normal;
+  font-weight: 600;
+}
+
+html:not([data-theme='dark']):has(#dm-app-theme) .dm-sidebar-logo > span {
+  font-family: var(--dm-app-brand-font) !important;
+}

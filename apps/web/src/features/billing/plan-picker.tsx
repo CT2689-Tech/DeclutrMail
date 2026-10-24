@@ -226,7 +226,7 @@ export function PlanPicker({
   currentTier: TierId;
   /** Display facts from the current-plan projection; separate from checkout eligibility. */
   currentAccess?: {
-    kind: 'tier' | 'pass';
+    kind: 'tier' | 'pass' | 'complimentary';
     priceLabel: string;
     subscription: SubscriptionRecord | null;
   };
@@ -326,7 +326,9 @@ export function PlanPicker({
     currentAccess !== undefined &&
     currentAccess.subscription === null &&
     currentTier !== 'free' &&
-    currentAccess.kind === 'tier';
+    currentAccess.kind !== 'pass';
+  const quietPassOffer =
+    currentTier === 'pro' && includedAccess && currentAccess?.kind === 'complimentary';
   const currentOfferTier =
     displayedSubscription?.tier ?? (currentTier === 'free' || includedAccess ? currentTier : null);
   const [comparisonOpen, setComparisonOpen] = useState(false);
@@ -371,6 +373,7 @@ export function PlanPicker({
   // the confirm panel directly (the deep link IS the plan click).
   const intentPlan = initialIntent?.plan ?? null;
   const intentCycle = initialIntent?.cycle ?? null;
+  const intentOffer = initialIntent?.offer ?? null;
   useEffect(() => {
     // QA-sign-in-20260829-03: a deep link naming the tier AND cycle the
     // visitor is already on (e.g. a stale bookmarked/shared pricing link)
@@ -395,6 +398,8 @@ export function PlanPicker({
     // waitlist card instead of a confirm panel the catalog cannot charge.
     if (
       intentPlan &&
+      // The Pass preview owns this link; do not queue a subscription behind it.
+      intentOffer !== 'pass_onetime' &&
       !(pricingV2 && intentPlan === 'pro') &&
       !alreadyOnPaidPlan &&
       !disabled &&
@@ -403,7 +408,7 @@ export function PlanPicker({
       consumedIntent.current = true;
       setSelected(intentPlan);
     }
-  }, [intentPlan, intentCycle, currentTier, disabled, grantingSub, pricingV2]);
+  }, [intentPlan, intentCycle, intentOffer, currentTier, disabled, grantingSub, pricingV2]);
 
   // A lock landing mid-session (pending action started in THIS tab or
   // ANOTHER via the storage event) must disarm any already-open confirm
@@ -687,6 +692,25 @@ export function PlanPicker({
     );
   }
 
+  const passOffer =
+    pricingV2 && passEnabled ? (
+      <PassOfferCard
+        compact={quietPassOffer}
+        locale={visitorPriceLocale({ country, indiaCheckoutOpen })}
+        included={
+          grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro')
+        }
+        selected={passSelected}
+        disabled={disabled}
+        onSelect={() => {
+          setSelected(null);
+          setPassSelected(true);
+          void track('pass_selected', { source: 'plan_picker' });
+          void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'pass' });
+        }}
+      />
+    ) : null;
+
   return (
     <section
       id="change-plan"
@@ -742,22 +766,7 @@ export function PlanPicker({
         </p>
       ) : null}
 
-      {pricingV2 && passEnabled ? (
-        <PassOfferCard
-          locale={visitorPriceLocale({ country, indiaCheckoutOpen })}
-          included={
-            grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro')
-          }
-          selected={passSelected}
-          disabled={disabled}
-          onSelect={() => {
-            setSelected(null);
-            setPassSelected(true);
-            void track('pass_selected', { source: 'plan_picker' });
-            void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'pass' });
-          }}
-        />
-      ) : null}
+      {quietPassOffer ? null : passOffer}
 
       <div
         style={{
@@ -829,6 +838,8 @@ export function PlanPicker({
           );
         })}
       </div>
+
+      {quietPassOffer ? passOffer : null}
 
       {passSelected && !disabled ? (
         <ConfirmPanel
@@ -1393,12 +1404,14 @@ function DowngradePanel({
 }
 
 function PassOfferCard({
+  compact = false,
   locale = 'usd',
   included,
   selected,
   disabled,
   onSelect,
 }: {
+  compact?: boolean;
   locale?: 'usd' | 'inr';
   included: boolean;
   selected: boolean;
@@ -1409,21 +1422,31 @@ function PassOfferCard({
     <div
       data-testid="pass-offer-card"
       style={{
-        padding: 16,
-        border: `1px solid ${selected ? color.primary : color.border}`,
-        borderRadius: radius.md,
-        background: color.card,
+        padding: compact ? '8px 0' : 16,
+        border: compact ? undefined : `1px solid ${selected ? color.primary : color.border}`,
+        borderRadius: compact ? undefined : radius.md,
+        background: compact ? undefined : color.card,
+        outline: compact && selected ? `2px solid ${color.primary}` : undefined,
+        outlineOffset: compact && selected ? 4 : undefined,
+        ...(compact
+          ? { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 20px' }
+          : {}),
       }}
     >
-      <div style={{ fontWeight: 600 }}>{fillStory(WS1_COPY['pricing.pass.name'])}</div>
-      <div style={{ color: color.fgMuted, marginTop: 4 }}>
-        {fillStory(WS1_COPY['cap.pass.sublabel'], locale)}
+      <div style={compact ? { flex: '1 1 240px', minWidth: 0, fontSize: text.sm } : undefined}>
+        <div style={{ fontWeight: compact ? 500 : 600, color: compact ? color.fgSoft : undefined }}>
+          {fillStory(WS1_COPY['pricing.pass.name'])}
+          {compact ? <span style={{ color: color.fgMuted }}> · optional purchase</span> : null}
+        </div>
+        <div style={{ color: color.fgMuted, marginTop: 4 }}>
+          {fillStory(WS1_COPY['cap.pass.sublabel'], locale)}
+        </div>
       </div>
       <Button
         tone="default"
         disabled={disabled || included}
         onClick={onSelect}
-        style={{ marginTop: 12 }}
+        style={{ marginTop: compact ? 0 : 12 }}
       >
         {included
           ? fillStory(WS1_COPY['picker.pass.includedInPlus'])
