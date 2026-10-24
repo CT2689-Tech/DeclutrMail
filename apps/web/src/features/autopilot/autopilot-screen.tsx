@@ -219,6 +219,8 @@ export function AutopilotRoute() {
       style={{
         ...(unsupported ? { minWidth: 0 } : editorialColumnStyle),
         display: 'grid',
+        // Expanded presets must not impose their intrinsic width on the page.
+        gridTemplateColumns: 'minmax(0, 1fr)',
         gap: unsupported ? 0 : 36,
       }}
     >

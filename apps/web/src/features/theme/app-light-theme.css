@@ -60,7 +60,8 @@ html:not([data-theme='dark']):has(#dm-app-theme) body {
 
 html:not([data-theme='dark']):has(#dm-app-theme) :is(h1, h2, h3) {
   font-style: normal;
-  font-weight: 600;
+  /* Shared editorial roles set weight inline; light mode owns this override. */
+  font-weight: 600 !important;
 }
 
 html:not([data-theme='dark']):has(#dm-app-theme) .dm-sidebar-logo > span {
