@@ -252,7 +252,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         id: 'archive-later',
         title: 'Archive and Later are inverse label changes',
         paragraphs: [
-          'Archive removes the Inbox label. Undo adds Inbox back. Later removes Inbox and adds DeclutrMail/Later; undo adds Inbox and removes that Later label. These are current-mail changes, not permanent future sender rules.',
+          'Archive removes the Inbox label. Undo adds Inbox back. Later removes Inbox and adds DeclutrMail/Later; undo adds Inbox and removes that Later label. These changes apply to the emails you already have. They don’t set up rules for future emails from these senders.',
           'Activity is the dependable recovery destination. ' +
             WS3_COPY['ws3.learn.undo.followsYou'],
         ],
@@ -262,7 +262,7 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
         title: 'Delete combines Activity Undo with Gmail Trash',
         paragraphs: [
           'Delete adds Gmail’s Trash state and removes Inbox. Gmail keeps ordinary deleted messages in Trash for up to 30 days unless you permanently delete them or empty Trash earlier. DeclutrMail’s preview names that Gmail recovery boundary.',
-          'An Activity token can reverse the label operation while it is active. If the token has expired but Gmail still retains the message, restore it directly from Gmail Trash. Once Gmail permanently deletes it, DeclutrMail cannot recover it because DeclutrMail never stored a full copy.',
+          'While Undo is still showing in Activity, it puts those emails back where they were. After that, you can still restore a deleted email from Gmail’s Trash, as long as Gmail has kept it. Once Gmail permanently deletes it, DeclutrMail cannot recover it because DeclutrMail never stored a full copy.',
         ],
       },
       {
