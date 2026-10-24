@@ -378,7 +378,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         // No transaction is open here. A failed publish leaves the original
         // delivery retryable; a successful one retains the frozen job row.
         const delayMs = Math.max(1000, Math.ceil(err.delayMs));
-        const resumeAt = Date.now() + delayMs;
+        const resumeDeadlineMs = Date.now() + delayMs;
         await this.deps.onQuietDeferred(payload, delayMs);
         // Record the actual published due time, not an inference from current Quiet state.
         // A lost resume delivery must become overdue after that time plus normal grace.
@@ -386,7 +386,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         await db
           .update(actionJobs)
           .set({
-            selector: sql`${actionJobs.selector} || jsonb_build_object('quietDeferredUntilMs', ${resumeAt}::bigint)`,
+            selector: sql`${actionJobs.selector} || jsonb_build_object('quietDeferredUntilMs', ${resumeDeadlineMs}::bigint)`,
           })
           .where(
             and(
