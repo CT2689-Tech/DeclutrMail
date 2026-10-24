@@ -67,3 +67,14 @@ html:not([data-theme='dark']):has(#dm-app-theme) :is(h1, h2, h3) {
 html:not([data-theme='dark']):has(#dm-app-theme) .dm-sidebar-logo > span {
   font-family: var(--dm-app-brand-font) !important;
 }
+
+/* Choice boundaries and selection must survive the flat card shadow. */
+html:not([data-theme='dark']):has(#dm-app-theme) .dm-onboarding-choice {
+  --dm-onboarding-choice-shadow: inset 0 0 0 1px var(--dm-border);
+}
+
+html:not([data-theme='dark']):has(#dm-app-theme)
+  .dm-onboarding-choice:is([aria-checked='true'], [aria-pressed='true']) {
+  --dm-onboarding-choice-shadow: 0 0 0 2px var(--dm-primary);
+  --dm-onboarding-choice-bg: var(--dm-primary-wash);
+}
