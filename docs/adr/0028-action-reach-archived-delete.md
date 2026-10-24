@@ -242,3 +242,26 @@ archived" choice appears, defaulting to Inbox only. Nowhere else.
 No API, worker or schema change for this amendment — Triage's Delete
 already rides `enqueueComposite`, which has accepted `reach` since the
 original decision.
+
+## Amendment 2026-10-24 — durable placement before Delete
+
+The founder authorized closing the crash/sync degradation described above.
+Before the first Gmail request, the worker now measures Inbox membership
+and atomically saves it with `status=executing` in versioned, server-only
+`action_jobs.selector.deleteUndo` metadata. The snapshot includes its bound
+message IDs and the Inbox subset. This supersedes terminal-transaction-only
+capture in decision 5 and the known degradation for newly executed work.
+
+An untouched root can refresh its snapshot before sending. A possibly
+applied retry or reviewed recovery inherits the original snapshot, can
+narrow its target set, and cannot expand it. Recovery already copies the
+selector; no SQL migration or extra provider fields are required. The
+terminal transaction copies the durable partition into the existing Undo
+journal. Undo publication and its retention window remain unchanged.
+
+Legacy in-flight work without a snapshot has unknown original placement.
+It is explicitly recorded as unknown and restores to Archive conservatively,
+regardless of a mutable reach value. No post-Delete mirror is treated as
+proof of original placement. Existing completed journals keep their prior
+reverse semantics. A skipped provider hook retains its existing error
+reporting and cannot reconstruct placement after the request.

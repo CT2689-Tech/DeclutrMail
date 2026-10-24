@@ -1159,6 +1159,293 @@ describe('LabelActionWorker', () => {
     expect(byId['a-out']).toEqual(['SENT', 'INBOX']);
   });
 
+  it.each([
+    { reach: 'inbox_only' as const, reviewed: false },
+    { reach: 'all_mail' as const, reviewed: false },
+    { reach: 'inbox_only' as const, reviewed: true },
+    { reach: 'all_mail' as const, reviewed: true },
+  ])(
+    'Delete $reach keeps original Inbox placement after a post-provider crash and sync (reviewed=$reviewed)',
+    async ({ reach, reviewed }) => {
+      const lifecycle = vi.spyOn(console, 'log');
+      const logStart = lifecycle.mock.calls.length;
+      await seedMessage(db, mailboxId, 'crash-in', ['INBOX', 'UNREAD', 'CATEGORY_PROMOTIONS']);
+      await seedMessage(db, mailboxId, 'crash-archived', ['CATEGORY_PROMOTIONS']);
+      const ids = reach === 'all_mail' ? ['crash-in', 'crash-archived'] : ['crash-in'];
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'delete',
+          selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+          reach,
+          idempotencyKey: `delete-crash-${reach}`,
+        })
+        .returning();
+      const data = {
+        actionId: job!.id,
+        mailboxAccountId: mailboxId,
+        idempotencyKey: job!.idempotencyKey,
+      };
+      const runAttempt = (payload: typeof data, attemptsMade = 0) =>
+        worker.run({
+          id: `synthetic-${payload.actionId}`,
+          data: payload,
+          opts: { attempts: 5 },
+          attemptsMade,
+          timestamp: Date.now(),
+        } as Parameters<LabelActionWorker['run']>[0]);
+      // Crash after Gmail succeeds but before the terminal journal transaction.
+      vi.spyOn(
+        worker as unknown as { undoExpiresAt: (id: string) => Promise<Date> },
+        'undoExpiresAt',
+      ).mockRejectedValueOnce(new TransientError('post-provider crash'));
+      await expect(runAttempt(data)).rejects.toThrow('post-provider crash');
+      expect(gmail.calls).toHaveLength(1);
+      expect([...gmail.calls[0]!.ids].sort()).toEqual([...ids].sort());
+
+      // While the worker is down, Gmail sync correctly observes the Trash move.
+      // Its mirror no longer contains the original Inbox partition.
+      await db
+        .update(mailMessages)
+        .set({ labelIds: ['TRASH', 'UNREAD', 'CATEGORY_PROMOTIONS'] })
+        .where(eq(mailMessages.providerMessageId, 'crash-in'));
+      if (reach === 'all_mail')
+        await db
+          .update(mailMessages)
+          .set({ labelIds: ['TRASH', 'CATEGORY_PROMOTIONS'] })
+          .where(eq(mailMessages.providerMessageId, 'crash-archived'));
+
+      let retryData = data;
+      if (reviewed) {
+        const [failed] = await db
+          .update(actionJobs)
+          .set({ status: 'failed' })
+          .where(eq(actionJobs.id, job!.id))
+          .returning();
+        const [child] = await db
+          .insert(actionJobs)
+          .values({
+            mailboxAccountId: mailboxId,
+            verb: 'delete',
+            selector: failed!.selector,
+            resolvedMessageIds: failed!.resolvedMessageIds,
+            requestedCount: ids.length,
+            reach,
+            recoveryAttempt: 1,
+            rootActionId: job!.id,
+            retryOfActionId: job!.id,
+            selectionFrozenAt: new Date(),
+            idempotencyKey: `reviewed-${data.idempotencyKey}`,
+          })
+          .returning();
+        retryData = { ...data, actionId: child!.id, idempotencyKey: child!.idempotencyKey };
+      }
+      const result = await runAttempt(retryData, 1);
+      expect(result.affectedCount).toBe(ids.length);
+      const [journal] = await db
+        .select()
+        .from(undoJournal)
+        .where(eq(undoJournal.token, result.undoToken!));
+      expect(journal!.payload).toMatchObject({
+        kind: 'delete',
+        inboxMessageIds: ['crash-in'],
+      });
+      const [reverse] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'delete',
+          direction: 'reverse',
+          selector: job!.selector,
+          resolvedMessageIds: ids,
+          requestedCount: ids.length,
+          undoToken: result.undoToken!,
+          idempotencyKey: `undo-delete-crash-${reach}`,
+          reach,
+        })
+        .returning();
+      await runAttempt({
+        actionId: reverse!.id,
+        mailboxAccountId: mailboxId,
+        idempotencyKey: reverse!.idempotencyKey,
+      });
+      const messages = await db.select().from(mailMessages);
+      const labels = Object.fromEntries(
+        messages.map((m) => [m.providerMessageId, m.labelIds.sort()]),
+      );
+      expect(labels['crash-in']).toEqual(['CATEGORY_PROMOTIONS', 'INBOX', 'UNREAD']);
+      expect(labels['crash-archived']).toEqual(['CATEGORY_PROMOTIONS']);
+      const succeeded = lifecycle.mock.calls
+        .slice(logStart)
+        .map(([line]) => JSON.parse(String(line)))
+        .filter((line) => line.kind === 'worker.succeeded' && line.worker === 'LabelActionWorker');
+      expect(succeeded).toHaveLength(2);
+      expect(succeeded.every((line) => line.result.affectedCount === ids.length)).toBe(true);
+    },
+  );
+
+  it('captures Delete placement before send and recaptures after a refused first request', async () => {
+    await seedMessage(db, mailboxId, 'not-sent', ['INBOX', 'UNREAD']);
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        reach: 'all_mail',
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+        idempotencyKey: 'delete-refused',
+      })
+      .returning();
+    const data = {
+      actionId: job!.id,
+      mailboxAccountId: mailboxId,
+      idempotencyKey: job!.idempotencyKey,
+    };
+    gmail.onSend = async () => {
+      const [persisted] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
+      expect(persisted!.status).toBe('executing');
+      expect(persisted!.selector.deleteUndo).toEqual({
+        version: 1,
+        messageIds: ['not-sent'],
+        inboxMessageIds: ['not-sent'],
+      });
+    };
+    gmail.shouldThrow = new RateLimitError('refused before applying', 1000);
+    await expect(worker.processJob(data, CTX)).rejects.toBeInstanceOf(RateLimitError);
+    const [refused] = await db.select().from(actionJobs).where(eq(actionJobs.id, job!.id));
+    expect(refused!.status).toBe('queued');
+    // No request was applied. A subsequent outside Archive is the new origin.
+    await db
+      .update(mailMessages)
+      .set({ labelIds: ['UNREAD'] })
+      .where(eq(mailMessages.providerMessageId, 'not-sent'));
+    gmail.shouldThrow = null;
+    gmail.onSend = null;
+    const result = await worker.processJob(data, CTX);
+    const [journal] = await db
+      .select()
+      .from(undoJournal)
+      .where(eq(undoJournal.token, result.undoToken!));
+    expect(journal!.payload).toMatchObject({ inboxMessageIds: [] });
+  });
+
+  it('treats missing legacy in-flight Delete placement as unknown even for Inbox-only reach', async () => {
+    await seedMessage(db, mailboxId, 'legacy-deleted', ['TRASH', 'UNREAD']);
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        status: 'executing',
+        selector: { type: 'sender', senderId: 'sid', senderKey: SENDER_KEY },
+        resolvedMessageIds: ['legacy-deleted'],
+        idempotencyKey: 'legacy-delete-unknown',
+      })
+      .returning();
+    const result = await worker.processJob(
+      {
+        actionId: job!.id,
+        mailboxAccountId: mailboxId,
+        idempotencyKey: job!.idempotencyKey,
+      },
+      CTX,
+    );
+    const [journal] = await db
+      .select()
+      .from(undoJournal)
+      .where(eq(undoJournal.token, result.undoToken!));
+    expect(journal!.payload).toMatchObject({ inboxPlacementUnknown: true });
+    expect(journal!.payload).not.toHaveProperty('inboxMessageIds');
+    const [reverse] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        direction: 'reverse',
+        selector: job!.selector,
+        resolvedMessageIds: ['legacy-deleted'],
+        undoToken: result.undoToken!,
+        idempotencyKey: 'legacy-delete-unknown-undo',
+      })
+      .returning();
+    await worker.processJob(
+      {
+        actionId: reverse!.id,
+        mailboxAccountId: mailboxId,
+        idempotencyKey: reverse!.idempotencyKey,
+      },
+      CTX,
+    );
+    expect(gmail.calls.at(-1)!.change).toEqual({ removeLabelIds: ['TRASH'] });
+  });
+
+  it('rejects a recovery scope that expands past its original Delete snapshot', async () => {
+    const [job] = await db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'delete',
+        status: 'executing',
+        selector: {
+          type: 'sender',
+          senderId: 'sid',
+          senderKey: SENDER_KEY,
+          deleteUndo: { version: 1, messageIds: ['original'], inboxMessageIds: ['original'] },
+        },
+        resolvedMessageIds: ['original', 'unapproved'],
+        idempotencyKey: 'delete-expanded',
+      })
+      .returning();
+    await expect(
+      worker.processJob(
+        {
+          actionId: job!.id,
+          mailboxAccountId: mailboxId,
+          idempotencyKey: job!.idempotencyKey,
+        },
+        CTX,
+      ),
+    ).rejects.toThrow('does not cover the execution scope');
+    expect(gmail.calls).toHaveLength(0);
+  });
+
+  it.each(['queued', 'executing'] as const)(
+    'a skipped hook handles the %s Delete snapshot honestly',
+    async (status) => {
+      await seedMessage(db, mailboxId, 'skipped-delete', ['INBOX']);
+      const [job] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'delete',
+          status,
+          selector: {
+            type: 'sender',
+            senderId: 'sid',
+            senderKey: SENDER_KEY,
+            deleteUndo: { version: 1, messageIds: ['skipped-delete'], inboxMessageIds: [] },
+          },
+          resolvedMessageIds: ['skipped-delete'],
+          idempotencyKey: `skipped-delete-${status}`,
+        })
+        .returning();
+      gmail.ignoreHook = true;
+      const result = await worker.processJob(
+        { actionId: job!.id, mailboxAccountId: mailboxId, idempotencyKey: job!.idempotencyKey },
+        CTX,
+      );
+      const [journal] = await db
+        .select()
+        .from(undoJournal)
+        .where(eq(undoJournal.token, result.undoToken!));
+      if (status === 'queued') {
+        expect(journal!.payload).toMatchObject({ inboxPlacementUnknown: true });
+        expect(journal!.payload).not.toHaveProperty('inboxMessageIds');
+      } else expect(journal!.payload).toMatchObject({ inboxMessageIds: [] });
+    },
+  );
+
   it('reverse delete degrades to archive-only when an all-mail payload lost its partition — never the inbox flood', async () => {
     // Damaged path: the payload says all_mail but its split is gone.
     // The ONLY safe direction is -TRASH for everything: inbox mail
