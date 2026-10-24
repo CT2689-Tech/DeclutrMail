@@ -93,6 +93,7 @@ export class AuthSignupOrchestrator {
   }): Promise<{
     tokens: IssuedTokens;
     csrfToken: string;
+    sessionId: string;
     user: { id: string; workspaceId: string; email: string };
     onboardingComplete: boolean;
   } | null> {
@@ -102,7 +103,7 @@ export class AuthSignupOrchestrator {
     if (!identity) return null;
     const user = await this.users.findById(identity.userId);
     if (!user) return null;
-    const { tokens } = await this.sessions.issue({
+    const { tokens, sessionId } = await this.sessions.issue({
       userId: identity.userId,
       workspaceId: identity.workspaceId,
       ipAddress: input.ipAddress,
@@ -111,6 +112,7 @@ export class AuthSignupOrchestrator {
     return {
       tokens,
       csrfToken: this.csrf.issue(),
+      sessionId,
       user: { id: identity.userId, workspaceId: identity.workspaceId, email },
       onboardingComplete: user.onboardedAt != null,
     };
@@ -126,6 +128,7 @@ export class AuthSignupOrchestrator {
   }): Promise<{
     tokens: IssuedTokens;
     csrfToken: string;
+    sessionId: string;
     user: { id: string; workspaceId: string; email: string };
     mailbox: { id: string };
     isNewSignup: boolean;
@@ -192,7 +195,7 @@ export class AuthSignupOrchestrator {
     await this.gmailWatch.watchMailbox(mailboxId);
 
     const onboardingComplete = (await this.users.findById(userId))?.onboardedAt != null;
-    const { tokens } = await this.sessions.issue({
+    const { tokens, sessionId } = await this.sessions.issue({
       userId,
       workspaceId,
       ipAddress: input.ipAddress,
@@ -201,6 +204,7 @@ export class AuthSignupOrchestrator {
 
     return {
       tokens,
+      sessionId,
       // CSRF token is independently random — the access JWT carrying
       // the jti is HttpOnly, so the FE cannot read it; a separate
       // non-HttpOnly cookie is the canonical double-submit shape.

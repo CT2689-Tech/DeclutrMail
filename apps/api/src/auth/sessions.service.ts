@@ -283,6 +283,56 @@ export class SessionsService implements OnModuleDestroy {
   }
 
   /**
+   * Native sign-in handoff (ADR-0049). The system browser completed sign-in,
+   * so a session row exists, but the tokens minted with it went nowhere. The
+   * app redeems its ticket here and gets a fresh pair under that SAME session
+   * id. The row's jti and refresh hash are replaced under a row lock, which
+   * kills the pair minted at callback time, and the grace slot is cleared so
+   * no earlier hash is honored. ip and user agent become the app's, not the
+   * browser's, so the live-sessions list names the device that holds it.
+   *
+   * Returns null when the session is gone or revoked: the ticket outlived
+   * its session and the caller must send the person back to sign in.
+   */
+  async issueForHandoff(input: {
+    sessionId: string;
+    ipAddress: string | null;
+    userAgent: string | null;
+  }): Promise<IssuedTokens | null> {
+    const outcome = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(activeSessions)
+        .where(and(eq(activeSessions.id, input.sessionId), eq(activeSessions.isRevoked, false)))
+        .for('update')
+        .limit(1);
+      if (!row) return null;
+      const issued = await this.jwt.issue({
+        userId: row.userId,
+        workspaceId: await this.lookupWorkspaceId(row.userId, tx),
+        sessionId: row.id,
+      });
+      await tx
+        .update(activeSessions)
+        .set({
+          jti: issued.jti,
+          refreshTokenHash: issued.refreshTokenHash,
+          previousRefreshTokenHash: null,
+          previousHashExpiresAt: null,
+          ipAddress: input.ipAddress,
+          userAgent: input.userAgent,
+          lastUsedAt: new Date(),
+        })
+        .where(eq(activeSessions.id, row.id));
+      return { issued, oldJti: row.jti };
+    });
+    if (!outcome) return null;
+    await this.invalidateCache(outcome.oldJti);
+    this.recordLastUsedWrite(input.sessionId, Date.now());
+    return outcome.issued;
+  }
+
+  /**
    * Revoke a session — flag the row and prime the negative cache so
    * other API instances see the revoke within the cache TTL.
    */

@@ -50,4 +50,12 @@ describe('responsive foundation contract', () => {
     expect(css).toMatch(/@supports \(height: 100dvh\)/);
     expect(css).toMatch(/\.dm-app-viewport\s*\{\s*height: 100dvh;/);
   });
+
+  it('insets the authed viewport for a status bar or camera cutout', () => {
+    const css = readFileSync(new URL('./tokens.css', import.meta.url), 'utf8');
+
+    expect(css).toMatch(
+      /\.dm-app-viewport\s*\{[^}]*padding-top:\s*env\(safe-area-inset-top, 0px\);/,
+    );
+  });
 });

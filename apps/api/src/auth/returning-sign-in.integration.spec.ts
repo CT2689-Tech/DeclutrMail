@@ -21,6 +21,7 @@ import { CsrfService } from './csrf.service.js';
 import { GoogleOAuthController } from './google-oauth.controller.js';
 import type { GoogleOAuthService } from './google-oauth.service.js';
 import { JwtService } from './jwt.service.js';
+import { NativeAuthService } from './native-auth.service.js';
 import { SessionsService } from './sessions.service.js';
 
 let pg: PGlite;
@@ -75,6 +76,7 @@ beforeAll(async () => {
     mailboxes,
     jwt,
     sessions,
+    new NativeAuthService(realDb),
   );
   const [workspace] = await db
     .insert(workspaces)

@@ -6,7 +6,7 @@
 - **Date:** 2026-06-03
 - **Deciders:** chintan.a.thakkar@gmail.com
 - **Related D-decisions:** D37 (Triage mobile vertical-card + swipe), D54 (Senders mobile vertical-card + bottom-sheet drawer + horizontal-scroll chips)
-- **Related ADRs:** ADR-0016 (visual language Layer A inherited), ADR-0019 (Verb Registry inherited)
+- **Related ADRs:** ADR-0016 (visual language Layer A inherited), ADR-0019 (Verb Registry inherited), ADR-0048 (supersedes the swipe mapping below)
 - **Related spec:** docs/spec/senders-v2.md v1.2 — Decision 8
 
 ## Context
@@ -62,7 +62,7 @@ Grid/Table choice untouched, matching this section's original intent.
 | Volume number            | NumericDisplay `display` variant (Fraunces 28px); not `hero` (40px would overwhelm phone width) |
 | Sparkline                | Hidden on collapsed row; revealed on tap-expand                                                 |
 | Stat strip               | Inline L2 dot-separated: `today · 8% read · 0 replied`                                          |
-| Primary CTA              | Hidden on collapsed row; revealed via swipe-right OR tap-expand                                 |
+| Primary CTA              | Hidden on collapsed row; revealed via tap-expand (swipes: see ADR-0048)                         |
 | Overflow `⋯`             | Hidden on collapsed row; revealed on tap-expand                                                 |
 | Chip row                 | Horizontal snap-scroll, all chips reachable                                                     |
 | Sort menu                | Bottom-sheet drawer on tap                                                                      |
@@ -71,6 +71,8 @@ Grid/Table choice untouched, matching this section's original intent.
 | Magnitude bar            | 1px bottom of row, full-width                                                                   |
 
 ### Gestures
+
+> **Superseded 2026-10-24 by [ADR-0048](./0048-one-swipe-grammar.md).** Swipes are now one shared grammar: right Keep, left Unsubscribe, up Delete; tap expands and long-press selects (both unchanged). The bullets below are the original decision.
 
 - **Swipe-right** on row → primary CTA (context-aware per Verb Registry `deriveDefaultPrimary`). Snackbar w/ undo per D226.
 - **Swipe-left** on row → tap-expand inline detail (subjects + List-Unsub URL behind toggle + headers per Decision 10)

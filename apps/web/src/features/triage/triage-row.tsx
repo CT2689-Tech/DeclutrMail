@@ -1,16 +1,15 @@
 'use client';
 
-import { Avatar, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Avatar, Pill, tokens, useIsAtMost, useSwipeVerb } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
 
 import { ActionToolbar } from './action-toolbar';
-import { canArchive, canLater, type TriageDecisionRow } from './data';
+import { canUnsubscribe, type TriageDecisionRow } from './data';
 import { InlinePreviewBlock, inlinePreviewGates, type InlinePreview } from './inline-preview';
 import { SwipeOverlay } from './swipe-overlay';
 import { verdictToVerb, type ActionVerb, type TriageVerdict } from './types';
 import { TriageRowExpanded } from './triage-row-expanded';
-import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
 import { whyLine } from './why-line';
 
 const { color, motion, radius, shadow, text } = tokens;
@@ -43,11 +42,11 @@ const VERDICT_TONE: Record<TriageVerdict, PillTone> = {
  * `expanded` flag is driven from the feature's Zustand store so the
  * queue and the action sheet can both read it.
  *
- * Mobile (D37, ≤xs): the header stacks and swipe gestures (→ Keep,
- * ← Archive, ↑ Later; see `use-swipe-verb.ts`) work on the row at
- * rest; the verb buttons mount on expand, as on desktop. Unsubscribe
- * stays button-only. Swipes route through the same onAction path, so
- * D226's preview still gates every destructive verb.
+ * Mobile (≤xs): the header stacks and swipe gestures (→ Keep,
+ * ← Unsubscribe, ↑ Delete; ADR-0048, `useSwipeVerb` in shared) work on
+ * the row at rest; the verb buttons mount on expand, as on desktop.
+ * Archive and Later are button-only. Swipes route through the same
+ * onAction path, so D226's preview still gates every verb.
  */
 export function TriageRow({
   row,
@@ -134,17 +133,14 @@ export function TriageRow({
   // information — the narrow layout is a reflow, not a downgrade.
   const isNarrow = useIsAtMost('xs');
 
-  // D37 — swipe gestures on the mobile card. A swipe resolves to the
-  // SAME onAction path the buttons use (destructive verbs still open
-  // the D226 sheet/preview — a swipe never mutates directly), gated by
-  // the row's capability rules. Touch pointers only.
+  // ADR-0048 — swipe gestures on the mobile card. A swipe resolves to the
+  // SAME onAction path the buttons use (every verb still opens the D226
+  // sheet/preview — a swipe never mutates directly), gated by the row's
+  // capability rules. Touch pointers only.
   const { drag, handlers: swipeHandlers } = useSwipeVerb({
     enabled: isNarrow && !actionsDisabled,
-    onVerb: (verb: SwipeVerb) => {
-      if (verb === 'Archive' && !canArchive(row)) return;
-      if (verb === 'Later' && !canLater(row)) return;
-      onAction(verb);
-    },
+    isAvailable: (verb) => verb !== 'Unsubscribe' || canUnsubscribe(row),
+    onVerb: onAction,
   });
 
   return (

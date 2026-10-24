@@ -11052,3 +11052,12 @@ consent. Single-category/unrelated toggles never renew consent. Feature deployme
 requires every generic email broker actor to advertise the compatibility marker,
 even when billing notices are disabled; old or mixed workers block activation.
 After new category writes, rollback retains the compatibility release floor.
+
+### [REVERSAL 2026-10-24 on D37 — the swipe mapping]
+
+Swipe gestures are one shared grammar on every surface that decides about a
+sender: right Keep, left Unsubscribe, up Delete, down unbound. Archive and Later
+are buttons only. D37's "Swipe-left → Archive" and "Verbs U and S require tap",
+ADR-0018's swipe-right-primary and swipe-left-expand, and the founder-directed
+up = Later are superseded. Every swipe still only opens the D226 preview. See
+ADR-0048.

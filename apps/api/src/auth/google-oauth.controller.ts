@@ -7,6 +7,7 @@ import {
   Inject,
   Logger,
   Optional,
+  Post,
   Query,
   Req,
   Res,
@@ -21,13 +22,18 @@ import {
   BETA_DENIED_PATH,
   BETA_DENIED_REASON,
   BETA_DENIED_REASON_PARAM,
+  type Envelope,
   type ErrorCode,
   GMAIL_ACCESS_MISSING_RESULT,
   isErrorCode,
   isUserScopedAppPath,
+  NATIVE_CODE_PATTERN,
+  type NativeConnectTicketResponse,
+  ok,
   parseAppReturnTo,
   parseBillingReturnTo,
   parseSignupAttributionRef,
+  PKCE_CHALLENGE_PATTERN,
   SIGNUP_ATTRIBUTION_REFS,
   SIGNUP_REF_COOKIE,
   type SignInResult,
@@ -51,9 +57,12 @@ import { SecurityEventsService } from '../security-events/security-events.servic
 import { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
 import { BetaGateDeniedError } from './beta-gate.js';
 import { ConnectMailboxStartFilter } from './connect-mailbox-start.filter.js';
+import { CsrfGuard } from './csrf.guard.js';
 import { GmailScopeNotGrantedError, GoogleOAuthService } from './google-oauth.service.js';
 import { JwtService } from './jwt.service.js';
 import { ACCESS_COOKIE, CurrentUser, JwtGuard, REFRESH_COOKIE } from './jwt.guard.js';
+import { NativeAuthService } from './native-auth.service.js';
+import { interceptNativeRedirects, sendNativeReturn, webPathOf } from './native-exit.js';
 import { oauthFlowId, STATE_COOKIE, STATE_COOKIE_PATH, stateCookieName } from './oauth-browser.js';
 import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
 import { SessionsService, type SessionPrincipal } from './sessions.service.js';
@@ -95,6 +104,12 @@ interface LoginOAuthState extends OAuthStateBase {
   utmMedium?: string | undefined;
   utmCampaign?: string | undefined;
   landingPath?: string | undefined;
+  /**
+   * Native app sign-in (ADR-0049): the PKCE challenge the app committed to.
+   * Present means this flow ends in the app, not in this browser: no session
+   * cookie is set here, a handoff ticket is staged instead.
+   */
+  nativeChallenge?: string | undefined;
 }
 
 interface ConnectOAuthState extends OAuthStateBase {
@@ -116,6 +131,8 @@ interface ConnectOAuthState extends OAuthStateBase {
    * inbox slot and must never receive the active-reconnect limit bypass.
    */
   reactivateMailboxId?: string | undefined;
+  /** Started by the native app (ADR-0049): every exit returns to the app. */
+  native?: true | undefined;
 }
 
 type OAuthState = LoginOAuthState | ConnectOAuthState;
@@ -148,6 +165,7 @@ const oauthStateSchema = z
         utmMedium: utmSchema.optional(),
         utmCampaign: utmSchema.optional(),
         landingPath: landingSchema.optional(),
+        nativeChallenge: z.string().regex(PKCE_CHALLENGE_PATTERN).optional(),
       })
       .strict(),
     z
@@ -162,6 +180,7 @@ const oauthStateSchema = z
         sessionId: uuidSchema,
         reconnectMailboxId: uuidSchema.optional(),
         reactivateMailboxId: uuidSchema.optional(),
+        native: z.literal(true).optional(),
       })
       .strict(),
   ])
@@ -188,6 +207,13 @@ const oauthStateSchema = z
  *     Single Google redirect target. Reads the state cookie's `mode`
  *     to branch between the two flows above.
  *
+ *   GET  /api/auth/google/native/start            (ADR-0049)
+ *   POST /api/auth/google/native/connect-ticket   (authenticated)
+ *   GET  /api/auth/google/native/open
+ *     The same two flows for the native app, which cannot run Google in its
+ *     WebView. The system browser runs them and every exit returns to the
+ *     app; see `native-exit.ts` and `NativeAuthService`.
+ *
  * Thin per D201/D204 — each handler delegates to the orchestrator.
  */
 @Controller('auth/google')
@@ -201,6 +227,7 @@ export class GoogleOAuthController {
     private readonly mailboxes: MailboxAccountsService,
     private readonly jwt: JwtService,
     private readonly sessions: SessionsService,
+    private readonly native: NativeAuthService,
     @Optional() @Inject(PRODUCT_EVENTS) private readonly productEvents?: ProductEventsPort,
   ) {}
 
@@ -326,11 +353,145 @@ export class GoogleOAuthController {
     @Query('reactivateMailboxId') reactivateMailboxId?: unknown,
     @Query('billingReturnTo') billingReturnTo?: unknown,
   ): Promise<void> {
+    const { reconnectMailboxId: validatedReconnectId, reactivateMailboxId: validatedReactivateId } =
+      await this.validateRecoveryTargets(user, reconnectMailboxId, reactivateMailboxId);
+
+    this.beginConsent(res, {
+      nonce: randomBytes(32).toString('base64url'),
+      mode: 'connect',
+      userId: user.userId,
+      workspaceId: user.workspaceId,
+      sessionId: user.sessionId,
+      ...(validatedReconnectId ? { reconnectMailboxId: validatedReconnectId } : {}),
+      ...(validatedReactivateId ? { reactivateMailboxId: validatedReactivateId } : {}),
+      ...(parseBillingReturnTo(billingReturnTo)
+        ? { billingReturnTo: parseBillingReturnTo(billingReturnTo) }
+        : {}),
+    });
+  }
+
+  /**
+   * Native app sign-in start (ADR-0049). The app opens this in the system
+   * browser, because Google refuses OAuth in an embedded WebView.
+   *
+   * It is `start` minus what belongs to a web visit: no live-session bounce
+   * (the browser's web session is not the app's) and no attribution (the app
+   * is not a marketing landing). `challenge` is the app's PKCE commitment;
+   * the callback stages a ticket against it instead of setting cookies. Any
+   * failure here, including a malformed challenge, returns to the app.
+   */
+  @Get('native/start')
+  @RateLimit('auth')
+  @UseFilters(LoginStartExitFilter)
+  nativeStart(
+    @Res() res: Response,
+    @Query('challenge') challenge?: unknown,
+    @Query('returnTo') returnTo?: unknown,
+    @Query('intent') intent?: unknown,
+  ): void {
+    interceptNativeRedirects(res, process.env.WEB_URL ?? 'http://localhost:3000');
+    if (typeof challenge !== 'string' || !PKCE_CHALLENGE_PATTERN.test(challenge)) {
+      throw new BadRequestException('A PKCE challenge is required.');
+    }
+    const safeReturnTo = parseAppReturnTo(returnTo);
+    this.beginConsent(res, {
+      nonce: randomBytes(32).toString('base64url'),
+      mode: 'login',
+      nativeChallenge: challenge,
+      ...(intent === 'sign-in' ? { intent: 'sign-in' as const } : {}),
+      ...(safeReturnTo ? { returnTo: safeReturnTo } : {}),
+    });
+  }
+
+  /**
+   * The signed-in app asks for a ticket to add or recover a Gmail account in
+   * the system browser, which holds none of the app's cookies. Takes the same
+   * targets as `connect-mailbox/start`, from the same query, through the same
+   * guards, so a request the browser route refuses is refused here too. The
+   * ticket stands in for the app's session when the browser opens it.
+   */
+  @Post('native/connect-ticket')
+  @RateLimit('auth')
+  @UseGuards(JwtGuard, CsrfGuard, InboxLimitGuard)
+  async nativeConnectTicket(
+    @CurrentUser() user: SessionPrincipal,
+    @Query('reconnectMailboxId') reconnectMailboxId?: unknown,
+    @Query('reactivateMailboxId') reactivateMailboxId?: unknown,
+    @Query('billingReturnTo') billingReturnTo?: unknown,
+  ): Promise<Envelope<NativeConnectTicketResponse>> {
+    const targets = await this.validateRecoveryTargets(
+      user,
+      reconnectMailboxId,
+      reactivateMailboxId,
+    );
+    const billingReturn = parseBillingReturnTo(billingReturnTo);
+    const code = await this.native.stageConnect({
+      userId: user.userId,
+      sessionId: user.sessionId,
+      options: { ...targets, ...(billingReturn ? { billingReturnTo: billingReturn } : {}) },
+    });
+    const apiBase = (process.env.API_URL ?? 'http://localhost:4000').replace(/\/+$/, '');
+    return ok({
+      url: `${apiBase}/api/auth/google/native/open?${new URLSearchParams({ ticket: code })}`,
+    });
+  }
+
+  /**
+   * Opened in the system browser with a ticket from `native/connect-ticket`.
+   * Redeems it, rebinds to the app session that asked, and begins the same
+   * authenticated consent `connect-mailbox/start` does. The ticket is the
+   * only credential here, so it is single use and short lived, and the
+   * session it names is checked live before consent starts.
+   */
+  @Get('native/open')
+  @RateLimit('auth')
+  @UseFilters(ConnectMailboxStartFilter)
+  async nativeOpen(@Res() res: Response, @Query('ticket') ticket?: unknown): Promise<void> {
+    const webBase = (process.env.WEB_URL ?? 'http://localhost:3000').replace(/\/+$/, '');
+    interceptNativeRedirects(res, webBase);
+    const stop = (result: 'failed' | 'session_retry'): void =>
+      res.redirect(302, `${webBase}/settings?connect_start_result=${result}#mailboxes`);
+
+    const redeemed =
+      typeof ticket === 'string' && NATIVE_CODE_PATTERN.test(ticket)
+        ? await this.native.redeem('connect_start', ticket)
+        : null;
+    const options = redeemed ? this.native.connectOptions(redeemed) : null;
+    if (!redeemed || !options) return stop('failed');
+
+    const session = await this.sessions.lookupActiveById(redeemed.sessionId);
+    if (!session || session.userId !== redeemed.userId) return stop('session_retry');
+
+    const billingReturn = parseBillingReturnTo(options.billingReturnTo);
+    this.beginConsent(res, {
+      nonce: randomBytes(32).toString('base64url'),
+      mode: 'connect',
+      native: true,
+      userId: session.userId,
+      workspaceId: session.workspaceId,
+      sessionId: session.id,
+      ...(options.reconnectMailboxId ? { reconnectMailboxId: options.reconnectMailboxId } : {}),
+      ...(options.reactivateMailboxId ? { reactivateMailboxId: options.reactivateMailboxId } : {}),
+      ...(billingReturn ? { billingReturnTo: billingReturn } : {}),
+    });
+  }
+
+  /**
+   * Validate the optional mailbox-recovery targets of an authenticated connect
+   * start: at most one, a real uuid, owned by this user, in the status that
+   * recovery expects. Shared by the browser start and the native ticket, which
+   * must refuse exactly the same requests.
+   */
+  private async validateRecoveryTargets(
+    user: SessionPrincipal,
+    reconnectMailboxId: unknown,
+    reactivateMailboxId: unknown,
+  ): Promise<{ reconnectMailboxId?: string; reactivateMailboxId?: string }> {
     if (reconnectMailboxId !== undefined && reactivateMailboxId !== undefined) {
       throw new BadRequestException('Mailbox recovery targets are mutually exclusive.');
     }
 
-    let validatedReconnectId: string | undefined;
+    let reconnectId: string | undefined;
     if (reconnectMailboxId !== undefined) {
       if (typeof reconnectMailboxId !== 'string' || !isUuid(reconnectMailboxId)) {
         throw new BadRequestException('Reconnect target must be a valid mailbox id.');
@@ -346,10 +507,10 @@ export class GoogleOAuthController {
         // do not leak whether a caller-supplied mailbox id exists.
         throw new BadRequestException('Reconnect target is unavailable.');
       }
-      validatedReconnectId = target.id;
+      reconnectId = target.id;
     }
 
-    let validatedReactivateId: string | undefined;
+    let reactivateId: string | undefined;
     if (reactivateMailboxId !== undefined) {
       if (typeof reactivateMailboxId !== 'string' || !isUuid(reactivateMailboxId)) {
         throw new BadRequestException('Reactivation target must be a valid mailbox id.');
@@ -365,21 +526,13 @@ export class GoogleOAuthController {
         // leak whether a caller-supplied mailbox id exists.
         throw new BadRequestException('Reactivation target is unavailable.');
       }
-      validatedReactivateId = target.id;
+      reactivateId = target.id;
     }
 
-    this.beginConsent(res, {
-      nonce: randomBytes(32).toString('base64url'),
-      mode: 'connect',
-      userId: user.userId,
-      workspaceId: user.workspaceId,
-      sessionId: user.sessionId,
-      ...(validatedReconnectId ? { reconnectMailboxId: validatedReconnectId } : {}),
-      ...(validatedReactivateId ? { reactivateMailboxId: validatedReactivateId } : {}),
-      ...(parseBillingReturnTo(billingReturnTo)
-        ? { billingReturnTo: parseBillingReturnTo(billingReturnTo) }
-        : {}),
-    });
+    return {
+      ...(reconnectId ? { reconnectMailboxId: reconnectId } : {}),
+      ...(reactivateId ? { reactivateMailboxId: reactivateId } : {}),
+    };
   }
 
   @Get('callback')
@@ -449,6 +602,11 @@ export class GoogleOAuthController {
     // Consume the exact attempt before any external token exchange. Clearing
     // this flow cannot invalidate another tab's in-progress consent.
     this.clearStateCookie(res, state);
+    // A native flow ends in the app. From here every redirect into the web app,
+    // including the exit filters', becomes a return to the app instead.
+    if (isNativeFlow(cookieState)) {
+      interceptNativeRedirects(res, process.env.WEB_URL ?? 'http://localhost:3000');
+    }
     const recoveryState = isTargetedRecoveryState(cookieState) ? cookieState : null;
     const recoveryMailboxId = recoveryState ? getRecoveryMailboxId(recoveryState) : undefined;
 
@@ -874,7 +1032,10 @@ export class GoogleOAuthController {
       });
       throw err;
     }
-    setSessionCookies(res, result.tokens, result.csrfToken);
+    // A native flow sets no cookie in this browser; the app redeems a ticket
+    // for its own session (ADR-0049).
+    const nativeChallenge = cookieState.mode === 'login' ? cookieState.nativeChallenge : undefined;
+    if (nativeChallenge === undefined) setSessionCookies(res, result.tokens, result.csrfToken);
     // D181 emit — the orchestrator resolved the user; the audit row can
     // carry the verified userId/workspaceId and whether this was a new
     // signup vs returning user (a useful operator filter).
@@ -920,6 +1081,15 @@ export class GoogleOAuthController {
       : returnTo
         ? `${webBase}${returnTo}`
         : `${webBase}/home`;
+    if (nativeChallenge !== undefined) {
+      await this.returnNativeSession(res, webBase, {
+        challenge: nativeChallenge,
+        userId: result.user.id,
+        sessionId: result.sessionId,
+        target,
+      });
+      return;
+    }
     res.redirect(302, target);
   }
 
@@ -951,6 +1121,7 @@ export class GoogleOAuthController {
         mode: state.mode,
         flowId: oauthFlowId(state.nonce),
         cookieStrategy: 'per_flow',
+        ...(isNativeFlow(state) ? { native: true } : {}),
       },
     });
     res.redirect(
@@ -997,7 +1168,9 @@ export class GoogleOAuthController {
       this.redirectSignInResult(res, webBase, state, 'connect_required');
       return;
     }
-    setSessionCookies(res, result.tokens, result.csrfToken);
+    if (state.nativeChallenge === undefined) {
+      setSessionCookies(res, result.tokens, result.csrfToken);
+    }
     void this.securityEvents.record({
       eventType: 'login.success',
       severity: 'info',
@@ -1015,7 +1188,39 @@ export class GoogleOAuthController {
       !result.onboardingComplete && !accountRecovery
         ? `/onboarding${returnTo ? `?${new URLSearchParams({ returnTo })}` : ''}`
         : (returnTo ?? '/home');
+    if (state.nativeChallenge !== undefined) {
+      await this.returnNativeSession(res, webBase, {
+        challenge: state.nativeChallenge,
+        userId: result.user.id,
+        sessionId: result.sessionId,
+        target: `${webBase}${target}`,
+      });
+      return;
+    }
     res.redirect(302, `${webBase}${target}`);
+  }
+
+  /**
+   * End a native sign-in. The session exists but is delivered to nobody here:
+   * stage a ticket bound to the app's PKCE challenge, with the destination the
+   * server chose, and hand the browser back to the app with only the code.
+   * If staging fails the throw reaches the callback's exit filter, whose
+   * redirect to the sign-in page is itself returned to the app.
+   */
+  private async returnNativeSession(
+    res: Response,
+    webBase: string,
+    input: { challenge: string; userId: string; sessionId: string; target: string },
+  ): Promise<void> {
+    const returnTo = webPathOf(webBase, input.target);
+    if (returnTo === null) throw new Error('Native sign-in destination is not an app path.');
+    const code = await this.native.stageHandoff({
+      userId: input.userId,
+      sessionId: input.sessionId,
+      challenge: input.challenge,
+      returnTo,
+    });
+    sendNativeReturn(res, { kind: 'session', code });
   }
 
   /** Authenticate, strictly decode, and enforce the cookie's signed expiry. */
@@ -1273,6 +1478,11 @@ export class GoogleOAuthController {
       payload: { provider: 'google', mode: 'connect', reason: input.reason },
     });
   }
+}
+
+/** The flow was started by the native app and must end there (ADR-0049). */
+function isNativeFlow(state: OAuthState): boolean {
+  return state.mode === 'login' ? state.nativeChallenge !== undefined : state.native === true;
 }
 
 /** UUID shape accepted by Postgres' uuid type; reject malformed hints pre-DB. */

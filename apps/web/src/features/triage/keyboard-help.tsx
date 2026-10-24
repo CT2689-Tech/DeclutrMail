@@ -26,7 +26,7 @@ const { color, radius, text } = tokens;
  *                     D29 + D227)
  *   - →            → skip to the next sender (`focus-stack.tsx`)
  *   - Enter/Space  → list row expand/collapse (`triage-row.tsx`)
- *   - → ← ↑ swipes → Keep / Archive / Later on touch (`use-swipe-verb.ts`)
+ *   - → ← ↑ swipes → Keep / Unsubscribe / Delete on touch (ADR-0048)
  *   - Z            → undo last decision (`triage-undo-tray.tsx`, D35)
  *   - Esc          → close the action sheet (`action-sheet.tsx`) or
  *                     dismiss an inline preview (`triage-screen.tsx`)
@@ -175,8 +175,8 @@ export function TriageKeyboardHelpPanel({
           <>
             <SectionLabel>On touch</SectionLabel>
             <ShortcutRow keys="Swipe →" label="Keep" />
-            <ShortcutRow keys="Swipe ←" label="Archive" />
-            <ShortcutRow keys="Swipe ↑" label="Later" />
+            <ShortcutRow keys="Swipe ←" label="Unsubscribe" />
+            <ShortcutRow keys="Swipe ↑" label="Delete" />
           </>
         )}
       </div>

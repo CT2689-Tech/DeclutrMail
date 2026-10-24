@@ -32,6 +32,7 @@
 import { useState, type ReactNode } from 'react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
+import { NativeShellGate } from '@/lib/native/shell-gate';
 import { makeQueryClient } from '@/lib/query-client';
 
 const PageLoadObservability = dynamic(
@@ -58,6 +59,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={queryClient}>
       {children}
       <PageLoadObservability />
+      <NativeShellGate />
     </QueryClientProvider>
   );
 }

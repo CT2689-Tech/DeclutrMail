@@ -17,6 +17,7 @@ export * from './inbox-report-cache';
 export * from './mail-messages';
 export * from './mailbox-accounts';
 export * from './mailbox-labels';
+export * from './native-auth-tickets';
 export * from './mailbox-data-deletion-requests';
 export * from './outbox-events';
 export * from './provider-sync-state';

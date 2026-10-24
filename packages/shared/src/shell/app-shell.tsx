@@ -201,7 +201,10 @@ export function AppShell({
               width: 'min(340px, 100vw)',
               background: color.card,
               color: color.fg,
-              padding: 16,
+              // Fixed to the viewport edges, so it clears the status bar
+              // and home indicator itself; 0 outside a native shell.
+              padding:
+                'calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px))',
               boxSizing: 'border-box',
               display: 'flex',
               flexDirection: 'column',
