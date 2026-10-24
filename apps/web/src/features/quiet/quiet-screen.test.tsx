@@ -444,7 +444,7 @@ describe('AutopilotSettingsRoute', () => {
         <AutopilotSettingsRoute />
       </QueryWrapper>,
     );
-    expect(await screen.findByText(/2 preset actions/)).toBeInTheDocument();
+    expect(await screen.findByText(/2 preset approvals/)).toBeInTheDocument();
 
     failing = true;
     await act(async () => {

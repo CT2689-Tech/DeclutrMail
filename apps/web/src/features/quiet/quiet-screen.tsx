@@ -204,7 +204,7 @@ function QuietQueueSummary({
         fontVariantNumeric: 'tabular-nums',
       }}
     >
-      {heldCount} {heldCount === 1 ? 'preset action is' : 'preset actions are'} held.{' '}
+      {heldCount} {heldCount === 1 ? 'preset approval is' : 'preset approvals are'} held.{' '}
       {activeInbox ? (
         <Link href="/autopilot" style={{ color: color.primary }}>
           Review Autopilot rules →

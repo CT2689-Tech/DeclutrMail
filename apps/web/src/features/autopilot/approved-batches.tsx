@@ -7,6 +7,7 @@ import { useInFlightActions } from '@/features/undo/in-flight';
 import { useBatchStatus, useRevertUndo, useUndoStatus } from '@/lib/api/use-action';
 import type { SenderRuleExecution } from '@/lib/api/autopilot-sender-rules';
 import { senderRuleFailureCopy } from './sender-rule-feedback';
+import { useHydrated } from '@/lib/use-hydrated';
 import styles from './sender-rule-library.module.css';
 
 type Receipt = SenderRuleExecution & { ruleName?: string };
@@ -22,6 +23,7 @@ export function ApprovedBatches({
   receipt: Receipt | null;
 }) {
   const active = useInFlightActions(mailboxId);
+  const hydrated = useHydrated();
   const [seen, setSeen] = useState<Batch[]>([]);
   useEffect(() => {
     setSeen((previous) => {
@@ -53,7 +55,7 @@ export function ApprovedBatches({
         <h2>Approved batches</h2>
         <Link href="/activity">All activity</Link>
       </div>
-      {active.isError && (
+      {hydrated && active.isError && (
         <p role="alert">
           Queued approvals couldn’t be refreshed.{' '}
           <Button size="sm" tone="ghost" onClick={() => void active.refetch()}>
@@ -63,7 +65,7 @@ export function ApprovedBatches({
       )}
       {!seen.length && (
         <p className={styles.muted}>
-          {active.isPending
+          {!hydrated || active.isPending
             ? 'Checking approved batches…'
             : active.isError
               ? 'Check Activity for your approved batches.'

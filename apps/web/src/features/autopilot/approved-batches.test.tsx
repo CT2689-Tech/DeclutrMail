@@ -1,10 +1,13 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { hydrateRoot, type Root } from 'react-dom/client';
+import { renderToString } from 'react-dom/server';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApprovedBatches } from './approved-batches';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import type { BatchStatusResult, InFlightActionGroup } from '@/lib/api/actions';
 import { useActionFeedbackStore } from '@/features/undo/feedback-store';
+import { undoKeys } from '@/features/undo/query-keys';
 
 const group: InFlightActionGroup = {
   groupId: 'batch',
@@ -54,6 +57,36 @@ function setup() {
 }
 
 describe('durable approved batches', () => {
+  it('hydrates when shared action discovery finishes before the route HTML arrives', async () => {
+    const server = createTestQueryClient();
+    const browser = createTestQueryClient();
+    clients.push(server, browser);
+    const tree = (client: typeof server) => (
+      <QueryWrapper client={client}>
+        <ApprovedBatches mailboxId="mailbox-a" receipt={null} />
+      </QueryWrapper>
+    );
+    const container = document.createElement('div');
+    document.body.append(container);
+    container.innerHTML = renderToString(tree(server));
+    expect(container.textContent).toContain('Checking approved batches…');
+    // The global action tray can complete this shared query while the route streams.
+    browser.setQueryDefaults(undoKeys.inFlight('mailbox-a'), { staleTime: Infinity });
+    browser.setQueryData(undoKeys.inFlight('mailbox-a'), []);
+    const recovered = vi.fn();
+    let root: Root | undefined;
+    try {
+      await act(async () => {
+        root = hydrateRoot(container, tree(browser), { onRecoverableError: recovered });
+      });
+      expect(recovered).not.toHaveBeenCalled();
+      expect(container.textContent).toContain('Preview a rule and approve a batch.');
+    } finally {
+      await act(async () => root?.unmount());
+      container.remove();
+    }
+  });
+
   it('discovers a Schedule wait after remount without a local receipt', async () => {
     installFetchStub([
       { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [group] }) },

@@ -72,7 +72,7 @@ describe('AppShell — responsive workspace navigation', () => {
   it('ignores old expansion preference and keeps five workspace groups', () => {
     window.localStorage.setItem('dm.sidebar.collapsed', 'false');
     render(
-      <AppShell active="quiet" onNavigate={vi.fn()}>
+      <AppShell active="autopilot" onNavigate={vi.fn()}>
         <div>Page content</div>
       </AppShell>,
     );
@@ -163,7 +163,7 @@ describe('AppShell — responsive workspace navigation', () => {
     const onNavigate = vi.fn();
     const onNavigateIntent = vi.fn();
     render(
-      <AppShell active="quiet" onNavigate={onNavigate} onNavigateIntent={onNavigateIntent}>
+      <AppShell active="autopilot" onNavigate={onNavigate} onNavigateIntent={onNavigateIntent}>
         <div>Page content</div>
       </AppShell>,
     );
@@ -181,29 +181,29 @@ describe('AppShell — responsive workspace navigation', () => {
     const onNavigate = vi.fn();
     render(
       <AppShell
-        active="autopilot"
+        active="brief"
         onNavigate={onNavigate}
-        counts={{ quiet: { text: 3, label: '3 windows' } }}
-        locks={{ quiet: 'Pro' }}
+        counts={{ followups: { text: 3, label: '3 follow-ups' } }}
+        locks={{ followups: 'Pro' }}
       >
         <div>Page content</div>
       </AppShell>,
     );
-    const child = within(screen.getByRole('navigation', { name: 'Automations views' })).getByRole(
+    const child = within(screen.getByRole('navigation', { name: 'Catch up views' })).getByRole(
       'button',
-      { name: /Quiet hours/ },
+      { name: /Follow-ups/ },
     );
-    expect(within(child).getByLabelText('3 windows')).toBeInTheDocument();
+    expect(within(child).getByLabelText('3 follow-ups')).toBeInTheDocument();
     expect(within(child).getByLabelText('Pro feature')).toBeInTheDocument();
     fireEvent.click(child);
-    expect(onNavigate).toHaveBeenCalledWith('quiet');
+    expect(onNavigate).toHaveBeenCalledWith('followups');
   });
 });
 
 describe('AppShell — mobile workspace navigation', () => {
   it.each([
     ['triage', 'Cleanup'],
-    ['quiet', 'Automations'],
+    ['autopilot', 'Automations'],
     ['followups', 'Catch up'],
     ['snoozed', 'Catch up'],
     ['home', 'Home'],

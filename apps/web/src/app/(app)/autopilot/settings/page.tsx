@@ -42,7 +42,7 @@ export default async function AutopilotSettingsPage() {
       <TierGate
         capability="quiet"
         title="Schedule"
-        pitch="A daily window per inbox when Autopilot holds its actions."
+        pitch="Choose a daily pause window for Autopilot in each inbox."
       >
         <AutopilotSettingsRoute />
       </TierGate>
