@@ -94,18 +94,8 @@ export function sandboxCheckoutFailure(error: unknown) {
   };
 }
 
-/**
- * How many billing documents one invoice read returns — Paddle's
- * per-page maximum.
- *
- * Deliberately a single page, not a paginated walk: this is a
- * customer-facing list on a page that must load fast, and a monthly
- * subscription accrues 12 rows a year, so 200 covers any real account.
- * The cap is nonetheless REPORTED rather than assumed away — when the
- * provider says there is more, `truncated` carries that to the UI
- * instead of a short list quietly reading as complete (no-silent-caps).
- */
-const INVOICE_PAGE_SIZE = 200;
+/** Provider maximum per page; further history is explicitly reported as truncated. */
+const INVOICE_PAGE_SIZE = 30;
 
 /**
  * `custom_data` travels to Paddle THROUGH THE BROWSER
@@ -181,6 +171,7 @@ interface PaddleTransaction {
   billed_at?: string | null;
   created_at?: string | null;
   currency_code?: string | null;
+  collection_mode?: 'automatic' | 'manual' | null;
   billing_period?: { starts_at?: unknown; ends_at?: unknown } | null;
   items?: Array<{ price?: { id?: unknown }; quantity?: unknown; proration?: unknown }>;
   details?: {
@@ -246,17 +237,9 @@ const PADDLE_INVOICE_STATUS: Readonly<Record<string, ProviderInvoice['status']>>
   paid: 'paid',
   completed: 'paid',
   billed: 'due',
-  ready: 'due',
   past_due: 'due',
   canceled: 'canceled',
 };
-
-/**
- * Statuses for which Paddle can produce an invoice PDF. A transaction
- * that was never billed has no document to mint, so advertising one
- * would hand the FE a button whose only outcome is a 404.
- */
-const PADDLE_DOCUMENT_STATUSES = new Set(['billed', 'paid', 'completed', 'past_due']);
 
 /**
  * Adjustment statuses that mean UNDONE. Paddle's four are `approved`,
@@ -2087,35 +2070,66 @@ export class PaddleAdapter implements BillingProvider {
    * show the customer a charge that has not happened.
    */
   async listInvoices(providerSubscriptionId: string): Promise<ProviderInvoicePage> {
+    return this.invoiceCollection('subscription_id', providerSubscriptionId);
+  }
+
+  async listCustomerInvoices(providerCustomerId: string): Promise<ProviderInvoicePage> {
+    return this.invoiceCollection('customer_id', providerCustomerId);
+  }
+
+  /** The grant is already workspace-owned; never resolve a browser-supplied payment ID here. */
+  async invoiceTransaction(transactionId: string): Promise<ProviderInvoicePage> {
+    if (!transactionId) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     const body = await this.authedGet(
-      `/transactions?subscription_id=${encodeURIComponent(providerSubscriptionId)}&per_page=${INVOICE_PAGE_SIZE}&order_by=billed_at[DESC]`,
-      `transactions sub=${providerSubscriptionId}`,
+      `/transactions/${encodeURIComponent(transactionId)}`,
+      'invoice transaction',
     );
-    // 404 on the collection means the subscription is unknown to
-    // Paddle — no rows, which is data, not a failure.
-    if (body === null) return { invoices: [], truncated: false, omitted: 0 };
-    const rows = (body as { data?: PaddleTransaction[] }).data;
-    if (!Array.isArray(rows)) {
-      this.logger.error(`paddle.transactions.malformed sub=${providerSubscriptionId}`);
+    const row = (body as { data?: PaddleTransaction } | null)?.data;
+    if (!row || row.id !== transactionId)
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    return { ...this.invoiceRows([row]), truncated: false };
+  }
+
+  private async invoiceCollection(
+    scope: 'subscription_id' | 'customer_id',
+    id: string,
+  ): Promise<ProviderInvoicePage> {
+    if (!id) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    const body = await this.authedGet(
+      `/transactions?${scope}=${encodeURIComponent(id)}&per_page=${INVOICE_PAGE_SIZE}&order_by=billed_at[DESC]`,
+      `transactions ${scope}=${id}`,
+    );
+    if (body === null && scope === 'subscription_id')
+      return { invoices: [], truncated: false, omitted: 0 };
+    const rows = (body as { data?: PaddleTransaction[] } | null)?.data;
+    if (!Array.isArray(rows)) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    // A provider response that contradicts its tenant filter is not safe to display.
+    if (rows.some((row) => row[scope] !== id)) {
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
+    return {
+      ...this.invoiceRows(rows),
+      truncated: Boolean(
+        (body as { meta?: { pagination?: { has_more?: boolean } } }).meta?.pagination?.has_more,
+      ),
+    };
+  }
+
+  private invoiceRows(rows: PaddleTransaction[]): Omit<ProviderInvoicePage, 'truncated'> {
     const invoices: ProviderInvoice[] = [];
     let omitted = 0;
     for (const row of rows) {
       const status = row.status ?? '';
-      if (!row.id || status === 'draft') continue;
-      if (row.origin && NON_BILLING_ORIGINS.has(row.origin)) continue;
+      if (
+        status === 'draft' ||
+        status === 'ready' ||
+        (row.origin && NON_BILLING_ORIGINS.has(row.origin))
+      )
+        continue;
       const issuedAt = row.billed_at ?? row.created_at ?? null;
       const amount = row.details?.totals?.grand_total ?? null;
       const currencyCode = row.currency_code ?? null;
-      // Every displayed row must carry a real date, amount and
-      // currency. A row missing any of them cannot be rendered without
-      // inventing one, so it is dropped and logged rather than shown
-      // with a blank or a zero (never-fabricate).
-      if (!issuedAt || !amount || !currencyCode) {
-        this.logger.warn(
-          `paddle.transactions.row_incomplete sub=${providerSubscriptionId} txn=${row.id} — dropped from the invoice list`,
-        );
+      if (!row.id || !issuedAt || !amount || !/^\d+$/.test(amount) || !currencyCode) {
         omitted += 1;
         continue;
       }
@@ -2125,20 +2139,14 @@ export class PaddleAdapter implements BillingProvider {
         amount,
         currencyCode,
         status: PADDLE_INVOICE_STATUS[status] ?? 'unknown',
-        // Paddle's invoice is a signed PDF minted per click, not a
-        // stable page — so there is no hosted URL to hand out here.
         hostedUrl: null,
-        documentAvailable: PADDLE_DOCUMENT_STATUSES.has(status),
+        // Paddle PDFs require a nonzero completed payment or a billed manual invoice.
+        documentAvailable:
+          /[1-9]/.test(amount) &&
+          (status === 'completed' || (status === 'billed' && row.collection_mode === 'manual')),
       });
     }
-    // Paddle signals another page by returning a `next` link. Absent
-    // meta is read as "no more" rather than as truncation: claiming a
-    // hidden remainder we cannot see would be its own fabrication.
-    const hasMore = Boolean(
-      (body as { meta?: { pagination?: { has_more?: boolean } | null } }).meta?.pagination
-        ?.has_more,
-    );
-    return { invoices, truncated: hasMore, omitted };
+    return { invoices, omitted };
   }
 
   /**

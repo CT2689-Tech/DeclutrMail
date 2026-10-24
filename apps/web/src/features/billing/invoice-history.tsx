@@ -111,16 +111,16 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       <section
         id="invoices"
         tabIndex={-1}
-        aria-label="Invoices"
+        aria-label="Payment history"
         data-testid="invoice-history"
         style={SECTION_STYLE}
       >
-        <GroupTitle>Invoices</GroupTitle>
+        <GroupTitle>Payment history</GroupTitle>
         <div
           aria-hidden="true"
           style={{ height: 72, background: color.fill, borderRadius: radius.lg }}
         />
-        <span style={{ position: 'absolute', left: -9999 }}>Loading invoices</span>
+        <span style={{ position: 'absolute', left: -9999 }}>Loading invoices…</span>
       </section>
     );
   }
@@ -130,11 +130,11 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       <section
         id="invoices"
         tabIndex={-1}
-        aria-label="Invoices"
+        aria-label="Payment history"
         data-testid="invoice-history"
         style={SECTION_STYLE}
       >
-        <GroupTitle>Invoices</GroupTitle>
+        <GroupTitle>Payment history</GroupTitle>
         <RecoverableErrorState
           headingLevel={3}
           title="We couldn’t load your invoices"
@@ -161,17 +161,22 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
     <section
       id="invoices"
       tabIndex={-1}
-      aria-label="Invoices"
+      aria-label="Payment history"
       data-testid="invoice-history"
       style={SECTION_STYLE}
     >
-      <GroupTitle>Invoices</GroupTitle>
+      <GroupTitle>Payment history</GroupTitle>
+      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+        Payments and invoices from past subscriptions and one-time purchases.
+      </p>
       {data.invoices.length > 0 ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
               Status{' '}
               <select
+                name="invoice-status"
+                autoComplete="off"
                 style={FILTER_STYLE}
                 value={status}
                 onChange={(event) => setStatus(event.target.value)}
@@ -187,6 +192,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               From{' '}
               <input
                 type="date"
+                name="invoice-from"
+                autoComplete="off"
                 style={FILTER_STYLE}
                 value={from}
                 onChange={(event) => setFrom(event.target.value)}
@@ -196,6 +203,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               Through{' '}
               <input
                 type="date"
+                name="invoice-through"
+                autoComplete="off"
                 style={FILTER_STYLE}
                 value={to}
                 min={from || undefined}
@@ -224,12 +233,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       ) : null}
 
       {data.invoices.length === 0 ? (
-        // THREE distinct empty answers, never collapsed: a rail we could
-        // not ask (partial), rows that exist but none renderable
-        // (omitted — with wrong field names EVERY row drops, and calling
-        // that "no invoices yet" is the failed-read-as-empty defect,
-        // gate network 2026-08-16 CONFIRMED), and the genuine
-        // never-billed state (D212 EmptyState primitive).
+        // Failed, omitted and capped reads cannot prove an account never paid.
+        // Only a complete empty history can show "No invoices yet".
         partial ? (
           <div
             style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}
@@ -248,17 +253,23 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           </div>
         ) : data.omittedRows > 0 ? (
           <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
-            Your invoices exist, but we couldn&rsquo;t display them. Email{' '}
+            We couldn&rsquo;t display this billing history. Email{' '}
             <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
               support@declutrmail.com
             </a>{' '}
-            and we&rsquo;ll send them to you directly.
+            for help with your invoices.
           </p>
+        ) : data.truncated ? (
+          <EmptyState
+            headingLevel={3}
+            title="No invoices in this limited history"
+            description="Request older invoices below to check beyond this list."
+          />
         ) : (
           <EmptyState
             headingLevel={3}
             title="No invoices yet"
-            description="Your first one appears here once a payment has been collected."
+            description="Invoices appear here after a purchase. Complimentary access doesn’t create a payment."
           />
         )
       ) : (
@@ -392,22 +403,20 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
       {partial && data.invoices.length > 0 ? (
         <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
-          One of your payment providers didn&rsquo;t answer, so this list may be missing invoices.
+          Some payment history couldn&rsquo;t be loaded, so this list may be missing invoices.
           Reload to try again.
         </p>
       ) : null}
 
       {data.omittedRows > 0 && data.invoices.length > 0 ? (
         <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
-          {data.omittedRows === 1 ? 'One invoice' : `${data.omittedRows} invoices`} couldn&rsquo;t
-          be displayed. Email support@declutrmail.com if you need{' '}
-          {data.omittedRows === 1 ? 'it' : 'them'}.
+          Some invoices couldn&rsquo;t be displayed. Email support@declutrmail.com if you need them.
         </p>
       ) : null}
 
       {data.truncated ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-          Showing your most recent invoices.{' '}
+          This list shows a limited invoice history.{' '}
           <a
             className={linkStyles.link}
             href="mailto:support@declutrmail.com?subject=Older%20invoice%20request"

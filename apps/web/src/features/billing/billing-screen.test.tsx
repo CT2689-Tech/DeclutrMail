@@ -221,6 +221,17 @@ function renderScreen(
     checkoutGeoToken?: string | null;
   },
 ) {
+  // History is independent of the current plan; default unrelated screen tests to a verified empty read.
+  addFetchHandlers([
+    {
+      method: 'GET',
+      path: '/api/billing/invoices',
+      respond: () =>
+        jsonOk({
+          data: { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 },
+        }),
+    },
+  ]);
   const client = createTestQueryClient();
   return render(
     <QueryWrapper client={client}>
@@ -320,6 +331,8 @@ describe('BillingScreen — designed states', () => {
       within(alert).getByText(/try again to confirm your current billing details/i),
     ).toBeInTheDocument();
     expect(within(alert).queryByText(/no charge or plan change was made/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole('region', { name: 'Payment history' })).toBeInTheDocument();
+    expect(await screen.findByText('No invoices yet')).toBeInTheDocument();
 
     fireEvent.click(within(alert).getByRole('button', { name: 'Try again' }));
 
@@ -5382,7 +5395,7 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     expect(invoicesFetched).toBe(false);
   });
 
-  it('a never-subscribed free workspace gets no invoice section and no payment-method card', async () => {
+  it('a never-subscribed free workspace can reach verified empty history without a payment-method card', async () => {
     stubBillingReads({
       complimentary: null,
       tier: 'free',
@@ -5392,12 +5405,15 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     });
     renderScreen();
     await screen.findByTestId('current-plan-card');
-    expect(screen.queryByTestId('invoice-history')).not.toBeInTheDocument();
+    expect(await screen.findByText('No invoices yet')).toBeInTheDocument();
     expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
     const contents = screen.getByRole('navigation', { name: 'On this page' });
     expect(screen.getAllByRole('link', { name: 'Compare plans' })).toHaveLength(2);
     expect(within(contents).queryByRole('link', { name: 'Payment details' })).toBeNull();
-    expect(within(contents).queryByRole('link', { name: 'Invoices' })).toBeNull();
+    expect(within(contents).getByRole('link', { name: 'Payment history' })).toHaveAttribute(
+      'href',
+      '#invoices',
+    );
     expect(within(contents).getByRole('link', { name: 'Your plan' })).toHaveAttribute(
       'href',
       '#plan',
@@ -5427,7 +5443,7 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     expect(shortcuts.map((link) => link.textContent)).toEqual([
       'Your plan',
       'Payment details',
-      'Invoices',
+      'Payment history',
       'Compare plans',
     ]);
     const targets = shortcuts.map((link) => {

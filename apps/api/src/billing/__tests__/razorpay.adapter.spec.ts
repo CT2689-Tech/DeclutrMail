@@ -1198,3 +1198,54 @@ describe('Razorpay deletion billing evidence', () => {
     ).toBe('unknown');
   });
 });
+
+describe('Razorpay customer invoice history', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const env = { RAZORPAY_KEY_ID: 'rzp_test_history', RAZORPAY_KEY_SECRET: 'test' };
+  function invoiceFetch(rows: unknown[]) {
+    return vi.fn().mockImplementation((url: string) => {
+      const items = new URL(url).searchParams.get('skip') === '0' ? rows : [];
+      return Promise.resolve(
+        new Response(JSON.stringify({ items, count: items.length }), { status: 200 }),
+      );
+    });
+  }
+
+  it('reads only the owned customer and keeps provider-hosted invoice links', async () => {
+    const fetchSpy = invoiceFetch([
+      {
+        id: 'inv_owned',
+        customer_id: 'cust_owned',
+        status: 'paid',
+        amount: 79900,
+        currency: 'INR',
+        issued_at: 1780000000,
+        short_url: 'https://rzp.io/i/owned',
+      },
+    ]);
+    vi.stubGlobal('fetch', fetchSpy);
+    const result = await makeAdapter(env).listCustomerInvoices('cust_owned');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    for (const call of fetchSpy.mock.calls)
+      expect(new URL(String(call[0])).searchParams.get('customer_id')).toBe('cust_owned');
+    expect(result.invoices[0]?.hostedUrl).toBe('https://rzp.io/i/owned');
+    expect(result.invoices[0]?.documentAvailable).toBe(false);
+  });
+
+  it.each([undefined, null, 'sub_foreign'])(
+    'rejects subscription invoices with unproven ownership: %s',
+    async (subscriptionId) => {
+      vi.stubGlobal('fetch', invoiceFetch([{ id: 'inv_other', subscription_id: subscriptionId }]));
+      await expect(makeAdapter(env).listInvoices('sub_owned')).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
+      });
+    },
+  );
+
+  it('rejects a foreign customer response rather than exposing it', async () => {
+    vi.stubGlobal('fetch', invoiceFetch([{ id: 'inv_other', customer_id: 'cust_other' }]));
+    await expect(makeAdapter(env).listCustomerInvoices('cust_owned')).rejects.toMatchObject({
+      code: 'BILLING_PROVIDER_ERROR',
+    });
+  });
+});

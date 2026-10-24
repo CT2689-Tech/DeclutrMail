@@ -25,6 +25,7 @@ import { and, desc, eq, getTableColumns, inArray, isNotNull, sql } from 'drizzle
 import {
   accountDeletionRequests,
   billingCustomers,
+  entitlementGrants,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   pendingCheckouts,
@@ -65,13 +66,14 @@ import {
 
 import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import type { BillingProvider } from './billing-provider.interface.js';
+import type { BillingProvider, ProviderInvoicePage } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
 import { foundingRedemptionCount } from './founding-redemptions.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { GRANTING_STATUSES, lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
+import { runWithBillingReadSignal } from './provider-signal.js';
 import { hasUnresolvedUpgrade } from './upgrade-intents.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
 import { INR_CHECKOUT_PAUSED_MESSAGE, inrNewPurchasePaused } from '@declutrmail/shared/contracts';
@@ -92,6 +94,10 @@ const PAUSE_DAYS = 30;
  * so the cap can only ever drop the oldest.
  */
 const MAX_INVOICE_SUBSCRIPTIONS = 10;
+const MAX_INVOICE_PASSES = 10;
+// Leave room for database/network overhead within the 2s hydration deadline.
+// Slower requests can still recover client-side; the transport itself allows 3s.
+const INVOICE_READ_TIMEOUT_MS = 1_500;
 
 @Injectable()
 export class BillingService {
@@ -1493,7 +1499,8 @@ export class BillingService {
    * D119 / ADR-0035 — the workspace's billing documents, proxied on
    * read from every rail it has ever paid on.
    *
-   * Reads EVERY subscription row, not just the granting one. A
+   * Reads owned customer mappings plus bounded historical subscriptions and
+   * paid Pass grants, not just the granting subscription. A
    * customer who cancelled still needs last year's invoices — the tax
    * need outlives the subscription — and a workspace that switched
    * region holds rows under both providers (`billing_customers` is
@@ -1507,46 +1514,126 @@ export class BillingService {
    * the list is partial.
    */
   async listInvoices(workspaceId: string): Promise<BillingInvoiceList> {
-    const rows = await this.db
-      .select({
-        provider: subscriptions.provider,
-        providerSubscriptionId: subscriptions.providerSubscriptionId,
-      })
-      .from(subscriptions)
-      .where(eq(subscriptions.workspaceId, workspaceId))
-      .orderBy(desc(subscriptions.updatedAt))
-      // One past the bound: an extra row proves the cap actually cut
-      // something, so `truncated` can report it — the silent-cap shape
-      // the contract forbids (gate network 2026-08-16). The walk itself
-      // still covers only the bound.
-      .limit(MAX_INVOICE_SUBSCRIPTIONS + 1);
+    const [customers, rows, passes] = await Promise.all([
+      this.db
+        .select({
+          provider: billingCustomers.provider,
+          providerCustomerId: billingCustomers.providerCustomerId,
+        })
+        .from(billingCustomers)
+        .where(eq(billingCustomers.workspaceId, workspaceId)),
+      this.db
+        .select({
+          provider: subscriptions.provider,
+          providerSubscriptionId: subscriptions.providerSubscriptionId,
+        })
+        .from(subscriptions)
+        .where(eq(subscriptions.workspaceId, workspaceId))
+        .orderBy(desc(subscriptions.updatedAt))
+        // One past the bound: an extra row proves the cap actually cut
+        // something, so `truncated` can report it — the silent-cap shape
+        // the contract forbids (gate network 2026-08-16). The walk itself
+        // still covers only the bound.
+        .limit(MAX_INVOICE_SUBSCRIPTIONS + 1),
+      this.db
+        .select({
+          provider: entitlementGrants.provider,
+          transactionId: entitlementGrants.providerTransactionId,
+        })
+        .from(entitlementGrants)
+        .innerJoin(users, eq(users.email, entitlementGrants.email))
+        .where(
+          and(
+            eq(users.workspaceId, workspaceId),
+            eq(entitlementGrants.source, 'pass'),
+            isNotNull(entitlementGrants.provider),
+            isNotNull(entitlementGrants.providerTransactionId),
+          ),
+        )
+        .orderBy(desc(entitlementGrants.createdAt))
+        .limit(MAX_INVOICE_PASSES + 1),
+    ]);
     const capped = rows.length > MAX_INVOICE_SUBSCRIPTIONS;
     const walked = capped ? rows.slice(0, MAX_INVOICE_SUBSCRIPTIONS) : rows;
 
-    const invoices: BillingInvoice[] = [];
+    const invoices = new Map<string, BillingInvoice>();
     const unavailable = new Set<BillingProviderId>();
-    let truncated = capped;
+    let truncated = capped || passes.length > MAX_INVOICE_PASSES;
     let omittedRows = 0;
-    for (const row of walked) {
+    const signal = AbortSignal.timeout(INVOICE_READ_TIMEOUT_MS);
+    const reads = new Map<BillingProviderId, Array<() => Promise<ProviderInvoicePage>>>();
+    const enqueue = (provider: BillingProviderId, read: () => Promise<ProviderInvoicePage>) => {
+      const queue = reads.get(provider) ?? [];
+      queue.push(read);
+      reads.set(provider, queue);
+    };
+    const collect = async (
+      provider: BillingProviderId,
+      read: () => Promise<ProviderInvoicePage>,
+    ) => {
+      let stop!: () => void;
+      const stopped = new Promise<never>((_, reject) => {
+        stop = () => reject(signal.reason);
+        signal.addEventListener('abort', stop, { once: true });
+      });
       try {
-        const page = await this.adapterFor(row.provider).listInvoices(row.providerSubscriptionId);
+        signal.throwIfAborted();
+        const page = await Promise.race([runWithBillingReadSignal(signal, read), stopped]);
         truncated = truncated || page.truncated;
         omittedRows += page.omitted;
         for (const invoice of page.invoices) {
-          invoices.push({ ...invoice, provider: row.provider });
+          invoices.set(`${provider}:${invoice.id}`, { ...invoice, provider });
         }
       } catch (err) {
         // One rail failing must not fail the whole read: the other
         // rail's invoices are still true, and a 500 here would hide
         // them behind an error state.
         this.logger.error(
-          `billing.invoices.provider_unavailable workspace=${workspaceId} provider=${row.provider} err=${err instanceof Error ? err.message : String(err)}`,
+          `billing.invoices.provider_unavailable workspace=${workspaceId} provider=${provider} err=${err instanceof Error ? err.message : String(err)}`,
         );
-        unavailable.add(row.provider);
+        unavailable.add(provider);
+      } finally {
+        signal.removeEventListener('abort', stop);
+      }
+    };
+    // At most one customer per workspace/provider; IDs come only from this tenant.
+    for (const row of customers) {
+      enqueue(row.provider, () =>
+        this.adapterFor(row.provider).listCustomerInvoices(row.providerCustomerId),
+      );
+    }
+    // Retain legacy/replaced customer mappings and every historical subscription.
+    for (const row of walked) {
+      enqueue(row.provider, () =>
+        this.adapterFor(row.provider).listInvoices(row.providerSubscriptionId),
+      );
+    }
+    // Expired/revoked paid grants retain their receipts. Manual grants have no payment ID.
+    for (const row of passes.slice(0, MAX_INVOICE_PASSES)) {
+      const transactionId = row.transactionId;
+      if (row.provider === 'paddle' && transactionId) {
+        enqueue('paddle', () => this.paddle.invoiceTransaction(transactionId));
+      } else {
+        omittedRows += 1;
       }
     }
-    invoices.sort((a, b) => Date.parse(b.issuedAt) - Date.parse(a.issuedAt));
-    return { invoices, unavailableProviders: [...unavailable], truncated, omittedRows };
+    // One worker per rail (at most two). A stalled rail cannot block the other;
+    // the shared deadline aborts HTTP/body reads and stops unstarted scopes.
+    await Promise.all(
+      [...reads].map(async ([provider, queue]) => {
+        for (const read of queue) {
+          if (signal.aborted) {
+            unavailable.add(provider);
+            break;
+          }
+          await collect(provider, read);
+        }
+      }),
+    );
+    const sorted = [...invoices.values()].sort(
+      (a, b) => Date.parse(b.issuedAt) - Date.parse(a.issuedAt),
+    );
+    return { invoices: sorted, unavailableProviders: [...unavailable], truncated, omittedRows };
   }
 
   /**
@@ -1564,7 +1651,8 @@ export class BillingService {
    * ownership set is a stale authorization decision.
    */
   async invoiceDocument(workspaceId: string, invoiceId: string): Promise<BillingInvoiceDocument> {
-    const { invoices, unavailableProviders } = await this.listInvoices(workspaceId);
+    const { invoices, unavailableProviders, truncated, omittedRows } =
+      await this.listInvoices(workspaceId);
     const owned = invoices.find((i) => i.id === invoiceId);
     if (!owned) {
       // Absent from an INCOMPLETE listing proves nothing: with a rail
@@ -1572,7 +1660,7 @@ export class BillingService {
       // read, and NOT_FOUND would tell the customer their invoice does
       // not exist during a provider blip (gate network 2026-08-16).
       // Only a complete listing may answer "not yours".
-      if (unavailableProviders.length > 0) {
+      if (unavailableProviders.length > 0 || truncated || omittedRows > 0) {
         throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
       }
       throw new AppException({ code: 'NOT_FOUND' });

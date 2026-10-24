@@ -137,6 +137,22 @@ export const NoInvoicesYet: Story<typeof InvoiceHistory> = {
   ),
 };
 
+/** A capped empty result cannot establish that the account never paid. */
+export const LimitedEmptyHistory: Story<typeof InvoiceHistory> = {
+  render: () => (
+    <Frame
+      client={clientWith({
+        invoices: [],
+        unavailableProviders: [],
+        truncated: true,
+        omittedRows: 0,
+      })}
+    >
+      <InvoiceHistory />
+    </Frame>
+  ),
+};
+
 /** In flight — the D211 loading skeleton, no layout shift on settle. */
 export const Loading: Story<typeof InvoiceHistory> = {
   render: () => {

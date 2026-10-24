@@ -191,6 +191,7 @@ function toNormalizedSubscription(entity: RazorpaySubscription): NormalizedSubsc
  * comparand for "was the whole charge returned?".
  */
 interface RazorpayInvoice {
+  customer_id?: string | null;
   payment_id?: string | null;
   amount_paid?: number | null;
   subscription_id?: string | null;
@@ -1080,12 +1081,27 @@ export class RazorpayAdapter implements BillingProvider {
    * degrade into "no invoices", so it throws.
    */
   async listInvoices(providerSubscriptionId: string): Promise<ProviderInvoicePage> {
+    return this.invoiceCollection('subscription_id', providerSubscriptionId);
+  }
+
+  async listCustomerInvoices(providerCustomerId: string): Promise<ProviderInvoicePage> {
+    return this.invoiceCollection('customer_id', providerCustomerId);
+  }
+
+  private async invoiceCollection(
+    scope: 'subscription_id' | 'customer_id',
+    id: string,
+  ): Promise<ProviderInvoicePage> {
+    if (!id) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     const rows = await this.listCollection<RazorpayInvoice>(
-      `/v1/invoices?subscription_id=${encodeURIComponent(providerSubscriptionId)}`,
-      `invoices sub=${providerSubscriptionId}`,
+      `/v1/invoices?${scope}=${encodeURIComponent(id)}`,
+      `invoices ${scope}=${id}`,
       'api_read',
     );
     if (rows === null) {
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    }
+    if (rows.some((row) => row[scope] !== id)) {
       throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     }
     const invoices: ProviderInvoice[] = [];
@@ -1102,7 +1118,7 @@ export class RazorpayAdapter implements BillingProvider {
       // logged rather than shown blank or zeroed (never-fabricate).
       if (!issuedAt || amount === null || amount === undefined || !currencyCode) {
         this.logger.warn(
-          `razorpay.invoices.row_incomplete sub=${providerSubscriptionId} invoice=${row.id} — dropped from the invoice list`,
+          `razorpay.invoices.row_incomplete ${scope}=${id} invoice=${row.id} — dropped from the invoice list`,
         );
         omitted += 1;
         continue;

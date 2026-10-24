@@ -62,12 +62,12 @@ Every billing artifact affordance resolves per-provider through the
 explicit "not supported on this rail" variant that the frontend renders as an
 honest support-assisted state.
 
-| Affordance            | Paddle                                                   | Razorpay                                               |
-| --------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
-| Payment-method update | Provider-hosted session URL, minted per click            | **Unsupported** — typed refusal, support-assisted copy |
-| Invoice list          | `GET /transactions?subscription_id=…`                    | `GET /v1/invoices?subscription_id=…`                   |
-| Invoice document      | Paddle-issued PDF via a signed URL fetched at click time | Razorpay-hosted `short_url`                            |
-| Tax invoice owner     | Paddle                                                   | **DeclutrMail** — GST, currently unowned               |
+| Affordance            | Paddle                                                                            | Razorpay                                                             |
+| --------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Payment-method update | Provider-hosted session URL, minted per click                                     | **Unsupported** — typed refusal, support-assisted copy               |
+| Invoice list          | `GET /transactions?customer_id=…` plus owned historical subscription/Pass records | `GET /v1/invoices?customer_id=…` plus owned historical subscriptions |
+| Invoice document      | Paddle-issued PDF via a signed URL fetched at click time                          | Razorpay-hosted `short_url`                                          |
+| Tax invoice owner     | Paddle                                                                            | **DeclutrMail** — GST, currently unowned                             |
 
 Five rules follow, and they bind every future change to this surface:
 
@@ -145,6 +145,21 @@ Five rules follow, and they bind every future change to this surface:
   `(workspace_id, provider)`, so a workspace that switched region holds rows
   under both — the list must not key off the current backing subscription's
   provider alone.
+
+### History discovery correction — 2026-10-24
+
+Current entitlement is independent of payment history. Complimentary/Free/Pass
+accounts load the same history endpoint and display an honest empty state when
+there are no provider records. Workspace-owned customer mappings include one-time
+payments; historical subscription IDs and paid Pass grant transaction IDs retain
+legacy history where customer mappings were absent. Include expired/revoked paid
+grants, exclude manual grants with no provider transaction, and deduplicate documents
+by provider/id. Reads remain bounded, with partial, omitted and truncated states.
+Document ownership is checked again per click; no signed URL enters server hydration
+or a reusable query cache. Paddle's collection filter and PDF eligibility follow its
+[list transactions](https://developer.paddle.com/api-reference/transactions/list-transactions/)
+and [invoice PDF](https://developer.paddle.com/api-reference/transactions/get-transaction-invoice/)
+contracts; the existing HTTP adapter remains authoritative.
 
 ## References
 
