@@ -15,3 +15,12 @@
   outline-offset: 4px;
   border-radius: 2px;
 }
+
+@media (max-width: 760px) {
+  .toolLink {
+    display: inline-flex;
+    align-items: center;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

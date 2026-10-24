@@ -420,13 +420,17 @@ export const ProWithoutSubscription: Story<typeof BillingScreen> = {
 export const CompedPro: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
-      makeClient(meFixture('pro', null), {
-        complimentary: { tier: 'pro', expiresAt: null },
-        tier: 'pro',
-        foundingMember: false,
-        pendingCheckout: null,
-        subscription: null,
-      }),
+      makeClient(
+        { ...meFixture('pro', null), pricingV2: true, passEnabled: true },
+        {
+          complimentary: { tier: 'pro', expiresAt: null },
+          tier: 'pro',
+          foundingMember: false,
+          pendingCheckout: null,
+          subscription: null,
+        },
+      ),
+      { pricingV2: true },
     ),
 };
 

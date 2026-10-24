@@ -5,22 +5,24 @@ import linkStyles from './billing-links.module.css';
 import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import {
   fillStory,
   fillStoryList,
   TIER_MANIFEST,
   type TierId,
 } from '@declutrmail/shared/entitlements';
+import { cleanupViewHref } from '@/features/cleanup/cleanup-view';
 import { useTier } from '@/features/auth/api/use-tier';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 
 const { color } = tokens;
 const tools = [
   ['senders', '/senders', 'Senders'],
-  ['screener', '/screener', 'Screener'],
+  ['screener', cleanupViewHref('first-review'), 'Needs first review'],
   ['autopilot', '/autopilot', 'Autopilot'],
   ['quiet', '/quiet', 'Quiet hours'],
-  ['brief', '/brief', 'Daily brief'],
+  ['brief', '/brief', BRIEF_NAME],
   ['followups', '/followups', 'Follow-ups'],
 ] as const;
 
@@ -44,14 +46,14 @@ export function PlanCoverage({
       <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Your plan includes</h2>
       <div>
         {connectedInboxes ?? 0} of {plan.inboxLimit} connected Gmail accounts ·{' '}
-        <Link className={`${linkStyles.link} dm-tap-target`} href="/settings">
-          Manage inboxes
+        <Link className={`${linkStyles.link} dm-tap-target`} href="/settings#mailboxes">
+          Manage Gmail accounts
         </Link>
       </div>
       {(connectedInboxes ?? 0) > plan.inboxLimit ? (
         <p style={{ margin: 0 }}>
-          Existing connections continue working. Adding an inbox is blocked while you are at or
-          above this plan’s limit.
+          Existing connections continue working. Adding a Gmail account is blocked while you are at
+          or above this plan’s limit.
         </p>
       ) : null}
       <div>
@@ -72,7 +74,7 @@ export function PlanCoverage({
         {tools
           .filter(([capability]) => plan.capabilities.includes(capability))
           .map(([, href, label]) => (
-            <Link className={linkStyles.link} key={href} href={href}>
+            <Link className={`${linkStyles.link} ${linkStyles.toolLink}`} key={href} href={href}>
               {label}
             </Link>
           ))}
@@ -95,7 +97,8 @@ export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTie
       {gained.length ? <p>Added: {labelsFor(gained)}.</p> : null}
       {lost.length ? <p>No longer included after the change: {labelsFor(lost)}.</p> : null}
       <p>
-        {to.name} includes {to.inboxLimit} connected {to.inboxLimit === 1 ? 'inbox' : 'inboxes'} and{' '}
+        {to.name} includes {to.inboxLimit} connected Gmail{' '}
+        {to.inboxLimit === 1 ? 'account' : 'accounts'} and{' '}
         {to.cleanupActionsPerMonth === null
           ? WS2_COPY.liveFix.billing.limit.unlimited
           : fillStory(WS2_COPY.liveFix.billing.limit.free)}

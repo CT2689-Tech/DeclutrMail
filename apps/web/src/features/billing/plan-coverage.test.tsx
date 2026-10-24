@@ -74,6 +74,20 @@ describe('PlanCoverage', () => {
     expect(coverage.textContent).not.toContain('Unlimited cleanup');
   });
 
+  it('uses canonical account, Needs first review and Daily Brief destinations', () => {
+    render(<PlanCoverage tier="pro" />);
+    expect(screen.getByRole('link', { name: 'Manage Gmail accounts' })).toHaveAttribute(
+      'href',
+      '/settings#mailboxes',
+    );
+    expect(screen.getByRole('link', { name: 'Needs first review' })).toHaveAttribute(
+      'href',
+      '/senders?view=first-review',
+    );
+    expect(screen.queryByRole('link', { name: 'Screener' })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Daily Brief' })).toHaveAttribute('href', '/brief');
+  });
+
   it('uses the r19 Pass lines when the Pass is the plan', () => {
     auth.me.tier = 'plus';
     auth.me.pricingV2 = true;

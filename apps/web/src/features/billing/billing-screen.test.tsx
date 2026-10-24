@@ -3355,7 +3355,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(current).toHaveTextContent('Plan price: $19/mo');
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
     expect(coverage).toHaveTextContent('1 of 5 connected Gmail accounts');
-    expect(within(coverage).getByRole('link', { name: 'Daily brief' })).toHaveAttribute(
+    expect(within(coverage).getByRole('link', { name: 'Daily Brief' })).toHaveAttribute(
       'href',
       '/brief',
     );
@@ -4623,7 +4623,7 @@ describe('BillingScreen — paid confirmation beneath complimentary access', () 
     await screen.findByTestId('current-plan-card');
     expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
     expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(pending);
-    expect(screen.queryByRole('button', { name: 'Subscribe to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Buy Plus separately' })).not.toBeInTheDocument();
   });
 });
 
@@ -4676,7 +4676,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     // affordance until the row is resumed or canceled. The notice above
     // carries those verbs.
     expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Subscribe to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Buy Plus separately' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
@@ -4706,7 +4706,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'annual')!)).not.toBeInTheDocument();
     expect(screen.queryByTestId('non-backing-subscription-notice')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Subscribe to Plus' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy Plus separately' })).toBeInTheDocument();
   });
 
   it('a COMPED Pro says so on the card, with no price and no cancel control', async () => {
@@ -4736,8 +4736,12 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).getByTestId('complimentary-note')).toHaveTextContent(
       'Pro is complimentary on this account',
     );
-    expect(screen.getByRole('button', { name: 'Subscribe to Plus' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy Plus separately' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
+    const comparison = screen.getByTestId('plan-option-pro');
+    expect(comparison).toHaveTextContent('Complimentary');
+    expect(comparison).toHaveTextContent('Current access');
+    expect(comparison.textContent).not.toMatch(/\$|\/yr|\/mo/);
     // No subscription exists, so nothing here may offer to manage one.
     expect(within(card).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
@@ -4915,7 +4919,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     renderScreen({ plan: 'plus', cycle: 'annual' }, undefined, { pricingV2: true });
 
     await screen.findByTestId('current-plan-card');
-    expect(screen.getByRole('button', { name: 'Subscribe to Plus' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Buy Plus separately' })).toBeInTheDocument();
     const panel = await screen.findByTestId('checkout-panel');
     expect(panel).toHaveTextContent(fillStory(WS1_COPY['checkout.title']));
     expect(panel).toHaveTextContent(fillStory(WS1_COPY['checkout.plus.summary']));
@@ -5219,7 +5223,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     // (status past_due ∈ SUBSCRIPTION_EXISTS), so no checkout affordance
     // renders at all.
     expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Subscribe to Plus' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Buy Plus separately' })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
@@ -5385,6 +5389,7 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     expect(screen.queryByTestId('invoice-history')).not.toBeInTheDocument();
     expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
     const contents = screen.getByRole('navigation', { name: 'On this page' });
+    expect(screen.getAllByRole('link', { name: 'Compare plans' })).toHaveLength(2);
     expect(within(contents).queryByRole('link', { name: 'Payment details' })).toBeNull();
     expect(within(contents).queryByRole('link', { name: 'Invoices' })).toBeNull();
     expect(within(contents).getByRole('link', { name: 'Your plan' })).toHaveAttribute(

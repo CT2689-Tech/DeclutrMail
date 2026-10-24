@@ -879,7 +879,7 @@ export function BillingScreen({
 
   return (
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
-      <BillingPageHeader description={billingAccountScope(plan)} comparePlans />
+      <BillingPageHeader description={billingAccountScope(plan)} />
       <BillingSectionAnchor />
       <EditorialContents
         items={[
@@ -981,6 +981,11 @@ export function BillingScreen({
 
       <PlanPicker
         currentTier={plan.entitlementTier}
+        currentAccess={{
+          kind: passCoversPlan(plan) ? 'pass' : 'tier',
+          priceLabel: currentPlanPriceLabel(plan, visitorLocale),
+          subscription: backingSub,
+        }}
         grantingSub={grantingBackingSub}
         // While a plan action awaits its webhook, a second one could
         // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
@@ -1142,10 +1147,8 @@ function BillingSectionAnchor() {
 
 function BillingPageHeader({
   description = 'Your plan, payments and billing history.',
-  comparePlans = false,
 }: {
   description?: string;
-  comparePlans?: boolean;
 }) {
   return (
     <header className={styles.header}>
@@ -1153,11 +1156,6 @@ function BillingPageHeader({
         <h1 style={editorialTitleStyle}>Plan & billing</h1>
         <p className={styles.description}>{description}</p>
       </div>
-      {comparePlans ? (
-        <a className={`${linkStyles.link} ${styles.compareLink}`} href="#change-plan">
-          Compare plans
-        </a>
-      ) : null}
     </header>
   );
 }

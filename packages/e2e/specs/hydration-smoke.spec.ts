@@ -96,6 +96,14 @@ test('phone account drawer reaches billing and keeps contextual help inside the 
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/settings');
   await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
+  for (const link of await page
+    .getByRole('navigation', { name: 'On this page' })
+    .getByRole('link')
+    .all()) {
+    const bounds = await link.boundingBox();
+    expect(bounds!.width).toBeGreaterThanOrEqual(44);
+    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  }
   const banner = page.getByTestId('cookie-consent-banner');
   await expect(banner).toBeVisible();
   const menu = page.getByRole('button', { name: 'Open navigation menu' });
@@ -113,6 +121,7 @@ test('phone account drawer reaches billing and keeps contextual help inside the 
   await drawer.getByRole('button', { name: 'Plan & billing', exact: true }).click();
   await expect(drawer).toBeHidden();
   await expect(page.getByRole('heading', { name: 'Plan & billing', exact: true })).toBeVisible();
+  await expect(page.locator('header').getByRole('link', { name: 'Compare plans' })).toHaveCount(0);
   await banner.getByRole('button', { name: 'Essential only', exact: true }).click();
   await expect(banner).toBeHidden();
   await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('button')).toHaveCount(
@@ -128,6 +137,14 @@ test('phone account drawer reaches billing and keeps contextual help inside the 
   await page.keyboard.press('Escape');
   await expect(popover).toBeHidden();
   await expect(help).toBeFocused();
+  const tools = page.getByRole('navigation', { name: 'Included tools' }).getByRole('link');
+  await expect(tools.first()).toBeVisible();
+  for (const link of await tools.all()) {
+    const bounds = await link.boundingBox();
+    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  }
+  await page.getByRole('link', { name: 'Manage Gmail accounts' }).click();
+  await expect(page.locator('#mailboxes')).toBeFocused();
 });
 
 /** Static routes that must hydrate from the server tree without recovery. */
@@ -412,7 +429,11 @@ test('live Pro complimentary billing hydrates on annual across repeated loads', 
       );
       await expect(page.getByRole('button', { name: /^Annual/, pressed: true })).toBeVisible();
       await expect(page.getByText(manifestPrice('plus', 'annual')).first()).toBeVisible();
-      await expect(page.getByText(manifestPrice('pro', 'annual')).first()).toBeVisible();
+      const pro = page.getByTestId('plan-option-pro');
+      await expect(pro).toContainText('Current access');
+      await expect(pro).toContainText('Complimentary');
+      await expect(pro).not.toContainText(manifestPrice('pro', 'annual'));
+      await expect(page.getByRole('button', { name: 'Buy Plus separately' })).toBeVisible();
     });
   });
 });

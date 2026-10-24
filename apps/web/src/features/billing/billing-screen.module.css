@@ -26,14 +26,6 @@
   overflow-wrap: anywhere;
 }
 
-.compareLink {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: 13px;
-  font-weight: 600;
-}
-
 .loading {
   display: grid;
   gap: 16px;
