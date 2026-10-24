@@ -35,7 +35,7 @@ const meta: StoryMeta<typeof ActionSheetPrefsCard> = {
     docs: {
       description: {
         component:
-          'Settings → Actions (D34). Per-verb preview placement for Archive / Unsubscribe / Later. The action preview is NEVER skippable (D226) — the Inline / Separate window choices say where it lands in Triage. Persisted under users.preferences.actionSheetPrefs so the choice roams devices.',
+          'Settings → Actions (D34). Per-verb preview placement for Archive / Unsubscribe / Later. The action preview is NEVER skippable (D226) — the Inline / Separate window choices say where it lands during guided review. Persisted under users.preferences.actionSheetPrefs so the choice roams devices.',
       },
     },
   },
