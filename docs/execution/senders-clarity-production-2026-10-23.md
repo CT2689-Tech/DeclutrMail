@@ -25,4 +25,15 @@ Fresh local verification: 11 files / 468 tests passed with one worker; scoped ES
 
 The synthetic browser production build compiled and validated successfully. Its explicit API URL makes a pre-existing comparison page dynamic, so the budget harness cannot choose a prerendered `/vs/[competitor]` path and probes a deliberate 404. A separate build with the CI marketing configuration (no public API URL) passed the full route budget and prerender checks: 49 measured routes within budget and two declared redirects verified. No budget caps or harness code changed. The browser runtime uses an isolated copy of the completed API-backed build, with disposable PostgreSQL/Redis, fixed synthetic account and no worker/provider credentials.
 
-Desktop/mobile production-build walkthrough is pending: the built-in browser connection closed during tab creation; reopening was requested. CI/queue and release status are pending. No actual emails changed. Synthetic checks do not establish Gmail worker execution or restoration; those mechanisms remain covered by their existing API/worker suites.
+Built-in browser walkthrough completed 24 October against the isolated API-backed production build:
+
+- Desktop 1280×720, light and dark; 320×760 light phone and 390×844 dark phone. No horizontal overflow; one main landmark on inspected views.
+- All senders compact header, live search, selection and native detail layout verified. Matching sender count/scope and Protected exclusions remain intact.
+- Mobile report entry measures approximately 90×44px, fully inside the viewport. Reopen/close preserves the existing expanded panel, without overflow.
+- Suggested Guided Review shows 2 current Inbox emails versus 191 received in 90 days; the next sender shows explicit 0, its Inbox-clear explanation and 191 historical emails. Previous/Next/Finish retain their existing behavior; navigation buttons measure 44px high on phones.
+- Archive preview resolves 2 eligible emails; Delete's existing 180-day default shows zero matches and disabled confirmation; Later retains its return-time control and 2-email preview. Open previews lock review navigation. Each preview was cancelled; no mail-changing confirmation or Keep/Unsubscribe was submitted.
+- Selected review uses its existing native card/action owner. Native sender detail and Back to Guided Review preserve position 2 of 2, and returning to All senders preserves selection. Clear restores the directory.
+- Needs first review opens its unchanged accordion, evidence and action controls at 320px. Unsubscribe remains gated by the existing method data (the synthetic senders have no checked method); unit suites cover that action path.
+- Final browser warning/error log was empty; viewport override reset. Database readback remained Fresh Finds 2/191 and Meadow Lane 0/191. All 50 action jobs were the fixture's pre-seeded quota rows; no new mail action was recorded.
+
+No actual emails changed. Synthetic checks do not establish Gmail worker execution or restoration; those mechanisms remain covered by their existing API/worker suites. Integration and current CI/queue/release state are tracked in [PR #1112](https://github.com/CT2689-Tech/DeclutrMail/pull/1112). Browser captures are under the local visualization directory `2026/10/24/senders-clarity-production/`.
