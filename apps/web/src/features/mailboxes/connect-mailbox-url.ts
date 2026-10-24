@@ -1,4 +1,4 @@
-import { openOAuthInShell } from '@/lib/native/oauth-shell';
+import { isNativeShell } from '@/lib/native/shell';
 
 /** Authenticated OAuth entry point for adding or re-authorizing Gmail. */
 const CONNECT_MAILBOX_START_PATH = '/api/auth/google/connect-mailbox/start';
@@ -38,11 +38,25 @@ export function connectMailboxStartUrl(
 /**
  * OAuth must be a full-page navigation, not an in-app router transition. In
  * the native app shell it runs in the system browser instead, because Google
- * refuses OAuth in an embedded WebView.
+ * refuses OAuth in an embedded WebView (ADR-0049). The shell code is imported
+ * on demand so no other visitor downloads it with the page.
  */
+function startOAuth(url: string): void {
+  if (!isNativeShell()) {
+    window.location.assign(url);
+    return;
+  }
+  void import('@/lib/native/oauth-shell')
+    .then(({ openOAuthInShell }) => {
+      if (!openOAuthInShell(url)) window.location.assign(url);
+    })
+    // A chunk that will not load must not fall through to Google, which refuses
+    // the WebView; show the failed result the connect flow already has.
+    .catch(() => window.location.assign('/settings?connect_start_result=failed#mailboxes'));
+}
+
 export function startMailboxConnect(reconnectMailboxId?: string, billingReturnTo?: string): void {
-  const url = connectMailboxStartUrl(reconnectMailboxId, billingReturnTo);
-  if (!openOAuthInShell(url)) window.location.assign(url);
+  startOAuth(connectMailboxStartUrl(reconnectMailboxId, billingReturnTo));
 }
 
 /**
@@ -60,6 +74,5 @@ export function reactivateMailboxStartUrl(mailboxId: string): string {
 
 /** OAuth reactivation is a full-page navigation to a mailbox-bound start. */
 export function startMailboxReactivation(mailboxId: string): void {
-  const url = reactivateMailboxStartUrl(mailboxId);
-  if (!openOAuthInShell(url)) window.location.assign(url);
+  startOAuth(reactivateMailboxStartUrl(mailboxId));
 }
