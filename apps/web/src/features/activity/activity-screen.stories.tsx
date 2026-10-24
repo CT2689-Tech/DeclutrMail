@@ -474,3 +474,51 @@ export const UndoInProgress: Story<typeof ActivityScreen> = {
     return frame(client);
   },
 };
+
+/** Eligible actions expose a separate checkbox; historical outcomes keep their logos. */
+export const BulkSelection: Story<typeof ActivityScreen> = {
+  render: () =>
+    frame(
+      makeClient(
+        [
+          {
+            ...ROWS[0]!,
+            id: 'selectable-studio',
+            sender: {
+              senderKey: 'studio',
+              displayName: 'Studio Weekly',
+              email: 'news@studio.example.invalid',
+              domain: 'studio.example.invalid',
+              brandMark: false,
+            },
+            undoState: { kind: 'available', token: 'studio', expiresAt: '2099-01-01T00:00:00Z' },
+          },
+          {
+            ...ROWS[0]!,
+            id: 'selectable-market',
+            sender: {
+              senderKey: 'market',
+              displayName: 'Market Notes',
+              email: 'news@market.example.invalid',
+              domain: 'market.example.invalid',
+              brandMark: false,
+            },
+            undoState: { kind: 'available', token: 'market', expiresAt: '2099-01-01T00:00:00Z' },
+          },
+          {
+            ...ROWS[0]!,
+            id: 'already-undone',
+            undoState: { kind: 'executed', executedAt: new Date(NOW).toISOString() },
+          },
+          {
+            ...ROWS[0]!,
+            id: 'expired-undo',
+            undoState: { kind: 'expired', expiredAt: new Date(NOW).toISOString() },
+          },
+          { ...ROWS[0]!, id: 'no-undo', undoState: { kind: 'unavailable' } },
+        ],
+        '30d',
+        'all',
+      ),
+    ),
+};
