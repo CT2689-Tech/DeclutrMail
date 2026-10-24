@@ -71,8 +71,15 @@ function fixture({
             ]
           : [],
       };
-    if (url.includes('/metricDescriptors/'))
+    if (url.includes('/metricDescriptors/')) {
+      // Google's resource name contains literal slash-separated metric segments.
+      // An encoded suffix passes a loose mock but is rejected by the native API.
+      assert.equal(
+        url,
+        'https://monitoring.googleapis.com/v3/projects/test/metricDescriptors/logging.googleapis.com/user/ops_action_overdue',
+      );
       return { valueType: 'DISTRIBUTION', metricKind: 'DELTA' };
+    }
     if (url.endsWith('/entries:list'))
       return {
         entries: [
