@@ -670,6 +670,8 @@ export interface BatchStatusResult {
   total: number;
   done: number;
   failed: number;
+  /** Registered outcome codes from the latest failed attempts only. */
+  failureCodes?: string[];
   requestedCount: number;
   affectedCount: number;
   /**

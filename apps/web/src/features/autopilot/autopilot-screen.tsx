@@ -35,6 +35,7 @@ import {
 import { useApproveAllForRule } from './api/use-approve-all-for-rule';
 import { useApproveMatches } from './api/use-approve-matches';
 import { useAutopilotRules } from './api/use-autopilot-rules';
+import { isSenderRulesUnsupported, useSenderRules } from './api/use-sender-rules';
 import { useDismissMatch } from './api/use-dismiss-match';
 import { usePatchRule } from './api/use-patch-rule';
 import { usePatternSuggestion } from './api/use-pattern-suggestion';
@@ -46,7 +47,7 @@ import { ActivateRuleModal } from './activate-rule-modal';
 import { ApproveConfirmModal } from './approve-confirm-modal';
 import { AutopilotBannerStack } from './autopilot-banner-stack';
 import { ObserveWindowBanner } from './observe-window-banner';
-import { PauseConfirmModal } from './pause-confirm-modal';
+import { PauseConfirmModal, type PauseRuleScope } from './pause-confirm-modal';
 import { ResumeConfirmModal } from './resume-confirm-modal';
 import { PausedBanner } from './paused-banner';
 import { PatternSuggestionCard } from './pattern-suggestion-card';
@@ -56,6 +57,7 @@ import { SuggestionGroup } from './suggestion-group';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import { SenderRuleLibrary } from './sender-rule-library';
 import { useHydrated } from '@/lib/use-hydrated';
 import type {
   AutopilotScreenState,
@@ -104,12 +106,13 @@ const PENDING_BUFFER_CAP = AUTOPILOT_PENDING_PAGE_SIZE;
  *      an explicit "Switch to Active" prompt. NO auto-promotion.
  *   4. **D105 master pause** — pause every rule via a previewed modal.
  *
- * Out of scope at V2 (D192/D197/D234): custom rule creation — presets
- * only; the API rejects `is_preset=false`.
+ * Sender-list rules use their own approval-first library and API. The preset
+ * lifecycle below retains its existing Observe and Active behavior.
  */
 export function AutopilotRoute() {
   const hydrated = useHydrated();
-  const mailboxId = useOptionalAuth()?.me.activeMailboxId ?? null;
+  const auth = useOptionalAuth();
+  const mailboxId = auth?.me.activeMailboxId ?? null;
   const [pages, setPages] = useState<{ mailboxId: string | null; cursors: string[] }>({
     mailboxId,
     cursors: [],
@@ -121,6 +124,8 @@ export function AutopilotRoute() {
   const rulesQuery = useAutopilotRules();
   const suggestionsQuery = usePendingSuggestions(mailboxId, cursor);
   const patternQuery = usePatternSuggestion();
+  const senderRulesEntitled = auth !== null && hasCapability(auth.me.tier, 'autopilot');
+  const senderRulesQuery = useSenderRules(mailboxId ?? undefined, senderRulesEntitled);
   const refetchRules = rulesQuery.refetch;
   const refetchSuggestions = suggestionsQuery.refetch;
   const refetchPattern = patternQuery.refetch;
@@ -168,9 +173,28 @@ export function AutopilotRoute() {
     retry,
   ]);
 
-  return (
+  // Adopt capability failures only after the server and browser share their first render.
+  const unsupported =
+    hydrated &&
+    senderRulesEntitled &&
+    mailboxId !== null &&
+    isSenderRulesUnsupported(senderRulesQuery.error);
+  const [presetsExpanded, setPresetsExpanded] = useState(false);
+  useEffect(() => {
+    if (unsupported) setPresetsExpanded(true);
+  }, [unsupported]);
+  const presetScreen = (
     <AutopilotScreen
+      embedded={!unsupported}
       state={state}
+      pauseScope={{
+        rules: [...(rulesQuery.data ?? []), ...(senderRulesQuery.data ?? [])],
+        complete:
+          senderRulesEntitled &&
+          mailboxId !== null &&
+          rulesQuery.isSuccess &&
+          senderRulesQuery.isSuccess,
+      }}
       pendingPagination={{
         pageKey: `${mailboxId ?? 'none'}:${cursor ?? 'first'}`,
         total: hydrated ? (suggestionsQuery.data?.meta?.total ?? null) : null,
@@ -189,6 +213,46 @@ export function AutopilotRoute() {
       }
       patternState={hydrated ? sectionState(patternQuery, refetchPattern) : { kind: 'loading' }}
     />
+  );
+  return (
+    <div
+      style={{
+        ...(unsupported ? { minWidth: 0 } : editorialColumnStyle),
+        display: 'grid',
+        gap: unsupported ? 0 : 36,
+      }}
+    >
+      {!unsupported && (
+        <SenderRuleLibrary
+          presetRules={rulesQuery.data ?? []}
+          presetsAvailable={rulesQuery.isSuccess && !rulesQuery.isError}
+        />
+      )}
+      {/* Keep preset previews and pending mutations mounted across API recovery. */}
+      <details
+        open={unsupported || presetsExpanded}
+        onToggle={(event) => {
+          if (!unsupported) setPresetsExpanded(event.currentTarget.open);
+        }}
+      >
+        <summary
+          hidden={unsupported}
+          style={{ cursor: 'pointer', padding: '14px 0', color: color.fgSoft, fontSize: text.md }}
+        >
+          Preset rules ·{' '}
+          {rulesQuery.isSuccess
+            ? `${(rulesQuery.data ?? []).filter((rule) => rule.enabled && rule.mode === 'active').length} Active`
+            : 'Status unavailable'}
+          {' · '}
+          {hydrated && suggestionsQuery.isSuccess
+            ? `${suggestionsQuery.data.meta?.total ?? suggestionsQuery.data.data.length} awaiting review`
+            : suggestionsQuery.isError
+              ? 'Review unavailable'
+              : 'Checking review…'}
+        </summary>
+        {presetScreen}
+      </details>
+    </div>
   );
 }
 
@@ -238,16 +302,36 @@ interface PendingPagination {
   onNewest: () => void;
 }
 
+function isVisiblePresetOpener(element: HTMLElement): boolean {
+  if (!element.isConnected || element.matches(':disabled')) return false;
+  for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
+    const style = window.getComputedStyle(ancestor);
+    if (ancestor.hidden || style.display === 'none' || style.visibility === 'hidden') return false;
+    if (
+      ancestor instanceof HTMLDetailsElement &&
+      !ancestor.open &&
+      !ancestor.querySelector(':scope > summary')?.contains(element)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function AutopilotScreen({
   state,
   suggestionsState = { kind: 'ready' },
   patternState = { kind: 'ready' },
   pendingPagination,
+  embedded = false,
+  pauseScope,
 }: {
+  embedded?: boolean;
   state: AutopilotScreenState;
   suggestionsState?: SectionState;
   patternState?: SectionState;
   pendingPagination?: PendingPagination;
+  pauseScope?: PauseRuleScope;
 }) {
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
@@ -283,6 +367,7 @@ export function AutopilotScreen({
   const [ruleFilter, setRuleFilter] = useState<'all' | 'watching' | 'acting' | 'inactive'>('all');
   useEffect(() => setRuleFilter('all'), [activeMailboxId]);
   const [pauseConfirmOpen, setPauseConfirmOpen] = useState(false);
+  const [pauseCommitScope, setPauseCommitScope] = useState<PauseRuleScope | null>(null);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [approveTarget, setApproveTarget] = useState<ApproveTarget | null>(null);
   useEffect(() => {
@@ -310,6 +395,31 @@ export function AutopilotScreen({
    * button, shown whenever `mode==='paused'` regardless of `enabled`).
    */
   const [resumeTarget, setResumeTarget] = useState<AutopilotRuleDto | null>(null);
+  const presetHeading = useRef<HTMLHeadingElement>(null);
+  const modalOpener = useRef<HTMLElement | null>(null);
+  const rememberModalOpener = () => {
+    modalOpener.current =
+      document.activeElement instanceof HTMLElement && document.activeElement !== document.body
+        ? document.activeElement
+        : null;
+  };
+  const modalOpen =
+    pauseConfirmOpen || approveTarget !== null || confirmTarget !== null || resumeTarget !== null;
+  const wasModalOpen = useRef(false);
+  useEffect(() => {
+    const closed = wasModalOpen.current && !modalOpen;
+    wasModalOpen.current = modalOpen;
+    if (!closed) return;
+    // PreviewSheet restores its opener during cleanup. Recovery may have removed
+    // that legacy control, so finish the handoff to the visible preset heading.
+    const frame = requestAnimationFrame(() => {
+      if (document.querySelector('[aria-modal="true"]')) return;
+      const opener = modalOpener.current;
+      const target = opener && isVisiblePresetOpener(opener) ? opener : presetHeading.current;
+      if (target && isVisiblePresetOpener(target)) target.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [modalOpen]);
   /**
    * Which of the modal's two commits is running. The frame needs it to
    * put the busy label on the button the user actually clicked — one
@@ -331,6 +441,9 @@ export function AutopilotScreen({
 
   const rules: AutopilotRuleDto[] =
     state.kind === 'ready' || state.kind === 'empty' ? state.rules : [];
+  const livePauseScope = pauseScope ?? { rules, complete: true };
+  const displayedPauseScope =
+    pauseAll.isPending && pauseCommitScope ? pauseCommitScope : livePauseScope;
   const ruleStatus = (rule: AutopilotRuleDto) =>
     !rule.enabled || rule.mode === 'paused' || (rule.mode === 'active' && !canActivate)
       ? 'inactive'
@@ -502,6 +615,7 @@ export function AutopilotScreen({
    * unseen. The commit itself is `onResumeConfirm` below.
    */
   const onResume = (rule: AutopilotRuleDto) => {
+    rememberModalOpener();
     patchRule.reset();
     resumePreview.reset();
     setResumeTarget(rule);
@@ -538,6 +652,7 @@ export function AutopilotScreen({
    * preview the confirm button gates on (`activatePreviewState`).
    */
   const openConfirm = (rule: AutopilotRuleDto, intent: 'enable' | 'activate') => {
+    rememberModalOpener();
     patchRule.reset();
     activatePreview.reset();
     setPendingCommit(undefined);
@@ -644,6 +759,7 @@ export function AutopilotScreen({
 
   const openApprove = (target: ApproveTarget) => {
     if (target.matches.length === 0) return;
+    rememberModalOpener();
     approveMatches.reset();
     approveAllForRule.reset();
     setApproveTarget(target);
@@ -760,6 +876,8 @@ export function AutopilotScreen({
   // ── Pause-all (D105) ───────────────────────────────────────────────
 
   const onConfirmPauseAll = () => {
+    if (pauseAll.isPending) return;
+    setPauseCommitScope(livePauseScope);
     void track('autopilot_paused', { duration_kind: 'until_resumed' });
     addBreadcrumb({
       category: 'action',
@@ -846,13 +964,13 @@ export function AutopilotScreen({
   return (
     <div
       style={{
-        ...editorialColumnStyle,
+        ...(embedded ? { minWidth: 0 } : editorialColumnStyle),
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
       }}
     >
-      <EditorialKicker>Automations / Your rules</EditorialKicker>
+      {!embedded && <EditorialKicker>Automations / Your rules</EditorialKicker>}
       {/* Header — one line: title + the master pause (D105). */}
       <div
         style={{
@@ -863,15 +981,32 @@ export function AutopilotScreen({
           gap: 16,
         }}
       >
-        <h1 style={editorialTitleStyle}>Autopilot</h1>
-        <Button
-          tone="default"
-          onClick={() => setPauseConfirmOpen(true)}
-          disabled={state.kind !== 'ready' || !hasRunningRules}
-          ariaLabel="Pause every Autopilot rule"
-        >
-          Pause all
-        </Button>
+        {embedded ? (
+          <h2
+            ref={presetHeading}
+            tabIndex={-1}
+            style={{ ...tokens.typography.sectionTitle, margin: 0 }}
+          >
+            Preset rules
+          </h2>
+        ) : (
+          <h1 ref={presetHeading} tabIndex={-1} style={editorialTitleStyle}>
+            Autopilot
+          </h1>
+        )}
+        {!embedded && (
+          <Button
+            tone="default"
+            onClick={() => {
+              rememberModalOpener();
+              setPauseConfirmOpen(true);
+            }}
+            disabled={state.kind !== 'ready' || !hasRunningRules}
+            ariaLabel={embedded ? 'Pause every preset rule' : 'Pause every Autopilot rule'}
+          >
+            Pause all
+          </Button>
+        )}
       </div>
 
       {/* The explainer is tier-conditional: the under-tier wording must
@@ -880,15 +1015,22 @@ export function AutopilotScreen({
           class as offering the Activate button. The Watch-first vs act
           choice itself is explained where it is made: the rule row's
           description and the turn-on preview. */}
-      <ScreenIntro
-        id="autopilot"
-        title="How Autopilot works"
-        body={
-          canActivate
-            ? 'Turning a rule on previews what it would do to email already in your inbox. Then let it act, or watch first and approve each batch.'
-            : `Rules collect matching email for you to approve. Rules that act on their own are part of ${ACT_PLAN_NAME}.`
-        }
-      />
+      {!embedded && (
+        <ScreenIntro
+          id="autopilot"
+          title="How Autopilot works"
+          body={
+            canActivate
+              ? 'Turning a rule on previews what it would do to email already in your inbox. Then let it act, or watch first and approve each batch.'
+              : `Rules collect matching email for you to approve. Rules that act on their own are part of ${ACT_PLAN_NAME}.`
+          }
+        />
+      )}
+      {embedded && (
+        <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+          Presets can watch for your approval or act on their own when set to Active.
+        </p>
+      )}
 
       <AutopilotBannerStack banners={banners} />
       {state.kind !== 'loading' && state.kind !== 'error' && patternState.kind === 'loading' && (
@@ -902,7 +1044,7 @@ export function AutopilotScreen({
         />
       )}
 
-      {state.kind === 'ready' && (
+      {!embedded && state.kind === 'ready' && (
         <nav
           aria-label="Autopilot next steps"
           style={{
@@ -1236,7 +1378,8 @@ export function AutopilotScreen({
 
       <PauseConfirmModal
         open={pauseConfirmOpen}
-        rules={rules}
+        rules={displayedPauseScope.rules}
+        complete={displayedPauseScope.complete}
         onCancel={() => {
           if (!pauseAll.isPending) setPauseConfirmOpen(false);
         }}

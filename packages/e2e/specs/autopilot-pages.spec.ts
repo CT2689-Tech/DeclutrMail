@@ -92,6 +92,7 @@ test('review pages cover the backlog and recover when the older page is exhauste
   // Dismiss any consent overlay before interacting with the lower review section.
   const essential = page.getByRole('button', { name: 'Essential only', exact: true });
   if (await essential.isVisible()) await essential.click();
+  await page.getByText(/^Preset rules ·/).click();
   await expect(page.getByText('50 on this page · 61 waiting at last check')).toBeVisible();
   await page.getByRole('button', { name: 'Older suggestions', exact: true }).click();
   await expect(page.getByText('11 on this page · 61 waiting at last check')).toBeVisible();
@@ -112,6 +113,7 @@ test('review pages cover the backlog and recover when the older page is exhauste
   await expect(page.getByText('50 on this page · 50 waiting at last check')).toBeVisible();
   await page.reload();
   await expectScreenMounted(page);
+  await page.getByText(/^Preset rules ·/).click();
   await expect(page.getByText('50 on this page · 50 waiting at last check')).toBeVisible();
   const dismissed = await sql<{ count: string }[]>`
     SELECT count(*)::text AS count FROM rule_match_log

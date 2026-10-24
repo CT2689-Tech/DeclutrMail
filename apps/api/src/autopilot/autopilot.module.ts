@@ -6,9 +6,17 @@ import { AUTOPILOT_ACTION_QUEUE, createRedisConnection } from '@declutrmail/work
 import type { AutopilotActionJobData } from '@declutrmail/workers';
 
 import { AuthModule } from '../auth/auth.module.js';
+import { ActionsModule } from '../actions/actions.module.js';
 import { EntitlementsModule } from '../common/entitlements/entitlements.module.js';
 import { MailboxAccountsModule } from '../mailboxes/mailbox-accounts.module.js';
 import { AutopilotController } from './autopilot.controller.js';
+import { SenderRulesController } from './sender-rules.controller.js';
+import { SenderRulesService } from './sender-rules.service.js';
+import {
+  MemorySenderRulePreviewStore,
+  RedisSenderRulePreviewStore,
+  SENDER_RULE_PREVIEW_STORE,
+} from './sender-rules.store.js';
 import { AUTOPILOT_ACTION_QUEUE_TOKEN, AutopilotReadService } from './autopilot.read-service.js';
 import {
   AUTOPILOT_PREVIEW_STORE,
@@ -43,9 +51,24 @@ import {
  * REDIS_URL is optional per the fail-open contract.
  */
 @Module({
-  imports: [AuthModule, MailboxAccountsModule, EntitlementsModule],
-  controllers: [AutopilotController],
+  imports: [AuthModule, ActionsModule, MailboxAccountsModule, EntitlementsModule],
+  controllers: [AutopilotController, SenderRulesController],
   providers: [
+    {
+      provide: SENDER_RULE_PREVIEW_STORE,
+      useFactory: () => {
+        const url = process.env.REDIS_URL;
+        if (!url) return new MemorySenderRulePreviewStore();
+        const redis = new Redis(url, {
+          maxRetriesPerRequest: 1,
+          enableOfflineQueue: false,
+          commandTimeout: 1500,
+        });
+        redis.on('error', () => new Logger('SenderRulePreview').warn('Preview cache unavailable'));
+        return new RedisSenderRulePreviewStore(redis);
+      },
+    },
+    SenderRulesService,
     {
       provide: AUTOPILOT_PREVIEW_STORE,
       useFactory: () => {

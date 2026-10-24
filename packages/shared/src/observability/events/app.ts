@@ -39,6 +39,7 @@ export const APP_EVENT_NAMES = [
   'autopilot_preset_changed',
   'autopilot_pattern_suggestion_shown',
   'autopilot_pattern_suggestion_decided',
+  'autopilot_sender_rule_changed',
   'product_feedback_submitted',
   'weekly_review_viewed',
   'quiet_hours_updated',
@@ -298,6 +299,14 @@ export interface AppEventPayloads {
     preset_key: 'auto_archive_low_engagement' | 'auto_unsubscribe_noisy';
     decision: 'observe' | 'dismissed';
     evidence_count: number;
+  };
+
+  autopilot_sender_rule_changed: {
+    operation: 'create' | 'edit' | 'preview' | 'confirm' | 'retire';
+    action: 'archive' | 'delete';
+    reach: 'inbox_only' | 'all_mail';
+    sender_count: number;
+    message_count: number;
   };
 
   // — Calibrated feedback + review (D246) —

@@ -5,6 +5,7 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 import { BILLING_SEED } from '../helpers/seed-billing';
+import { expectScreenMounted } from '../helpers/screen-ready';
 
 test.use({ locale: 'de-DE', timezoneId: 'Asia/Kolkata' });
 
@@ -181,7 +182,21 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
   const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
   await page.locator('body').waitFor({ state: 'visible' });
   if (route === '/autopilot') {
-    // A nonempty shell can precede the streamed sections and their diagnostics.
+    // Free mounts the read-only preset preview; paid plans mount the library.
+    // The preview has no help registration or collapsible preset section.
+    const readOnlyPreview = page.getByTestId('autopilot-observe-preview');
+    const senderLibrary = page.getByTestId('sender-rule-library');
+    await expect(readOnlyPreview.or(senderLibrary)).toHaveCount(1);
+    const essential = page.getByRole('button', { name: 'Essential only', exact: true });
+    if (await essential.isVisible()) await essential.click();
+    if (await senderLibrary.count()) {
+      // A nonempty shell can precede the streamed sections and their diagnostics.
+      await expectScreenMounted(page);
+      await page.getByText(/^Preset rules ·/).click();
+    } else {
+      await expect(readOnlyPreview).toBeVisible();
+      await expect(readOnlyPreview.getByRole('link', { name: /^Upgrade to / })).toBeVisible();
+    }
     await expect(page.getByRole('heading', { name: 'Rules', exact: true })).toBeVisible();
     for (const label of [
       'Loading Autopilot rules',
@@ -314,75 +329,62 @@ function manifestPrice(tier: 'plus' | 'pro', cycle: 'monthly' | 'annual'): strin
 }
 
 /**
- * Live complimentary Pro, then a normal paid Plus plan. Both restore the
- * synthetic workspace. The grant and the paid row belong to this spec.
+ * Free, complimentary Pro, and paid Plus fixtures restore the synthetic
+ * workspace. The grant and the paid row belong to this spec.
  */
 async function withBillingFixture(
-  setup: 'complimentary-pro' | 'paid-plus',
+  setup: 'free' | 'complimentary-pro' | 'paid-plus',
   run: () => Promise<void>,
 ): Promise<void> {
   const sql = dbConnect();
-  const [workspace] = await sql<{ tier: string }[]>`
-    SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
-  `;
-  const [grant] = await sql<
-    {
-      tier: string;
-      reason: string;
-      granted_by: string;
-      expires_at: Date | null;
-      revoked_at: Date | null;
-    }[]
-  >`
-    SELECT tier, reason, granted_by, expires_at, revoked_at
-    FROM entitlement_grants
-    WHERE email = ${BILLING_SEED.email}
-  `;
   try {
-    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}`;
-    if (setup === 'complimentary-pro') {
-      await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
-      // Comp uniqueness is partial on source = 'comp'. A bare
-      // ON CONFLICT (email) does not match that index.
-      await sql`
-        INSERT INTO entitlement_grants (email, tier, reason, granted_by, source)
-        VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e', 'comp')
-        ON CONFLICT (email) WHERE source = 'comp' DO UPDATE
-        SET tier = 'pro', reason = 'hydration smoke', granted_by = 'e2e',
-            expires_at = NULL, revoked_at = NULL, updated_at = now()
-      `;
-    } else {
-      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
-      await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
-      await sql`
-        INSERT INTO subscriptions (
-          workspace_id, provider, provider_subscription_id, tier, status,
-          provider_price_id, billing_cycle, current_period_end
-        ) VALUES (
-          ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
-          'pri_e2e_hydration', 'monthly', now() + interval '30 days'
-        )
-      `;
-    }
-    await run();
-  } finally {
-    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId} AND provider_subscription_id = 'sub_e2e_hydration_paid'`;
-    if (workspace) {
+    const [workspace] = await sql<{ tier: string }[]>`
+      SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
+    `;
+    const grants = await sql<{ id: string }[]>`
+      SELECT id FROM entitlement_grants WHERE email = ${BILLING_SEED.email}
+    `;
+    const subscriptions = await sql<{ id: string }[]>`
+      SELECT id FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}
+    `;
+    if (!workspace) throw new Error('Hydration fixture requires its seeded synthetic workspace.');
+    // Fail before any write or teardown if the disposable seed has billing state.
+    expect(grants, 'Hydration fixture requires an empty grant baseline').toHaveLength(0);
+    expect(subscriptions, 'Hydration fixture requires an empty subscription baseline').toHaveLength(
+      0,
+    );
+
+    try {
+      if (setup === 'complimentary-pro') {
+        await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+        await sql`
+          INSERT INTO entitlement_grants (email, tier, reason, granted_by, source)
+          VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e', 'comp')
+        `;
+      } else if (setup === 'free') {
+        await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${BILLING_SEED.workspaceId}`;
+      } else {
+        await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
+        await sql`
+          INSERT INTO subscriptions (
+            workspace_id, provider, provider_subscription_id, tier, status,
+            provider_price_id, billing_cycle, current_period_end
+          ) VALUES (
+            ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
+            'pri_e2e_hydration', 'monthly', now() + interval '30 days'
+          )
+        `;
+      }
+      await run();
+    } finally {
+      await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId} AND provider_subscription_id = 'sub_e2e_hydration_paid'`;
       await sql`UPDATE workspaces SET tier = ${workspace.tier} WHERE id = ${BILLING_SEED.workspaceId}`;
-    }
-    if (grant) {
       await sql`
-        UPDATE entitlement_grants
-        SET tier = ${grant.tier},
-            reason = ${grant.reason},
-            granted_by = ${grant.granted_by},
-            expires_at = ${grant.expires_at},
-            revoked_at = ${grant.revoked_at}
-        WHERE email = ${BILLING_SEED.email}
+        DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}
+          AND source = 'comp' AND reason = 'hydration smoke' AND granted_by = 'e2e'
       `;
-    } else {
-      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
     }
+  } finally {
     await sql.end();
   }
 }
@@ -438,6 +440,22 @@ test('a normal paid plan hydrates across repeated loads', async ({ page }) => {
       await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
       await expect(page.getByTestId('current-plan-card')).toContainText('Plus');
     });
+  });
+});
+
+test('paid Autopilot library hydrates with its preset review section', async ({ page }) => {
+  await withBillingFixture('paid-plus', async () => {
+    await expectRouteHydrates(page, '/autopilot');
+    await expect(page.getByTestId('sender-rule-library')).toBeVisible();
+    await expect(page.getByTestId('autopilot-observe-preview')).toHaveCount(0);
+  });
+});
+
+test('Free Autopilot read-only preview hydrates with its upgrade link', async ({ page }) => {
+  await withBillingFixture('free', async () => {
+    await expectRouteHydrates(page, '/autopilot');
+    await expect(page.getByTestId('autopilot-observe-preview')).toBeVisible();
+    await expect(page.getByTestId('sender-rule-library')).toHaveCount(0);
   });
 });
 

@@ -125,7 +125,14 @@ export const actionJobStatus = pgEnum('action_job_status', [
  *                  selector itself carries no per-message data.
  */
 export type LabelActionSelector =
-  { type: 'sender'; senderId: string; senderKey: string } | { type: 'messages' };
+  | {
+      type: 'sender';
+      senderId: string;
+      senderKey: string;
+      /** Approved custom Autopilot preview; message ids and scope remain on the job. */
+      autopilot?: { ruleId: string; ruleVersion: number; previewId: string };
+    }
+  | { type: 'messages' };
 
 export const actionJobs = pgTable(
   'action_jobs',

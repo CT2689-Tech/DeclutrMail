@@ -39,6 +39,7 @@ export function reconcileAction(client: QueryClient, snapshot: object, actionId?
   void client.invalidateQueries({ queryKey: undoKeys.all });
   void client.invalidateQueries({ queryKey: snoozedKeys.all });
   void client.invalidateQueries({ queryKey: activityKeys.all });
+  void client.invalidateQueries({ queryKey: ['autopilot-sender-rules'] });
   void client.invalidateQueries({ queryKey: ['composite-preview'] });
   void client.invalidateQueries({ queryKey: ['bulk-action-preview'] });
 }

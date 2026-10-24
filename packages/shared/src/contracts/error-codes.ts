@@ -588,6 +588,60 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'This preview expired. Refresh to see current matches.',
   },
+  AUTOPILOT_RULE_CHANGED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This rule changed. Refresh it and review the current matches.',
+  },
+  AUTOPILOT_RULE_PAUSED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This rule is paused. Resume it before reviewing a cleanup.',
+  },
+  AUTOPILOT_PREVIEW_CHANGED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'These matches changed. Refresh the preview before confirming.',
+  },
+  AUTOPILOT_PREVIEW_EMPTY: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'No eligible emails remain in this preview. Refresh to check again.',
+  },
+  AUTOPILOT_RULE_LIMIT: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'You can save up to 50 rules. Retire a rule before creating another.',
+  },
+  AUTOPILOT_RULE_INACTIVE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This rule was paused or retired before the cleanup started.',
+  },
+  AUTOPILOT_RULE_INVALID: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This rule needs another review before a cleanup can start.',
+  },
+  AUTOPILOT_NOT_ENTITLED: {
+    status: 403,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Your current plan no longer includes Autopilot. No cleanup started.',
+  },
+  AUTOPILOT_MAILBOX_INACTIVE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This mailbox disconnected before the cleanup started. Reconnect it to continue.',
+  },
   // Later (D82, D232)
   LATER_TIMER_NOT_FOUND: {
     status: 409,

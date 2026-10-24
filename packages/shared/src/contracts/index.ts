@@ -449,3 +449,4 @@ export {
 export { EXPLAIN_BATCH_MAX } from './triage-explain';
 
 export type { AutopilotPendingMeta } from './autopilot';
+export * from './autopilot-sender-rules';
