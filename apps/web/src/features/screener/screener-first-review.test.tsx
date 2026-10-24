@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -140,7 +140,7 @@ describe('Needs first review in Senders', () => {
     );
   });
 
-  it('does not own action keys while inactive, including an already-open preview', async () => {
+  it('does not own action keys while inactive and discards an unconfirmed preview', async () => {
     const writes = vi.fn();
     installFetchStub([
       {
@@ -176,10 +176,82 @@ describe('Needs first review in Senders', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     await Promise.resolve();
     expect(writes).not.toHaveBeenCalled();
-    expect(screen.getByRole('region', { name: /^Preview · Keep / })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /^Preview · Keep / })).not.toBeInTheDocument();
     view.rerender(ui(true));
+    expect(screen.queryByRole('region', { name: /^Preview · Keep / })).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'k' });
+    expect(screen.getByRole('region', { name: /^Preview · Keep / })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('region', { name: /^Preview · Keep / })).not.toBeInTheDocument();
+  });
+
+  it('closes a hidden preview and re-reads the current count before arming it again', async () => {
+    const client = createTestQueryClient();
+    const counts = (count: number) => ({
+      all: count,
+      olderThan30d: count,
+      olderThan90d: count,
+      olderThan180d: count,
+      olderThan365d: count,
+    });
+    let previewReads = 0;
+    let finishFreshRead!: (response: Response) => void;
+    const writes = vi.fn();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => {
+          previewReads += 1;
+          if (previewReads === 1) return jsonOk({ data: { counts: counts(4) } });
+          return new Promise<Response>((resolve) => {
+            finishFreshRead = resolve;
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: () => {
+          writes();
+          return jsonServerError('must_not_run');
+        },
+      },
+    ]);
+    const ui = (active: boolean) => (
+      <QueryWrapper client={client}>
+        <ScreenerScreen
+          active={active}
+          presentation="senders"
+          state={{ kind: 'ready', rows: [row] }}
+        />
+      </QueryWrapper>
+    );
+    const view = render(ui(true));
+    fireEvent.click(
+      screen.getByRole('button', { name: `${row.senderName} — expand sender detail` }),
+    );
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: `Archive for ${row.senderName}` })).toBeEnabled(),
+    );
+    expect(previewReads).toBe(1);
+
+    view.rerender(ui(false));
+    expect(screen.queryByRole('region', { name: /^Preview · Archive / })).not.toBeInTheDocument();
+    view.rerender(ui(true));
+    expect(screen.queryByRole('region', { name: /^Preview · Archive / })).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(previewReads).toBe(2));
+    const confirm = screen.getByRole('button', { name: `Archive for ${row.senderName}` });
+    expect(confirm).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter' });
+    expect(writes).not.toHaveBeenCalled();
+
+    await act(async () => finishFreshRead(jsonOk({ data: { counts: counts(7) } })));
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.getByRole('region', { name: 'What Archive will do' })).toHaveTextContent('7');
+    expect(writes).not.toHaveBeenCalled();
   });
 
   it('continues confirming the original action while its view is inactive', async () => {

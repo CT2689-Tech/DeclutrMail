@@ -28,4 +28,11 @@ describe('Cleanup view URLs', () => {
   it('does not leave a trailing query marker for the default view', () => {
     expect(cleanupViewHref('all', '?view=guided')).toBe('/senders');
   });
+
+  it('keeps review context only in Guided Review destinations', () => {
+    const search = '?q=notes&view=guided&review=review-token';
+    expect(cleanupViewHref('guided', search)).toContain('review=review-token');
+    expect(cleanupViewHref('all', search)).toBe('/senders?q=notes');
+    expect(cleanupViewHref('first-review', search)).toBe('/senders?q=notes&view=first-review');
+  });
 });

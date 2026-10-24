@@ -4684,7 +4684,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(screen.queryAllByText(/Still confirming your last action/)).toHaveLength(held);
     });
 
-    it('Keep Undo posts /keep/undo and drops Skipped in suggested review when the list refetch fails', async () => {
+    it('Keep Undo posts /keep/undo and drops Kept when the list refetch fails', async () => {
       let phase: 'initial' | 'kept' | 'undo' = 'initial';
       let undoPosts = 0;
       installFetchStub([
@@ -4745,7 +4745,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       renderScreenWithToasts();
       fireEvent.click(await screen.findByRole('checkbox', { name: /select sender a/i }));
       fireEvent.keyDown(document.body, { key: 'k' });
-      await screen.findByText('Skipped in suggested review');
+      await screen.findByText('Kept');
       await waitFor(() => {
         const lists = lastClient.getQueriesData<{
           pages: Array<{ data: Array<{ policyType?: string | null }> }>;
@@ -4758,7 +4758,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       });
       fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
       await waitFor(() => expect(undoPosts).toBe(1));
-      await waitFor(() => expect(screen.queryByText('Skipped in suggested review')).toBeNull());
+      await waitFor(() => expect(screen.queryByText('Kept')).toBeNull());
     });
 
     it('says so when SEVERAL senders are kept — it used to say nothing at all', async () => {
@@ -7221,6 +7221,8 @@ describe('Senders Unsubscribe selected-age network request', () => {
 describe('guided review from Senders', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.history.replaceState(null, '', '/senders');
     useSendersStore.setState({ sort: 'total', direction: 'desc' });
   });
   afterEach(() => resetFetchStub());

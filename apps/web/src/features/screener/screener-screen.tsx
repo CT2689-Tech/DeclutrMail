@@ -238,6 +238,12 @@ export function ScreenerScreen({
     windowDays: number | null;
   } | null>(null);
 
+  // A retained, hidden action owner must not revive an old unconfirmed
+  // preview. Running handles below continue reconciling independently.
+  useEffect(() => {
+    if (!active) setPending(null);
+  }, [active]);
+
   // D24 — explanations on demand (founder decision 2026-09-25). The reason
   // is read in the expanded row and in the decide preview's "Why
   // suggested", so those rows ask for their sentence — not the whole
@@ -367,6 +373,7 @@ export function ScreenerScreen({
       ? (state.rows.find((r) => r.id === pending.rowId) ?? null)
       : null;
   const previewSenderId =
+    active &&
     pending != null &&
     pendingRow != null &&
     (pending.verb === 'archive' || pending.verb === 'later' || pending.verb === 'delete')

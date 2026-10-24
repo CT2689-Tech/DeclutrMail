@@ -263,9 +263,9 @@ describe('SenderActionRow — relevant actions', () => {
       expect(onAction).not.toHaveBeenCalled();
     },
   );
-  it('states the saved Keep effect', () => {
+  it('names the saved Keep choice without promising queue exclusion', () => {
     render(<SenderActionRow sender={sender({ policyType: 'keep' })} onAction={vi.fn()} />);
-    expect(screen.getByText('Skipped in suggested review')).toBeInTheDocument();
-    expect(screen.queryByText('Kept')).toBeNull();
+    expect(screen.getByText('Kept')).toBeInTheDocument();
+    expect(screen.queryByText(/Skipped in (Triage|suggested review)/)).toBeNull();
   });
 });

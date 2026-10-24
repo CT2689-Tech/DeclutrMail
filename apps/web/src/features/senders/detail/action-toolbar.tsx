@@ -234,8 +234,7 @@ export function ActionToolbar({
           color: color.fgSoft,
         }}
       >
-        Keep skips future suggestions for this sender; Protected excludes bulk and automatic
-        cleanup.
+        Keep leaves your email where it is. Protected excludes bulk and automatic cleanup.
       </span>
       {activity &&
         !(
