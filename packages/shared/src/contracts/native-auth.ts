@@ -128,9 +128,12 @@ export interface NativeExchangeResponse {
 }
 
 /**
- * POST /api/auth/native/connect-ticket body: the same optional targets the
- * authenticated browser route takes, because the app starts the flow and the
- * system browser, which holds no session, runs it.
+ * The targets a connect ticket carries. The app sends them as the query of
+ * `POST /api/auth/google/native/connect-ticket`, the same optional parameters
+ * `GET /api/auth/google/connect-mailbox/start` takes, because the app starts
+ * the flow and the system browser, which holds no session, runs it. The API
+ * validates ownership and status before it stores them here, and parses them
+ * again when the ticket is opened.
  */
 export const nativeConnectTicketRequestSchema = z
   .object({
@@ -141,7 +144,7 @@ export const nativeConnectTicketRequestSchema = z
   .strict();
 export type NativeConnectTicketRequest = z.infer<typeof nativeConnectTicketRequestSchema>;
 
-/** The URL to open in the system browser. Single use. */
+/** The URL to open in the system browser. Single use, valid for a few minutes. */
 export interface NativeConnectTicketResponse {
   url: string;
 }

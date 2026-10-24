@@ -115,7 +115,7 @@ describe('wire schemas', () => {
     );
   });
 
-  it('connect ticket takes only the recovery targets and a billing return', () => {
+  it('connect ticket options take only the recovery targets and a billing return', () => {
     expect(nativeConnectTicketRequestSchema.safeParse({}).success).toBe(true);
     expect(
       nativeConnectTicketRequestSchema.safeParse({
