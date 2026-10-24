@@ -2185,7 +2185,7 @@ function ActivityRow({
               justifyContent: 'center',
               cursor: 'pointer',
             }}
-            title="Select this action for Undo"
+            title="Select for Undo"
           >
             <input
               type="checkbox"

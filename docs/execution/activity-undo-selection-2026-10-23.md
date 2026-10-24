@@ -67,3 +67,9 @@ all 49 bundle budgets and 32 public prerender checks passed. Activity measured
 302.5 kB against its existing 314 kB budget; no budget change was required.
 
 CI, queue, deployment and production verification remain separate release gates.
+
+The full queue suite caught one new glossary hit in the checkbox tooltip. The
+tooltip now reads “Select for Undo”; the glossary baseline and release checks
+remain unchanged. The shared (946), config (38), events (76) and Activity (126) tests passed
+serially after the tooltip correction, with changed-file lint and formatting.
+The corrected commit must pass the protected queue again.
