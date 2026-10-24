@@ -1,4 +1,4 @@
-package com.declutrmail.proto;
+package com.declutrmail.app;
 
 import com.getcapacitor.BridgeActivity;
 

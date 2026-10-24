@@ -1,3 +1,5 @@
+import { openOAuthInShell } from '@/lib/native/oauth-shell';
+
 /** Authenticated OAuth entry point for adding or re-authorizing Gmail. */
 const CONNECT_MAILBOX_START_PATH = '/api/auth/google/connect-mailbox/start';
 
@@ -33,9 +35,14 @@ export function connectMailboxStartUrl(
     : target;
 }
 
-/** OAuth must be a full-page navigation, not an in-app router transition. */
+/**
+ * OAuth must be a full-page navigation, not an in-app router transition. In
+ * the native app shell it runs in the system browser instead, because Google
+ * refuses OAuth in an embedded WebView.
+ */
 export function startMailboxConnect(reconnectMailboxId?: string, billingReturnTo?: string): void {
-  window.location.assign(connectMailboxStartUrl(reconnectMailboxId, billingReturnTo));
+  const url = connectMailboxStartUrl(reconnectMailboxId, billingReturnTo);
+  if (!openOAuthInShell(url)) window.location.assign(url);
 }
 
 /**
@@ -53,5 +60,6 @@ export function reactivateMailboxStartUrl(mailboxId: string): string {
 
 /** OAuth reactivation is a full-page navigation to a mailbox-bound start. */
 export function startMailboxReactivation(mailboxId: string): void {
-  window.location.assign(reactivateMailboxStartUrl(mailboxId));
+  const url = reactivateMailboxStartUrl(mailboxId);
+  if (!openOAuthInShell(url)) window.location.assign(url);
 }

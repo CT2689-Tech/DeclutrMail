@@ -14,6 +14,9 @@
     "storybook:build": "storybook build"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.5.3",
     "@declutrmail/shared": "workspace:*",
     "@paddle/paddle-js": "^1.4.2",
     "@sentry/nextjs": "^11.0.0",

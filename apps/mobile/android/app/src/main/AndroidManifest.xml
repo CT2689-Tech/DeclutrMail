@@ -23,6 +23,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- The system browser returns here after sign-in or Gmail connect
+                 (ADR-0049). Only auth/return, so no other link opens the app. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="@string/custom_url_scheme"
+                    android:host="auth"
+                    android:pathPrefix="/return" />
+            </intent-filter>
+
         </activity>
 
         <provider

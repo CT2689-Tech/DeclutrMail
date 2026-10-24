@@ -37,9 +37,10 @@ function serverUrl(raw: string | undefined): URL {
 const url = serverUrl(process.env.CAP_SERVER_URL);
 
 const config: CapacitorConfig = {
-  // The placeholder id keeps this build installable beside a future store app.
-  // The bundle id / applicationId cannot change after the first store upload.
-  appId: 'com.declutrmail.proto',
+  // The bundle id / applicationId, and the scheme the system browser uses to
+  // return to the app (NATIVE_APP_SCHEME in packages/shared, ADR-0049). Neither
+  // can change after the first store upload.
+  appId: 'com.declutrmail.app',
   appName: 'DeclutrMail',
   webDir: 'www',
   // Lets the web app (and PostHog) tell shell sessions from browser sessions.

@@ -50,7 +50,7 @@ address; anything else fails `sync` by name.
 - No push, no offline mode. Default Capacitor icon and splash. Portrait only.
 - Not inset-checked: the no-active-mailbox gate and `/onboarding`.
 - The status-bar icon colour follows the OS appearance, not an in-app theme override.
-- Placeholder `appId` `com.declutrmail.proto`.
+- `appId` `com.declutrmail.app`, also the sign-in return scheme (ADR-0049). Permanent after the first store upload.
 
 ## Hand-edited native files
 
