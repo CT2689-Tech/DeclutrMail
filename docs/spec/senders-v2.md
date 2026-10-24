@@ -142,7 +142,7 @@ else                              → 'keep'        (neutral outline)
 
 ## Decision 8 — Mobile pattern
 
-**Lock:** D54 + swipe-right primary + long-press multi-select + hairline-divided rows. ADR-0018 + Phase 4 PR.
+**Lock:** D54 + swipe-right primary + long-press multi-select + hairline-divided rows. ADR-0018 + Phase 4 PR. _Amended 2026-10-24: swipes follow the shared grammar in ADR-0048 (right Keep, left Unsubscribe, up Delete)._
 
 ---
 

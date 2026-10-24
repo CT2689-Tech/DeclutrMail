@@ -45,6 +45,14 @@ export { useFocusTrap } from './hooks/use-focus-trap';
 export { useExpandableRow, nextExpandedRowId } from './hooks/use-expandable-row';
 export type { UseExpandableRowResult } from './hooks/use-expandable-row';
 export { useLongPress, LONG_PRESS_MS, LONG_PRESS_DRIFT_PX } from './hooks/use-long-press';
+export {
+  useSwipeVerb,
+  resolveSwipeVerb,
+  SWIPE_HINT,
+  SWIPE_THRESHOLD_PX,
+  SWIPE_DOMINANCE,
+} from './hooks/use-swipe-verb';
+export type { SwipeVerb, SwipeDragState } from './hooks/use-swipe-verb';
 
 export { Kbd } from './components/kbd';
 export { BottomSheet } from './components/bottom-sheet';

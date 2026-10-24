@@ -1,13 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { SWIPE_THRESHOLD_PX } from '@declutrmail/shared';
 
 import { RowActivityProvider, type RowActivityById } from './row-activity';
-import {
-  DomainGroupRow,
-  resolvesToSwipeRight,
-  ROW_SWIPE_THRESHOLD_PX,
-  SenderRow,
-} from './sender-row';
+import { DomainGroupRow, SenderRow } from './sender-row';
 import { makeSender } from './testing/make-sender';
 
 const noop = () => {};
@@ -32,25 +28,6 @@ function renderRow(
   );
   return s;
 }
-
-describe('resolvesToSwipeRight — the phone row gesture', () => {
-  it('right past the threshold resolves', () => {
-    expect(resolvesToSwipeRight(ROW_SWIPE_THRESHOLD_PX + 1, 0)).toBe(true);
-  });
-  it('left, vertical and sub-threshold drags do not', () => {
-    expect(resolvesToSwipeRight(-ROW_SWIPE_THRESHOLD_PX - 40, 0)).toBe(false);
-    expect(resolvesToSwipeRight(0, 200)).toBe(false);
-    expect(resolvesToSwipeRight(ROW_SWIPE_THRESHOLD_PX - 1, 0)).toBe(false);
-  });
-  it('diagonals are rejected by the dominance ratio; minor drift is not', () => {
-    expect(resolvesToSwipeRight(100, 90)).toBe(false);
-    expect(resolvesToSwipeRight(120, 20)).toBe(true);
-  });
-  it('honours custom threshold + dominance', () => {
-    expect(resolvesToSwipeRight(30, 0, { threshold: 20 })).toBe(true);
-    expect(resolvesToSwipeRight(100, 60, { dominance: 2 })).toBe(false);
-  });
-});
 
 describe('<SenderRow /> — what the row says', () => {
   // Senders are keyed by ADDRESS, so one brand legitimately owns several
@@ -219,17 +196,52 @@ describe('<SenderRow /> — opening vs. acting', () => {
 });
 
 describe('<SenderRow compact /> — phone', () => {
-  const swipeRight = (row: HTMLElement) => {
-    const at = (clientX: number) => ({ pointerId: 1, pointerType: 'touch', clientX, clientY: 0 });
-    fireEvent.pointerDown(row, at(0));
-    fireEvent.pointerMove(row, at(ROW_SWIPE_THRESHOLD_PX + 40));
-    fireEvent.pointerUp(row, at(ROW_SWIPE_THRESHOLD_PX + 40));
+  type Direction = 'right' | 'left' | 'up';
+  const swipe = (row: HTMLElement, direction: Direction, release = true) => {
+    const at = (x: number, y: number) => ({
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: x,
+      clientY: y,
+    });
+    const d = SWIPE_THRESHOLD_PX + 40;
+    const dx = direction === 'right' ? d : direction === 'left' ? -d : 0;
+    const dy = direction === 'up' ? -d : 0;
+    fireEvent.pointerDown(row, at(200, 200));
+    fireEvent.pointerMove(row, at(200 + dx, 200 + dy));
+    if (release) fireEvent.pointerUp(row, at(200 + dx, 200 + dy));
   };
+  /** A sender every verb can run on. */
+  const FULL = {
+    inboxCount: 12,
+    archivedCount: 3,
+    unsubscribeMethod: 'one_click',
+    policyType: null,
+    unsubStatus: null,
+  } as const;
 
   it('keeps the checkbox and the ⋯ menu; drops the verb button', () => {
     renderRow({}, { compact: true });
     expect(screen.getByRole('checkbox')).toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(1);
+  });
+
+  it.each([
+    ['right', 'Keep'],
+    ['left', 'Unsubscribe'],
+    ['up', 'Delete'],
+  ] as const)('swipe %s → %s through onAction (the D226 preview path)', (direction, verb) => {
+    const onAction = vi.fn();
+    const s = renderRow(FULL, { compact: true, onAction });
+    swipe(screen.getByTestId(`sender-row-${s.id}`), direction);
+    expect(onAction).toHaveBeenCalledExactlyOnceWith({ verb, senders: [s] });
+  });
+
+  it('names the verb while dragging, in the shared words', () => {
+    const s = renderRow(FULL, { compact: true });
+    const row = screen.getByTestId(`sender-row-${s.id}`);
+    swipe(row, 'left', false);
+    expect(screen.getByText('← Unsubscribe')).toBeInTheDocument();
   });
 
   it('retains a fresh unsubscribe swipe with zero current mail', () => {
@@ -244,45 +256,53 @@ describe('<SenderRow compact /> — phone', () => {
       },
       { compact: true, onAction },
     );
-    swipeRight(screen.getByTestId(`sender-row-${s.id}`));
-    expect(onAction).toHaveBeenCalledOnce();
-    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Unsubscribe' }));
-  });
-
-  it('does not dispatch an empty-mail primary on swipe', () => {
-    const onAction = vi.fn();
-    const s = renderRow(
-      { inboxCount: 0, archivedCount: 0, lastDays: 250, unsubscribeMethod: 'none' },
-      { compact: true, onAction },
+    swipe(screen.getByTestId(`sender-row-${s.id}`), 'left');
+    expect(onAction).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ verb: 'Unsubscribe' }),
     );
-    swipeRight(screen.getByTestId(`sender-row-${s.id}`));
-    expect(onAction).not.toHaveBeenCalled();
   });
 
-  it('swipe-right fires the primary verb through onAction (the D226 preview path)', () => {
-    const onAction = vi.fn();
-    const s = renderRow({}, { compact: true, onAction });
-    swipeRight(screen.getByTestId(`sender-row-${s.id}`));
-    expect(onAction).toHaveBeenCalledTimes(1);
+  it.each(['right', 'left', 'up'] as const)(
+    'offers no %s swipe where nothing can run: no mail, no unsubscribe channel',
+    (direction) => {
+      const onAction = vi.fn();
+      const s = renderRow(
+        { inboxCount: 0, archivedCount: 0, lastDays: 250, unsubscribeMethod: 'none' },
+        { compact: true, onAction },
+      );
+      swipe(screen.getByTestId(`sender-row-${s.id}`), direction);
+      expect(onAction).not.toHaveBeenCalled();
+      expect(screen.queryByText(/^[←→↑] /)).not.toBeInTheDocument();
+    },
+  );
+
+  it('shows no hint for a verb that would then be refused', () => {
+    // No unsubscribe channel: dragging left must not promise Unsubscribe.
+    const s = renderRow({ ...FULL, unsubscribeMethod: null }, { compact: true });
+    swipe(screen.getByTestId(`sender-row-${s.id}`), 'left', false);
+    expect(screen.queryByText('← Unsubscribe')).not.toBeInTheDocument();
   });
 
   it.each(['requested', 'endpoint_accepted', 'user_marked_sent'] as const)(
-    'does not turn a %s status into a different action through swipe',
+    'does not offer Unsubscribe by swipe while a %s request is in flight; the other swipes still work',
     (unsubStatus) => {
       const onAction = vi.fn();
       const s = renderRow(
-        { policyType: 'unsubscribe', unsubscribeMethod: 'one_click', unsubStatus },
+        { ...FULL, policyType: 'unsubscribe', unsubStatus },
         { compact: true, onAction },
       );
-      swipeRight(screen.getByTestId(`sender-row-${s.id}`));
+      const row = screen.getByTestId(`sender-row-${s.id}`);
+      swipe(row, 'left');
       expect(onAction).not.toHaveBeenCalled();
-      expect(screen.queryByText(/^→ /)).not.toBeInTheDocument();
+      expect(screen.queryByText('← Unsubscribe')).not.toBeInTheDocument();
+      swipe(row, 'right');
+      expect(onAction).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ verb: 'Keep' }));
     },
   );
 
   it('swipe is refused while the row is busy — the same action its inert button refuses', () => {
     const onAction = vi.fn();
-    const s = makeSender();
+    const s = makeSender(FULL);
     render(
       <RowActivityProvider value={new Map([[s.id, { phase: 'working', verb: 'archive' }]])}>
         <SenderRow
@@ -295,15 +315,17 @@ describe('<SenderRow compact /> — phone', () => {
         />
       </RowActivityProvider>,
     );
-    swipeRight(screen.getByTestId(`sender-row-${s.id}`));
+    for (const direction of ['right', 'left', 'up'] as const) {
+      swipe(screen.getByTestId(`sender-row-${s.id}`), direction);
+    }
     expect(onAction).not.toHaveBeenCalled();
     expect(screen.getByText('Archiving…')).toHaveAttribute('data-dm-row-activity', 'working');
   });
 
   it('a full-width row ignores the swipe', () => {
     const onAction = vi.fn();
-    const s = renderRow({}, { onAction });
-    swipeRight(screen.getByTestId(`sender-row-${s.id}`));
+    const s = renderRow(FULL, { onAction });
+    swipe(screen.getByTestId(`sender-row-${s.id}`), 'left');
     expect(onAction).not.toHaveBeenCalled();
   });
 });

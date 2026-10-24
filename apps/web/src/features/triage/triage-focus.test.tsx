@@ -699,7 +699,7 @@ describe('focus mode — mobile', () => {
     expect(screen.queryByText(/Swipe ·/)).toBeNull();
   });
 
-  it('does not interpret a drag beginning on a control as an Archive swipe', () => {
+  it('does not interpret a drag beginning on a control as a swipe', () => {
     renderScreen(ready([GROUPON, LINKEDIN]));
     const control = within(card()).getByRole('button', { name: 'Why?' });
     const touch = { pointerType: 'touch', pointerId: 1 };
@@ -732,14 +732,36 @@ describe('focus mode — mobile', () => {
     await waitFor(() => expect(keeps).toEqual([{ senderId: GROUPON.senderId }]));
   });
 
-  it('a left swipe only OPENS the Archive preview — a gesture never mutates', async () => {
+  it('a left swipe only OPENS the Unsubscribe preview — a gesture never mutates', async () => {
     renderScreen(ready([GROUPON, LINKEDIN]));
     const surface = within(card()).getByRole('heading', { level: 2 }).parentElement!;
     const touch = { pointerType: 'touch', pointerId: 1 };
     fireEvent.pointerDown(surface, { ...touch, clientX: 200, clientY: 200 });
     fireEvent.pointerUp(surface, { ...touch, clientX: 80, clientY: 203 });
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(useTriageStore.getState().pendingAction?.verb).toBe('Archive');
+    expect(useTriageStore.getState().pendingAction?.verb).toBe('Unsubscribe');
+  });
+
+  it('an up swipe only OPENS the Delete preview — a gesture never mutates', async () => {
+    renderScreen(ready([GROUPON, LINKEDIN]));
+    const surface = within(card()).getByRole('heading', { level: 2 }).parentElement!;
+    const touch = { pointerType: 'touch', pointerId: 1 };
+    fireEvent.pointerDown(surface, { ...touch, clientX: 200, clientY: 300 });
+    fireEvent.pointerUp(surface, { ...touch, clientX: 203, clientY: 170 });
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(useTriageStore.getState().pendingAction?.verb).toBe('Delete');
+  });
+
+  it('a left swipe on a sender with no unsubscribe channel opens nothing and promises nothing', () => {
+    renderScreen(ready([{ ...GROUPON, unsubscribeMethod: 'none' }, LINKEDIN]));
+    const surface = within(card()).getByRole('heading', { level: 2 }).parentElement!;
+    const touch = { pointerType: 'touch', pointerId: 1 };
+    fireEvent.pointerDown(surface, { ...touch, clientX: 200, clientY: 200 });
+    fireEvent.pointerMove(surface, { ...touch, clientX: 120, clientY: 202 });
+    expect(screen.queryByText('← Unsubscribe')).toBeNull();
+    fireEvent.pointerUp(surface, { ...touch, clientX: 80, clientY: 203 });
+    expect(useTriageStore.getState().pendingAction).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
 

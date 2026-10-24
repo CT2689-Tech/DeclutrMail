@@ -20,20 +20,20 @@
  * pane or the full page (`onOpen`).
  *
  * Phone (`compact`): the primary verb button does not fit beside the
- * number, so the row keeps only the `⋯` menu and gains swipe-right =
- * this row's primary verb. The swipe resolves through the SAME `onAction`
- * as the button, so a gesture can never bypass the D226 preview.
+ * number, so the row keeps only the `⋯` menu and gains the shared swipe
+ * grammar (ADR-0048): right Keep, left Unsubscribe, up Delete. A swipe
+ * resolves through the SAME `onAction` as the buttons, so a gesture can
+ * never bypass the D226 preview.
  *
  * Privacy (D7, D228): renders only allowlisted fields — name, address,
  * received count, unsubscribe lifecycle state.
  */
 
-import { useCallback, useRef, useState, type MouseEvent } from 'react';
-import type * as React from 'react';
+import type { MouseEvent } from 'react';
 import Link from 'next/link';
-import { Avatar, Pill, tokens } from '@declutrmail/shared';
+import { Avatar, Pill, SWIPE_HINT, tokens, useSwipeVerb } from '@declutrmail/shared';
 import { senderSizeCell } from './sender-size';
-import { derivePrimaryVerbId, legacyVerbFromId, SenderActionRow } from './action-row';
+import { SenderActionRow } from './action-row';
 import {
   blocksRepeatUnsubscribe,
   canPerformSenderAction,
@@ -55,63 +55,6 @@ import {
 import { unsubscribeStatusCopy } from './unsub-status';
 
 const { color, motion, radius, text } = tokens;
-
-/** Minimum travel (px) on the dominant axis before a row swipe resolves. */
-export const ROW_SWIPE_THRESHOLD_PX = 56;
-/** Dominant axis must beat the other by this ratio (rejects diagonals). */
-export const ROW_SWIPE_DOMINANCE = 1.4;
-
-/**
- * Pure resolver — pointer delta → did this resolve to a swipe-right?
- * Exported so tests pin the mapping without synthesising pointer streams.
- */
-export function resolvesToSwipeRight(
-  dx: number,
-  dy: number,
-  opts: { threshold?: number; dominance?: number } = {},
-): boolean {
-  const threshold = opts.threshold ?? ROW_SWIPE_THRESHOLD_PX;
-  const dominance = opts.dominance ?? ROW_SWIPE_DOMINANCE;
-  return dx >= threshold && dx >= Math.abs(dy) * dominance;
-}
-
-/** Touch-only swipe-right. `enabled=false` renders the handlers inert. */
-function useSwipeRight(enabled: boolean, onSwipe: () => void) {
-  const origin = useRef<{ x: number; y: number; pointerId: number } | null>(null);
-  const [armed, setArmed] = useState(false);
-
-  const onPointerDown = useCallback<React.PointerEventHandler<HTMLElement>>(
-    (e) => {
-      if (!enabled || e.pointerType !== 'touch') return;
-      origin.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
-    },
-    [enabled],
-  );
-  const onPointerMove = useCallback<React.PointerEventHandler<HTMLElement>>((e) => {
-    const start = origin.current;
-    if (!start || e.pointerId !== start.pointerId) return;
-    setArmed(resolvesToSwipeRight(e.clientX - start.x, e.clientY - start.y));
-  }, []);
-  const settle = useCallback(
-    (e: React.PointerEvent<HTMLElement>, fire: boolean) => {
-      const start = origin.current;
-      if (!start || e.pointerId !== start.pointerId) return;
-      origin.current = null;
-      setArmed(false);
-      if (fire && resolvesToSwipeRight(e.clientX - start.x, e.clientY - start.y)) onSwipe();
-    },
-    [onSwipe],
-  );
-  const onPointerUp = useCallback<React.PointerEventHandler<HTMLElement>>(
-    (e) => settle(e, true),
-    [settle],
-  );
-  const onPointerCancel = useCallback<React.PointerEventHandler<HTMLElement>>(
-    (e) => settle(e, false),
-    [settle],
-  );
-  return { armed, handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel } };
-}
 
 const INTERACTIVE = 'button, a, input, select, textarea, label, [role="button"], [role="menu"]';
 
@@ -214,18 +157,22 @@ export function SenderRow({
     </div>
   );
 
-  const swipeVerb = legacyVerbFromId(derivePrimaryVerbId(s));
-  const swipe = useSwipeRight(
-    compact &&
-      !blocksRepeatUnsubscribe(s) &&
-      !(s.inboxCount === 0 && s.archivedCount === 0 && swipeVerb === 'Keep') &&
-      canPerformSenderAction(swipeVerb, s),
-    () => {
+  // Each swipe is offered only where its button would be: Keep needs some
+  // mail to speak about, Unsubscribe a real channel with no request already
+  // in flight, Delete mail to delete. An unavailable swipe shows no hint.
+  const swipe = useSwipeVerb({
+    enabled: compact,
+    isAvailable: (verb) =>
+      verb === 'Keep'
+        ? !(s.inboxCount === 0 && s.archivedCount === 0)
+        : canPerformSenderAction(verb, s),
+    onVerb: (verb) => {
       // The same action the busy row's inert button refuses.
       if (busy) return;
-      onAction({ verb: swipeVerb, senders: [s] });
+      onAction({ verb, senders: [s] });
     },
-  );
+  });
+  const swipeHint = swipe.drag?.wouldResolve ?? null;
 
   return (
     <div
@@ -385,9 +332,9 @@ export function SenderRow({
           </div>
         )}
 
-      {/* Live gesture feedback: while a touch drag would resolve to the
+      {/* Live gesture feedback: while a touch drag would resolve to a
           swipe, name the verb so releasing is informed. */}
-      {swipe.armed && (
+      {swipeHint != null && (
         <div
           aria-hidden="true"
           style={{
@@ -403,10 +350,10 @@ export function SenderRow({
             zIndex: 2,
             fontSize: text.md,
             fontWeight: 600,
-            color: color.fg,
+            color: swipeHint === 'Delete' ? color.dangerText : color.fg,
           }}
         >
-          → {legacyVerbFromId(derivePrimaryVerbId(s))}
+          {SWIPE_HINT[swipeHint]}
         </div>
       )}
     </div>

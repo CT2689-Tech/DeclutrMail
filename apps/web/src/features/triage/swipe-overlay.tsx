@@ -1,19 +1,11 @@
 'use client';
 
-import { tokens } from '@declutrmail/shared';
-
-import type { SwipeVerb } from './use-swipe-verb';
+import { SWIPE_HINT, tokens, type SwipeVerb } from '@declutrmail/shared';
 
 const { color, text } = tokens;
 
-const SWIPE_LABEL: Record<SwipeVerb, string> = {
-  Keep: '→ Keep',
-  Archive: '← Archive',
-  Later: '↑ Later',
-};
-
 /**
- * D37 — live gesture feedback: while a touch drag would resolve to a
+ * Live gesture feedback (ADR-0048): while a touch drag would resolve to a
  * verb, name it over the card so releasing is informed. The parent must
  * be `position: relative`.
  */
@@ -37,10 +29,10 @@ export function SwipeOverlay({ verb }: { verb: SwipeVerb }) {
         style={{
           fontSize: text.lg,
           fontWeight: 600,
-          color: verb === 'Keep' ? color.primary : color.fg,
+          color: verb === 'Keep' ? color.primary : verb === 'Delete' ? color.dangerText : color.fg,
         }}
       >
-        {SWIPE_LABEL[verb]}
+        {SWIPE_HINT[verb]}
       </span>
     </div>
   );

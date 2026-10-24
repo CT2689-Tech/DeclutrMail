@@ -36,6 +36,8 @@ Status values: Proposed | Accepted | Superseded by ADR-NNNN.
 
 | [0047](./0047-capacitor-shell-mobile-prototype.md) | Proposed (prototype only) | Capacitor remote-URL shell for the mobile prototype | D164, D173, D246 |
 
+| [0048](./0048-one-swipe-grammar.md) | Accepted | One swipe grammar for every phone surface | D37, D54, D226, D227 |
+
 ## Authoring an ADR
 
 1. Copy `0000-template.md` to `NNNN-kebab-title.md` using the next

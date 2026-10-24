@@ -1,16 +1,15 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Avatar, tokens, useIsAtMost } from '@declutrmail/shared';
+import { Avatar, tokens, useIsAtMost, useSwipeVerb } from '@declutrmail/shared';
 
 import { ActionToolbar } from './action-toolbar';
-import { canArchive, canLater, type TriageDecisionRow } from './data';
+import { canUnsubscribe, type TriageDecisionRow } from './data';
 import { InlinePreviewBlock, inlinePreviewGates, type InlinePreview } from './inline-preview';
 import { SwipeOverlay } from './swipe-overlay';
 import { ProtectedMark } from './triage-row';
 import { TriageRowExpanded } from './triage-row-expanded';
 import { recommendedVerb, type ActionVerb } from './types';
-import { useSwipeVerb, type SwipeVerb } from './use-swipe-verb';
 import { focusFacts } from './why-line';
 
 const { color, font, motion, radius, shadow, space, text } = tokens;
@@ -80,14 +79,13 @@ export function TriageFocusCard({
   const actionsDisabled = busy || inlinePreviewGates(inlinePreview).blocked;
   const facts = focusFacts(row);
 
-  // D37 — the same gestures as the list row, same gates, same path.
+  // ADR-0048 — the same gestures as the list row, same gates, same path.
+  // A swipe only opens the D226 preview. Unsubscribe needs a real channel,
+  // so without one that swipe neither fires nor shows a hint.
   const { drag, handlers: swipeHandlers } = useSwipeVerb({
     enabled: active && isNarrow && !actionsDisabled,
-    onVerb: (verb: SwipeVerb) => {
-      if (verb === 'Archive' && !canArchive(row)) return;
-      if (verb === 'Later' && !canLater(row)) return;
-      onAction(verb);
-    },
+    isAvailable: (verb) => verb !== 'Unsubscribe' || canUnsubscribe(row),
+    onVerb: onAction,
   });
 
   return (
