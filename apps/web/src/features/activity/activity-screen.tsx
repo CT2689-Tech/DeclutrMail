@@ -2173,7 +2173,7 @@ function ActivityRow({
           background: resultColor,
         }}
       />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 14, minWidth: 0 }}>
         {canSelect && (
           <label
             style={{

@@ -130,11 +130,14 @@ for (const width of [1280, 320]) {
         expect(bounds).not.toBeNull();
         expect(logo).not.toBeNull();
         expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(logo!.x);
-        expect(
-          await card
-            .locator('[data-row-sender]')
-            .evaluate((el) => el.scrollWidth <= el.clientWidth),
-        ).toBe(true);
+        await expect
+          .poll(() => card.locator('[data-row-sender]').evaluate((el) => el.clientWidth))
+          .toBeGreaterThanOrEqual(100);
+        await expect
+          .poll(() =>
+            card.locator('[data-row-sender]').evaluate((el) => el.scrollWidth - el.clientWidth),
+          )
+          .toBeLessThanOrEqual(0);
       }
       await boxes.nth(0).focus();
       await page.keyboard.press('Space');

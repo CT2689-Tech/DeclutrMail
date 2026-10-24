@@ -44,10 +44,17 @@ Codex's built-in browser verified the real component with fictional data at
 1280px and 320px: exactly two eligible row checkboxes, three unavailable rows
 without them, no checkbox/logo overlap, keyboard Space and multiple selection,
 correct selected-action counts, and Clear. At 320px the two sample sender names
-fit their 104px text cells without clipping; the page had no horizontal overflow.
+fit their 116px text cells without clipping; the page had no horizontal overflow.
 Grouped 320px verification opened an eligible sender and a group containing three
 ineligible actions: only the eligible action exposed a checkbox. Console warning
 and error logs were empty. The temporary viewport override was reset.
+
+The first CI run passed the desktop render case but failed the 320px sender
+readability assertion. A compact-screen spacing adjustment gives sender names
+12px more room, and the test now waits for responsive geometry before measuring
+it. The check still requires at least 100px and no clipped sender names. The
+126-test Activity suite and built-in phone verification passed after this fix;
+the updated CI run must pass before queueing.
 
 An independent reviewer inspected the final source/tests and desktop, phone and
 grouped-phone screenshots. Design-system, accessibility, React/performance and
