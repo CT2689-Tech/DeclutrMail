@@ -21,7 +21,7 @@ export type ActionSheetPrefsCardState =
   | { kind: 'error'; onRetry: () => void }
   | { kind: 'ready'; prefs: ActionSheetPrefs };
 
-/** Preview placement for Triage; true persists the inline choice. */
+/** Preview placement for guided review; true persists the inline choice. */
 export function ActionSheetPrefsCard({
   state,
   onToggle,
@@ -57,7 +57,8 @@ export function ActionSheetPrefsCard({
           lineHeight: 1.5,
         }}
       >
-        Choose where previews open in Triage. Senders and sender details use a separate window.
+        Choose where previews open during guided review. Senders and sender details use a separate
+        window.
       </p>
       {state.kind === 'ready' ? (
         VERB_ROWS.map(({ wire, verb }) => (
