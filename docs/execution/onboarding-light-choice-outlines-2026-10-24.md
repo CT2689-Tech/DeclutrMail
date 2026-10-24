@@ -57,3 +57,16 @@ The existing route marker and dark exclusion contain the CSS overrides, and
 the original inline values remain the fallback outside those overrides.
 
 Full required PR and merge-group checks remain prerequisites for merging.
+
+## Screenshot timing correction
+
+The first PR run passed all six new cases, but its queue run caught two preset
+pixel comparisons during the existing theme transition. The 375px trace starts
+the dark change at 35755.648ms and the first capture at 35882.675ms, only 127ms
+into the 160ms transition. Rounded computed background colors had already
+matched their targets, while the final rendered pixels were still changing.
+
+The comparisons now finish finite animations during screenshot capture using
+Playwright's `animations: 'disabled'` option. The exact pixel comparison stays
+in place; there are no retries, delays, masks, or relaxed thresholds. This is
+a test-only correction; the runtime fix and existing theme motion are unchanged.

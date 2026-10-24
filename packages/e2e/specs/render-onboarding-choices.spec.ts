@@ -146,9 +146,11 @@ for (const width of [320, 375, 1280]) {
       await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
       await expect.poll(() => paint(selected)).toMatchObject({ background: 'rgb(48, 42, 50)' });
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(30, 26, 33)');
-      const darkWithStyles = await page.screenshot();
+      // Computed RGB values can round to their target before a theme
+      // transition finishes. Compare the final paint, pixel for pixel.
+      const darkWithStyles = await page.screenshot({ animations: 'disabled' });
       await page.evaluate(() => document.querySelector<HTMLStyleElement>('#app-styles')!.remove());
-      expect((await page.screenshot()).equals(darkWithStyles)).toBe(true);
+      expect((await page.screenshot({ animations: 'disabled' })).equals(darkWithStyles)).toBe(true);
 
       await page.evaluate((styles) => {
         const sheet = document.createElement('style');
@@ -162,9 +164,11 @@ for (const width of [320, 375, 1280]) {
       await page.evaluate(() => document.querySelector('#dm-app-theme')!.remove());
       await expect.poll(() => paint(selected)).toMatchObject({ background: 'rgb(255, 252, 248)' });
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(246, 242, 235)');
-      const publicWithStyles = await page.screenshot();
+      const publicWithStyles = await page.screenshot({ animations: 'disabled' });
       await page.evaluate(() => document.querySelector('#app-styles')!.remove());
-      expect((await page.screenshot()).equals(publicWithStyles)).toBe(true);
+      expect((await page.screenshot({ animations: 'disabled' })).equals(publicWithStyles)).toBe(
+        true,
+      );
       expect(errors).toEqual([]);
     });
   }
