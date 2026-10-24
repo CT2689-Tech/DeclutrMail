@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>DeclutrMail</title>
+    <style>
+      :root {
+        --bg: #f7f6f9;
+        --fg: #2b2730;
+        --muted: #5e5866;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #17141a;
+          --fg: #f1eff4;
+          --muted: #b3adbb;
+        }
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      main {
+        box-sizing: border-box;
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 22px;
+        font-weight: 600;
+      }
+      p {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.5;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Can't reach DeclutrMail</h1>
+      <p>Check your connection, then reopen the app.</p>
+    </main>
+  </body>
+</html>

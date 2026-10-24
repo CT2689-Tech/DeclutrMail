@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds only: lets the WebView load an http:// dev server on the LAN
+     (see capacitor.config.ts). Merged into debug variants, absent from release.
+     The Capacitor CLI writes usesCleartextTraffic only for Cordova plugins, so
+     `server.cleartext` alone does nothing on a plain Capacitor project. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>

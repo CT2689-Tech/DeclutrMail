@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">DeclutrMail</string>
+    <string name="title_activity_main">DeclutrMail</string>
+    <string name="package_name">com.declutrmail.proto</string>
+    <string name="custom_url_scheme">com.declutrmail.proto</string>
+</resources>
