@@ -37,3 +37,7 @@ Built-in browser walkthrough completed 24 October against the isolated API-backe
 - Final browser warning/error log was empty; viewport override reset. Database readback remained Fresh Finds 2/191 and Meadow Lane 0/191. All 50 action jobs were the fixture's pre-seeded quota rows; no new mail action was recorded.
 
 No actual emails changed. Synthetic checks do not establish Gmail worker execution or restoration; those mechanisms remain covered by their existing API/worker suites. Integration and current CI/queue/release state are tracked in [PR #1112](https://github.com/CT2689-Tech/DeclutrMail/pull/1112). Browser captures are under the local visualization directory `2026/10/24/senders-clarity-production/`.
+
+## CI journey setup follow-up
+
+Run `40081721892` passed 38 journeys but the unsubscribe/backlog journey timed out because the first-visit cookie banner intercepted its ordinary click on More actions. The scenario had not made a consent choice. It now requires the real banner, chooses Essential only and verifies dismissal before exercising the unchanged action flow, matching existing Brief/Later journeys. No force-click, hidden overlay, timeout change, skipped test or weakened action assertion was added. Independent source re-review found no actionable issues; this covers post-consent action behavior. Scoped formatting/lint and discovery of all four unsubscribe scenarios passed. Full CI on the follow-up commit remains the integration gate.

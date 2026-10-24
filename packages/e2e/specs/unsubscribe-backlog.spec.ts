@@ -136,6 +136,12 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
 
   await page.goto('/triage');
   await expectScreenMounted(page);
+  // Resolve the first-visit banner through the real UI before exercising
+  // bottom-of-card actions, which can otherwise sit behind the cookie card.
+  const cookieBanner = page.getByTestId('cookie-consent-banner');
+  await expect(cookieBanner).toBeVisible();
+  await cookieBanner.getByRole('button', { name: 'Essential only', exact: true }).click();
+  await expect(cookieBanner).toBeHidden();
   const queue = page.getByRole('navigation', { name: 'Senders in this review' });
   const rowHeader = queue.getByRole('button', { name: senderName, exact: true });
   await expect(rowHeader).toBeVisible();
