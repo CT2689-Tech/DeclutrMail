@@ -14,6 +14,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { senderDetailHref } from './sender-detail-navigation';
 
 export const SENDER_PANE_PARAM = 'sender';
 
@@ -28,6 +29,7 @@ function useOptionalAppRouter() {
 
 export function useSenderPane(): {
   senderId: string | null;
+  detailSearch: string;
   /** `push` for a fresh open; `replace` when the pane is already showing a sender. */
   open: (id: string) => void;
   close: () => void;
@@ -77,8 +79,8 @@ export function useSenderPane(): {
   );
   const close = useCallback(() => write(null, 'replace'), [write]);
   const navigateTo = useCallback((id: string, mode: 'push' | 'replace' = 'push') => {
-    latest.current.appRouter?.router[mode](`/senders/${encodeURIComponent(id)}`);
+    latest.current.appRouter?.router[mode](senderDetailHref(id, window.location.search));
   }, []);
 
-  return { senderId, open, close, navigateTo };
+  return { senderId, detailSearch: appRouter?.params.toString() ?? '', open, close, navigateTo };
 }

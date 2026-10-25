@@ -3204,7 +3204,7 @@ describe('SendersScreen — first-cleanup nudge', () => {
     expect(nudge).toHaveTextContent('Biggest B has 300 emails in your inbox');
     expect(screen.getByRole('link', { name: 'Open a sender' })).toHaveAttribute(
       'href',
-      '/senders/b',
+      '/senders/b?from=senders_table',
     );
   });
 
@@ -6565,7 +6565,7 @@ describe('SendersScreen — one list, detail pane, pagination & load more (D202)
 
     renderScreen();
     const sender = await screen.findByRole('link', { name: 'Sender A' });
-    expect(sender).toHaveAttribute('href', `/senders/${ROW.id}`);
+    expect(sender).toHaveAttribute('href', `/senders/${ROW.id}?from=senders_table`);
     fireEvent.click(sender);
     expect(screen.queryByTestId('sender-detail-pane')).not.toBeInTheDocument();
   });

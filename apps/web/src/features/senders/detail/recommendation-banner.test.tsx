@@ -11,6 +11,13 @@ const SUGGESTION: Recommendation = {
 };
 
 describe('RecommendationBanner — D245 optional suggestion', () => {
+  it('presents a Later abstention as context rather than advice to move mail', () => {
+    render(<RecommendationBanner recommendation={{ ...SUGGESTION, verdict: 'later' }} />);
+    const context = screen.getByRole('group', { name: 'Review context' });
+    expect(context.querySelector('summary')).toHaveTextContent('No clear suggestion');
+    expect(context).toHaveTextContent(SUGGESTION.reasoning);
+    expect(context).not.toHaveTextContent('Suggested: Later');
+  });
   it('renders nothing when there is no suggestion', () => {
     const { container } = render(<RecommendationBanner recommendation={null} />);
     expect(container).toBeEmptyDOMElement();
