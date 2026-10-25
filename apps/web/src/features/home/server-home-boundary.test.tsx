@@ -14,7 +14,7 @@ import { useHomeSummary } from './api/use-home-summary';
 import { ServerHomeBoundary } from './server-home-boundary';
 
 function HomeProbe() {
-  const summary = useHomeSummary({ enabled: true });
+  const summary = useHomeSummary({ enabled: true, mailboxId: 'mb-synthetic' });
   const pending = useHomePending({ enabled: true, tier: 'pro' });
   return (
     <div>
@@ -101,6 +101,10 @@ describe('Home server hydration', () => {
     try {
       expect(await screen.findByText('9 cleared; 0 to review; 3 new')).toBeInTheDocument();
       expect(await screen.findByText('Badge: 3')).toBeInTheDocument();
+      expect(client.getQueryData(homeKeys.summary('mb-synthetic'))).toMatchObject({
+        decidedSenders: 9,
+      });
+      expect(client.getQueryData(homeKeys.summary())).toBeUndefined();
       expect(fetchSpy.mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual([
         '/api/auth/me',
         '/api/activity/summary',

@@ -73,7 +73,10 @@ export function HomeScreen() {
   const confirmBacklog = useConfirmUnsubscribeBacklog();
   const hasActiveMailbox = me.activeMailboxId != null;
 
-  const summary = useHomeSummary({ enabled: hasActiveMailbox });
+  const summary = useHomeSummary({
+    enabled: hasActiveMailbox,
+    mailboxId: me.activeMailboxId ?? undefined,
+  });
   const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
   const cleanup = useCleanupSummary();
   const mailboxId = me.activeMailboxId;

@@ -12,6 +12,46 @@ import { useHomeSummary } from './use-home-summary';
 afterEach(() => resetFetchStub());
 
 describe('Home totals after completed decisions', () => {
+  it('never shows the previous mailbox totals while the selected mailbox is loading', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    let release!: () => void;
+    const scopes: Array<string | null> = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity/summary',
+        respond: (req) => {
+          const mailbox = req.headers.get('X-Active-Mailbox-Id');
+          scopes.push(mailbox);
+          const data = {
+            since: null,
+            decidedSenders: 1,
+            emailsByVerb: { archive: mailbox === 'b' ? 4 : 10 },
+          };
+          return mailbox === 'b'
+            ? new Promise<Response>((resolve) => {
+                release = () => resolve(jsonOk({ data }));
+              })
+            : jsonOk({ data });
+        },
+      },
+    ]);
+    const hook = renderHook(({ mailboxId }) => useHomeSummary({ enabled: true, mailboxId }), {
+      initialProps: { mailboxId: 'a' },
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(hook.result.current.data?.emailsByVerb?.archive).toBe(10));
+    hook.rerender({ mailboxId: 'b' });
+    expect(hook.result.current.data).toBeUndefined();
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    await act(async () => release());
+    await waitFor(() => expect(hook.result.current.data?.emailsByVerb?.archive).toBe(4));
+    expect(scopes).toEqual(['a', 'b']);
+    hook.unmount();
+    client.clear();
+  });
   it.each([
     [
       'a label action completes',
@@ -39,11 +79,14 @@ describe('Home totals after completed decisions', () => {
         },
       },
     ]);
-    const { result, unmount } = renderHook(() => useHomeSummary({ enabled: true }), {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={client}>{children}</QueryClientProvider>
-      ),
-    });
+    const { result, unmount } = renderHook(
+      () => useHomeSummary({ enabled: true, mailboxId: 'a' }),
+      {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      },
+    );
     try {
       await waitFor(() => expect(result.current.data?.emailsByVerb?.archive).toBe(10));
       handled = 4;
