@@ -147,7 +147,7 @@ describe('Action overview', () => {
       />,
     );
     expect(screen.getByRole('region', { name: 'Mailbox snapshot' })).toHaveTextContent(
-      'Unavailable',
+      /unavailable/i,
     );
     expect(screen.getByRole('region', { name: 'Your results' })).toHaveTextContent('Unavailable');
     expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeEnabled();
@@ -170,7 +170,7 @@ describe('Action overview', () => {
       />,
     );
     expect(screen.getByRole('region', { name: 'Mailbox snapshot' })).toHaveTextContent(
-      'Unavailable',
+      /unavailable/i,
     );
     expect(screen.queryByText('≈0 B')).toBeNull();
   });

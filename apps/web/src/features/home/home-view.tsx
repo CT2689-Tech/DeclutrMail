@@ -429,7 +429,9 @@ export function HomeView({
                 </>
               ) : (
                 <p className={styles.muted}>
-                  {readLabel(overview.snapshot)}
+                  {overview.snapshot.status === 'loading'
+                    ? 'Loading mailbox snapshot…'
+                    : 'Mailbox snapshot unavailable.'}
                   {onRefresh && overview.snapshot.status === 'error' && (
                     <button className={styles.textButton} onClick={onRefresh}>
                       Try again
