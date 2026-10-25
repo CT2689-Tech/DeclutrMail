@@ -13,8 +13,11 @@ export function HomeLoadingSlots({ labelId }: { labelId: string }) {
         Loading Home
       </span>
       <div className={styles.focusLead} data-home-slot="primary" aria-hidden="true">
-        <Skeleton variant="text" width="min(280px, 100%)" height={32} />
-        <Skeleton variant="rect" width="min(180px, 100%)" height={44} />
+        <div className={styles.loadingRecommendation}>
+          <Skeleton variant="rect" width="min(320px, 100%)" height={84} />
+          <Skeleton variant="text" width="min(180px, 100%)" height={20} />
+          <Skeleton variant="rect" width="min(180px, 100%)" height={44} />
+        </div>
       </div>
       <div className={styles.details} data-home-slot="details" aria-hidden="true">
         <Skeleton variant="text" width="min(90px, 100%)" height={44} />

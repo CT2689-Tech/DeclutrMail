@@ -51,7 +51,17 @@ const summary = {
 };
 
 const steps = [
-  { kind: 'unsub_archive' as const, senderCount: 158, emailCount: 2400, senderIds: ['a'] },
+  {
+    kind: 'unsub_archive' as const,
+    senderCount: 158,
+    emailCount: 2400,
+    senderIds: ['a', 'b', 'c'],
+    senders: [
+      { id: 'a', name: 'Fresh Finds Weekly', domain: 'freshfinds.synthetic.test' },
+      { id: 'b', name: 'Meadow Lane Dispatch', domain: 'meadow.synthetic.test' },
+      { id: 'c', name: 'North Letter', domain: 'north.synthetic.test' },
+    ],
+  },
   { kind: 'largest' as const, senderCount: 10, sizeLabel: '2.1 GB', senderIds: ['b'] },
   { kind: 'later_due' as const, senderCount: 3, senderIds: ['c'] },
 ];
@@ -100,7 +110,18 @@ export const FirstCleanup: Story<typeof HomeView> = {
 export const UnknownImpact: Story<typeof HomeView> = {
   args: {
     state: ready,
-    nextSteps: [{ kind: 'unsub_archive', senderCount: 5, senderIds: ['a'] }],
+    nextSteps: [
+      {
+        kind: 'unsub_archive',
+        senderCount: 5,
+        senderIds: ['a', 'b', 'c'],
+        senders: [
+          { id: 'a', name: 'Fresh Finds Weekly', domain: 'freshfinds.synthetic.test' },
+          { id: 'b', name: 'Meadow Lane Dispatch', domain: 'meadow.synthetic.test' },
+          { id: 'c', name: 'North Letter', domain: 'north.synthetic.test' },
+        ],
+      },
+    ],
   },
 };
 

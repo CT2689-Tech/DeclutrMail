@@ -84,7 +84,8 @@ describe('HomeView', () => {
     ]) {
       expect(content.closest('details')).toBe(details);
     }
-    expect(document.querySelector('[data-home-impact]')?.closest('details')).toBe(details);
+    expect(document.querySelector('[data-home-impact]')?.closest('details')).toBeNull();
+    expect(document.querySelectorAll('[data-home-impact]')).toHaveLength(1);
     expect(document.querySelectorAll('.dm-button-link')).toHaveLength(1);
     expect(screen.queryByText(HOME_DECK.focus.safety)).toBeNull();
     expect(screen.queryByText(HOME_DECK.focus.context)).toBeNull();
@@ -94,6 +95,25 @@ describe('HomeView', () => {
       'href',
       '/senders#inbox-report',
     );
+  });
+
+  it('shows only actual suggested sender identities with one impact line and one primary action', () => {
+    const senders = ['a', 'b', 'c', 'd'].map((id) => ({
+      id,
+      name: `Sender ${id}`,
+      domain: `${id}.synthetic.test`,
+    }));
+    render(
+      <HomeView state={ready} nextSteps={[{ ...unsub, senderIds: ['a', 'b', 'c'], senders }]} />,
+    );
+    const preview = screen.getByRole('list', { name: 'Some senders to review' });
+    expect(preview.closest('details')).toBeNull();
+    expect(preview.querySelectorAll('li')).toHaveLength(3);
+    expect(preview).toHaveTextContent('Sender a');
+    expect(preview).not.toHaveTextContent('Sender d');
+    expect(preview.querySelectorAll('a,button')).toHaveLength(0);
+    expect(document.querySelectorAll('[data-home-impact]')).toHaveLength(1);
+    expect(document.querySelectorAll('.dm-button-link')).toHaveLength(1);
   });
 
   it('makes Open Later the single primary action when Later is the only recommendation', () => {

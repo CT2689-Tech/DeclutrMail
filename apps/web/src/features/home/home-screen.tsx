@@ -28,6 +28,7 @@ import { fetchSnoozed } from '@/lib/api/snoozed';
 import { snoozedListQueryOptions } from '@/features/snoozed/api/query-options';
 
 import { homeInboxReportQueryOptions } from './api/query-options';
+import { useHomeSenderPreview } from './api/use-home-sender-preview';
 import { useHomeSummary } from './api/use-home-summary';
 import { HomeArrivals } from './home-arrivals';
 import {
@@ -72,6 +73,7 @@ export function HomeScreen() {
   const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
   const cleanup = useCleanupSummary();
   const mailboxId = me.activeMailboxId;
+  const activeMailbox = me.mailboxes.find((m) => m.id === mailboxId);
   const scope = useRef({ mailboxId, generation: 0 });
   if (scope.current.mailboxId !== mailboxId)
     scope.current = { mailboxId, generation: scope.current.generation + 1 };
@@ -95,6 +97,11 @@ export function HomeScreen() {
     [...homeCandidatesFromReport(report.data ?? null), ...(laterStep !== null ? [laterStep] : [])],
     { senderSizeView: SENDER_SIZE_VIEW },
   );
+  const senderPreview = useHomeSenderPreview(
+    mailboxId,
+    nextSteps.find((step) => step.kind === 'unsub_archive')?.senderIds ?? [],
+    activeMailbox?.readiness === 'ready' && summary.data !== undefined && !summary.isError,
+  );
   // The stage sentence comes from a client poll. The server document has
   // only the leave line, so the first client render must match that.
   const [stageMounted, setStageMounted] = useState(false);
@@ -115,7 +122,6 @@ export function HomeScreen() {
     setStageMounted(true);
   }, []);
 
-  const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
   const readiness = activeMailbox?.readiness;
   const syncing = readiness === 'queued' || readiness === 'syncing';
 
@@ -151,7 +157,9 @@ export function HomeScreen() {
       tier={tier}
       visitSummary={<HomeArrivals />}
       summary={cleanup.data ?? null}
-      nextSteps={nextSteps}
+      nextSteps={nextSteps.map((step) =>
+        step.kind === 'unsub_archive' ? { ...step, senders: senderPreview } : step,
+      )}
       senderSizeView={SENDER_SIZE_VIEW}
       mailboxId={activeMailbox?.id ?? ''}
       mailboxEmail={activeMailbox?.email ?? null}

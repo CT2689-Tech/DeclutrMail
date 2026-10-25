@@ -51,7 +51,10 @@ test('return visit opens Home and does not confirm a next step', async ({ page }
   const step = page.getByRole('button', { name: 'Preview cleanup', exact: true });
   const ready = page.locator('[data-home-fix-expected="true"]');
   await expect(ready).toHaveCount(1);
-  await page.getByText('Details', { exact: true }).click();
+  await expect(page.locator('details')).not.toHaveAttribute('open');
+  await expect(page.getByRole('list', { name: 'Some senders to review' })).toContainText(
+    BILLING_SEED.archiveSenderName,
+  );
   await expect(page.locator('[data-home-impact]')).toContainText('3 emails in your inbox');
   await step.click();
   const dialog = page.getByRole('alertdialog');
