@@ -768,7 +768,7 @@ describe('Guided Review inside Senders', () => {
     else row.inboxCount = inboxCount;
     renderScreen(ready([row]), undefined, { presentation: 'guided' });
     fireEvent.click(await screen.findByRole('button', { name: 'Why?' }));
-    expect(screen.getByText(/Suggested: Later/)).toBeInTheDocument();
+    expect(screen.getByText('No clear suggestion')).toBeInTheDocument();
     if (inboxCount === undefined)
       expect(screen.getByText('Current Inbox count unavailable')).toBeInTheDocument();
     else expect(screen.getByText('emails in Inbox now')).toBeInTheDocument();
@@ -777,7 +777,7 @@ describe('Guided Review inside Senders', () => {
   it('keeps standalone Triage Later evidence at zero Inbox', async () => {
     renderScreen(ready([{ ...SHIPPING, inboxCount: 0 }]));
     fireEvent.click(await screen.findByRole('button', { name: 'Why?' }));
-    expect(screen.getByText(/Suggested: Later/)).toBeInTheDocument();
+    expect(screen.getByText('No clear suggestion')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Later (L)' })).toBeInTheDocument();
   });
   it('does not suggest Archive for an empty Inbox, keeping its neutral action and preview', async () => {

@@ -28,7 +28,7 @@ import {
   actionMovesMail,
   type ActionPreviewDetail,
 } from './action-preview-detail';
-import { PREVIEW_DETAILS } from '@declutrmail/shared/copy';
+import { ENGINE_ABSTENTION_COPY, PREVIEW_DETAILS } from '@declutrmail/shared/copy';
 import {
   PreviewReasoning,
   buildPreviewFacts,
@@ -357,7 +357,13 @@ export function ActionSheet({
       detail={detail !== undefined && movesMail ? detail : undefined}
       leadFacts={facts.disclosures}
       trailingFacts={[
-        { label: PREVIEW_DETAILS.whySuggested.label, value: <PreviewReasoning row={row} /> },
+        {
+          label:
+            row.verdict === 'later'
+              ? ENGINE_ABSTENTION_COPY.context
+              : PREVIEW_DETAILS.whySuggested.label,
+          value: <PreviewReasoning row={row} />,
+        },
         ...(verb === 'Delete'
           ? []
           : [

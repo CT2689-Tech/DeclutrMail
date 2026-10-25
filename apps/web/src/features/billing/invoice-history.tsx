@@ -73,12 +73,30 @@ const SECTION_STYLE = {
  * to NOTHING rather than a guess — the provider used a status we do not
  * map, and inventing "Paid" over it is the one error that matters here.
  */
-const STATUS_LABEL: Record<BillingInvoice['status'], string | null> = {
+const STATUS_LABEL = {
   paid: 'Paid',
   due: 'Due',
   canceled: 'Canceled',
   unknown: null,
-};
+  refunded: 'Refunded',
+  partially_refunded: 'Partially refunded',
+} as const;
+
+function invoiceStatus(invoice: BillingInvoice): keyof typeof STATUS_LABEL {
+  const refund = invoice.refundedAmount;
+  if (
+    invoice.status !== 'paid' ||
+    !refund ||
+    !/^\d+$/.test(refund) ||
+    !/^\d+$/.test(invoice.amount)
+  )
+    return invoice.status;
+  const returned = BigInt(refund);
+  const original = BigInt(invoice.amount);
+  if (returned > original) return 'unknown';
+  if (returned === 0n) return invoice.status;
+  return returned === original ? 'refunded' : 'partially_refunded';
+}
 
 export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const queryClient = useQueryClient();
@@ -151,7 +169,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const filtered = data.invoices.filter((invoice) => {
     const date = invoice.issuedAt.slice(0, 10);
     return (
-      (status === 'all' || status === invoice.status) &&
+      (status === 'all' || status === invoiceStatus(invoice)) &&
       (!from || date >= from) &&
       (!to || date <= to)
     );
@@ -183,6 +201,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               >
                 <option value="all">All statuses</option>
                 <option value="paid">Paid invoices</option>
+                <option value="refunded">Refunded invoices</option>
+                <option value="partially_refunded">Partially refunded invoices</option>
                 <option value="due">Due invoices</option>
                 <option value="canceled">Canceled invoices</option>
                 <option value="unknown">Unknown status</option>
@@ -301,7 +321,11 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
             {filtered.map((invoice) => {
               const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
               const date = formatBillingDate(invoice.issuedAt);
-              const label = STATUS_LABEL[invoice.status];
+              const displayStatus = invoiceStatus(invoice);
+              const label = STATUS_LABEL[displayStatus];
+              const refundAmount = invoice.refundedAmount
+                ? formatProviderAmount(invoice.refundedAmount, invoice.currencyCode)
+                : null;
               const busy = mint.isPending && mint.variables === invoice.id;
               // Codex round 1 (QA-billing-20260901-07): the new header
               // row is `aria-hidden` (decorative, sighted-only), so a
@@ -315,7 +339,12 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               // of it. Name each field.
               const rowLabel = `Date ${date ?? 'unknown'}, amount ${
                 amount ?? invoice.currencyCode
-              }, status ${label ?? 'unknown'}`;
+              }, status ${label ?? 'unknown'}${
+                (displayStatus === 'refunded' || displayStatus === 'partially_refunded') &&
+                refundAmount
+                  ? `, refunded ${refundAmount}`
+                  : ''
+              }`;
               return (
                 <li
                   key={`${invoice.provider}:${invoice.id}`}
@@ -363,6 +392,11 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                       style={{ color: color.fgMuted, minWidth: isPhone ? 0 : 70 }}
                     >
                       {label}
+                      {displayStatus === 'partially_refunded' && refundAmount ? (
+                        <span style={{ display: 'block', fontSize: text.sm }}>
+                          {refundAmount} refunded
+                        </span>
+                      ) : null}
                     </span>
                   ) : isPhone ? null : (
                     <span aria-hidden="true" style={{ minWidth: 70 }} />

@@ -1,56 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { ReactNode } from 'react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import { installFetchStub, jsonOk } from '@/test/fetch-stub';
 import { createTestQueryClient } from '@/test/query-wrapper';
-
-const cardGate = vi.hoisted(() => ({ shape: 'none' as 'none' | 'anchor' | 'shell' }));
-
-vi.mock('@/features/inbox-report/card', () => ({
-  InboxReportCard: (props: { mailboxId: string; lead?: ReactNode }) => {
-    if (cardGate.shape === 'anchor') {
-      return (
-        <>
-          {props.lead}
-          <a href="/senders" data-mailbox={props.mailboxId}>
-            <strong>Your Inbox Report</strong>
-            <span>
-              A quick look at who sends you the most, what you leave unread and what takes up space.
-            </span>
-            <span>Open report</span>
-          </a>
-        </>
-      );
-    }
-    if (cardGate.shape === 'shell') {
-      return (
-        <div data-surface="home" data-mailbox={props.mailboxId}>
-          {props.lead}
-          <h2 className="dm-home-report-title">Your Inbox Report</h2>
-          <span className="dm-home-report-body">
-            A quick look at who sends you the most, what you leave unread and what takes up space.
-          </span>
-          <a className="dm-home-report-cta dm-external-link dm-tap-target" href="/senders">
-            Open report
-          </a>
-        </div>
-      );
-    }
-    return <>{props.lead}</>;
-  },
-  getFixSet: (report: {
-    fix: { senderKeys: readonly string[]; sendersCount: number; inboxEmailCount: number };
-  }) => ({
-    senderKeys: [...report.fix.senderKeys],
-    sendersCount: report.fix.sendersCount,
-    inboxEmailCount: report.fix.inboxEmailCount,
-  }),
-}));
 
 import { failedScanSettingsStep } from '@/features/mailboxes/mailbox-health';
 import { ApiError } from '@/lib/api/client';
@@ -105,6 +58,53 @@ const metered = {
 };
 
 describe('HomeView', () => {
+  it('leads with one preview and discloses supporting context in Details', () => {
+    render(
+      <HomeView
+        state={ready}
+        nextSteps={[unsub, later]}
+        mailboxEmail="selected@synthetic.test"
+        previewReport={homePreviewReport('full')}
+        summary={metered}
+      />,
+    );
+    const details = screen.getByText('Details').closest('details');
+    expect(details).not.toHaveAttribute('open');
+    expect(
+      screen.getByRole('heading', { name: '158 senders worth reviewing.' }).closest('details'),
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: 'Preview cleanup' }).closest('details')).toBeNull();
+    for (const content of [
+      screen.getByTestId('home-hero'),
+      screen.getByText(/91% of the email/),
+      screen.getByText(/≈ 7.7 GB/),
+      screen.getByRole('link', { name: 'Open Later' }),
+      screen.getByRole('link', { name: 'Review senders' }),
+      screen.getByRole('link', { name: 'Compare plans' }),
+    ]) {
+      expect(content.closest('details')).toBe(details);
+    }
+    expect(document.querySelector('[data-home-impact]')?.closest('details')).toBe(details);
+    expect(document.querySelectorAll('.dm-button-link')).toHaveLength(1);
+    expect(screen.queryByText(HOME_DECK.focus.safety)).toBeNull();
+    expect(screen.queryByText(HOME_DECK.focus.context)).toBeNull();
+    expect(screen.queryByText(/A quick look at who sends/)).toBeNull();
+    expect(screen.queryByText(/We never fetch or store/)).toBeNull();
+    expect(screen.getByRole('link', { name: 'Open report' })).toHaveAttribute(
+      'href',
+      '/senders#inbox-report',
+    );
+  });
+
+  it('makes Open Later the single primary action when Later is the only recommendation', () => {
+    render(<HomeView state={ready} nextSteps={[later]} />);
+    const link = screen.getByRole('link', { name: 'Open Later' });
+    expect(link).toHaveClass('dm-button-link');
+    expect(link.closest('details')).toBeNull();
+    expect(screen.queryByText(HOME_DECK.laterBody)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
+  });
+
   it.each([ready.since, null])('labels recorded progress as all time with since=%s', (since) => {
     render(<HomeView state={{ ...ready, since }} />);
     const progress = screen.getByRole('region', { name: 'Progress' });
@@ -163,7 +163,7 @@ describe('HomeView', () => {
       render(<HomeView state={ready} nextSteps={[step]} />);
       expect(document.querySelector('[data-home-impact]')).toBeNull();
       expect(screen.queryByRole('button', { name: 'Preview cleanup' })).toBeNull();
-      expect(screen.getByRole('link', { name: 'Review the senders' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
         'href',
         '/senders',
       );
@@ -224,172 +224,6 @@ describe('HomeView', () => {
     expect(document.querySelector('[data-sender-size-view="off"]')).not.toBeNull();
   });
 
-  it('preview full state shows the fixture report and a count-free Later card', async () => {
-    cardGate.shape = 'shell';
-    render(
-      <HomeView
-        state={ready}
-        nextSteps={[unsub, later]}
-        mailboxId="mb-preview"
-        previewReport={homePreviewReport('full')}
-      />,
-    );
-    expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open report' })).toHaveAttribute('href', '/senders');
-    expect(screen.getByRole('link', { name: 'Open report' })).toHaveClass(
-      'dm-external-link',
-      'dm-tap-target',
-    );
-    expect(screen.getByRole('link', { name: 'Open report' })).not.toHaveClass('dm-button-link');
-    expect(screen.getByRole('link', { name: 'What we store and share' })).toHaveClass(
-      'dm-external-link',
-      'dm-tap-target',
-    );
-    expect(screen.getByRole('link', { name: 'Review the senders' })).toHaveClass(
-      'dm-external-link',
-      'dm-tap-target',
-    );
-    expect(screen.getByRole('link', { name: 'See your activity' })).toHaveClass('dm-tap-target');
-    expect(screen.getByText('91%')).toBeInTheDocument();
-    expect(screen.getByText(/195 senders you mostly leave unread/)).toBeInTheDocument();
-    expect(screen.getByText(/Each of those 195 senders had less than 10%/)).toBeInTheDocument();
-    expect(screen.queryByText(/Each had less than 10%/)).toBeNull();
-    expect(screen.queryByText(/It had less than 10%/)).toBeNull();
-    expect(homePreviewReport('full')?.fix.supportOne).toMatch(/^That sender had less than 10%/);
-    expect(screen.getByText('≈ 7.7 GB')).toBeInTheDocument();
-    expect(screen.getByText(/We never fetch or store full email contents/)).toBeInTheDocument();
-    const unsubscribe = screen.getByRole('button', { name: 'Preview cleanup' });
-    const tile = screen.getByText('≈ 7.7 GB');
-    expect(unsubscribe.compareDocumentPosition(tile) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    fireEvent.click(unsubscribe);
-    expect(await screen.findByRole('alertdialog')).toHaveTextContent(
-      'Unsubscribe from 158 senders?',
-    );
-    const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
-    expect(laterCard).toHaveTextContent(HOME_DECK.laterBody);
-    expect(laterCard).not.toHaveTextContent('3');
-    expect(homePreviewReport('caught-up')?.calm).toMatch(/47 emails/);
-    expect(homePreviewReport('syncing')).toBeNull();
-    expect(homePreviewReport('empty')).toBeNull();
-    cardGate.shape = 'none';
-  });
-
-  it('keeps the compact home slots while the shell reserves the tab bar', () => {
-    const narrowOf = (css: string) => css.slice(css.indexOf('@media (max-width: 760px)'));
-    const dir = dirname(fileURLToPath(import.meta.url));
-    const home = readFileSync(join(dir, 'home-view.module.css'), 'utf8');
-    const card = readFileSync(join(dir, '../inbox-report/card.module.css'), 'utf8');
-    const narrow = narrowOf(home);
-    expect(narrow).toContain('grid-template-columns: minmax(0, 1fr)');
-    expect(narrow).not.toMatch(/\.page\s*\{[^}]*min-height: 0/s);
-    expect(home).toContain('margin-bottom: var(--dm-tabbar-inset)');
-    expect(home).toContain('min-height: 28px');
-    expect(home).toMatch(/max-width:\s*1172px/);
-    expect(home).toMatch(/\.leadFigure\s*\{[^}]*font-size:\s*28px/s);
-    expect(home).toMatch(/\.planLine\s*\{[^}]*min-height:\s*28px/s);
-    expect(home).toMatch(/\.fixActions\s*\{[^}]*margin-top:\s*8px/);
-    expect(home).not.toContain('.page:has(.arrivals)');
-    expect(home).toContain('container-type: inline-size');
-    expect(home).toContain('container-name: home-report');
-    expect(card).toMatch(/\.card\s*\{[^}]*padding:\s*8px 10px/);
-    expect(card).toMatch(/\.body\s*\{[^}]*margin:\s*2px 0 4px/);
-  });
-
-  it('reserves 60px for the visit slot at a 390px width', () => {
-    const dir = dirname(fileURLToPath(import.meta.url));
-    const home = readFileSync(join(dir, 'home-view.module.css'), 'utf8');
-    const style = document.createElement('style');
-    style.textContent = home;
-    document.head.appendChild(style);
-    const happy = (
-      window as unknown as {
-        happyDOM: { setViewport: (viewport: { width: number; height: number }) => void };
-      }
-    ).happyDOM;
-    const previous = { width: window.innerWidth, height: window.innerHeight };
-    const slots: HTMLElement[] = [];
-    const measure = (width: number) => {
-      happy.setViewport({ width, height: 800 });
-      const slot = document.createElement('div');
-      slot.className = 'visitSlot';
-      document.body.appendChild(slot);
-      slots.push(slot);
-      return getComputedStyle(slot).minHeight;
-    };
-    try {
-      expect(measure(390)).toBe('60px');
-      expect(measure(800)).toBe('40px');
-    } finally {
-      happy.setViewport(previous);
-      style.remove();
-      for (const slot of slots) slot.remove();
-    }
-  });
-
-  it('keeps the lead, size tile, and trust line when the home card link is present', async () => {
-    cardGate.shape = 'anchor';
-    render(
-      <HomeView
-        state={ready}
-        nextSteps={[later, unsub]}
-        mailboxId="mb-preview"
-        previewReport={homePreviewReport('full')}
-      />,
-    );
-    const lead = await screen.findByText('91%');
-    expect(lead).toBeVisible();
-    expect(screen.getByText(/195 senders you mostly leave unread/)).toBeVisible();
-    expect(screen.getByText('≈ 7.7 GB')).toBeVisible();
-    expect(screen.getByText(/We never fetch or store full email contents/)).toBeVisible();
-    expect(document.querySelector('[data-report-facts]')).not.toHaveAttribute('hidden');
-    await waitFor(() => {
-      expect(screen.queryByRole('heading', { name: 'Your Inbox Report' })).toBeNull();
-    });
-    const card = document.querySelector('[data-home-report-card] > a');
-    expect(card).not.toBeNull();
-    expect(card?.querySelector('strong')).toHaveTextContent('Your Inbox Report');
-    expect(card?.querySelectorAll('span')).toHaveLength(2);
-    cardGate.shape = 'none';
-  });
-
-  it('keeps the lead, size tile, and trust line when the shipped home card is present', async () => {
-    cardGate.shape = 'shell';
-    render(
-      <HomeView
-        state={ready}
-        nextSteps={[later, unsub]}
-        mailboxId="mb-preview"
-        previewReport={homePreviewReport('full')}
-      />,
-    );
-    const lead = await screen.findByText('91%');
-    const shell = lead.closest('[data-surface="home"]');
-    expect(lead.closest('[data-report-lead]')).not.toBeNull();
-    expect(lead.closest('[data-home-report-card]')).not.toBeNull();
-    expect(lead.closest('a')).toBeNull();
-    expect(lead.closest('[hidden]')).toBeNull();
-    expect(shell).not.toBeNull();
-    const title = shell?.querySelector('h2');
-    expect(title).not.toBeNull();
-    expect(lead.compareDocumentPosition(title!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
-    );
-    expect(screen.getByText('≈ 7.7 GB').closest('[data-report-tile]')).not.toBeNull();
-    expect(
-      screen.getByText(/We never fetch or store full email contents/).closest('[hidden]'),
-    ).toBeNull();
-    expect(shell?.querySelector('h2')).toHaveTextContent('Your Inbox Report');
-    expect(shell?.querySelector('.dm-home-report-body')).not.toBeNull();
-    expect(shell?.querySelector('a')).toHaveTextContent('Open report');
-    expect(shell?.querySelector('h2')?.textContent).not.toContain('Open report');
-    await waitFor(() => {
-      expect(screen.getAllByRole('link', { name: 'Open report' })).toHaveLength(1);
-    });
-    cardGate.shape = 'none';
-  });
-
   it('shows the largest card only when the size view is on', () => {
     render(
       <HomeView
@@ -409,28 +243,13 @@ describe('HomeView', () => {
     );
   });
 
-  it('does not render a duplicate Inbox Report heading', () => {
-    cardGate.shape = 'shell';
-    render(
-      <HomeView
-        state={ready}
-        nextSteps={[unsub]}
-        mailboxId="mb-preview"
-        previewReport={homePreviewReport('full')}
-      />,
-    );
-    expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
-    expect(screen.getAllByRole('link', { name: 'Open report' })).toHaveLength(1);
-    cardGate.shape = 'none';
-  });
-
   it('uses one skeleton that matches the ready layout slots', () => {
     const { rerender } = render(<HomeView state={{ kind: 'loading' }} />);
     const slots = () =>
       [...document.querySelectorAll('[data-home-slot]')].map((el) =>
         el.getAttribute('data-home-slot'),
       );
-    expect(slots()).toEqual(['plan', 'primary', 'visit', 'report']);
+    expect(slots()).toEqual(['quota', 'primary', 'details']);
     rerender(
       <HomeView
         state={ready}
@@ -439,7 +258,7 @@ describe('HomeView', () => {
         previewReport={homePreviewReport('full')}
       />,
     );
-    expect(slots()).toEqual(['plan', 'primary', 'visit', 'report']);
+    expect(slots()).toEqual(['quota', 'primary', 'details', 'visit', 'report', 'plan']);
   });
 
   it('keeps the route loading shell on the same slots without mounting HomeView', () => {
@@ -449,18 +268,9 @@ describe('HomeView', () => {
       [...container.querySelectorAll('[data-home-slot]')].map((el) =>
         el.getAttribute('data-home-slot'),
       ),
-    ).toEqual(['plan', 'primary', 'visit', 'report']);
+    ).toEqual(['quota', 'primary', 'details']);
     expect(container.querySelector('[data-home-skeleton]')).not.toBeNull();
-    expect(container.querySelector('a.dm-tap-target')).not.toBeNull();
-  });
-
-  it('does not name a plan on the route skeleton before the plan is known', () => {
-    render(<HomeRouteLoading />);
-    const plan = document.querySelector('[data-home-slot="plan"]');
-    expect(plan).not.toBeNull();
-    expect(plan).not.toHaveTextContent(/\b(Free|Plus|Pro)\b/);
-    expect(plan?.querySelector('[data-dm-skeleton="text"]')).not.toBeNull();
-    expect(screen.getByRole('link', { name: 'Compare plans' })).toBeInTheDocument();
+    expect(container.querySelector('a')).toBeNull();
   });
 
   it('uses the calm fallback when nothing is suggested', () => {
@@ -471,7 +281,7 @@ describe('HomeView', () => {
     if (homeCalmTemplate() === null) {
       expect(screen.queryByTestId('home-calm')).toBeNull();
     } else {
-      expect(screen.getByTestId('home-calm')).toHaveTextContent('47 emails');
+      expect(screen.getByTestId('home-calm')).toHaveTextContent('47 scanned emails');
     }
     expect(screen.queryByText(/share card/i)).toBeNull();
     expect(screen.queryByRole('region', { name: 'Suggested next steps' })).toBeNull();
@@ -489,7 +299,7 @@ describe('HomeView', () => {
     const { rerender } = render(<HomeView state={{ kind: 'empty', syncing: false, action }} />);
     expect(screen.queryByTestId('home-hero')).toBeNull();
     expect(screen.getByText('Nothing cleared yet.')).toBeInTheDocument();
-    expect(screen.getByText(HOME_DECK.emptyBody)).toBeInTheDocument();
+    expect(screen.queryByText(HOME_DECK.emptyBody)).toBeNull();
     expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
       'href',
       '/senders',
@@ -579,7 +389,7 @@ describe('HomeView', () => {
     render(<HomeView state={{ kind: 'loading' }} />);
     expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Compare plans' })).toHaveClass('dm-tap-target');
+    expect(screen.queryByRole('link', { name: 'Compare plans' })).toBeNull();
   });
 
   it('error: names the cause and retries', () => {

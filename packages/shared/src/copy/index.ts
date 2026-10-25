@@ -47,6 +47,7 @@ export { scoredAge, scoredAgeLabel } from './engine-read-age';
 
 export {
   RECOMMEND_FLOOR,
+  ENGINE_ABSTENTION_COPY,
   isRecommended,
   confidenceBand,
   type EngineVerdict,

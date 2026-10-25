@@ -24,6 +24,7 @@ import type { RollupEntry } from './domain-rollup';
 import { isTypingTarget } from './keyboard';
 import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { DomainGroupRow, SenderRow } from './sender-row';
+import { senderDetailHref } from './sender-detail-navigation';
 
 const { color, motion } = tokens;
 
@@ -51,6 +52,7 @@ const LIST_CSS = `
 export interface SenderListProps {
   /** Rolled-up visible set (see `rollupByDomain`). */
   entries: RollupEntry[];
+  detailSearch?: string;
   selectedIds: ReadonlySet<string>;
   /** Checkbox toggle — the native event rides up for shift-click ranges (D52). */
   onToggleSelect: (id: string, evt: MouseEvent) => void;
@@ -72,6 +74,7 @@ export interface SenderListProps {
 
 export function SenderList({
   entries,
+  detailSearch,
   selectedIds,
   onToggleSelect,
   onAction,
@@ -171,6 +174,7 @@ export function SenderList({
     <BoundSenderRow
       key={s.id}
       s={s}
+      detailHref={detailSearch === undefined ? undefined : senderDetailHref(s.id, detailSearch)}
       selected={selectedIds.has(s.id)}
       active={s.id === activeId}
       compact={compact}
@@ -219,6 +223,7 @@ export function SenderList({
 /** Memoize at the id-binding boundary so callbacks stay stable for untouched rows. */
 const BoundSenderRow = memo(function BoundSenderRow({
   s,
+  detailHref,
   selected,
   active,
   compact,
@@ -227,6 +232,7 @@ const BoundSenderRow = memo(function BoundSenderRow({
   onAction,
 }: Pick<SenderListProps, 'onToggleSelect' | 'onOpen' | 'onAction' | 'compact'> & {
   s: Sender;
+  detailHref: string | undefined;
   selected: boolean;
   active: boolean;
 }) {
@@ -238,6 +244,7 @@ const BoundSenderRow = memo(function BoundSenderRow({
   return (
     <SenderRow
       s={s}
+      detailHref={detailHref}
       selected={selected}
       active={active}
       compact={compact}

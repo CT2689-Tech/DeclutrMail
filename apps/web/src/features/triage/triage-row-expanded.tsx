@@ -1,7 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
+import { confidenceBand, ENGINE_ABSTENTION_COPY, scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
 import { fmtCompact, lastSeenLabel, type TriageDecisionRow } from './data';
 import { verdictToVerb } from './types';
@@ -88,7 +88,9 @@ export function TriageRowExpanded({
         >
           {showSuggestion && (
             <span data-dm-verdict-band>
-              Suggested: {verdictToVerb(row.verdict)}
+              {row.verdict === 'later'
+                ? ENGINE_ABSTENTION_COPY.label
+                : `Suggested: ${verdictToVerb(row.verdict)}`}
               {band !== null && <> · {band}</>}
             </span>
           )}

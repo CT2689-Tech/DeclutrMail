@@ -227,6 +227,26 @@ export const CheckoutStartedNothingFound: Story<typeof BillingScreen> = {
   ),
 };
 
+export const CheckoutHoldReleasing: Story<typeof BillingScreen> = {
+  render: () => (
+    <div style={{ background: tokens.color.bg, padding: 12 }}>
+      <PaymentProcessingNotice kind="checkout_intent" releasing onRelease={() => {}} />
+    </div>
+  ),
+};
+
+export const CheckoutHoldReleaseFailed: Story<typeof BillingScreen> = {
+  render: () => (
+    <div style={{ background: tokens.color.bg, padding: 12 }}>
+      <PaymentProcessingNotice
+        kind="checkout_intent"
+        releaseError="This hold couldn’t be released; try confirming again."
+        onRelease={() => {}}
+      />
+    </div>
+  ),
+};
+
 /** Active Pro subscriber — renewal date, provider, cancel affordance. */
 export const ProSubscriber: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>

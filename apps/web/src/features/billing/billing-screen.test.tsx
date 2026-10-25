@@ -224,6 +224,11 @@ function renderScreen(
   // History is independent of the current plan; default unrelated screen tests to a verified empty read.
   addFetchHandlers([
     {
+      method: 'DELETE',
+      path: '/api/billing/checkout/pending',
+      respond: () => jsonOk({ data: { released: true } }),
+    },
+    {
       method: 'GET',
       path: '/api/billing/invoices',
       respond: () =>
@@ -233,7 +238,7 @@ function renderScreen(
     },
   ]);
   const client = createTestQueryClient();
-  return render(
+  const result = render(
     <QueryWrapper client={client}>
       <BillingScreen
         initialIntent={initialIntent}
@@ -245,6 +250,7 @@ function renderScreen(
       />
     </QueryWrapper>,
   );
+  return { ...result, client };
 }
 
 /** The overlay-lifecycle callbacks the screen registered on launch. */
@@ -701,6 +707,43 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
     expect(screen.getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
+  });
+
+  it('a failed overlay releases its cached server claim without leaving a synthesized wait', async () => {
+    let started = false;
+    const claim = {
+      provider: 'paddle',
+      tier: 'plus',
+      cycle: 'annual',
+      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: { ...FREE_BODY, pendingCheckout: started ? claim : null } }),
+      },
+      { method: 'POST', path: '/api/billing/checkout', respond: () => paddleSessionOk() },
+      {
+        method: 'DELETE',
+        path: '/api/billing/checkout/pending',
+        respond: () => jsonOk({ data: { released: true } }),
+      },
+    ]);
+    const { client } = renderScreen();
+    vi.mocked(launchCheckout).mockImplementationOnce(async () => {
+      started = true;
+      await client.refetchQueries({ queryKey: billingKeys.subscription() });
+      throw new Error('overlay blocked');
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    expect(
+      client.getQueryData<BillingSubscription>(billingKeys.subscription())?.pendingCheckout,
+    ).toBeNull();
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
   });
 
   it('a failed checkout CREATE surfaces the held claim — no invisible-lock trap (Codex 2026-07-29)', async () => {
@@ -1478,10 +1521,257 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // Only the confirmed assertion releases the lock.
     fireEvent.click(within(notice).getByRole('button', { name: 'Review checkout' }));
     fireEvent.click(within(notice).getByRole('button', { name: 'Confirm no charge' }));
-    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+    );
     expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
+
+  it('releases a cached server checkout claim without requiring a reload', async () => {
+    let released = false;
+    let deletes = 0;
+    let finishDelete!: () => void;
+    const releaseGate = new Promise<void>((resolve) => {
+      finishDelete = resolve;
+    });
+    const claim = {
+      provider: 'paddle' as const,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: { ...FREE_BODY, pendingCheckout: released ? null : claim } }),
+      },
+      {
+        method: 'DELETE',
+        path: '/api/billing/checkout/pending',
+        respond: async () => {
+          deletes += 1;
+          await releaseGate;
+          released = true;
+          return jsonOk({ data: { released: true } });
+        },
+      },
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review checkout' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
+    await waitFor(() => expect(deletes).toBe(1));
+    const releasing = screen.getByRole('button', { name: 'Releasing…' });
+    expect(releasing).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Keep waiting' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    fireEvent.click(releasing);
+    expect(deletes).toBe(1);
+    await act(async () => {
+      finishDelete();
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeEnabled();
+  });
+
+  it.each([false, true])(
+    'a settled server-null read clears only a server-owned wait (stored lock: %s)',
+    async (stored) => {
+      let claimPresent = true;
+      if (stored)
+        writePendingCheckout(
+          'w',
+          'checkout_intent',
+          'free',
+          null,
+          'plus',
+          'annual',
+          'unresolved-payment',
+        );
+      const claim = {
+        provider: 'paddle',
+        tier: 'plus',
+        cycle: 'annual',
+        expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+      };
+      stubSubscription(() =>
+        jsonOk({ data: { ...FREE_BODY, pendingCheckout: claimPresent ? claim : null } }),
+      );
+      const { client } = renderScreen();
+      await screen.findByTestId('payment-processing-notice');
+      claimPresent = false;
+      await act(async () => {
+        await client.refetchQueries({ queryKey: billingKeys.subscription() });
+      });
+      if (stored) {
+        expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+        expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!).attemptId).toBe(
+          'unresolved-payment',
+        );
+      } else {
+        await waitFor(() =>
+          expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+        );
+        expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeEnabled();
+      }
+    },
+  );
+
+  it.each(['provider error', 'unconfirmed response'] as const)(
+    'retains the lock and visible retry after release: %s',
+    async (failure) => {
+      let failures = true;
+      const stored = writePendingCheckout(
+        'w',
+        'checkout_intent',
+        'free',
+        null,
+        'plus',
+        'annual',
+        'owned-attempt',
+      );
+      stubSubscription(() => jsonOk({ data: FREE_BODY }));
+      addFetchHandlers([
+        {
+          method: 'DELETE',
+          path: '/api/billing/checkout/pending',
+          respond: () =>
+            failures
+              ? failure === 'provider error'
+                ? jsonServerError()
+                : jsonOk({ data: {} })
+              : jsonOk({ data: { released: true } }),
+        },
+      ]);
+      renderScreen();
+      fireEvent.click(await screen.findByRole('button', { name: 'Review checkout' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t be released/);
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(stored);
+      expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).not.toBeInTheDocument();
+      failures = false;
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
+      await waitFor(() =>
+        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+      );
+    },
+  );
+
+  it('ignores a late pre-release subscription read after the server claim was released', async () => {
+    const claim = {
+      provider: 'paddle',
+      tier: 'plus',
+      cycle: 'annual',
+      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    };
+    let reads = 0;
+    let released = false;
+    let finishOldRead!: () => void;
+    const oldRead = new Promise<void>((resolve) => {
+      finishOldRead = resolve;
+    });
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: async () => {
+          reads += 1;
+          if (reads === 2) {
+            await oldRead;
+            return jsonOk({ data: { ...FREE_BODY, pendingCheckout: claim } });
+          }
+          return jsonOk({ data: { ...FREE_BODY, pendingCheckout: released ? null : claim } });
+        },
+      },
+      {
+        method: 'DELETE',
+        path: '/api/billing/checkout/pending',
+        respond: () => {
+          released = true;
+          return jsonOk({ data: { released: true } });
+        },
+      },
+    ]);
+    const { client } = renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review checkout' }));
+    void client.refetchQueries({ queryKey: billingKeys.subscription() });
+    await waitFor(() => expect(reads).toBe(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
+    await waitFor(() =>
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+    );
+    await act(async () => {
+      finishOldRead();
+    });
+    expect(
+      client.getQueryData<BillingSubscription>(billingKeys.subscription())?.pendingCheckout,
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeEnabled();
+  });
+
+  it.each(['replacement', 'unmount', 'workspace switch'] as const)(
+    'does not clear a different owner after release: %s',
+    async (change) => {
+      writePendingCheckout('w', 'checkout_intent', 'free', null, 'plus', 'annual', 'original');
+      let finishDelete!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        finishDelete = resolve;
+      });
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/billing/subscription',
+          respond: () => jsonOk({ data: FREE_BODY }),
+        },
+        {
+          method: 'DELETE',
+          path: '/api/billing/checkout/pending',
+          respond: async () => {
+            await gate;
+            return jsonOk({ data: { released: true } });
+          },
+        },
+      ]);
+      const result = renderScreen();
+      fireEvent.click(await screen.findByRole('button', { name: 'Review checkout' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
+      let expectedAttempt = 'original';
+      if (change === 'replacement') {
+        expectedAttempt = 'replacement';
+        act(() => {
+          writePendingCheckout(
+            'w',
+            'checkout_intent',
+            'free',
+            null,
+            'plus',
+            'annual',
+            expectedAttempt,
+          );
+          window.dispatchEvent(new StorageEvent('storage', { key: pendingCheckoutKey('w') }));
+        });
+      } else if (change === 'unmount') result.unmount();
+      else {
+        mockWorkspaceId = 'other';
+        result.rerender(
+          <QueryWrapper client={result.client}>
+            <BillingScreen />
+          </QueryWrapper>,
+        );
+      }
+      await act(async () => {
+        finishDelete();
+      });
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!).attemptId).toBe(
+        expectedAttempt,
+      );
+    },
+  );
 
   it('D249: the release stays hidden until the provider check comes back empty', async () => {
     window.localStorage.setItem(
@@ -3794,7 +4084,9 @@ describe('BillingScreen — paid subscriber', () => {
     // Only the confirmed assertion releases.
     fireEvent.click(within(notice).getByRole('button', { name: 'Review plan change' }));
     fireEvent.click(within(notice).getByRole('button', { name: 'Confirm not applied' }));
-    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+    );
     expect(await screen.findByRole('button', { name: 'Switch to Pro' })).toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });

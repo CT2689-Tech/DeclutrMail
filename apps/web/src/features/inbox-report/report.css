@@ -1,344 +1,164 @@
-/* Inbox Report only. The headline step is not part of the shared type scale. */
+/* A short sender-review entry; supporting data stays behind Details. */
 .dm-report {
-  --dm-text-display-xl: 64px;
   position: relative;
+  scroll-margin-top: 96px;
   background: var(--dm-card);
   color: var(--dm-fg);
-  border-radius: 20px;
+  border-radius: var(--dm-radius-lg);
   border: 1px solid var(--dm-line-soft, var(--dm-border));
-  box-shadow: var(--dm-shadow-card);
-  padding: 20px 28px 18px 32px;
-  overflow: hidden;
+  padding: 12px 20px;
   min-width: 0;
   max-width: 100%;
-  container-type: inline-size;
-  container-name: inbox-report;
-}
-
-.dm-report::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--dm-primary);
-}
-
-.dm-report header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-family: var(--dm-font-mono, ui-monospace, monospace);
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--dm-primary);
-}
-
-.dm-report button,
-.dm-report a {
   font-family: var(--dm-font-sans, system-ui, sans-serif);
-}
-
-.dm-report button {
-  background: transparent;
-  border: 0;
-  color: var(--dm-primary);
-  font-weight: 600;
-  min-height: 32px;
-}
-
-.dm-report [data-report-fix] {
-  min-height: 44px;
-  border-radius: 10px;
-  background: var(--dm-primary);
-  color: var(--dm-fg-inverse, #fff);
-  padding: 0 18px;
-  max-width: 100%;
-  white-space: normal;
-}
-
-.dm-report a {
-  color: var(--dm-primary);
-}
-
-.dm-report-sentence {
-  font-size: 15px;
-  color: var(--dm-fg-soft, var(--dm-fg));
-  margin-top: 4px;
   overflow-wrap: anywhere;
 }
-
-.dm-report-meta,
-.dm-report [data-report-basis],
-.dm-report [data-report-sizes] {
-  font-size: 13px;
-  color: var(--dm-fg-muted);
-  overflow-wrap: anywhere;
+.dm-report p {
+  margin: 0;
 }
-
-.dm-report-glyphs {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.dm-report-glyphs svg {
-  width: 18px;
-  height: 14px;
-}
-
-.dm-report-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px 40px;
-  width: 100%;
-  min-width: 0;
-}
-
-.dm-report-lead,
-.dm-report-side {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.dm-report-rule {
-  border: 0;
-  border-top: 1px solid var(--dm-line-soft, var(--dm-border));
-  margin: 16px 0;
-}
-
-.dm-report-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.dm-report-actions > * {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.dm-report-glyphs-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* Two columns only when the card itself is wide enough. A viewport
-   breakpoint still splits this grid while the card is squeezed beside
-   the rail, and overflow:hidden then clips the numbers column. */
-@container inbox-report (min-width: 40rem) {
-  .dm-report-grid {
-    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-    align-items: start;
-  }
-}
-
-@media (max-width: 480px) {
-  .dm-report {
-    --dm-text-display-xl: 40px;
-    padding: 14px 16px 14px 20px;
-  }
-
-  .dm-report [data-report-fix] {
-    width: 100%;
-  }
-}
-
-.dm-report .dm-display-xl {
-  font-family: var(--dm-font-display, Fraunces, serif);
-  font-weight: 300;
-  font-size: var(--dm-text-display-xl);
-  line-height: 1;
-  letter-spacing: -0.02em;
-  font-variation-settings: 'opsz' 144;
-  font-variant-numeric: tabular-nums lining-nums;
-  min-width: min(4ch, 100%);
-  max-width: 100%;
-  display: inline-block;
-}
-
-/* Opacity stays 1. A transparent rise fails the contrast gate while it is sampled. */
-.dm-report [data-reveal] {
-  opacity: 1;
-  transform: translateY(8px);
-}
-
-.dm-report.is-revealed [data-reveal] {
-  animation: dm-report-rise 180ms cubic-bezier(0.2, 0, 0, 1) both;
-  animation-delay: calc(var(--i, 0) * 60ms);
-}
-
-.dm-report-celebrate {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.dm-check {
-  position: relative;
-  width: 56px;
-  height: 56px;
-  flex: none;
-}
-
-.dm-check svg {
-  width: 56px;
-  height: 56px;
-  display: block;
-}
-
-.dm-check circle {
-  stroke-dasharray: 164;
-  stroke-dashoffset: 164;
-  animation: dm-draw 240ms cubic-bezier(0.65, 0, 0.35, 1) forwards;
-}
-
-.dm-check path {
-  stroke-dasharray: 34;
-  stroke-dashoffset: 34;
-  animation: dm-draw 240ms cubic-bezier(0.65, 0, 0.35, 1) 160ms forwards;
-}
-
-.dm-burst {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.dm-burst i {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  opacity: 0;
-  animation: dm-burst 600ms cubic-bezier(0.2, 0.7, 0.3, 1) 200ms both;
-}
-
-.dm-burst i:nth-child(4n + 1) {
-  background: var(--dm-primary);
-}
-
-.dm-burst i:nth-child(4n + 2) {
-  background: var(--dm-nav-marker);
-}
-
-.dm-burst i:nth-child(4n + 3) {
-  background: var(--dm-lilac);
-}
-
-.dm-burst i:nth-child(4n) {
-  background: var(--dm-amber);
-}
-
+.dm-report-header,
+.dm-report-summary,
 .dm-report-strip {
-  min-height: 44px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px 20px;
+  min-width: 0;
 }
-
-/* Only Senders' collapsed entry is quiet. Expanded report and actions retain
-   their existing presentation and owner. */
+.dm-report-header h2 {
+  margin: 0;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+.dm-report-header > button {
+  margin-left: auto;
+}
+.dm-report-meta {
+  font-size: 12px;
+  color: var(--dm-fg-muted);
+}
+.dm-report-summary {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.dm-report-summary > p {
+  font-size: 16px;
+}
+.dm-report button,
+.dm-report a,
+.dm-report summary {
+  font: inherit;
+  touch-action: manipulation;
+}
+.dm-report button,
+.dm-report summary {
+  min-height: 44px;
+  color: var(--dm-primary);
+  cursor: pointer;
+}
+.dm-report button {
+  border: 0;
+  background: transparent;
+  padding: 8px 12px;
+}
+.dm-report .dm-report-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: var(--dm-radius-md);
+  background: var(--dm-primary);
+  color: var(--dm-fg-inverse);
+  text-decoration: none;
+  font-weight: 600;
+}
+.dm-report-details > summary {
+  display: list-item;
+  width: fit-content;
+  box-sizing: border-box;
+  padding: 12px 0;
+  font-size: 13px;
+}
+.dm-report-detail-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0 8px;
+  border-top: 1px solid var(--dm-line-soft, var(--dm-border));
+}
+.dm-report-detail-content ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.dm-report-detail-content li + li {
+  margin-top: 12px;
+}
+.dm-report-detail-content li p + p {
+  margin-top: 4px;
+}
+.dm-report-detail-content li > p:first-child {
+  font-size: 14px;
+}
+.dm-report [data-report-fix] {
+  border: 1px solid var(--dm-border);
+  border-radius: var(--dm-radius-md);
+}
+.dm-report-privacy {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--dm-primary);
+  font-size: 13px;
+}
+.dm-report button:focus-visible,
+.dm-report a:focus-visible,
+.dm-report summary:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 3px;
+}
+.dm-report button:not(:disabled):hover,
+.dm-report a:hover,
+.dm-report summary:hover {
+  text-decoration: underline;
+}
+.dm-report button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.dm-report-strip {
+  justify-content: space-between;
+  min-height: 44px;
+}
 .dm-report[data-compact] {
-  container-type: normal;
   border: 0;
   border-radius: 0;
   padding: 0;
   background: transparent;
-  box-shadow: none;
-}
-.dm-report[data-compact]::before {
-  display: none;
 }
 .dm-report[data-compact] .dm-report-strip {
-  border-bottom: 1px solid var(--dm-line-soft);
   color: var(--dm-fg-muted);
   font-size: 12px;
 }
-.dm-report[data-compact] button {
-  min-height: 44px;
-  padding: 0 4px 0 12px;
-  border: 0;
-  background: transparent;
-  color: var(--dm-fg-soft);
-  font-size: 12px;
-  text-decoration: underline;
-}
-.dm-report-reopen-short {
-  display: none;
-}
 @media (max-width: 480px) {
-  .dm-report[data-compact] .dm-report-strip {
-    border: 0;
+  .dm-report {
+    padding: 8px 14px;
   }
-  .dm-report[data-compact] .dm-report-strip > span,
-  .dm-report-reopen-long {
-    display: none;
+  .dm-report-header {
+    gap: 4px 8px;
+    flex-wrap: wrap;
   }
-  .dm-report-reopen-short {
-    display: inline;
+  .dm-report-header > .dm-report-meta {
+    order: 3;
+    flex-basis: 100%;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .dm-report [data-reveal],
-  .dm-report.is-revealed [data-reveal] {
-    opacity: 1;
-    transform: none;
-    animation: none;
+  .dm-report-summary {
+    margin-top: 12px;
+    gap: 12px;
   }
-
-  .dm-check circle,
-  .dm-check path {
-    animation: none;
-    stroke-dashoffset: 0;
-  }
-
-  .dm-burst {
-    display: none;
-  }
-}
-
-@keyframes dm-report-rise {
-  from {
-    transform: translateY(8px);
-  }
-  to {
-    transform: translateY(0);
-  }
-}
-
-@keyframes dm-draw {
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-@keyframes dm-burst {
-  0% {
-    opacity: 0;
-    transform: rotate(var(--a)) translateX(30px) scale(0.4);
-  }
-  30% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: rotate(var(--a)) translateX(calc(30px + var(--d))) scale(0.6);
+  .dm-report .dm-report-primary {
+    width: 100%;
   }
 }

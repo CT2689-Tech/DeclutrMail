@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Button, ScreenIntro, Skeleton } from '@declutrmail/shared';
@@ -34,6 +34,7 @@ import { ConfirmModalFrame } from './confirm-modal-frame';
 import { SenderRuleEditor, useDebouncedQuery } from './sender-rule-editor';
 import styles from './sender-rule-library.module.css';
 import { QuietWatch } from './quiet-watch';
+import { presetDisplayName } from './preset-labels';
 
 const num = (value: number) => value.toLocaleString('en-US');
 const verb = (action: SenderRuleConfig['action']) => (action === 'archive' ? 'Archive' : 'Delete');
@@ -70,9 +71,11 @@ function ruleError(error: unknown, operation: 'save' | 'preview' | 'execute' | '
 export function SenderRuleLibrary({
   presetRules = [],
   presetsAvailable = false,
+  renderPresetRule,
 }: {
   presetRules?: AutopilotRuleDto[];
   presetsAvailable?: boolean;
+  renderPresetRule: (rule: AutopilotRuleDto) => ReactNode;
 }) {
   const auth = useOptionalAuth();
   const mailboxId = auth?.me.activeMailboxId ?? undefined;
@@ -83,6 +86,7 @@ export function SenderRuleLibrary({
       mailboxId={mailboxId}
       presetRules={presetRules}
       presetsAvailable={presetsAvailable}
+      renderPresetRule={renderPresetRule}
     />
   );
 }
@@ -91,10 +95,12 @@ export function SenderRuleLibraryScope({
   mailboxId,
   presetRules = [],
   presetsAvailable = false,
+  renderPresetRule,
 }: {
   mailboxId: string | undefined;
   presetRules?: AutopilotRuleDto[];
   presetsAvailable?: boolean;
+  renderPresetRule: (rule: AutopilotRuleDto) => ReactNode;
 }) {
   const auth = useOptionalAuth();
   const email = auth ? getActiveMailboxEmail(auth.me) : undefined;
@@ -128,17 +134,6 @@ export function SenderRuleLibraryScope({
     if (!previewOpen) reviewHeading.current?.focus();
   }, [focusReview, editing, selected?.id, previewOpen]);
   const page = cursors.length;
-  const filteredRules = (rulesData: SenderRule[]) =>
-    rulesData.filter(
-      (rule) =>
-        `${rule.name} ${rule.senders.map((sender) => sender.name ?? sender.email ?? '').join(' ')}`
-          .toLowerCase()
-          .includes(query.toLowerCase()) &&
-        (filter === 'all' ||
-          (filter === 'paused'
-            ? rule.mode === 'paused' || !rule.enabled
-            : rule.enabled && rule.mode !== 'paused' && rule.matchingMessageCount > 0)),
-    );
   const rules = useSenderRules(mailboxId, entitled);
   const planLocked = !entitled || apiErrorCode(rules.error) === 'PRO_FEATURE_REQUIRED';
   const runningPresets = presetRules.filter((rule) => rule.enabled && rule.mode !== 'paused');
@@ -148,8 +143,34 @@ export function SenderRuleLibraryScope({
   const pausableCustom = (rules.data ?? []).filter((rule) => rule.mode !== 'paused');
   const pausableCount = pausablePresets.length + pausableCustom.length;
   const canPause = presetsAvailable && rules.isSuccess && !rules.isError && runningCount > 0;
-  const filtered = filteredRules(rules.data ?? []);
+  const inventory = [
+    ...presetRules.map((rule) => ({ kind: 'preset' as const, rule })),
+    ...(rules.data ?? []).map((rule) => ({ kind: 'sender' as const, rule })),
+  ];
+  const filtered = inventory.filter((item) => {
+    const rule = item.rule;
+    const name =
+      item.kind === 'preset'
+        ? `${presetDisplayName(item.rule.presetKey, item.rule.name)} ${item.rule.actionKind}`
+        : `${item.rule.name} ${item.rule.senders.map((sender) => sender.name ?? sender.email ?? '').join(' ')}`;
+    const pending =
+      item.kind === 'preset'
+        ? (item.rule.observeDigest?.pendingTotal ?? 0)
+        : item.rule.matchingMessageCount;
+    return (
+      name.toLowerCase().includes(query.toLowerCase()) &&
+      (filter === 'all' ||
+        (filter === 'paused'
+          ? rule.mode === 'paused' || !rule.enabled
+          : rule.enabled && rule.mode !== 'paused' && pending > 0))
+    );
+  });
   const visibleRules = filtered.slice(page * 6, page * 6 + 6);
+  const inventoryComplete = presetsAvailable && rules.isSuccess && !rules.isError;
+  // A changed search result or a retired rule can remove the final page.
+  useEffect(() => {
+    if (page > 0 && page * 6 >= filtered.length) setCursors([]);
+  }, [page, filtered.length]);
   useEffect(() => {
     if (!rules.data || editing !== null || previewOpen) return;
     if (selected && !rules.data.some((rule) => rule.id === selected.id))
@@ -429,13 +450,13 @@ export function SenderRuleLibraryScope({
         </section>
       ) : (
         <div className={styles.split}>
-          <aside className={styles.library} aria-label="Sender rule library">
+          <aside className={styles.library} aria-label="Rule library">
             <div id="sender-rule-library-content" className={styles.libraryContent}>
               <div className={styles.libraryHead}>
                 <h2 ref={libraryHeading} tabIndex={-1}>
                   Your rules
                 </h2>
-                <span className={styles.count}>{rules.data?.length ?? '—'}</span>
+                <span className={styles.count}>{inventoryComplete ? inventory.length : '—'}</span>
               </div>
               <input
                 className={styles.input}
@@ -448,7 +469,7 @@ export function SenderRuleLibraryScope({
                   setCursors([]);
                 }}
               />
-              <div className={styles.filters} role="group" aria-label="Filter sender rules">
+              <div className={styles.filters} role="group" aria-label="Filter rules">
                 {(['all', 'ready', 'paused'] as const).map((value) => (
                   <button
                     type="button"
@@ -460,7 +481,7 @@ export function SenderRuleLibraryScope({
                       setCursors([]);
                     }}
                   >
-                    {value === 'all' ? 'All rules' : value === 'ready' ? 'Ready' : 'Paused'}
+                    {value === 'all' ? 'All rules' : value === 'ready' ? 'Ready' : 'Inactive'}
                   </button>
                 ))}
               </div>
@@ -477,68 +498,80 @@ export function SenderRuleLibraryScope({
                   </Button>
                 </div>
               )}
-              {visibleRules.map((rule) => (
-                <div key={rule.id} className={styles.row}>
-                  <button
-                    type="button"
-                    className={styles.ruleSelect}
-                    aria-current={selected?.id === rule.id ? 'true' : undefined}
-                    disabled={busy}
-                    onClick={() => choose(rule)}
-                  >
-                    <span>
-                      <strong>{rule.name}</strong>
-                      <small>{senderRuleSummary(rule)}</small>
-                      <small>
-                        {rule.enabled
-                          ? rule.mode === 'paused'
-                            ? 'Paused'
-                            : 'Approval first'
-                          : 'Retired'}{' '}
-                        · {num(rule.matchingMessageCount)} matching emails from{' '}
-                        {num(rule.matchingSenderCount)}{' '}
-                        {rule.matchingSenderCount === 1 ? 'sender' : 'senders'}
-                      </small>
-                    </span>
-                  </button>
-                  <div className={styles.tools}>
-                    <Button
-                      tone="default"
-                      size="sm"
-                      ariaLabel={`Edit rule ${rule.name}`}
-                      disabled={busy || !rule.enabled}
-                      onClick={() => {
-                        choose(rule);
-                        setEditing('edit');
-                        save.reset();
-                      }}
-                    >
-                      Edit rule
-                    </Button>
-                    <Button
-                      tone="ghost"
-                      size="sm"
-                      ariaLabel={`${rule.mode === 'paused' ? 'Resume rule' : 'Preview batch for'} ${rule.name}`}
-                      disabled={busy || !rule.enabled || rules.isError}
-                      onClick={() => {
-                        choose(rule);
-                        if (rule.mode === 'paused') {
-                          mode.mutate(rule);
-                          return;
-                        }
-                        setExcluded([]);
-                        setPreviewOpen(true);
-                        refreshPreview();
-                      }}
-                    >
-                      {rule.mode === 'paused' ? 'Resume rule' : 'Preview batch'}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-              {!rules.isPending && rules.data !== undefined && filtered.length === 0 && (
+              <ul className={styles.ruleList} aria-label="Autopilot rules">
+                {visibleRules.map((item) => {
+                  if (item.kind === 'preset') return renderPresetRule(item.rule);
+                  const rule = item.rule;
+                  return (
+                    <li key={rule.id} className={styles.row}>
+                      <button
+                        type="button"
+                        className={styles.ruleSelect}
+                        aria-current={selected?.id === rule.id ? 'true' : undefined}
+                        disabled={busy}
+                        onClick={() => choose(rule)}
+                      >
+                        <span>
+                          <strong>{rule.name}</strong>
+                          <small>{senderRuleSummary(rule)}</small>
+                          <small>
+                            {rule.enabled
+                              ? rule.mode === 'paused'
+                                ? 'Paused'
+                                : 'Approval first'
+                              : 'Retired'}{' '}
+                            · {num(rule.matchingMessageCount)} matching emails from{' '}
+                            {num(rule.matchingSenderCount)}{' '}
+                            {rule.matchingSenderCount === 1 ? 'sender' : 'senders'}
+                          </small>
+                        </span>
+                      </button>
+                      <div className={styles.tools}>
+                        <Button
+                          tone="default"
+                          size="sm"
+                          ariaLabel={`Edit rule ${rule.name}`}
+                          disabled={busy || !rule.enabled}
+                          onClick={() => {
+                            choose(rule);
+                            setEditing('edit');
+                            save.reset();
+                          }}
+                        >
+                          Edit rule
+                        </Button>
+                        <Button
+                          tone="ghost"
+                          size="sm"
+                          ariaLabel={`${rule.mode === 'paused' ? 'Resume rule' : 'Preview batch for'} ${rule.name}`}
+                          disabled={busy || !rule.enabled || rules.isError}
+                          onClick={() => {
+                            choose(rule);
+                            if (rule.mode === 'paused') {
+                              mode.mutate(rule);
+                              return;
+                            }
+                            setExcluded([]);
+                            setPreviewOpen(true);
+                            refreshPreview();
+                          }}
+                        >
+                          {rule.mode === 'paused' ? 'Resume rule' : 'Preview batch'}
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {inventoryComplete && filtered.length === 0 && (
                 <p className={styles.empty}>
-                  {query ? 'No rules match your search.' : 'Your rules will appear here.'}
+                  {query
+                    ? 'No rules match your search.'
+                    : filter === 'ready'
+                      ? 'No rules ready for review.'
+                      : filter === 'paused'
+                        ? 'No inactive rules.'
+                        : 'Your rules will appear here.'}
                 </p>
               )}
               {(page > 0 || filtered.length > (page + 1) * 6) && (
@@ -570,7 +603,7 @@ export function SenderRuleLibraryScope({
               mailboxId === undefined ||
               rules.isError ||
               rules.isPending ||
-              rules.data?.length === 0) && (
+              (rules.data?.length === 0 && presetRules.length === 0)) && (
               <section
                 className={styles.card}
                 aria-label={editing ? 'Rule editor' : 'Selected rule'}

@@ -176,6 +176,7 @@ const ROW_GRID = '44px minmax(0,1fr) auto auto';
 
 export function SenderRow({
   s,
+  detailHref,
   selected,
   active = false,
   compact = false,
@@ -184,6 +185,7 @@ export function SenderRow({
   onAction,
 }: {
   s: Sender;
+  detailHref?: string | undefined;
   selected: boolean;
   /** This sender is the one open in the detail pane. */
   active?: boolean;
@@ -292,7 +294,7 @@ export function SenderRow({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
           <Link
             className="dm-tap-target"
-            href={`/senders/${encodeURIComponent(s.id)}`}
+            href={detailHref ?? `/senders/${encodeURIComponent(s.id)}`}
             // `aria-label` overrides the contents, so the activity has to be
             // IN it or a screen reader never hears "Archiving…".
             aria-label={activity ? `${s.name}, ${rowActivityLabel(activity)}` : undefined}

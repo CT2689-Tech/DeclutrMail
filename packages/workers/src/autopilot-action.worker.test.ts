@@ -2016,37 +2016,50 @@ describe('AutopilotActionWorker', () => {
     });
   });
 
-  it('enforces the per-rule daily cap and leaves over-cap matches pending', async () => {
-    // auto_unsubscribe_noisy has dailyActionCap=25 — fill the window.
-    const ruleId = await enablePreset(db, mailboxId, 'auto_unsubscribe_noisy');
-    const { senderKey } = await seedSender(db, mailboxId, 'list@news.com', {
-      unsubscribeMethod: 'one_click',
-      unsubscribeUrl: 'https://news.com/unsub',
-    });
-    const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey);
-    await db.insert(activityLog).values(
-      Array.from({ length: 25 }, () => ({
-        mailboxAccountId: mailboxId,
-        senderKey,
-        source: 'autopilot' as const,
-        action: 'unsubscribe' as const,
-        affectedCount: 0,
+  it.each(['auto_unsubscribe_noisy', 'auto_archive_low_engagement', 'auto_screen_new_senders'])(
+    'enforces the Unsubscribe cap after action customization (%s)',
+    async (presetKey) => {
+      const ruleId = await enablePreset(db, mailboxId, presetKey, 'observe');
+      await db
+        .update(automationRules)
+        .set({ actionKind: 'unsubscribe' })
+        .where(eq(automationRules.id, ruleId));
+      const { senderKey } = await seedSender(db, mailboxId, 'list@news.com', {
+        unsubscribeMethod: 'one_click',
+        unsubscribeUrl: 'https://news.com/unsub',
+      });
+      const matchId = await seedApprovedMatch(
+        db,
+        mailboxId,
         ruleId,
-        occurredAt: new Date(NOW.getTime() - 60 * 60 * 1000),
-      })),
-    );
+        senderKey,
+        'approved',
+        'observe',
+      );
+      await db.insert(activityLog).values(
+        Array.from({ length: 25 }, () => ({
+          mailboxAccountId: mailboxId,
+          senderKey,
+          source: 'autopilot' as const,
+          action: 'unsubscribe' as const,
+          affectedCount: 0,
+          ruleId,
+          occurredAt: new Date(NOW.getTime() - 60 * 60 * 1000),
+        })),
+      );
 
-    const result = await worker.processJob(
-      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
-      CTX,
-    );
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
 
-    expect(result.skippedCapped).toBe(1);
-    expect(result.unsubscribeIntentsRecorded).toBe(0);
-    const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
-    expect(match!.intentApplied).toBe(false);
-    expect(match!.resolution).toBe('approved');
-  });
+      expect(result.skippedCapped).toBe(1);
+      expect(result.unsubscribeIntentsRecorded).toBe(0);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match!.intentApplied).toBe(false);
+      expect(match!.resolution).toBe('approved');
+    },
+  );
 
   it('label-rule cap counts only rows that moved messages (0-affected rows are free)', async () => {
     // auto_archive_low_engagement has dailyActionCap=100. Fill the

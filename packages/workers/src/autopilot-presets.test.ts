@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { AUTOPILOT_PRESETS, type PresetInput, type PresetSignals } from './autopilot-presets.js';
+import {
+  AUTOPILOT_PRESETS,
+  matchConfiguredPreset,
+  type PresetInput,
+  type PresetSignals,
+} from './autopilot-presets.js';
 
 const SIGNALS_ZERO: PresetSignals = {
   isProtected: false,
@@ -331,5 +336,76 @@ describe('AUTOPILOT_PRESETS', () => {
         expect(allowed.has(preset.actionKind)).toBe(true);
       }
     });
+  });
+});
+
+// Configured presets keep their identity but use saved metadata conditions.
+describe('configured preset matching', () => {
+  it('uses edited dormancy bounds rather than the installed fixed window', () => {
+    const candidate = input(
+      { lastSeenDaysAgo: 210, readRateLifetime: 0.08, totalMessages: 10 },
+      null,
+    );
+    const conditions = {
+      kind: 'dormant',
+      lastSeenAfterDays: 200,
+      lastSeenWithinDays: null,
+      minMessages: 5,
+      readRateBelow: 0.1,
+    };
+    expect(AUTOPILOT_PRESETS.newsletter_graveyard.match(candidate, null).matched).toBe(false);
+    expect(matchConfiguredPreset('newsletter_graveyard', candidate, null, conditions).matched).toBe(
+      true,
+    );
+    expect(
+      matchConfiguredPreset(
+        'newsletter_graveyard',
+        input({ ...candidate.signals, readRateLifetime: null }, null),
+        null,
+        conditions,
+      ).matched,
+    ).toBe(false);
+    expect(
+      matchConfiguredPreset(
+        'newsletter_graveyard',
+        input({ ...candidate.signals, totalMessages: 4 }, null),
+        null,
+        conditions,
+      ).matched,
+    ).toBe(false);
+    expect(
+      matchConfiguredPreset('newsletter_graveyard', candidate, null, {
+        ...conditions,
+        readRateBelow: 0.05,
+      }).matched,
+    ).toBe(false);
+  });
+  it('fails closed on malformed conditions and preserves untouched preset defaults', () => {
+    const candidate = input({ lastSeenDaysAgo: 120, readRateLifetime: 0.01 }, null);
+    expect(matchConfiguredPreset('newsletter_graveyard', candidate, null, {}).matched).toBe(true);
+    expect(
+      matchConfiguredPreset('newsletter_graveyard', candidate, null, {
+        kind: 'subject',
+        contains: 'sale',
+      }).matched,
+    ).toBe(false);
+  });
+  it('honors edited recommendation and new-sender boundaries', () => {
+    expect(
+      matchConfiguredPreset(
+        'auto_archive_low_engagement',
+        input({}, { verdict: 'later', confidence: 0.8 }),
+        null,
+        { kind: 'recommendation', verdict: 'later', confidence: 0.7 },
+      ).matched,
+    ).toBe(true);
+    expect(
+      matchConfiguredPreset(
+        'auto_screen_new_senders',
+        input({ firstSeenDaysAgo: 10, totalMessages: 10 }, null),
+        null,
+        { kind: 'new_sender', firstSeenWithinDays: 11, fewerThanMessages: 3 },
+      ).matched,
+    ).toBe(true);
   });
 });

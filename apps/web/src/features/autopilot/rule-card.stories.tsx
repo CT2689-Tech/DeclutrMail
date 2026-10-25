@@ -74,6 +74,12 @@ function frame(children: React.ReactNode) {
   );
 }
 
+/** The same built-in rule in the unified Your rules inventory. */
+export const InRuleLibrary: Story<typeof RuleCard> = {
+  args: { ...baseArgs, libraryRow: true },
+  render: (args: CardArgs) => frame(<RuleCard {...args} />),
+};
+
 /** Observe window complete — threshold slider behind Details (confidence preset). */
 export const ObserveWindowComplete: Story<typeof RuleCard> = {
   args: baseArgs,

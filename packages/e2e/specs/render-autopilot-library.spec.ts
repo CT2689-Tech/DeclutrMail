@@ -107,20 +107,29 @@ if (process.env.DM_AUTOPILOT_LIBRARY_DIR) {
 
 for (const width of [320, 375, 1280]) {
   for (const theme of ['light', 'dark']) {
-    test(`expanded presets fit the ${width}px ${theme} Automations page`, async ({ page }) => {
+    test(`editable preset rules fit the ${width}px ${theme} Automations page`, async ({ page }) => {
       await page.setViewportSize({ width, height: 812 });
       await page.goto(`${url}?scenario=route&theme=${theme}`);
       await expect(page.getByRole('heading', { name: 'Autopilot', exact: true })).toBeVisible();
       await expectNoViewportOverflow(page);
       await expectNoUncontainedViewportEscape(page);
-      const disclosure = page.getByText(/^Preset rules ·/);
-      await disclosure.click();
-      await expect(page.getByRole('heading', { name: 'Preset rules', exact: true })).toBeVisible();
+      const library = page.getByRole('complementary', { name: 'Rule library' });
+      const edit = library.getByRole('button', {
+        name: 'Edit rule Review low-engagement senders for Archive',
+        exact: true,
+      });
+      await edit.click();
+      await expect(library.getByLabel('Confidence above (%)')).toBeVisible();
       await expectNoViewportOverflow(page);
       await expectNoUncontainedViewportEscape(page);
       await expect(page.getByRole('heading', { name: 'Pending suggestions' })).toBeVisible();
-      await disclosure.click();
-      await expect(page.getByRole('heading', { name: 'Preset rules', exact: true })).toBeHidden();
+      await library
+        .getByRole('button', {
+          name: 'Close rule Review low-engagement senders for Archive',
+          exact: true,
+        })
+        .click();
+      await expect(library.getByLabel('Confidence above (%)')).toHaveCount(0);
       await expectNoUncontainedViewportEscape(page);
     });
   }

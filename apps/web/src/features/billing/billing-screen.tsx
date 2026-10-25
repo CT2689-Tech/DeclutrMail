@@ -218,10 +218,12 @@ export function BillingScreen({
   const mayStartCheckout = useRef(false);
   mayStartCheckout.current = false;
   const mounted = useRef(true);
+  const releaseRequest = useRef<AbortController | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      releaseRequest.current?.abort();
     };
   }, []);
   // The pending payment lock. Persisted per workspace (localStorage) so
@@ -231,6 +233,11 @@ export function BillingScreen({
   // Initialized null (SSR renders without storage) and hydrated from
   // storage on mount below. Cross-DEVICE remains a BE gap — flagged.
   const [pending, setPending] = useState<PendingCheckout | null>(null);
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+  const serverOwnedPending = useRef<PendingCheckout | null>(null);
+  const [releasingPending, setReleasingPending] = useState(false);
+  const [releaseError, setReleaseError] = useState<string | null>(null);
   const [heldCheckout, setHeldCheckout] = useState<HeldCheckout | null>(null);
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>('fresh');
   // QA-billing-20260901-03: `pauseForThirtyDays` writes nothing locally
@@ -305,13 +312,19 @@ export function BillingScreen({
   // writes from OTHER tabs — localStorage fires `storage` there, so a
   // payment completed in tab A locks (and later unlocks) tab B live.
   useEffect(() => {
+    setReleasingPending(false);
+    setReleaseError(null);
     setPending(readPendingCheckout(workspaceId));
     const onStorage = (event: StorageEvent) => {
       if (event.key !== null && event.key !== pendingCheckoutKey(workspaceId)) return;
       setPending(readPendingCheckout(workspaceId));
     };
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      releaseRequest.current?.abort();
+      releaseRequest.current = null;
+    };
   }, [workspaceId]);
 
   const data = subscriptionQuery.data ?? null;
@@ -336,6 +349,22 @@ export function BillingScreen({
   // richer fromTier/kind context the server row doesn't.
   const serverPending = data?.pendingCheckout ?? null;
   useEffect(() => {
+    // Only a wait synthesized from this server claim follows its removal.
+    // A stored payment/change ambiguity must survive a missing server claim.
+    if (
+      !serverPending &&
+      pending !== null &&
+      pending === serverOwnedPending.current &&
+      pending.workspaceId === workspaceId &&
+      data !== null &&
+      !subscriptionQuery.isError &&
+      !subscriptionQuery.isFetching &&
+      readPendingCheckout(workspaceId) === null
+    ) {
+      serverOwnedPending.current = null;
+      setPending(null);
+      return;
+    }
     if (!serverPending || pending !== null || data === null) return;
     if (Date.parse(serverPending.expiresAt) <= Date.now()) return;
     // Hydrate and this effect both see `pending === null` on the first
@@ -348,7 +377,7 @@ export function BillingScreen({
       setPending(stored);
       return;
     }
-    setPending({
+    const synthesized: PendingCheckout = {
       workspaceId,
       // 'checkout_intent', NOT 'checkout': the server row proves a
       // checkout was OPENED and is unresolved — not that a payment was
@@ -364,11 +393,20 @@ export function BillingScreen({
       toTier: serverPending.tier,
       toCycle: serverPending.cycle,
       at: Date.now(),
-    });
+    };
+    serverOwnedPending.current = synthesized;
+    setPending(synthesized);
     // Deliberately NOT written to localStorage: the server row is the
     // source; a synthesized local copy would outlive it and re-lock
     // after the server cleared.
-  }, [serverPending, pending, data, workspaceId]);
+  }, [
+    serverPending,
+    pending,
+    data,
+    workspaceId,
+    subscriptionQuery.isError,
+    subscriptionQuery.isFetching,
+  ]);
 
   // A6 — the ONE interpretation of the billing read. Every rendered
   // surface derives from `view`; no component reads the raw
@@ -509,18 +547,58 @@ export function BillingScreen({
   // never released on a timer (that would reopen the double-charge
   // window for exactly the user whose webhook is delayed).
   function onReleasePendingLock() {
-    setHeldCheckout(null);
-    clearPendingCheckout(workspaceId);
-    setPending(null);
-    // Release the SERVER claim too (0051) — without this, the local
-    // release re-arms this browser while CHECKOUT_IN_FLIGHT still
-    // refuses the retry for up to 30 minutes, and other devices keep
-    // showing the processing banner. Best-effort: a failed release
-    // self-heals at the TTL, and the retry checkout's error message
-    // names this control as the way out.
-    void apiDelete<{ released: true }>('/api/billing/checkout/pending')
-      .then(() => queryClient.invalidateQueries({ queryKey: billingKeys.subscription() }))
-      .catch(() => undefined);
+    releaseCheckoutClaim();
+  }
+
+  // Keep the wait until the server releases it. Clearing it earlier lets
+  // the cached positive claim synthesize a new local wait that outlives
+  // the server claim. Cancel old reads before updating that cached field.
+  function releaseCheckoutClaim(attemptId?: string) {
+    if (releaseRequest.current || !mounted.current || currentOwner.current !== workspaceId) return;
+    const stored = readPendingCheckout(workspaceId);
+    const originalPending = pendingRef.current;
+    if (attemptId ? stored?.attemptId !== attemptId : originalPending === null) return;
+    const storedSnapshot = JSON.stringify(stored);
+    const pendingSnapshot = JSON.stringify(originalPending);
+    const controller = new AbortController();
+    releaseRequest.current = controller;
+    setReleasingPending(true);
+    setReleaseError(null);
+    const stillOwns = () =>
+      mounted.current &&
+      currentOwner.current === workspaceId &&
+      !controller.signal.aborted &&
+      JSON.stringify(readPendingCheckout(workspaceId)) === storedSnapshot &&
+      (attemptId
+        ? pendingRef.current === null || pendingRef.current.attemptId === attemptId
+        : JSON.stringify(pendingRef.current) === pendingSnapshot);
+    void apiDelete<{ released: true }>('/api/billing/checkout/pending', {
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (response.data?.released !== true) throw new Error('Checkout release unconfirmed');
+        if (!stillOwns()) return;
+        const refresh =
+          !attemptId ||
+          queryClient.isFetching({ queryKey: billingKeys.subscription(), exact: true }) > 0;
+        await queryClient.cancelQueries({ queryKey: billingKeys.subscription(), exact: true });
+        if (!stillOwns()) return;
+        queryClient.setQueryData<BillingSubscription>(billingKeys.subscription(), (previous) =>
+          previous ? { ...previous, pendingCheckout: null } : previous,
+        );
+        clearPendingCheckout(workspaceId);
+        setHeldCheckout(null);
+        setPending(null);
+        if (refresh) void queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
+      })
+      .catch(() => {
+        if (stillOwns()) setReleaseError('This hold couldn’t be released; try confirming again.');
+      })
+      .finally(() => {
+        if (releaseRequest.current !== controller) return;
+        releaseRequest.current = null;
+        if (mounted.current && currentOwner.current === workspaceId) setReleasingPending(false);
+      });
   }
 
   if (view.kind === 'loading' || (view.kind === 'billing_dark' && !hydrated)) {
@@ -794,6 +872,8 @@ export function BillingScreen({
             kind={pending.kind}
             {...(pending.offer !== undefined ? { offer: pending.offer } : {})}
             onRelease={onReleasePendingLock}
+            releasing={releasingPending}
+            releaseError={releaseError}
             onProviderCheck={
               // D249 — checkout-shaped waits run the pending-checkout
               // ladder; a change wait asks about the workspace's LIVE
@@ -1035,13 +1115,10 @@ export function BillingScreen({
           attemptClaim('checkout_intent', target, cycle, offer)
         }
         onCheckoutAbandoned={(attemptId) => {
-          releaseAttemptLock(attemptId);
-          // Overlay never opened (or the server refused before a
-          // claim). Clear the server slot so a retry is not
-          // CHECKOUT_IN_FLIGHT. Best-effort: TTL is the fallback.
-          void apiDelete<{ released: true }>('/api/billing/checkout/pending').catch(
-            () => undefined,
-          );
+          if (!mounted.current || currentOwner.current !== workspaceId) return;
+          const record = readPendingCheckout(workspaceId);
+          if (record?.attemptId === attemptId) setPending(record);
+          releaseCheckoutClaim(attemptId);
         }}
         onCheckoutClosed={surfaceAttemptLock}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
@@ -1283,6 +1360,8 @@ export function PaymentProcessingNotice({
   kind = 'checkout',
   offer,
   onRelease,
+  releasing = false,
+  releaseError = null,
   onProviderCheck,
 }: {
   phase?: 'fresh' | 'slow' | 'unconfirmed';
@@ -1299,6 +1378,8 @@ export function PaymentProcessingNotice({
    *  invites a second charge, so the risk is stated before the act
    *  (the D226 preview-before-consequence shape). */
   onRelease?: () => void;
+  releasing?: boolean;
+  releaseError?: string | null;
   /** D249 — server-side provider-truth check for checkout-shaped
    *  waits. When present, the manual release renders only AFTER a
    *  check has actually run and found nothing (or the provider was
@@ -1437,6 +1518,12 @@ export function PaymentProcessingNotice({
             ? 'Still confirming — this is taking longer than usual.'
             : `${acted} — confirming your ${isPass ? passName : 'plan'}.`}
       </h2>
+      {releasing ? <p style={{ margin: 0 }}>Releasing hold…</p> : null}
+      {releaseError ? (
+        <p role="alert" style={{ margin: 0, color: color.danger }}>
+          {releaseError}
+        </p>
+      ) : null}
       <p style={{ margin: 0, color: color.fgSoft }}>{body}</p>
       {phase !== 'fresh' ? (
         <p style={{ margin: 0, fontSize: text.sm }}>
@@ -1569,13 +1656,21 @@ export function PaymentProcessingNotice({
                   style={recoveryButtonStyle}
                   tone="default"
                   onClick={() => setConfirmingRelease(false)}
+                  inert={releasing}
                 >
                   Keep waiting
                 </Button>
-                <Button style={recoveryButtonStyle} tone="danger" onClick={onRelease}>
-                  {kind === 'checkout' || kind === 'checkout_intent'
-                    ? 'Confirm no charge'
-                    : 'Confirm not applied'}
+                <Button
+                  style={recoveryButtonStyle}
+                  tone="danger"
+                  onClick={onRelease}
+                  inert={releasing}
+                >
+                  {releasing
+                    ? 'Releasing…'
+                    : kind === 'checkout' || kind === 'checkout_intent'
+                      ? 'Confirm no charge'
+                      : 'Confirm not applied'}
                 </Button>
               </div>
             </div>
@@ -1585,10 +1680,13 @@ export function PaymentProcessingNotice({
                 style={recoveryButtonStyle}
                 tone="default"
                 onClick={() => setConfirmingRelease(true)}
+                inert={releasing}
               >
-                {kind === 'checkout' || kind === 'checkout_intent'
-                  ? 'Review checkout'
-                  : 'Review plan change'}
+                {releasing
+                  ? 'Releasing…'
+                  : kind === 'checkout' || kind === 'checkout_intent'
+                    ? 'Review checkout'
+                    : 'Review plan change'}
               </Button>
             </div>
           )
@@ -1597,8 +1695,13 @@ export function PaymentProcessingNotice({
           // re-applying the same change is a provider no-op — so a
           // single explicit release is enough.
           <div>
-            <Button style={recoveryButtonStyle} tone="default" onClick={onRelease}>
-              Stop waiting
+            <Button
+              style={recoveryButtonStyle}
+              tone="default"
+              onClick={onRelease}
+              inert={releasing}
+            >
+              {releasing ? 'Releasing…' : 'Stop waiting'}
             </Button>
           </div>
         )

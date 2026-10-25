@@ -10,8 +10,9 @@ import {
   GUIDED_REVIEW_PARAM,
   readGuidedReviewSession,
 } from '../guided-review-session';
+import { readSendersReturnHref, SENDER_RETURN_PARAM } from '../sender-detail-navigation';
 
-/** An explicit review token opts into return context; ordinary details still return to Senders. */
+/** Guided tokens retain ownership checks; ordinary detail links carry only safe workspace scope. */
 export function SenderDetailBackLink({
   senderId,
   arrow = false,
@@ -73,14 +74,22 @@ export function SenderDetailBackLink({
         : null,
     );
   }, [token, userId, mailboxId, identity, currentSenderId]);
-  const href =
+  const guidedHref =
     target?.identity === identity &&
     target.token === token &&
     target.senderId === currentSenderId &&
     target.expiresAt > Date.now()
       ? target.href
-      : '/senders';
-  const label = href === '/senders' ? 'Back to Senders' : 'Back to Guided Review';
+      : null;
+  const listHref = token
+    ? '/senders'
+    : (readSendersReturnHref(params?.get(SENDER_RETURN_PARAM)) ?? '/senders');
+  const href = guidedHref ?? listHref;
+  const label = guidedHref
+    ? 'Back to Guided Review'
+    : new URLSearchParams(listHref.split('?')[1]).get('view') === 'first-review'
+      ? 'Back to first review'
+      : 'Back to Senders';
   if (asButton)
     return (
       <Button tone="primary" onClick={() => window.location.assign(href)}>

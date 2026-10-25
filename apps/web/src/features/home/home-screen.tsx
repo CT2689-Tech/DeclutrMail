@@ -12,11 +12,9 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
 import {
-  celebrationFromUnsubscribeBacklog,
   toastUnsubscribeBacklog,
   toastUnsubscribeBacklogFailure,
 } from '@/features/inbox-report/backlog-outcome';
-import { writeReportCelebration } from '@/features/inbox-report/seen';
 import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { undoKeys } from '@/features/undo/query-keys';
@@ -25,11 +23,7 @@ import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
 import { inProgressStageSentence } from '@/features/onboarding/sync-stage-copy';
 import { apiGet } from '@/lib/api/client';
-import {
-  useActionStatus,
-  useBatchStatus,
-  useConfirmUnsubscribeBacklog,
-} from '@/lib/api/use-action';
+import { useConfirmUnsubscribeBacklog } from '@/lib/api/use-action';
 import { fetchSnoozed } from '@/lib/api/snoozed';
 import { snoozedListQueryOptions } from '@/features/snoozed/api/query-options';
 
@@ -59,7 +53,7 @@ import { HomeView } from './home-view';
  * | no decisions, still syncing   | title, status, scan bar          |
  * | no decisions, scan failed     | "The scan stopped" + retry       |
  * | no decisions                  | "Nothing cleared yet" + button   |
- * | decisions                     | number + label + button          |
+ * | decisions                     | next action + closed Details     |
  *
  * A mailbox switch needs nothing here: `resetMailboxScopedCache`
  * invalidates every query, these included.
@@ -67,32 +61,20 @@ import { HomeView } from './home-view';
 /** F2's size field is not on main, so the Largest card stays off. */
 const SENDER_SIZE_VIEW = false;
 
-interface ArchiveMove {
-  id: string;
-  handle: 'action' | 'batch';
-}
-
-/** Poll the archive Home just confirmed so the tray can offer Undo. */
-function useHomeArchiveUndo(mailboxId: string | null, move: ArchiveMove | null) {
-  const batch = move?.handle === 'batch';
-  const scoped = mailboxId !== null ? mailboxId : undefined;
-  useActionStatus(move && !batch ? move.id : null, scoped);
-  useBatchStatus(move && batch ? move.id : null, scoped);
-}
-
 export function HomeScreen() {
   const { me } = useAuth();
   const { tier } = useTier();
   const queryClient = useQueryClient();
   const confirmBacklog = useConfirmUnsubscribeBacklog();
-  const [archiveMove, setArchiveMove] = useState<ArchiveMove | null>(null);
   const hasActiveMailbox = me.activeMailboxId != null;
-  useHomeArchiveUndo(me.activeMailboxId, archiveMove);
 
   const summary = useHomeSummary({ enabled: hasActiveMailbox });
   const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
   const cleanup = useCleanupSummary();
   const mailboxId = me.activeMailboxId;
+  const scope = useRef({ mailboxId, generation: 0 });
+  if (scope.current.mailboxId !== mailboxId)
+    scope.current = { mailboxId, generation: scope.current.generation + 1 };
   const report = useQuery({
     ...homeInboxReportQueryOptions(mailboxId, async (signal) => {
       const envelope = await apiGet<InboxReportDto>(`/api/mailboxes/${mailboxId}/inbox-report`, {
@@ -141,25 +123,19 @@ export function HomeScreen() {
     if (step.kind !== 'unsub_archive') return;
     const mailbox = activeMailbox?.id;
     if (!mailbox || step.senderIds.length === 0) return;
+    if (confirmBacklog.isPending) return;
+    const generation = scope.current.generation;
     confirmBacklog.mutate(
       { mailboxId: mailbox, mode: 'archive', senderIds: [...step.senderIds] },
       {
         onSuccess: (result) => {
-          toastUnsubscribeBacklog(result);
-          const next = celebrationFromUnsubscribeBacklog(result, {
-            senderKeys: step.senderIds,
-            generatedAt: report.data?.generatedAt,
-          });
-          if (next) {
-            writeReportCelebration(mailbox, next);
-            if (next.actionId && next.actionHandle) {
-              setArchiveMove({ id: next.actionId, handle: next.actionHandle });
-            }
-          }
+          if (scope.current.generation === generation) toastUnsubscribeBacklog(result);
           void queryClient.invalidateQueries({ queryKey: activityKeys.all });
           void queryClient.invalidateQueries({ queryKey: undoKeys.all });
         },
-        onError: toastUnsubscribeBacklogFailure,
+        onError: (error) => {
+          if (scope.current.generation === generation) toastUnsubscribeBacklogFailure(error);
+        },
       },
     );
   }
@@ -170,6 +146,7 @@ export function HomeScreen() {
 
   return (
     <HomeView
+      key={mailboxId}
       state={resolve()}
       tier={tier}
       visitSummary={<HomeArrivals />}

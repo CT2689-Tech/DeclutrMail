@@ -69,6 +69,40 @@ describe('AutopilotController PATCH mode gate', () => {
 // preview showed, so the body is now REQUIRED: no "approve everything
 // offerable now" fallback.
 // docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
+describe('AutopilotController configuration validation', () => {
+  const configuration = {
+    version: 1,
+    name: 'My rule',
+    actionKind: 'archive',
+    conditions: {
+      kind: 'dormant',
+      lastSeenAfterDays: 90,
+      lastSeenWithinDays: 180,
+      readRateBelow: 0.05,
+      minMessages: 5,
+    },
+  };
+  it('passes the validated configuration without promoting the rule', async () => {
+    const { controller, patchRule, tierForWorkspace } = makeController('plus');
+    await controller.patchRule(mailbox, principal, RULE_ID, { configuration });
+    expect(patchRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, { configuration });
+    expect(tierForWorkspace).not.toHaveBeenCalled();
+  });
+  it.each([
+    { configuration: { ...configuration, actionKind: 'delete' } },
+    { configuration: { ...configuration, version: 0 } },
+    { configuration: { ...configuration, conditions: { kind: 'subject', contains: 'sale' } } },
+    { configuration, mode: 'active' },
+    { mode: 'observe', expectedVersion: -1 },
+  ])('rejects invalid or mixed configuration writes before the service', async (body) => {
+    const { controller, patchRule } = makeController('plus');
+    await expect(controller.patchRule(mailbox, principal, RULE_ID, body)).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(patchRule).not.toHaveBeenCalled();
+  });
+});
+
 describe('AutopilotController approve-all body validation', () => {
   function makeApproveAllController() {
     const approveAllForRule = vi.fn().mockResolvedValue({

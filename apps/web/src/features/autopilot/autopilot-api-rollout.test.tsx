@@ -177,8 +177,8 @@ it('keeps an open preset preview and focus through recovery, then returns focus 
   expect(within(affectedRules).getAllByRole('listitem')).toHaveLength(2);
   expect(within(affectedRules).getByText('Newsletter cleanup')).toBeInTheDocument();
   cancel.focus();
-  const heading = screen.getByRole('heading', { name: 'Preset rules', level: 2 });
-  expect(heading.closest('details')).toHaveAttribute('open');
+  const heading = screen.getByRole('heading', { name: 'Pending suggestions', level: 2 });
+  expect(screen.getByRole('list', { name: 'Autopilot rules' })).toBeVisible();
   expect(opener).not.toBeInTheDocument();
 
   fireEvent.click(cancel);
@@ -221,12 +221,10 @@ it('keeps a pending preset pause through recovery and completes its focus handof
   await act(async () => state.completePause());
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   await waitFor(() =>
-    expect(screen.getByRole('heading', { name: 'Preset rules', level: 2 })).toHaveFocus(),
+    expect(screen.getByRole('heading', { name: 'Pending suggestions', level: 2 })).toHaveFocus(),
   );
   await waitFor(() => expect(screen.getByRole('button', { name: 'Pause all' })).toBeDisabled());
-  expect(
-    screen.getByRole('heading', { name: 'Preset rules', level: 2 }).closest('details'),
-  ).toHaveAttribute('open');
+  expect(screen.getByRole('list', { name: 'Autopilot rules' })).toBeVisible();
 });
 
 it('preserves a visible preset opener when cancelling without capability recovery', async () => {

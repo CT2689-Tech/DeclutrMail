@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Avatar, Button, Kbd, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { PillTone } from '@declutrmail/shared';
 import { unsubscribeUnavailableReason } from '@declutrmail/shared/actions';
-import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
+import { confidenceBand, ENGINE_ABSTENTION_COPY, scoredAgeLabel } from '@declutrmail/shared/copy';
+import { senderDetailHref } from '@/features/senders/sender-detail-navigation';
 import { useNow } from '@/lib/use-now';
 
 import type { ActionReach } from '@/lib/api/actions';
@@ -103,7 +105,11 @@ export function ScreenerRow({
   onCancel: () => void;
   onRetryPreview?: (() => void) | undefined;
 }) {
+  const params = useSearchParams();
+  const returnSearch = new URLSearchParams(params?.toString());
+  returnSearch.set('view', 'first-review');
   const showSuggestion = row.inboxCount !== 0 || row.recommendation?.verdict !== 'later';
+  const abstention = row.recommendation?.verdict === 'later';
   // Hydration-safe clock — `null` on the server and the first client
   // render, so a day-boundary crossing can't make the server and the
   // browser disagree about "3 days ago" vs "4 days ago".
@@ -249,7 +255,9 @@ export function ScreenerRow({
           {showSuggestion &&
             (row.recommendation != null ? (
               <Pill tone={VERDICT_TONE[row.recommendation.verdict]}>
-                {verdictLabel(row.recommendation.verdict)}
+                {abstention
+                  ? ENGINE_ABSTENTION_COPY.label
+                  : verdictLabel(row.recommendation.verdict)}
                 {(() => {
                   const band = confidenceBand(
                     row.recommendation.verdict,
@@ -377,7 +385,7 @@ export function ScreenerRow({
             {showSuggestion && row.recommendation != null && (
               <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
                 <span style={{ fontWeight: 600, color: color.fgSoft }}>
-                  Why this is suggested:{' '}
+                  {abstention ? ENGINE_ABSTENTION_COPY.context : 'Why this is suggested'}:{' '}
                 </span>
                 {row.recommendation.reasoning}
                 {/* The sentence is stored — written when the read was
@@ -394,7 +402,7 @@ export function ScreenerRow({
               </span>
             )}
             <Link
-              href={`/senders/${row.senderId}`}
+              href={senderDetailHref(row.senderId, returnSearch.toString())}
               style={{
                 fontSize: text.sm,
                 fontWeight: 600,

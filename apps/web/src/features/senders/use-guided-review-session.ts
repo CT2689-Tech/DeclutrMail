@@ -151,7 +151,7 @@ export function useGuidedReviewSession({
   }, [session, selectedIds, unavailable]);
   const start = useCallback(
     (
-      nextRows: readonly Sender[],
+      nextRows: readonly Identity[],
       kind: StoredGuidedReviewSession['kind'],
       selectedIds: string[] = [],
     ) => {

@@ -4,6 +4,13 @@ export const SANDBOX_API_ORIGIN = 'https://sandbox-api.paddle.com';
 
 const CENTS = /^\d+$/;
 
+/** A null provider expiry is unlimited; missing/invalid or elapsed expiry fails closed. */
+export function discountIsUnexpired(expiresAt: unknown, nowMs = Date.now()): boolean {
+  if (!Number.isFinite(nowMs)) return false;
+  if (expiresAt === null) return true;
+  return typeof expiresAt === 'string' && nowMs < Date.parse(expiresAt);
+}
+
 /** Percentage discounts apply to the pre-tax subtotal, in minor units. */
 export function discountMatchesPercent(
   subtotal: string,

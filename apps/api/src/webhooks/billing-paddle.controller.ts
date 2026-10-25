@@ -13,7 +13,7 @@
 //     unverifiable event.
 //   - 401 on any signature failure (recorded to the D181 security
 //     audit as `webhook.signature_failure` BEFORE the throw).
-//   - 400 on a verified-but-malformed envelope (Paddle stops retrying).
+//   - 400 on a verified-but-malformed envelope (Paddle retries non-2xx).
 //   - 200 on processed / duplicate / ignored — dedup hits and
 //     recognized-but-irrelevant events are valid terminal outcomes
 //     under at-least-once delivery.
@@ -89,8 +89,8 @@ export class BillingPaddleWebhookController {
       event = await this.adapter.mapWebhookEvent(payload);
     } catch (err) {
       // Mirrors the Razorpay controller for the same reason it does:
-      // a malformed envelope is terminal (400), but a provider read the
-      // mapper could not make is a delivery that must come back (5xx).
+      // a malformed envelope returns 400, while a provider read the
+      // mapper could not make returns 5xx. Paddle retries both failures.
       // Paddle's mapper cannot produce the latter today — it is
       // synchronous and makes no network call — so this branch is dead
       // code on the CURRENT adapter. It is not dead on the CONTRACT: the
@@ -98,8 +98,8 @@ export class BillingPaddleWebhookController {
       // for a provider-read failure, and the day Paddle's mapper gains
       // one (`adjustment.updated` resolving a status transition is the
       // known candidate — see FOUNDER-FOLLOWUPS), a bare catch here
-      // would silently collapse that 5xx into a 400 and Paddle would
-      // stop retrying the delivery. Ultrareview, 2026-08-14.
+      // would misclassify a transient provider failure as a malformed
+      // request, even though Paddle retries both. Ultrareview, 2026-08-14.
       if (err instanceof AppException) throw err;
       throw new AppException({ code: 'BAD_REQUEST', message: 'Malformed Paddle webhook body.' });
     }

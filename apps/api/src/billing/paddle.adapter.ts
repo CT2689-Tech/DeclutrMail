@@ -172,6 +172,10 @@ interface PaddleTransaction {
   created_at?: string | null;
   currency_code?: string | null;
   collection_mode?: 'automatic' | 'manual' | null;
+  adjustments_totals?: {
+    currency_code?: unknown;
+    breakdown?: { refund?: unknown };
+  } | null;
   billing_period?: { starts_at?: unknown; ends_at?: unknown } | null;
   items?: Array<{ price?: { id?: unknown }; quantity?: unknown; proration?: unknown }>;
   details?: {
@@ -2081,7 +2085,7 @@ export class PaddleAdapter implements BillingProvider {
   async invoiceTransaction(transactionId: string): Promise<ProviderInvoicePage> {
     if (!transactionId) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     const body = await this.authedGet(
-      `/transactions/${encodeURIComponent(transactionId)}`,
+      `/transactions/${encodeURIComponent(transactionId)}?include=adjustments_totals`,
       'invoice transaction',
     );
     const row = (body as { data?: PaddleTransaction } | null)?.data;
@@ -2096,7 +2100,7 @@ export class PaddleAdapter implements BillingProvider {
   ): Promise<ProviderInvoicePage> {
     if (!id) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
     const body = await this.authedGet(
-      `/transactions?${scope}=${encodeURIComponent(id)}&per_page=${INVOICE_PAGE_SIZE}&order_by=billed_at[DESC]`,
+      `/transactions?${scope}=${encodeURIComponent(id)}&per_page=${INVOICE_PAGE_SIZE}&order_by=billed_at[DESC]&include=adjustments_totals`,
       `transactions ${scope}=${id}`,
     );
     if (body === null && scope === 'subscription_id')
@@ -2133,12 +2137,25 @@ export class PaddleAdapter implements BillingProvider {
         omitted += 1;
         continue;
       }
+      const refunds = row.adjustments_totals;
+      const refundedAmount = refunds?.breakdown?.refund;
+      if (
+        refunds != null &&
+        (refunds.currency_code !== currencyCode ||
+          typeof refundedAmount !== 'string' ||
+          !/^\d+$/.test(refundedAmount) ||
+          BigInt(refundedAmount) > BigInt(amount))
+      ) {
+        omitted += 1;
+        continue;
+      }
       invoices.push({
         id: row.id,
         issuedAt,
         amount,
         currencyCode,
         status: PADDLE_INVOICE_STATUS[status] ?? 'unknown',
+        ...(typeof refundedAmount === 'string' ? { refundedAmount } : {}),
         hostedUrl: null,
         // Paddle PDFs require a nonzero completed payment or a billed manual invoice.
         documentAvailable:

@@ -555,6 +555,25 @@ describe('DecidePreview — reasoning age label (QA-archive-20260903-01)', () =>
     // The reasoning itself still renders — only the age label is gated.
     expect(screen.getByText('Why suggested')).toBeInTheDocument();
   });
+
+  it('labels a Later abstention as review context without changing the chosen action', () => {
+    const reasoning = 'No recent mail, so engagement patterns cannot yet be assessed.';
+    render(
+      <DecidePreview
+        verb="later"
+        row={{ ...row, recommendation: { verdict: 'later', confidence: 0.4, reasoning } }}
+        inboxCount={2}
+        wakeAt="2030-10-31T12:00:00.000Z"
+        confirming={false}
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(screen.getByText('Review context')).toBeInTheDocument();
+    expect(screen.getByText(reasoning)).toBeInTheDocument();
+    expect(screen.queryByText('Why suggested')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Later for ${row.senderName}` })).toBeEnabled();
+  });
 });
 
 // QA-delete-20260903-01: a zero-match Archive/Later/Delete otherwise still

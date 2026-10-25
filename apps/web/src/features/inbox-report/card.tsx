@@ -21,7 +21,7 @@ export function InboxReportCard(props: {
       <span className={`${styles.body} dm-home-report-body`}>{WS5_COPY['report.home.body']}</span>
       <a
         className={`${styles.cta} dm-home-report-cta dm-external-link dm-tap-target`}
-        href="/senders"
+        href="/senders#inbox-report"
       >
         {WS5_COPY['report.home.cta']}
       </a>

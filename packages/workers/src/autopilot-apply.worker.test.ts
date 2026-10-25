@@ -207,6 +207,75 @@ async function enablePreset(
 }
 
 describe('AutopilotApplyWorker', () => {
+  it('uses saved conditions and the chosen Archive action for an existing Unsubscribe preset', async () => {
+    const db = await freshDb();
+    const mailbox = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mailbox);
+    const id = await enablePreset(db, mailbox, 'newsletter_graveyard', {
+      enabled: true,
+      mode: 'observe',
+    });
+    await db
+      .update(automationRules)
+      .set({
+        actionKind: 'archive',
+        conditions: {
+          kind: 'dormant',
+          lastSeenAfterDays: 200,
+          lastSeenWithinDays: null,
+          readRateBelow: 0.1,
+          minMessages: 5,
+        },
+      })
+      .where(eq(automationRules.id, id));
+    const sender = await seedSender(db, mailbox, {
+      email: 'configured@example.test',
+      lastSeenAt: new Date(NOW.getTime() - 210 * 86400000),
+      totalMessages: 10,
+      timeseries: { volume: 10, readCount: 0 },
+    });
+    const protectedKey = await seedSender(db, mailbox, {
+      email: 'protected@example.test',
+      lastSeenAt: new Date(NOW.getTime() - 210 * 86400000),
+      totalMessages: 10,
+      timeseries: { volume: 10, readCount: 0 },
+      isProtected: true,
+    });
+    const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ mailboxAccountId: mailbox, triggeredAtMs: NOW.getTime() }, FAKE_CTX);
+    const matches = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.ruleId, id));
+    expect(matches.map((m) => m.senderKey)).toEqual([sender]);
+    expect(matches.some((m) => m.senderKey === protectedKey)).toBe(false);
+    expect(matches[0]).toMatchObject({ modeAtMatch: 'observe', resolution: 'pending' });
+  });
+
+  it('discards old matches and summary when the rule changes after signals were read', async () => {
+    const db = await freshDb();
+    const mailbox = await seedMailbox(db);
+    await seedAutopilotPresets(db as never, mailbox);
+    const id = await enablePreset(db, mailbox, 'auto_archive_low_engagement', {
+      enabled: true,
+      mode: 'observe',
+    });
+    await seedSender(db, mailbox, {
+      email: 'old-snapshot@example.test',
+      decision: { verdict: 'archive', confidence: 0.92 },
+      totalMessages: 5,
+    });
+    const transaction = db.transaction.bind(db);
+    vi.spyOn(db, 'transaction').mockImplementationOnce(async (callback, options) => {
+      await db
+        .update(automationRules)
+        .set({ version: 2, lastRunActions: 777, lastRunSenders: 777 })
+        .where(eq(automationRules.id, id));
+      return transaction(callback, options);
+    });
+    const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+    await worker.processJob({ mailboxAccountId: mailbox, triggeredAtMs: NOW.getTime() }, FAKE_CTX);
+    expect(await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.ruleId, id))).toHaveLength(0);
+    const [rule] = await db.select().from(automationRules).where(eq(automationRules.id, id));
+    expect(rule).toMatchObject({ version: 2, lastRunActions: 777, lastRunSenders: 777 });
+  });
   it('keeps a legacy Active low-engagement Archive rule in review mode', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);

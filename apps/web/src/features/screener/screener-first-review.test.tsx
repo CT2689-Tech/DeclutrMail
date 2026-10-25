@@ -35,6 +35,9 @@ vi.mock('./api/use-screener', async (importOriginal) => ({
   useScreenerCount: access.count,
 }));
 vi.mock('@/lib/posthog', () => ({ track: vi.fn() }));
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
 vi.mock('@/lib/sentry', () => ({ captureFeatureException: vi.fn() }));
 vi.mock('@declutrmail/shared', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -44,6 +47,7 @@ vi.mock('@declutrmail/shared', async (importOriginal) => ({
 const row = SCREENER_QUEUE[0]!;
 
 beforeEach(() => {
+  window.history.replaceState(null, '', '/senders?view=first-review');
   installFetchStub();
   access.granted = true;
   access.capability.mockClear();
@@ -58,6 +62,25 @@ beforeEach(() => {
 });
 
 describe('Needs first review in Senders', () => {
+  it('carries the originating view and dormant directory search into sender details', () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/senders?q=weekly&has_inbox_mail=true&view=first-review',
+    );
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen presentation="senders" state={{ kind: 'ready', rows: [row] }} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: `${row.senderName} — expand sender detail` }),
+    );
+    const href = screen.getByRole('link', { name: 'Open sender' }).getAttribute('href')!;
+    expect(new URL(href, 'http://localhost').searchParams.get('returnTo')).toBe(
+      '/senders?q=weekly&has_inbox_mail=true&view=first-review',
+    );
+  });
   it('retains the capability gate before mounting queue or count reads', () => {
     access.granted = false;
     render(
@@ -209,7 +232,7 @@ describe('Needs first review in Senders', () => {
       </QueryWrapper>
     );
     const view = render(ui(2));
-    expect(screen.getByText('Later', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('No clear suggestion', { exact: true })).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole('button', { name: `${row.senderName} — expand sender detail` }),
     );
@@ -222,7 +245,7 @@ describe('Needs first review in Senders', () => {
     ).toBeEnabled();
     view.rerender(ui(2));
     expect(screen.getByText(recommendation.reasoning)).toBeInTheDocument();
-    expect(screen.getByText(/Why this is suggested/)).toBeInTheDocument();
+    expect(screen.getByText('Review context:')).toBeInTheDocument();
   });
 
   it.each([

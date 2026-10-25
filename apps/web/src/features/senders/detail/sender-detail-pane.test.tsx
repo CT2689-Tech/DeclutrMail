@@ -52,6 +52,9 @@ vi.mock('@/features/auth/auth-provider', () => ({
 }));
 
 const trackMock = vi.fn();
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => new URLSearchParams(window.location.search),
+}));
 vi.mock('@/lib/posthog', () => ({ track: (...args: unknown[]) => trackMock(...args) }));
 vi.mock('@/lib/sentry', () => ({ addBreadcrumb: vi.fn(), captureFeatureException: vi.fn() }));
 
@@ -139,6 +142,7 @@ function renderPane(onClose = vi.fn(), senderId = 'linkedin') {
 
 describe('SenderDetailPane', () => {
   beforeEach(() => {
+    window.history.replaceState(null, '', '/senders');
     trackMock.mockClear();
   });
   afterEach(() => {
@@ -185,6 +189,20 @@ describe('SenderDetailPane', () => {
     );
     fireEvent.click(pane.getByRole('button', { name: 'Close sender details' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves directory search and sort through Open full page without reopening the pane', async () => {
+    install(() => jsonOk({ data: DETAIL }));
+    window.history.replaceState(
+      null,
+      '',
+      '/senders?q=weekly&sort=name&direction=asc&sender=linkedin',
+    );
+    renderPane();
+    const href = screen.getByRole('link', { name: 'Open full page' }).getAttribute('href')!;
+    expect(new URL(href, 'http://localhost').searchParams.get('returnTo')).toBe(
+      '/senders?q=weekly&sort=name&direction=asc',
+    );
   });
 
   it('shows current inbox and archived counts separately from received history', async () => {
