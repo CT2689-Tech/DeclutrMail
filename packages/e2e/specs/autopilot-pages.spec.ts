@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 import { applyJourneySeed } from '../helpers/seed-journeys';
+import { BILLING_SEED } from '../helpers/seed-billing';
 
 /** Owned synthetic review records only: no worker, Gmail or approval intents. */
 const api = new ApiClient();
@@ -16,6 +17,7 @@ const senderKeys = Array.from({ length: 61 }, (_, i) =>
 );
 let sql: postgres.Sql;
 let mailboxId: string;
+let originalAttribution: { source: string | null; detail: string | null } | undefined;
 
 interface PendingPage {
   data: { id: string; matchedAt: string }[];
@@ -30,12 +32,29 @@ async function pending(cursor?: string): Promise<PendingPage> {
   return response.body as PendingPage;
 }
 
+/** Follow the same visible dismissal as the Schedule journey; never click through an overlay. */
+async function dismissOptionalPrompts(page: Page) {
+  const essential = page.getByRole('button', { name: 'Essential only', exact: true });
+  if (await essential.isVisible()) await essential.click();
+  const me = await api.get<{ signupAttribution?: { promptNeeded?: boolean } }>('/api/auth/me');
+  if (me.signupAttribution?.promptNeeded) {
+    const prompt = page.getByTestId('heard-from-prompt');
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole('button', { name: 'Skip', exact: true }).click();
+    await expect(prompt).toBeHidden();
+  }
+}
+
 test.beforeAll(async () => {
   const live = await requireLiveStack(api);
   expect(live.mailboxId).not.toBeNull();
   mailboxId = live.mailboxId!;
   sql = dbConnect();
   await applyJourneySeed(sql);
+  [originalAttribution] = await sql<{ source: string | null; detail: string | null }[]>`
+    SELECT signup_attribution_heard_from AS source, signup_attribution_heard_detail AS detail
+    FROM users WHERE id = ${BILLING_SEED.userId}
+  `;
 });
 
 test.afterAll(async () => {
@@ -43,6 +62,11 @@ test.afterAll(async () => {
     // Rule cascade deletes only this test's matches; names/keys are unique.
     await sql`DELETE FROM automation_rules WHERE id IN (${ruleId}, ${editorRuleId}) AND mailbox_account_id = ${mailboxId}`;
     await sql`DELETE FROM senders WHERE mailbox_account_id = ${mailboxId} AND sender_key IN ${sql(senderKeys)}`;
+    if (originalAttribution) {
+      await sql`UPDATE users SET signup_attribution_heard_from = ${originalAttribution.source},
+        signup_attribution_heard_detail = ${originalAttribution.detail}
+        WHERE id = ${BILLING_SEED.userId}`;
+    }
     await sql.end();
   }
   await api.dispose();
@@ -90,9 +114,7 @@ test('review pages cover the backlog and recover when the older page is exhauste
 
   await page.goto('/autopilot');
   await expectScreenMounted(page);
-  // Dismiss any consent overlay before interacting with the lower review section.
-  const essential = page.getByRole('button', { name: 'Essential only', exact: true });
-  if (await essential.isVisible()) await essential.click();
+  await dismissOptionalPrompts(page);
   await expect(
     page.getByText('50 recorded sender matches on this page · 61 at last check'),
   ).toBeVisible();
@@ -139,8 +161,7 @@ test('customizes an existing preset through the real API and preserves it on rel
   await page.setViewportSize({ width: 375, height: 812 });
   await page.goto('/autopilot');
   await expectScreenMounted(page);
-  const essential = page.getByRole('button', { name: 'Essential only', exact: true });
-  if (await essential.isVisible()) await essential.click();
+  await dismissOptionalPrompts(page);
   await page.getByRole('button', { name: /^Your rules/ }).click();
   await page.getByRole('button', { name: 'Edit rule E2E existing rule', exact: true }).click();
   const editor = page.getByRole('form', { name: 'Customize E2E existing rule', exact: true });

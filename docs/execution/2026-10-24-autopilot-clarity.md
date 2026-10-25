@@ -56,3 +56,5 @@ Implemented: Senders-style neutral list hierarchy, separate review/management vi
 Deferred: changing when/how rules act, merging incompatible custom-email and recorded sender-match totals, and a new backend freshness contract. None is needed for this visual/clarity change; the exact current preview remains the decision point. No new data collection, tier policy or provider permissions.
 
 Delivery and independent review evidence are recorded on the PR. Browser CI must validate the changed navigation against the isolated real API before merge.
+
+CI follow-up: the first real-API journey run reached the updated counts and rule views, but an optional account feedback prompt covered lower controls. The Autopilot journey now uses the same visible Skip dismissal as the Schedule journey before proceeding. No forced clicks, prompt suppression, shell changes or production account writes were added. Onboarding remains outside this repair scope.
