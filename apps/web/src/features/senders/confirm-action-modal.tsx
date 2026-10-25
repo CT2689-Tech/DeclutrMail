@@ -1062,8 +1062,8 @@ export function ConfirmActionModal({
   const inboxReachCount = pickBucketCount(inboxCounts, reachWindow);
   const allMailReachCount = pickBucketCount(allMailCounts, reachWindow);
   // Delete keeps the checkbox when the archived count is missing, so the
-  // unavailable sentence can say why widening is off. Equal numeric
-  // counts still hide it inside ActionReachControl. Widening itself
+  // unavailable sentence can say why widening is off. Matching numeric
+  // counts keep the scope choice inspectable. Widening itself
   // stays behind `reachAvailable`.
   const showReach = deleteReachOffered && inboxReachCount != null;
   const windowOptions = TIME_WINDOW_PRESETS.map((preset) => ({

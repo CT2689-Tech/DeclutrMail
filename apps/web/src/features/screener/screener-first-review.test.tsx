@@ -62,6 +62,75 @@ beforeEach(() => {
 });
 
 describe('Needs first review in Senders', () => {
+  it('keeps archived Delete discoverable when both age-filtered counts are zero and submits the selected scope', async () => {
+    const counts = (all: number) => ({
+      all,
+      olderThan30d: 0,
+      olderThan90d: 0,
+      olderThan180d: 0,
+      olderThan365d: 0,
+    });
+    const bodies: unknown[] = [];
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/actions/preview',
+        respond: () => jsonOk({ data: { counts: counts(0), allMail: { counts: counts(2) } } }),
+      },
+      {
+        method: 'POST',
+        path: '/api/screener/decide',
+        respond: async (req) => {
+          bodies.push(await req.json());
+          return jsonOk({
+            data: {
+              senderId: row.senderId,
+              verb: 'delete',
+              resolved: true,
+              execution: { kind: 'noop', reason: 'no_matching_messages' },
+            },
+          });
+        },
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ScreenerScreen
+          presentation="senders"
+          state={{ kind: 'ready', rows: [{ ...row, inboxCount: 0, isProtected: false }] }}
+        />
+      </QueryWrapper>,
+    );
+    fireEvent.click(
+      screen.getByRole('button', { name: `${row.senderName} — expand sender detail` }),
+    );
+    fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: 'Delete' }));
+    await screen.findByText('No emails match these choices.');
+    const archived = screen.getByRole('checkbox', { name: 'Include archived email' });
+    const confirm = screen.getByRole('button', { name: `Delete for ${row.senderName}` });
+    expect(archived).not.toBeChecked();
+    expect(archived).toBeEnabled();
+    expect(confirm).toBeDisabled();
+    fireEvent.click(archived);
+    expect(archived).toBeChecked();
+    expect(confirm).toBeDisabled();
+    expect(bodies).toHaveLength(0);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: 'all' },
+    });
+    await waitFor(() => expect(confirm).toBeEnabled());
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      '2 emails will move to Gmail Trash.',
+    );
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      'Inbox and archived email · Any age',
+    );
+    fireEvent.click(confirm);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ senderId: row.senderId, verb: 'delete', reach: 'all_mail' });
+    expect(bodies[0]).not.toHaveProperty('olderThanDays');
+  });
+
   it('carries the originating view and dormant directory search into sender details', () => {
     window.history.replaceState(
       null,

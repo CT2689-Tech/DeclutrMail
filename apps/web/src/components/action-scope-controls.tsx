@@ -25,7 +25,8 @@ export function ActionReachControl({
     typeof inboxCount === 'number' &&
     typeof allMailCount === 'number' &&
     inboxCount === allMailCount;
-  if (countsMatch) return null;
+  // Equal counts describe this age-filtered snapshot, not whether the
+  // reader should be able to choose a scope (or change the age next).
 
   const archivedUnavailable = allMailCount == null;
   return (
@@ -36,9 +37,11 @@ export function ActionReachControl({
         disabled={archivedUnavailable && value !== 'all_mail'}
         onChange={(checked) => onChange(checked ? 'all_mail' : 'inbox_only')}
       />
-      {archivedUnavailable ? (
+      {archivedUnavailable || countsMatch ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-          {WS5_COPY['f1.preview.archived.unavailable']}
+          {archivedUnavailable
+            ? WS5_COPY['f1.preview.archived.unavailable']
+            : WS2_COPY.simplify.confirm.sameScope}
         </p>
       ) : null}
     </>

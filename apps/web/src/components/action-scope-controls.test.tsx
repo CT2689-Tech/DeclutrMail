@@ -27,17 +27,19 @@ describe('ActionReachControl', () => {
     expect(onChange).toHaveBeenCalledWith('inbox_only');
   });
 
-  it('hides the checkbox when the two counts match, including zero', () => {
+  it('keeps the scope choice visible when counts match, including zero', () => {
     const { rerender } = render(
       <ActionReachControl value="inbox_only" inboxCount={4} allMailCount={4} onChange={vi.fn()} />,
     );
-    expect(screen.queryByRole('checkbox', { name: label })).toBeNull();
-    expect(screen.queryByText(WS2_COPY.simplify.confirm.sameScope)).toBeNull();
+    expect(screen.getByRole('checkbox', { name: label })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: label })).not.toBeChecked();
+    expect(screen.getByText(WS2_COPY.simplify.confirm.sameScope)).toBeInTheDocument();
 
     rerender(
       <ActionReachControl value="inbox_only" inboxCount={0} allMailCount={0} onChange={vi.fn()} />,
     );
-    expect(screen.queryByRole('checkbox', { name: label })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: label })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: label })).not.toBeChecked();
   });
 
   it('disables an unchecked box and explains when archived mail cannot be counted', () => {
