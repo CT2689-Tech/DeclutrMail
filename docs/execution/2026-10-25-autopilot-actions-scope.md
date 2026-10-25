@@ -48,7 +48,12 @@ pre-existing warnings. The final Storybook and production builds passed, as did
 the 32-route public prerender check. Preset editing is loaded on demand. The
 measured bundle table was regenerated with the repository script after the new
 flow exceeded the old Autopilot cap by 0.2 kB and Settings by 0.1 kB; the generated
-formula remains unchanged. CI browser lanes remain required before merge.
+formula remains unchanged. The first CI build caught a conditional pricing route
+omitted by the flag-off local rebaseline. Rebuilt and regenerated with CI's
+PRICING_V2/METER_V2/BILLING_PASS_ENABLED flags: all 50 route budgets and the
+32-route prerender check pass. Current main was merged once to resolve this
+integration failure; its Home and refund changes did not conflict with this flow.
+CI browser lanes remain required before merge.
 
 The actual app and API ran against a cloned synthetic Postgres database, isolated
 Redis DB 12 and a mock Gmail provider. The built-in rule saved Delete with
