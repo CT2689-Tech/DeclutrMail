@@ -224,11 +224,6 @@ export function BillingScreen({
       mounted.current = false;
     };
   }, []);
-  // The checkout attempt whose overlay was closed IN THIS TAB without a
-  // completed event. In-memory only, on purpose: after a reload or a dead
-  // tab nothing says the customer saw the overlay close, so that lock
-  // keeps the manual release.
-  const closedUnpaidAttempt = useRef<string | null>(null);
   // The pending payment lock. Persisted per workspace (localStorage) so
   // it survives reloads and reaches every tab of this browser — React
   // state alone is tab-local, and between checkout.completed and the
@@ -824,27 +819,6 @@ export function BillingScreen({
                       // this notice through the normal detector.
                       void subscriptionQuery.refetch();
                     }
-                    // Two independent signals, never one: the customer
-                    // closed the overlay in THIS tab, AND the provider
-                    // answered that it holds no matching payment.
-                    // `none_found` only — `no_pending` can mean nothing
-                    // was asked. Re-read the lock: it may have been
-                    // released or replaced while the check was in flight.
-                    const current = readPendingCheckout(workspaceId);
-                    if (
-                      outcome === 'none_found' &&
-                      mounted.current &&
-                      currentOwner.current === workspaceId &&
-                      pending.kind === 'checkout_intent' &&
-                      pending.attemptId !== undefined &&
-                      closedUnpaidAttempt.current === pending.attemptId &&
-                      current?.kind === 'checkout_intent' &&
-                      current.attemptId === pending.attemptId
-                    ) {
-                      closedUnpaidAttempt.current = null;
-                      onReleasePendingLock();
-                      toast('Checkout closed — no payment found.');
-                    }
                     return outcome;
                   }
                 : pending.kind === 'change' || pending.kind === 'change_unconfirmed'
@@ -1069,10 +1043,7 @@ export function BillingScreen({
             () => undefined,
           );
         }}
-        onCheckoutClosed={(attemptId, cause) => {
-          if (cause === 'overlay_closed') closedUnpaidAttempt.current = attemptId;
-          surfaceAttemptLock(attemptId);
-        }}
+        onCheckoutClosed={surfaceAttemptLock}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
         mayOpenCheckout={(attemptId) => {
           const record = readPendingCheckout(workspaceId);

@@ -288,10 +288,7 @@ export function PlanPicker({
    *  is at risk; the reservation releases and the inline alert owns the
    *  message. */
   onCheckoutAbandoned: (attemptId: string) => void;
-  /** `cause: 'overlay_closed'` marks the customer closing the overlay in
-   *  this tab; a post-claim error surfaces the same lock without it,
-   *  because nothing there shows the customer saw an unpaid close. */
-  onCheckoutClosed: (attemptId: string, cause?: 'overlay_closed') => void;
+  onCheckoutClosed: (attemptId: string) => void;
   mayOpenCheckout?: (attemptId: string) => boolean;
   /** Lifecycle callbacks fence owner changes without discarding late valid payment events. */
   ownsCheckout?: () => boolean;
@@ -584,7 +581,7 @@ export function PlanPicker({
                     if (ownsCheckout && !ownsCheckout()) return;
                     void track('checkout_overlay_closed', funnel);
                     closePanel();
-                    onCheckoutClosed(attemptId, 'overlay_closed');
+                    onCheckoutClosed(attemptId);
                   },
                 },
                 () => mayOpenCheckout?.(attemptId) ?? true,
