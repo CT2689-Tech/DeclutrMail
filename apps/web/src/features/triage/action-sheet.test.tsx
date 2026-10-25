@@ -34,6 +34,21 @@ beforeEach(() => {
 const row = TRIAGE_QUEUE[0]!; // Groupon — high-confidence Archive
 
 describe('ActionSheet — D226 mandatory preview surface', () => {
+  it('labels abstention evidence as context while retaining the selected preview action', () => {
+    render(
+      <ActionSheet
+        open
+        verb="Archive"
+        row={{ ...row, verdict: 'later' }}
+        inboxCount={2}
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('Review context')).toBeInTheDocument();
+    expect(screen.queryByText('Why suggested')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeEnabled();
+  });
   it('keeps Archive inbox-only and any age with the same confirmation details', () => {
     const onConfirm = vi.fn();
     render(

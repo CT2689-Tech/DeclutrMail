@@ -1247,6 +1247,7 @@ describe('SenderDetailRoute', () => {
   ] as const)(
     'reconciles the suggestion after $action and restores eligible reads after Undo',
     async ({ action, verdict, policyType, inbox, archived }) => {
+      const contextLabel = verdict === 'later' ? 'Review context' : /Optional suggestion/;
       const before: SenderDetailDto = {
         ...DETAIL,
         policyType: null,
@@ -1267,7 +1268,7 @@ describe('SenderDetailRoute', () => {
       const current = { ...before };
       installHappyPath(MESSAGE, undefined, undefined, current);
       renderDetail();
-      await screen.findByRole('group', { name: /Optional suggestion/ });
+      await screen.findByRole('group', { name: contextLabel });
       Object.assign(current, {
         policyType,
         inboxCount: inbox,
@@ -1281,9 +1282,7 @@ describe('SenderDetailRoute', () => {
         });
       });
       await waitFor(() =>
-        expect(
-          screen.queryByRole('group', { name: /Optional suggestion/ }),
-        ).not.toBeInTheDocument(),
+        expect(screen.queryByRole('group', { name: contextLabel })).not.toBeInTheDocument(),
       );
       // An unsubscribe cannot be recalled. Only the reversible choices
       // return to their previous eligible state here.
@@ -1295,9 +1294,7 @@ describe('SenderDetailRoute', () => {
             exact: true,
           });
         });
-        expect(
-          await screen.findByRole('group', { name: /Optional suggestion/ }),
-        ).toBeInTheDocument();
+        expect(await screen.findByRole('group', { name: contextLabel })).toBeInTheDocument();
       }
     },
   );

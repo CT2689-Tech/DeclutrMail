@@ -1416,6 +1416,7 @@ function SendersScreenContent({
   const tightSplit = useIsAtMost('lg');
   const {
     senderId: urlSenderId,
+    detailSearch,
     open: openPane,
     close: closePane,
     navigateTo: openSenderPage,
@@ -3278,7 +3279,7 @@ function SendersScreenContent({
                 {
                   id: 'first_cleanup_nudge',
                   ready: showFirstCleanupNudge && senders[0] !== undefined,
-                  node: <FirstBacklogNudge />,
+                  node: <FirstBacklogNudge detailSearch={detailSearch} />,
                 },
               ]}
             />
@@ -3426,6 +3427,7 @@ function SendersScreenContent({
                 // one collapsible group row.
                 <SenderList
                   entries={listEntries}
+                  detailSearch={detailSearch}
                   selectedIds={selected}
                   onToggleSelect={toggleSenderSelection}
                   onAction={requestAction}

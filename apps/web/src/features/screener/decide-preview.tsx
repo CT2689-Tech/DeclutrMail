@@ -9,7 +9,7 @@ import {
   describeInboxScope,
   inboxScopeNoticeCopy,
 } from '@declutrmail/shared/actions';
-import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { ENGINE_ABSTENTION_COPY, scoredAgeLabel } from '@declutrmail/shared/copy';
 import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
 import { PREVIEW_DETAILS, previewIncludesValue } from '@declutrmail/shared/copy';
@@ -338,7 +338,10 @@ export function DecidePreview({
   // read is (QA-archive-20260903-01).
   if (showSuggestion && row.recommendation != null) {
     facts.push({
-      label: PREVIEW_DETAILS.whySuggested.label,
+      label:
+        row.recommendation.verdict === 'later'
+          ? ENGINE_ABSTENTION_COPY.context
+          : PREVIEW_DETAILS.whySuggested.label,
       value: (
         <>
           {row.recommendation.reasoning}

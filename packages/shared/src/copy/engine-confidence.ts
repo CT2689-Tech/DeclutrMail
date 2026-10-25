@@ -55,6 +55,12 @@ export const RECOMMEND_FLOOR: Record<EngineVerdict, number | null> = {
   later: null,
 };
 
+/** Later is an abstention; its evidence can inform a choice without recommending a move. */
+export const ENGINE_ABSTENTION_COPY = {
+  label: 'No clear suggestion',
+  context: 'Review context',
+} as const;
+
 /**
  * Whether this read is confident enough to present as a recommendation.
  *

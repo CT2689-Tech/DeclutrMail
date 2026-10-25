@@ -32,6 +32,31 @@ beforeEach(() => {
   query.refetch.mockClear();
 });
 describe('guided sender card current facts', () => {
+  it('keeps a Later abstention neutral while retaining its manual action', () => {
+    query.data = {
+      data: detail({
+        recommendation: {
+          verdict: 'later',
+          confidence: 0.4,
+          reasoning: 'Recent activity does not point to a clear action.',
+          generatedBy: 'template',
+          scoredAt: '2026-10-24T00:00:00Z',
+          stale: false,
+        },
+      }),
+    };
+    const onAction = vi.fn();
+    render(<GuidedSenderCard senderId="selected-sender" onAction={onAction} />);
+    expect(
+      screen.getByRole('group', { name: 'Review context' }).querySelector('summary'),
+    ).toHaveTextContent('No clear suggestion');
+    const more = screen.getByRole('button', { name: 'Later (L)' }).closest('details');
+    expect(more).not.toBeNull();
+    expect(more).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByText('More actions'));
+    fireEvent.click(screen.getByRole('button', { name: 'Later (L)' }));
+    expect(onAction).toHaveBeenCalledWith(expect.objectContaining({ verb: 'Later' }));
+  });
   it('dispatches the re-read sender to the unchanged Senders action owner', () => {
     const act = vi.fn();
     render(<GuidedSenderCard senderId="selected-sender" onAction={act} />);

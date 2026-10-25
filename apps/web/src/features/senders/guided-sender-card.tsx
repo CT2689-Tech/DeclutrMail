@@ -67,7 +67,7 @@ export function GuidedSenderCard({
     : null;
   const suggestion =
     currentVerb && canPerformSenderAction(currentVerb, detail.sender) ? currentSuggestion : null;
-  const suggestedVerb = suggestion ? currentVerb : null;
+  const suggestedVerb = suggestion && suggestion.verdict !== 'later' ? currentVerb : null;
   return (
     <section className={styles.guidedCard} aria-label="Current sender">
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', minWidth: 0 }}>

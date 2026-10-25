@@ -230,6 +230,27 @@ export const EmptyInboxLater: Story<typeof ScreenerRow> = {
   },
 };
 
+export const NoClearSuggestion: Story<typeof ScreenerRow> = {
+  render: () => (
+    <Shell>
+      <div style={{ maxWidth: 900, margin: '24px auto', padding: '0 12px' }}>
+        <ScreenerRow
+          {...rowBase}
+          row={{
+            ...rowBase.row,
+            inboxCount: 2,
+            recommendation: {
+              verdict: 'later',
+              confidence: 0.4,
+              reasoning: 'No recent mail, so engagement patterns cannot yet be assessed.',
+            },
+          }}
+        />
+      </div>
+    </Shell>
+  ),
+};
+
 export const PreviewPending: Story<typeof ScreenerRow> = {
   render: () => (
     <Shell>
