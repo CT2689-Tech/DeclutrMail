@@ -249,9 +249,6 @@ export function SendersSimulator() {
   const [activity, setActivity] = useState<readonly DemoActivity[]>([]);
   const [activityOpen, setActivityOpen] = useState(false);
   const [reportDismissed, setReportDismissed] = useState(false);
-  const [celebration, setCelebration] = useState<{ archived: number; senders: number } | null>(
-    null,
-  );
   const activitySequence = useRef(0);
 
   const visible = useMemo(
@@ -423,7 +420,6 @@ export function SendersSimulator() {
           : item,
       ),
     ]);
-    if (mode === 'archive') setCelebration({ archived: n, senders: targets.length });
     setSelected([]);
     setActivityOpen(true);
     setPending(null);
@@ -529,7 +525,6 @@ export function SendersSimulator() {
             'all_mail',
           ),
         }}
-        celebration={celebration}
         onDismiss={() => setReportDismissed(true)}
         onReopen={() => setReportDismissed(false)}
         onReview={() => {

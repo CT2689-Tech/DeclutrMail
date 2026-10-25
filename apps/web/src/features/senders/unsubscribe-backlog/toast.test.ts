@@ -32,6 +32,32 @@ function result(
 
 describe('unsubscribeBacklogToast', () => {
   it.each(['archive', 'delete'] as const)(
+    'never turns bulk %s submission counts into completed moves',
+    (verb) => {
+      const queued = result({ mode: verb, backlog: { actionId: 'b', requestedCount: 999, verb } });
+      queued.senders.push({ ...queued.senders[0]!, senderId: 's2' });
+      expect(unsubscribeBacklogSubmissionToast(queued)).toBe('');
+      queued.senders.push({
+        ...queued.senders[0]!,
+        senderId: 's3',
+        unsubStatus: 'manual',
+        executionActionId: null,
+      });
+      const manual = unsubscribeBacklogSubmissionToast(queued);
+      expect(manual).toContain('Gmail');
+      expect(manual).not.toMatch(/999|Archived|Deleted/);
+      queued.senders.push({
+        ...queued.senders[0]!,
+        senderId: 's4',
+        unsubStatus: 'skipped',
+        reasonCode: 'protected',
+      });
+      expect(unsubscribeBacklogSubmissionToast(queued)).toContain('Protected');
+      expect(unsubscribeBacklogSubmissionToast(queued)).not.toMatch(/999|Archived|Deleted/);
+    },
+  );
+
+  it.each(['archive', 'delete'] as const)(
     'leaves watched single-sender %s completion to its result surfaces',
     (verb) => {
       const queued = result({ mode: verb, backlog: { actionId: 'b', requestedCount: 21, verb } });
@@ -40,11 +66,12 @@ describe('unsubscribeBacklogToast', () => {
       // Without a watcher, manual follow-ups and submission problems still
       // need their existing feedback instead of disappearing silently.
       queued.senders[0]!.executionActionId = null;
-      expect(unsubscribeBacklogSubmissionToast(queued)).toBe(unsubscribeBacklogToast(queued));
+      expect(unsubscribeBacklogSubmissionToast(queued)).toBe('');
       queued.senders[0]!.unsubStatus = 'failed';
-      expect(unsubscribeBacklogSubmissionToast(queued)).toContain('Unsubscribe failed');
+      expect(unsubscribeBacklogSubmissionToast(queued)).toContain('unsubscribe failed');
       queued.senders[0]!.unsubStatus = 'manual';
       expect(unsubscribeBacklogSubmissionToast(queued)).toContain('Gmail');
+      expect(unsubscribeBacklogSubmissionToast(queued)).not.toMatch(/Archived|Deleted/);
     },
   );
 

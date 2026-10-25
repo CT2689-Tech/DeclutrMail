@@ -1181,13 +1181,8 @@ describe('TriageScreen — D226 mutation wiring', () => {
       mode: 'archive',
       senderIds: [LINKEDIN.senderId],
     });
-    await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith(
-        pluralCopy(WS5_COPY['f1.toast.both.archive'], 47, { n: 47 }),
-        'info',
-      ),
-    );
     await waitFor(() => expect(statusCalls).toBeGreaterThan(0));
+    expect(h.toast).not.toHaveBeenCalled();
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all });
   });
 
@@ -1368,7 +1363,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     expect(submitted).not.toHaveProperty('reach');
   });
 
-  it('Unsubscribe deletes the backlog in one request and toasts the delete line', async () => {
+  it('Unsubscribe accepts Delete in one request without an optimistic success toast', async () => {
     let unsubscribeBody: unknown = null;
     addFetchHandlers([
       {
@@ -1438,14 +1433,11 @@ describe('TriageScreen — D226 mutation wiring', () => {
         senderIds: [LINKEDIN.senderId],
       }),
     );
-    expect(h.toast).toHaveBeenCalledWith(
-      pluralCopy(WS5_COPY['f1.toast.both.delete'], 47, { n: 47 }),
-      'info',
-    );
     await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: undoKeys.all }));
+    expect(h.toast).not.toHaveBeenCalled();
   });
 
-  it('a mailto backlog states the move and the Gmail handoff, then offers Undo', async () => {
+  it('a mailto backlog keeps the Gmail handoff without claiming move completion', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1491,12 +1483,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     fireEvent.keyDown(window, { key: 'u' });
     await confirmOpenSheet('Unsubscribe');
 
-    await waitFor(() =>
-      expect(h.toast).toHaveBeenCalledWith(
-        pluralCopy(WS5_COPY['f1.toast.mailto.withMove.archive'], 47, { n: 47 }),
-        'info',
-      ),
-    );
+    await waitFor(() => expect(h.toast).toHaveBeenCalledWith(WS5_COPY['f1.toast.mailto'], 'info'));
     expect(h.toast).not.toHaveBeenCalledWith(expect.stringMatching(/draft/i), expect.anything());
   });
 
@@ -1534,7 +1521,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     );
   });
 
-  it('a failed unsubscribe still states the archive and the reason', async () => {
+  it('a failed unsubscribe stays visible without claiming Archive completed', async () => {
     addFetchHandlers([
       {
         method: 'POST',
@@ -1567,10 +1554,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
 
     await waitFor(() =>
       expect(h.toast).toHaveBeenCalledWith(
-        pluralCopy(WS5_COPY['f1.toast.unsubFailed.archive'], 47, {
-          n: 47,
-          reason: WS5_COPY['f1.reason.noLink'],
-        }),
+        pluralCopy(WS5_COPY['f1.toast.bulkFailed'], 1, { k: 1 }),
         'warn',
       ),
     );

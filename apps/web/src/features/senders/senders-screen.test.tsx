@@ -5553,9 +5553,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     ]);
 
     await confirmBulkUnsubscribe();
-    const toast = await screen.findByText(
-      'Unsubscribe requested from 1 sender · Archived 30 emails · 1 unsubscribe failed',
-    );
+    const toast = await screen.findByText('1 unsubscribe failed');
     expect(toast.textContent?.toLowerCase()).not.toContain('unsubscribed');
     expect(screen.queryByText(/1 request accepted/i)).toBeNull();
     expect(screen.queryByText(/result unconfirmed/i)).toBeNull();
@@ -5591,7 +5589,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       await screen.findByRole('region', { name: 'Email unsubscribe drafts' }),
     ).toHaveTextContent('1 email unsubscribe draft still needs you');
     const manualToast =
-      'The email is ready in Gmail. Press Send there to finish. · Archived 30 emails · 1 unsubscribe failed';
+      'The email is ready in Gmail. Press Send there to finish. · 1 unsubscribe failed';
     expect(await screen.findByText(manualToast)).toHaveTextContent(manualToast);
     expect(manualToast).not.toMatch(/requested/i);
     expect(screen.queryByText(/2 unsubscribes failed/)).toBeNull();
@@ -5636,9 +5634,9 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       },
     ]);
     await confirmBulkUnsubscribe();
-    const toast = await screen.findByText(
-      'Unsubscribe requested from 1 sender · Archived 30 emails · No unsubscribe sent. That sender was left as it is.',
-    );
+    const toast = (
+      await screen.findAllByText('No unsubscribe sent. That sender was left as it is.')
+    )[0]!;
     expect(toast.textContent?.toLowerCase()).not.toMatch(/failed|not sent|unsubscribed/);
     expect(screen.queryByText(/Not sent: 1 Protected sender/)).toBeNull();
   });
@@ -5726,11 +5724,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     fireEvent.click(confirm);
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]?.senderIds).toEqual(['a']);
-    expect(
-      await screen.findByText(
-        'Unsubscribe requested from 1 sender · Archived 12 emails · 1 Protected sender left as it is',
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('1 Protected sender left as it is')).toBeInTheDocument();
   });
 
   it('never grows a Protected "Not sent" receipt after the backlog request is overdue', async () => {
@@ -7352,7 +7346,7 @@ describe('guided review from Senders', () => {
       ...reviewHandlers(writes),
     ]);
     renderScreen();
-    fireEvent.click(await screen.findByRole('button', { name: 'Review them first' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review senders' }));
     const current = await screen.findByRole(
       'region',
       { name: 'Current sender' },
