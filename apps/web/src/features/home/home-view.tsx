@@ -29,6 +29,7 @@ import {
   type HomeV1Mode,
 } from './home-next-steps';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeState } from './home-state';
+import type { HomePriority } from './home-orientation';
 import styles from './home-view.module.css';
 
 const BILLING_HREF = '/billing?from=%2Fhome';
@@ -65,6 +66,9 @@ export function HomeView({
   state,
   tier = 'free',
   visitSummary,
+  statusLine,
+  priority = null,
+  noSuggestions = false,
   summary = null,
   nextSteps = [],
   senderSizeView = false,
@@ -79,6 +83,9 @@ export function HomeView({
 }: {
   state: HomeState;
   visitSummary?: ReactNode;
+  statusLine?: string;
+  priority?: HomePriority | null;
+  noSuggestions?: boolean;
   tier?: TierId;
   summary?: CleanupSummaryDto | null;
   nextSteps?: readonly HomeFixCandidate[];
@@ -103,7 +110,8 @@ export function HomeView({
   const [pendingFix, setPendingFix] = useState<HomeFixCandidate | null>(null);
   const fixCopy = previewReport?.fix ?? homeFixCopy();
   const namesSenders = previewReport !== null || homeReportNamesSenders();
-  const fixReady = fixCopy !== null && namesSenders && steps.some(canPreviewFix);
+  const fixReady =
+    priority === null && fixCopy !== null && namesSenders && steps.some(canPreviewFix);
   useHomeSurfaceEvents(mode);
   const openFix = (step: HomeFixCandidate) => {
     void track('home_next_step_clicked', { kind: homeNextStepEventKind(step.kind) });
@@ -127,11 +135,18 @@ export function HomeView({
           <QuotaChipSlot summary={summary} />
         </div>
       </header>
+      {statusLine && (
+        <p className={styles.statusLine} role="status">
+          {statusLine}
+        </p>
+      )}
       <HomeBody
         state={state}
         mode={mode}
         steps={steps}
         visitSummary={visitSummary}
+        priority={priority}
+        noSuggestions={noSuggestions}
         reportSizeLabel={reportSizeLabel}
         indexedEmailCount={indexedEmailCount}
         mailboxId={mailboxId}
@@ -188,6 +203,8 @@ function HomeBody({
   mode,
   steps,
   visitSummary,
+  priority,
+  noSuggestions,
   reportSizeLabel,
   indexedEmailCount,
   mailboxId,
@@ -202,6 +219,8 @@ function HomeBody({
   mode: HomeV1Mode;
   steps: readonly HomeFixCandidate[];
   visitSummary?: ReactNode;
+  priority: HomePriority | null;
+  noSuggestions: boolean;
   reportSizeLabel: string | null;
   indexedEmailCount: number | null;
   mailboxId: string;
@@ -254,18 +273,16 @@ function HomeBody({
             ))}
           </div>
         )}
-        {state.kind === 'ready' ? (
-          <Progress state={state} />
-        ) : state.kind === 'empty' && !state.syncing && primary ? (
-          <section className={styles.progressLine} aria-label="Progress">
-            <h2 className={styles.progressHeading}>{HOME_DECK.focus.progress}</h2>
-            <p className={styles.firstProgress}>{HOME_DECK.emptyTitle}</p>
-            <Link href="/activity?window=all" className="dm-external-link dm-tap-target">
-              {HOME_DECK.activityLink}
-            </Link>
-          </section>
-        ) : null}
-        {visit}
+        {state.kind === 'ready' && state.secondary.length > 0 && (
+          <dl className={styles.progressDetails}>
+            {state.secondary.map((stat) => (
+              <div key={stat.label}>
+                <dt>{stat.label}</dt>
+                <dd>{formatCount(stat.value)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
         {report}
         {plan}
       </div>
@@ -306,8 +323,15 @@ function HomeBody({
     case 'ready':
       return (
         <>
+          {visit}
           <div className={styles.focusLead}>
-            {primary ? (
+            {priority && (!(state.kind === 'empty' && state.syncing) || priority.action) ? (
+              <section className={styles.primaryCard} aria-label="Your next step">
+                <h2>{priority.title}</h2>
+                {priority.body && <p>{priority.body}</p>}
+                {priority.action && <PrimaryLink action={priority.action} />}
+              </section>
+            ) : primary ? (
               <NextSteps
                 primary={primary}
                 secondary={[]}
@@ -319,11 +343,14 @@ function HomeBody({
               <EmptyCopy state={state} />
             ) : (
               <section aria-label="Your next step" className={styles.calmStart}>
-                <h2>{HOME_DECK.focus.calmTitle}</h2>
+                <h2>
+                  {noSuggestions ? 'No suggested cleanup right now.' : HOME_DECK.focus.calmTitle}
+                </h2>
                 <PrimaryLink action={state.action} />
               </section>
             )}
           </div>
+          {state.kind === 'ready' && <Progress state={state} />}
           {details}
         </>
       );
@@ -352,7 +379,7 @@ function EmptyCopy({ state }: { state: Extract<HomeState, { kind: 'empty' }> }) 
   }
   return (
     <section className={styles.beginning} aria-label="Your next step">
-      <h2>{HOME_DECK.emptyTitle}</h2>
+      <h2>Start your first cleanup.</h2>
       {!isRetiredReviewCta(state.action.label) && <PrimaryLink action={state.action} />}
     </section>
   );
@@ -656,22 +683,12 @@ function LaterCard({ step, primary }: { step: HomeFixCandidate; primary: boolean
 function Progress({ state }: { state: Extract<HomeState, { kind: 'ready' }> }) {
   return (
     <section className={styles.progressLine} aria-label="Progress">
-      <h2 className={styles.progressHeading}>{HOME_DECK.focus.progress}</h2>
+      <h2 className={styles.srOnly}>{HOME_DECK.focus.progress}</h2>
       <p className={styles.progressSentence}>
         <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>{' '}
         <span>{state.hero.label}</span>
         <span className={styles.period}>{HOME_DECK.focus.allTime}</span>
       </p>
-      {state.secondary.length > 0 && (
-        <dl className={styles.progressDetails}>
-          {state.secondary.map((stat) => (
-            <div key={stat.label}>
-              <dt>{stat.label}</dt>
-              <dd>{formatCount(stat.value)}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
       <Link href="/activity?window=all" className="dm-external-link dm-tap-target">
         {HOME_DECK.activityLink}
       </Link>

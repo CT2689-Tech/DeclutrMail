@@ -144,9 +144,9 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, sno
       respond: () =>
         jsonOk({
           data: sync ?? {
-            readiness_status: 'failed',
-            error_code: 'TransientError',
-            progress_pct: 25,
+            readiness_status: authCell.me.mailboxes[0]?.readiness ?? 'ready',
+            progress_pct: 100,
+            is_ready_for_triage: authCell.me.mailboxes[0]?.readiness === 'ready',
           },
         }),
     },
@@ -391,14 +391,17 @@ describe('HomeScreen', () => {
     expect(screen.queryByText('In inbox now')).toBeNull();
     expect(screen.queryByRole('link', { name: /Autopilot/ })).toBeNull();
     expect(calls.triage).toBe(0);
-    expect(calls.screener).toBe(0);
+    expect(calls.screener).toBe(1);
   });
 
-  it('does not offer the Screener as Home’s primary step', async () => {
+  it('prioritizes pending new sender review on Home', async () => {
     stub({ queueLength: 0, screenerPending: 4 });
     renderHome();
     expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
-    expect(screen.queryByRole('link', { name: 'Review 4 new' })).toBeNull();
+    expect(await screen.findByRole('link', { name: 'Review new senders' })).toHaveAttribute(
+      'href',
+      '/senders?view=first-review',
+    );
   });
 
   it('shows cleanup totals without waiting on a removed review list', async () => {
@@ -431,7 +434,7 @@ describe('HomeScreen', () => {
         path: '/api/v1/sync/status',
         respond: () =>
           jsonOk({
-            data: { readiness_status: 'failed', error_code: 'TransientError', progress_pct: 25 },
+            data: { readiness_status: 'ready', is_ready_for_triage: true, progress_pct: 100 },
           }),
       },
       { method: 'GET', path: '/api/activity/summary', respond: () => jsonOk({ data: SUMMARY }) },
@@ -479,7 +482,7 @@ describe('HomeScreen', () => {
   it('shows an empty home without an achievement count or Review today', async () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }), queueLength: 2 });
     renderHome();
-    expect(await screen.findByText('Nothing cleared yet.')).toBeInTheDocument();
+    expect(await screen.findByText('Start your first cleanup.')).toBeInTheDocument();
     expect(screen.queryByTestId('home-hero')).toBeNull();
     expect(screen.queryByRole('link', { name: 'Review 2 today' })).toBeNull();
     expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
@@ -491,7 +494,7 @@ describe('HomeScreen', () => {
   it('new user: no number, a title and the senders link', async () => {
     stub({ summary: () => jsonOk({ data: EMPTY_SUMMARY }) });
     renderHome();
-    expect(await screen.findByText('Nothing cleared yet.')).toBeInTheDocument();
+    expect(await screen.findByText('Start your first cleanup.')).toBeInTheDocument();
     expect(screen.queryByTestId('home-hero')).toBeNull();
     expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
       'href',

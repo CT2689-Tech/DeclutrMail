@@ -50,11 +50,19 @@ describe('rankHomeNextSteps', () => {
 
 describe('homeLaterCandidate', () => {
   it('returns no card for an empty Later list', () => {
-    expect(homeLaterCandidate([])).toBeNull();
+    expect(homeLaterCandidate([], Date.now())).toBeNull();
   });
 
   it('counts the Later rows and does not invent a sentence', () => {
-    expect(homeLaterCandidate([{ senderId: 's1' }, { senderId: 's2' }])).toEqual({
+    expect(
+      homeLaterCandidate(
+        [
+          { senderId: 's1', snoozedUntil: '2026-01-01T00:00:00Z', returnStatus: 'scheduled' },
+          { senderId: 's2', snoozedUntil: '2026-01-01T00:00:00Z', returnStatus: 'retrying' },
+        ],
+        Date.parse('2026-10-25'),
+      ),
+    ).toEqual({
       kind: 'later_due',
       senderCount: 2,
       senderIds: ['s1', 's2'],

@@ -64,6 +64,30 @@ test('return visit opens Home and does not confirm a next step', async ({ page }
   await expect(step).toBeFocused();
 });
 
+test('pending first review takes priority over another bulk cleanup', async ({ page }) => {
+  await seedHomeRecommendation();
+  const sql = dbConnect();
+  try {
+    await sql`UPDATE sender_policies SET is_protected = false WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    await page.goto(
+      `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: BILLING_SEED.email })}`,
+    );
+    await expect(page.getByRole('heading', { name: '1 new sender needs review.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Preview cleanup', exact: true })).toHaveCount(0);
+    await expect(page.locator('details')).not.toHaveAttribute('open');
+    const review = page.getByRole('link', { name: 'Review new senders', exact: true });
+    await expect(review).toHaveAttribute('href', '/senders?view=first-review');
+    await review.click();
+    await expect(page).toHaveURL(/\/senders\?view=first-review$/);
+    await expect(
+      page.getByRole('heading', { level: 1, name: 'Senders', exact: true }),
+    ).toBeVisible();
+  } finally {
+    await sql`UPDATE sender_policies SET is_protected = true WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    await sql.end();
+  }
+});
+
 for (const tier of ['pro', 'free'] as const) {
   for (const width of [1280, 768, 375, 320]) {
     test(`Focus Home and account menu fit ${width}px on ${tier} without changing mail`, async ({

@@ -21,15 +21,19 @@ import { undoKeys } from '@/features/undo/query-keys';
 
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { hasCapability } from '@declutrmail/shared/entitlements';
+import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
+import { useNow } from '@/lib/use-now';
 import { inProgressStageSentence } from '@/features/onboarding/sync-stage-copy';
 import { apiGet } from '@/lib/api/client';
 import { useConfirmUnsubscribeBacklog } from '@/lib/api/use-action';
-import { fetchSnoozed } from '@/lib/api/snoozed';
-import { snoozedListQueryOptions } from '@/features/snoozed/api/query-options';
 
 import { homeInboxReportQueryOptions } from './api/query-options';
 import { useHomeSenderPreview } from './api/use-home-sender-preview';
 import { useHomeSummary } from './api/use-home-summary';
+import { useHomeCleanupStatus } from './api/use-home-cleanup-status';
+import { useHomeAttention } from './api/use-home-attention';
+import { homePriority, homeSyncLine } from './home-orientation';
 import { HomeArrivals } from './home-arrivals';
 import {
   homeCandidatesFromReport,
@@ -74,6 +78,13 @@ export function HomeScreen() {
   const cleanup = useCleanupSummary();
   const mailboxId = me.activeMailboxId;
   const activeMailbox = me.mailboxes.find((m) => m.id === mailboxId);
+  const cleanupStatus = useHomeCleanupStatus(mailboxId);
+  const canReviewNew =
+    hasActiveMailbox && hasCapability(tier, 'screener') && activeMailbox?.readiness === 'ready';
+  const { newSenders, later } = useHomeAttention(mailboxId, canReviewNew);
+  const needsReconnect =
+    activeMailbox?.needsReconnect === true || syncStatusNeedsReconnect(sync.data);
+  const now = useNow(60_000, sync.data?.last_synced_at);
   const scope = useRef({ mailboxId, generation: 0 });
   if (scope.current.mailboxId !== mailboxId)
     scope.current = { mailboxId, generation: scope.current.generation + 1 };
@@ -86,13 +97,19 @@ export function HomeScreen() {
     }),
     enabled: hasActiveMailbox && mailboxId != null,
   });
-  const later = useQuery({
-    ...snoozedListQueryOptions((signal) => fetchSnoozed(signal)),
-    select: (envelope) => envelope.data,
-    enabled: hasActiveMailbox,
-  });
   const presentation = homeReportPresentation(report.data);
-  const laterStep = homeLaterCandidate(later.data ?? []);
+  const laterStep = homeLaterCandidate(later.isError ? [] : (later.data ?? []), now);
+  const priority = homePriority({
+    sync: sync.isError ? undefined : sync.data,
+    needsReconnect,
+    cleanup: cleanupStatus,
+    newSenders: !canReviewNew || newSenders.isError ? null : (newSenders.data?.pending ?? null),
+    laterAttention: later.isError
+      ? 0
+      : (later.data ?? []).filter(
+          (row) => row.returnStatus === 'missed' || row.returnStatus === 'retrying',
+        ).length,
+  });
   const nextSteps = rankHomeNextSteps(
     [...homeCandidatesFromReport(report.data ?? null), ...(laterStep !== null ? [laterStep] : [])],
     { senderSizeView: SENDER_SIZE_VIEW },
@@ -122,7 +139,10 @@ export function HomeScreen() {
     setStageMounted(true);
   }, []);
 
-  const readiness = activeMailbox?.readiness;
+  const readiness =
+    stageMounted && !sync.isError
+      ? (sync.data?.readiness_status ?? activeMailbox?.readiness)
+      : activeMailbox?.readiness;
   const syncing = readiness === 'queued' || readiness === 'syncing';
 
   function confirmHomeFix(step: HomeFixCandidate) {
@@ -154,6 +174,13 @@ export function HomeScreen() {
     <HomeView
       key={mailboxId}
       state={resolve()}
+      statusLine={
+        stageMounted
+          ? homeSyncLine(sync.data, sync.isError, needsReconnect, now)
+          : 'Checking Gmail status…'
+      }
+      priority={stageMounted ? priority : null}
+      noSuggestions={report.isSuccess && nextSteps.length === 0}
       tier={tier}
       visitSummary={<HomeArrivals />}
       summary={cleanup.data ?? null}
