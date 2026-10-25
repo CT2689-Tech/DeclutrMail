@@ -323,6 +323,20 @@ describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
     });
   });
 
+  it.each([
+    'AUTOPILOT_RULE_CHANGED',
+    'AUTOPILOT_RULE_APPROVED_WORK_PENDING',
+    'AUTOPILOT_RULE_SAVE_BUSY',
+  ] as const)('preserves %s so the editor can recover from the actual HTTP response', (code) => {
+    const { body, status } = invoke(
+      new AllExceptionsFilter(),
+      new ConflictException({ code, message: ERROR_CODES[code].message }),
+      REQ_WITH_CORRELATION,
+    );
+    expect(status).toBe(409);
+    expect(body.error.code).toBe(code);
+  });
+
   it('falls back to the status code when the body code is unregistered', () => {
     const { body } = invoke(
       new AllExceptionsFilter(),

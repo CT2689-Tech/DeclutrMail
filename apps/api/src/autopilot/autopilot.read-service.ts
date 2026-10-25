@@ -27,6 +27,7 @@
 import { measureRequestOperation } from '../observability/request-performance.js';
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Optional,
@@ -64,6 +65,7 @@ import {
   addCoalescedJob,
   AUTOPILOT_ACTION_JOB,
   AUTOPILOT_PRESETS,
+  matchConfiguredPreset,
   autopilotActionSweepJobOptions,
   materializeAutopilotSignals,
   OutboxPublisher,
@@ -72,7 +74,13 @@ import {
 } from '@declutrmail/workers';
 import { AutopilotRuleActivatedPayloadSchema, TOPICS } from '@declutrmail/events';
 import { TIER_IDS, hasCapability } from '@declutrmail/shared/entitlements';
-import { AUTOPILOT_PENDING_PAGE_SIZE, encodeCursor } from '@declutrmail/shared/contracts';
+import {
+  AUTOPILOT_PENDING_PAGE_SIZE,
+  encodeCursor,
+  defaultAutopilotConditions,
+  AutopilotRuleConditionsSchema,
+  AutopilotRuleConfigurationSchema,
+} from '@declutrmail/shared/contracts';
 import type {
   AutopilotPendingMeta,
   DecodedCursor,
@@ -275,6 +283,7 @@ export class AutopilotReadService {
           eq(automationRules.isPreset, true),
           eq(automationRules.enabled, false),
           eq(automationRules.scope, 'account'),
+          sql`${automationRules.conditions} = '{}'::jsonb`,
           inArray(automationRules.presetKey, [...PATTERN_PRESET_KEYS]),
           sql`(${automationRules.patternSuggestionDismissedAt} is null or ${automationRules.patternSuggestionDismissedAt} <= ${dismissedCutoff}::timestamptz)`,
           ne(activityLog.source, 'autopilot'),
@@ -523,6 +532,7 @@ export class AutopilotReadService {
     patch: AutopilotRulePatch,
   ): Promise<AutopilotRule | null> {
     if (
+      patch.configuration === undefined &&
       patch.enabled === undefined &&
       patch.mode === undefined &&
       patch.confidenceThreshold === undefined &&
@@ -533,6 +543,12 @@ export class AutopilotReadService {
       // catches the empty-patch bug at the boundary.
       throw new BadRequestException('PATCH body must update at least one field.');
     }
+    const configuration =
+      patch.configuration === undefined
+        ? undefined
+        : AutopilotRuleConfigurationSchema.parse(patch.configuration);
+    if (configuration && Object.keys(patch).some((k) => k !== 'configuration'))
+      throw new BadRequestException('Save rule configuration separately from lifecycle changes.');
     if (patch.confidenceThreshold !== undefined && patch.confidenceThreshold !== null) {
       const c = patch.confidenceThreshold;
       if (!Number.isFinite(c) || c < 0 || c > 1) {
@@ -563,12 +579,30 @@ export class AutopilotReadService {
       }
     }
 
+    const materialChange = configuration !== undefined || patch.confidenceThreshold !== undefined;
+
     // Drizzle's update().set() accepts `SQL` for any column on the
     // Postgres dialect; `$inferInsert` narrows too aggressively to
     // Date for the timestamp columns. Loosen the index signature to
     // `unknown` so the `sql\`now()\`` expressions for `updatedAt` and
     // `modeChangedAt` typecheck without an unsafe cast.
     const set: Record<string, unknown> = { updatedAt: sql`now()` };
+    if (materialChange || patch.enabled !== undefined || patch.mode !== undefined)
+      set.version = sql`${automationRules.version} + 1`;
+    if (configuration) {
+      set.name = configuration.name;
+      set.conditions = configuration.conditions;
+      set.actionKind = configuration.actionKind;
+      set.actionPayload = sql`CASE WHEN ${automationRules.actionKind}::text = ${configuration.actionKind} THEN ${automationRules.actionPayload} ELSE '{}'::jsonb END`;
+      set.confidenceThreshold =
+        configuration.conditions.kind === 'recommendation'
+          ? configuration.conditions.confidence.toFixed(2)
+          : null;
+      set.version = sql`${automationRules.version} + 1`;
+      set.mode = sql`CASE WHEN ${automationRules.mode} = 'active' THEN 'observe'::autopilot_rule_mode ELSE ${automationRules.mode} END`;
+      set.modeChangedAt = sql`now()`;
+      set.observePromptDismissedAt = null;
+    }
     if (patch.enabled !== undefined) set.enabled = patch.enabled;
     if (patch.mode !== undefined) {
       set.mode = patch.mode;
@@ -618,89 +652,184 @@ export class AutopilotReadService {
     // not tell which half happened. Publishing to the outbox inside the
     // same transaction removes the question: either all three land or
     // none do, and the dispatcher owns delivery from there.
-    const updated = await this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(automationRules)
-        .set(set)
-        .where(
-          and(
-            eq(automationRules.mailboxAccountId, mailboxAccountId),
-            eq(automationRules.id, id),
-            eq(automationRules.isPreset, true),
-          ),
-        )
-        .returning();
-      if (!row) return null;
-
-      // A rule that just became runnable gets a sweep NOW.
-      //
-      // Nothing else enqueues one on a rule change: `autopilot-apply` is
-      // triggered only by `mailbox.sync_ready`,
-      // `triage.score_run_completed` and the 5-minute incremental-sync
-      // delta. So before this, turning a rule on left it inert until
-      // unrelated mail happened to arrive — which made the enable
-      // preview's whole promise ("the rule acts on matching mail already
-      // in your inbox") false on a quiet mailbox.
-      //
-      // Both modes need it: `active` so the first sweep acts on the
-      // backlog the preview just counted, `observe` so the suggestions
-      // the user was told to expect actually appear. `paused` gets
-      // nothing.
-      const nowRunnable = row.enabled && row.mode !== 'paused';
-      const patchTurnedItOn = patch.enabled === true || patch.mode !== undefined;
-      if (!nowRunnable || !patchTurnedItOn) return row;
-
-      if (row.mode === 'active') {
-        // Supersede this rule's unresolved Observe suggestions.
-        //
-        // Without this the mailbox ends up holding TWO rows per sender:
-        // the old `(observe, pending)` suggestion and the
-        // `(active, approved)` row the sweep below is about to write.
-        // The pending-dedup partial unique index does not stop it — it
-        // is scoped `WHERE resolution = 'pending'`, so an approved
-        // insert simply is not a conflict (the apply worker's own
-        // comment says as much). The approved row then executes, and
-        // the stale suggestion stays on screen offering the user an
-        // action against mail that has already moved. Approving it is a
-        // no-op for Archive and a SECOND request for Unsubscribe, which
-        // is the one verb the product tells users cannot be taken back.
-        //
-        // `dismissed` + `superseded` rather than a delete: the row is
-        // audit history, and the reason distinguishes this from a user
-        // dismissal exactly as `entitlement` does for downgrades.
-        // Scoped to `intent_applied = false` so a match that already
-        // produced an action is never rewritten.
-        await tx
-          .update(ruleMatchLog)
-          .set({
-            resolution: 'dismissed',
-            dismissReason: 'superseded',
-            resolvedAt: sql`now()`,
-          })
+    const updated = await this.db
+      .transaction(async (tx) => {
+        const [row] = await tx
+          .update(automationRules)
+          .set(set)
           .where(
             and(
-              eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-              eq(ruleMatchLog.ruleId, row.id),
-              eq(ruleMatchLog.modeAtMatch, 'observe'),
-              eq(ruleMatchLog.resolution, 'pending'),
-              eq(ruleMatchLog.intentApplied, false),
+              eq(automationRules.mailboxAccountId, mailboxAccountId),
+              eq(automationRules.id, id),
+              eq(automationRules.isPreset, true),
+              configuration
+                ? eq(automationRules.version, configuration.version)
+                : patch.expectedVersion === undefined
+                  ? undefined
+                  : eq(automationRules.version, patch.expectedVersion),
             ),
-          );
-      }
+          )
+          .returning();
+        if (!row) {
+          if (configuration || patch.expectedVersion !== undefined) {
+            const [existing] = await tx
+              .select({ id: automationRules.id })
+              .from(automationRules)
+              .where(
+                and(
+                  eq(automationRules.mailboxAccountId, mailboxAccountId),
+                  eq(automationRules.id, id),
+                  eq(automationRules.isPreset, true),
+                ),
+              );
+            if (existing)
+              throw new ConflictException({
+                code: 'AUTOPILOT_RULE_CHANGED',
+                message: 'This rule changed. Reload the page, then edit it again.',
+              });
+          }
+          return null;
+        }
+        if (
+          !configuration &&
+          (patch.enabled === true || patch.mode === 'active' || patch.mode === 'observe') &&
+          Object.keys(row.conditions as object).length > 0 &&
+          patch.expectedVersion === undefined
+        )
+          throw new ConflictException({
+            code: 'AUTOPILOT_RULE_CHANGED',
+            message: 'Refresh this rule and preview it before starting it.',
+          });
+        if (
+          patch.confidenceThreshold !== undefined &&
+          Object.keys(row.conditions as object).length > 0
+        )
+          throw new BadRequestException('Use Edit rule to change configured conditions.');
+        if (configuration) {
+          const family = defaultAutopilotConditions(row.presetKey);
+          if (
+            configuration.conditions.kind !== family.kind ||
+            (family.kind === 'recommendation' &&
+              configuration.conditions.kind === 'recommendation' &&
+              configuration.conditions.verdict !== family.verdict)
+          )
+            throw new BadRequestException(
+              'Keep this rule’s condition type and recommendation. Customize its values and action instead.',
+            );
+        }
+        if (materialChange) {
+          // Serialize with approval UPDATEs before inspecting or retiring suggestions.
+          const outstanding = await tx
+            .select({ resolution: ruleMatchLog.resolution })
+            .from(ruleMatchLog)
+            .where(
+              and(
+                eq(ruleMatchLog.ruleId, id),
+                eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+                eq(ruleMatchLog.intentApplied, false),
+                inArray(ruleMatchLog.resolution, ['pending', 'approved']),
+              ),
+            )
+            .orderBy(ruleMatchLog.id)
+            .for('update');
+          if (outstanding.some((m) => m.resolution === 'approved'))
+            throw new ConflictException({
+              code: 'AUTOPILOT_RULE_APPROVED_WORK_PENDING',
+              message:
+                'This rule has approved work waiting or running. Let that batch finish, then save your changes.',
+            });
+          await tx
+            .update(ruleMatchLog)
+            .set({ resolution: 'dismissed', dismissReason: 'superseded', resolvedAt: sql`now()` })
+            .where(
+              and(
+                eq(ruleMatchLog.ruleId, id),
+                eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+                eq(ruleMatchLog.resolution, 'pending'),
+                eq(ruleMatchLog.intentApplied, false),
+              ),
+            );
+        }
 
-      await this.outbox.publish(tx, {
-        topic: TOPICS.AUTOPILOT_RULE_ACTIVATED,
-        aggregateId: row.id,
-        payload: {
-          mailboxAccountId,
-          ruleId: row.id,
-          mode: row.mode === 'active' ? ('active' as const) : ('observe' as const),
-          activatedAt: new Date().toISOString(),
-        },
-        schema: AutopilotRuleActivatedPayloadSchema,
+        // A rule that just became runnable gets a sweep NOW.
+        //
+        // Nothing else enqueues one on a rule change: `autopilot-apply` is
+        // triggered only by `mailbox.sync_ready`,
+        // `triage.score_run_completed` and the 5-minute incremental-sync
+        // delta. So before this, turning a rule on left it inert until
+        // unrelated mail happened to arrive — which made the enable
+        // preview's whole promise ("the rule acts on matching mail already
+        // in your inbox") false on a quiet mailbox.
+        //
+        // Both modes need it: `active` so the first sweep acts on the
+        // backlog the preview just counted, `observe` so the suggestions
+        // the user was told to expect actually appear. `paused` gets
+        // nothing.
+        const nowRunnable = row.enabled && row.mode !== 'paused';
+        const patchTurnedItOn =
+          materialChange || patch.enabled === true || patch.mode !== undefined;
+        if (!nowRunnable || !patchTurnedItOn) return row;
+
+        if (row.mode === 'active') {
+          // Supersede this rule's unresolved Observe suggestions.
+          //
+          // Without this the mailbox ends up holding TWO rows per sender:
+          // the old `(observe, pending)` suggestion and the
+          // `(active, approved)` row the sweep below is about to write.
+          // The pending-dedup partial unique index does not stop it — it
+          // is scoped `WHERE resolution = 'pending'`, so an approved
+          // insert simply is not a conflict (the apply worker's own
+          // comment says as much). The approved row then executes, and
+          // the stale suggestion stays on screen offering the user an
+          // action against mail that has already moved. Approving it is a
+          // no-op for Archive and a SECOND request for Unsubscribe, which
+          // is the one verb the product tells users cannot be taken back.
+          //
+          // `dismissed` + `superseded` rather than a delete: the row is
+          // audit history, and the reason distinguishes this from a user
+          // dismissal exactly as `entitlement` does for downgrades.
+          // Scoped to `intent_applied = false` so a match that already
+          // produced an action is never rewritten.
+          await tx
+            .update(ruleMatchLog)
+            .set({
+              resolution: 'dismissed',
+              dismissReason: 'superseded',
+              resolvedAt: sql`now()`,
+            })
+            .where(
+              and(
+                eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+                eq(ruleMatchLog.ruleId, row.id),
+                eq(ruleMatchLog.modeAtMatch, 'observe'),
+                eq(ruleMatchLog.resolution, 'pending'),
+                eq(ruleMatchLog.intentApplied, false),
+              ),
+            );
+        }
+
+        await this.outbox.publish(tx, {
+          topic: TOPICS.AUTOPILOT_RULE_ACTIVATED,
+          aggregateId: row.id,
+          payload: {
+            mailboxAccountId,
+            ruleId: row.id,
+            mode: row.mode === 'active' ? ('active' as const) : ('observe' as const),
+            activatedAt: new Date().toISOString(),
+          },
+          schema: AutopilotRuleActivatedPayloadSchema,
+        });
+        return row;
+      })
+      .catch((error: unknown) => {
+        const pg = error as { code?: string; cause?: { code?: string } };
+        if (pg?.code === '40P01' || pg?.cause?.code === '40P01')
+          throw new ConflictException({
+            code: 'AUTOPILOT_RULE_SAVE_BUSY',
+            message: 'Another rule action is finishing. Try saving again.',
+          });
+        throw error;
       });
-      return row;
-    });
     if (!updated) return null;
 
     const digests = await this.observeDigests(mailboxAccountId, id);
@@ -1245,77 +1374,97 @@ export class AutopilotReadService {
   ): Promise<AutopilotApproveResult | null> {
     this.requireActionQueue();
 
-    const [rule] = await this.db
-      .select({
-        id: automationRules.id,
-        enabled: automationRules.enabled,
-        mode: automationRules.mode,
-      })
-      .from(automationRules)
-      .where(
-        and(eq(automationRules.mailboxAccountId, mailboxAccountId), eq(automationRules.id, ruleId)),
+    const outcome = await this.db.transaction(async (tx) => {
+      const [rule] = await tx
+        .select({
+          id: automationRules.id,
+          enabled: automationRules.enabled,
+          mode: automationRules.mode,
+          version: automationRules.version,
+          conditions: automationRules.conditions,
+        })
+        .from(automationRules)
+        .where(
+          and(
+            eq(automationRules.mailboxAccountId, mailboxAccountId),
+            eq(automationRules.id, ruleId),
+          ),
+        )
+        .limit(1)
+        .for('share');
+      if (!rule) return null;
+      if (
+        scope &&
+        'matchedBefore' in scope &&
+        ((scope.ruleVersion !== undefined && scope.ruleVersion !== rule.version) ||
+          (Object.keys(rule.conditions as object).length > 0 && scope.ruleVersion === undefined))
       )
-      .limit(1);
-    if (!rule) return null;
-    // Founder decision 2026-09-29 (a) — see `approveMatches`'s comment
-    // for the full reasoning; same refusal, scoped to one rule here.
-    // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
-    if (!rule.enabled || rule.mode === 'paused') {
-      throw new BadRequestException('Cannot approve suggestions for a paused or disabled rule.');
-    }
+        throw new ConflictException({
+          code: 'AUTOPILOT_RULE_CHANGED',
+          message: 'This rule changed. Refresh and review its current matches.',
+        });
+      // Founder decision 2026-09-29 (a) — see `approveMatches`'s comment
+      // for the full reasoning; same refusal, scoped to one rule here.
+      // docs/log/founder-followups/2026-09-27-autopilot-approvals-on-paused-rules.md
+      if (!rule.enabled || rule.mode === 'paused') {
+        throw new BadRequestException('Cannot approve suggestions for a paused or disabled rule.');
+      }
 
-    // Founder decision 2026-09-29 (a): "Approve all" approves exactly
-    // the set its preview showed — the exact ids rendered below the
-    // 50-row pending-suggestions cap, or a "matched before" cutoff at
-    // the cap (the FE cannot enumerate every id it never fetched). A
-    // suggestion that arrives after the preview loaded must stay
-    // pending. `scope` is optional here only so tests exercising the
-    // underlying update directly do not need a synthetic one — the
-    // controller always parses one from the request body, so the
-    // unscoped "approve everything offerable now" path is unreachable
-    // from the product surface.
-    // docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
-    const scopeFilter: SQL | undefined =
-      scope == null
-        ? undefined
-        : 'matchIds' in scope
-          ? inArray(ruleMatchLog.id, scope.matchIds)
-          : lte(ruleMatchLog.matchedAt, new Date(scope.matchedBefore));
+      // Founder decision 2026-09-29 (a): "Approve all" approves exactly
+      // the set its preview showed — the exact ids rendered below the
+      // 50-row pending-suggestions cap, or a "matched before" cutoff at
+      // the cap (the FE cannot enumerate every id it never fetched). A
+      // suggestion that arrives after the preview loaded must stay
+      // pending. `scope` is optional here only so tests exercising the
+      // underlying update directly do not need a synthetic one — the
+      // controller always parses one from the request body, so the
+      // unscoped "approve everything offerable now" path is unreachable
+      // from the product surface.
+      // docs/log/founder-followups/2026-09-27-autopilot-approve-all-unpreviewed-suggestions.md
+      const scopeFilter: SQL | undefined =
+        scope == null
+          ? undefined
+          : 'matchIds' in scope
+            ? inArray(ruleMatchLog.id, scope.matchIds)
+            : lte(ruleMatchLog.matchedAt, new Date(scope.matchedBefore));
 
-    const updated = await this.db
-      .update(ruleMatchLog)
-      .set({ resolution: 'approved', resolvedAt: sql`now()` })
-      .where(
-        and(
-          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-          eq(ruleMatchLog.ruleId, ruleId),
-          ruleMatchIsOfferableSuggestion(),
-          ...(scopeFilter ? [scopeFilter] : []),
-        ),
-      )
-      .returning({ id: ruleMatchLog.id });
-    const approvedCount = updated.length;
+      const updated = await tx
+        .update(ruleMatchLog)
+        .set({ resolution: 'approved', resolvedAt: sql`now()` })
+        .where(
+          and(
+            eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+            eq(ruleMatchLog.ruleId, ruleId),
+            ruleMatchIsOfferableSuggestion(),
+            ...(scopeFilter ? [scopeFilter] : []),
+          ),
+        )
+        .returning({ id: ruleMatchLog.id });
+      const approvedCount = updated.length;
 
-    // Same accounting as `approveMatches`: rows left `pending` solely
-    // because their sender is now Protected — scoped identically so the
-    // count describes exactly what this call's scope left behind.
-    const [protectedSkip] = await this.db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(ruleMatchLog)
-      .where(
-        and(
-          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
-          eq(ruleMatchLog.ruleId, ruleId),
-          ruleMatchIsPendingSuggestion(),
-          ruleMatchSenderIsProtected(),
-          ...(scopeFilter ? [scopeFilter] : []),
-        ),
-      );
-    const skippedProtectedCount = protectedSkip?.n ?? 0;
+      // Same accounting as `approveMatches`: rows left `pending` solely
+      // because their sender is now Protected — scoped identically so the
+      // count describes exactly what this call's scope left behind.
+      const [protectedSkip] = await tx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(ruleMatchLog)
+        .where(
+          and(
+            eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+            eq(ruleMatchLog.ruleId, ruleId),
+            ruleMatchIsPendingSuggestion(),
+            ruleMatchSenderIsProtected(),
+            ...(scopeFilter ? [scopeFilter] : []),
+          ),
+        );
+      const skippedProtectedCount = protectedSkip?.n ?? 0;
 
+      return { approvedCount, alreadyResolvedCount: 0, skippedProtectedCount };
+    });
+    if (!outcome) return null;
     const executionEnqueued =
-      approvedCount > 0 ? await this.enqueueActionSweep(mailboxAccountId) : false;
-    return { approvedCount, alreadyResolvedCount: 0, skippedProtectedCount, executionEnqueued };
+      outcome.approvedCount > 0 ? await this.enqueueActionSweep(mailboxAccountId) : false;
+    return { ...outcome, executionEnqueued };
   }
 
   /**
@@ -1368,7 +1517,7 @@ export class AutopilotReadService {
     let protectedWouldMatchCount = 0;
     for (const { senderKey, signals, decision, inboxCount, isUnsubscribed } of signalRows) {
       const input: PresetInput = { signals, triageDecision: decision };
-      const result = def.match(input, threshold);
+      const result = matchConfiguredPreset(presetKey, input, threshold, rule.conditions);
       if (!result.matched) continue;
       if (signals.isProtected) {
         protectedWouldMatchCount += 1;
@@ -1378,7 +1527,7 @@ export class AutopilotReadService {
     }
 
     const actionable = matched.filter((m) =>
-      def.actionKind === 'unsubscribe' ? !m.isUnsubscribed : m.inboxCount > 0,
+      rule.actionKind === 'unsubscribe' ? !m.isUnsubscribed : m.inboxCount > 0,
     );
 
     // Pre-activation volume is learned from every Observe resolution:
@@ -1469,7 +1618,8 @@ export class AutopilotReadService {
       actionableMessageCount: actionable.reduce((total, m) => total + m.inboxCount, 0),
       protectedWouldMatchCount,
       evaluatedSenders: eligible.length,
-      dailyActionCap: def.dailyActionCap,
+      dailyActionCap:
+        rule.actionKind === 'unsubscribe' ? Math.min(25, def.dailyActionCap) : def.dailyActionCap,
       weeklyVolume: {
         observedMatches,
         observedDays,
@@ -1595,6 +1745,13 @@ function projectRule(
     presetKey: asPresetKey(row.presetKey),
     isPreset: row.isPreset,
     name: row.name,
+    version: row.version,
+    conditions: AutopilotRuleConditionsSchema.safeParse(row.conditions).success
+      ? AutopilotRuleConditionsSchema.parse(row.conditions)
+      : defaultAutopilotConditions(
+          row.presetKey,
+          row.confidenceThreshold === null ? null : Number(row.confidenceThreshold),
+        ),
     enabled: row.enabled,
     mode: mode as AutopilotRuleMode,
     modeChangedAt: row.modeChangedAt.toISOString(),

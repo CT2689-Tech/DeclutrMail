@@ -74,6 +74,7 @@ export const AutopilotApproveAllRequestSchema = z.union([
   z
     .object({
       matchedBefore: z.string().datetime(),
+      ruleVersion: z.number().int().positive().optional(),
     })
     .strict(),
 ]);

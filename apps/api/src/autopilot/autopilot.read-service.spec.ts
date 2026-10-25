@@ -9,6 +9,7 @@ import {
   ruleMatchLog,
   schema,
   senderPolicies,
+  senderTimeseries,
   senders,
   triageDecisions,
   undoJournal,
@@ -2502,5 +2503,191 @@ describe('AutopilotReadService', () => {
       const rule = await service.getRule(mailboxA, ruleId);
       expect(rule!.observeDigest).toBeNull();
     });
+  });
+  describe('existing preset configuration', () => {
+    const config = {
+      version: 1,
+      name: 'Evening cleanup',
+      actionKind: 'archive' as const,
+      conditions: {
+        kind: 'dormant' as const,
+        lastSeenAfterDays: 120,
+        lastSeenWithinDays: 240,
+        readRateBelow: 0.1,
+        minMessages: 5,
+      },
+    };
+
+    it('previews the persisted dormancy edits and chosen action with Protected excluded', async () => {
+      const id = await getRuleId(db, mailboxA, 'newsletter_graveyard');
+      const key = FIXTURE_SENDER_KEYS[0]!;
+      await indexSenders(db, mailboxA, [key]);
+      await db
+        .update(senders)
+        .set({ lastSeenAt: new Date(Date.now() - 210 * 86400000) })
+        .where(eq(senders.senderKey, key));
+      await db.insert(mailMessages).values(
+        Array.from({ length: 10 }, (_, n) => ({
+          mailboxAccountId: mailboxA,
+          senderKey: key,
+          providerMessageId: `configured-${n}`,
+          providerThreadId: `configured-${n}`,
+          internalDate: new Date(),
+          labelIds: ['INBOX'],
+          isUnread: true,
+        })),
+      );
+      await db.insert(senderTimeseries).values({
+        mailboxAccountId: mailboxA,
+        senderKey: key,
+        yearMonth: '2026-01-01',
+        volume: 10,
+        readCount: 0,
+      });
+      expect((await service.previewRule(mailboxA, id))?.wouldMatchCount).toBe(0);
+      await service.patchRule(mailboxA, id, {
+        configuration: { ...config, conditions: { ...config.conditions, lastSeenAfterDays: 200 } },
+      });
+      expect(await service.previewRule(mailboxA, id)).toMatchObject({
+        wouldMatchCount: 1,
+        actionableSenderCount: 1,
+        actionableMessageCount: 10,
+      });
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailboxA,
+        senderKey: key,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      expect(await service.previewRule(mailboxA, id)).toMatchObject({
+        actionableSenderCount: 0,
+        protectedWouldMatchCount: 1,
+      });
+    });
+
+    it('rejects a stale capped approval and stale start preview after an action edit', async () => {
+      const id = await getRuleId(db, mailboxA, 'newsletter_graveyard');
+      await db.update(automationRules).set({ enabled: true }).where(eq(automationRules.id, id));
+      await service.patchRule(mailboxA, id, { configuration: config });
+      await indexSenders(db, mailboxA, [FIXTURE_SENDER_KEYS[0]!]);
+      const [match] = await db
+        .insert(ruleMatchLog)
+        .values({
+          mailboxAccountId: mailboxA,
+          ruleId: id,
+          senderKey: FIXTURE_SENDER_KEYS[0]!,
+          modeAtMatch: 'observe',
+          confidence: '0',
+          reason: 'new configuration',
+        })
+        .returning();
+      const add = vi.fn(async (_name: string, _data: unknown, opts?: { jobId?: string }) => ({
+        id: opts?.jobId,
+      }));
+      const queued = new AutopilotReadService(db as never, { add } as never);
+      const matchedBefore = new Date(Date.now() + 60000).toISOString();
+      await expect(
+        queued.approveAllForRule(mailboxA, id, { matchedBefore, ruleVersion: 1 }),
+      ).rejects.toThrow('This rule changed');
+      await expect(queued.approveAllForRule(mailboxA, id, { matchedBefore })).rejects.toThrow(
+        'This rule changed',
+      );
+      const [pending] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, match!.id));
+      expect(pending!.resolution).toBe('pending');
+      await expect(
+        service.patchRule(mailboxA, id, { mode: 'active', expectedVersion: 1 }),
+      ).rejects.toThrow('This rule changed');
+      await expect(service.patchRule(mailboxA, id, { mode: 'active' })).rejects.toThrow(
+        'Refresh this rule',
+      );
+      expect((await service.getRule(mailboxA, id))?.mode).toBe('observe');
+      expect(
+        await queued.approveAllForRule(mailboxA, id, { matchedBefore, ruleVersion: 2 }),
+      ).toMatchObject({ approvedCount: 1 });
+    });
+    it('rejects changing preset families or recommendation guards even through the API', async () => {
+      const id = await getRuleId(db, mailboxA, 'auto_unsubscribe_noisy');
+      await expect(service.patchRule(mailboxA, id, { configuration: config })).rejects.toThrow(
+        'condition type',
+      );
+      await expect(
+        service.patchRule(mailboxA, id, {
+          configuration: {
+            ...config,
+            conditions: { kind: 'recommendation', verdict: 'archive', confidence: 0.7 },
+          },
+        }),
+      ).rejects.toThrow('recommendation');
+      expect((await service.getRule(mailboxA, id))?.version).toBe(1);
+    });
+    it('persists conditions/action/name in place, supersedes pending and rejects stale edits', async () => {
+      const id = await getRuleId(db, mailboxA, 'newsletter_graveyard');
+      await indexSenders(db, mailboxA, [FIXTURE_SENDER_KEYS[0]!]);
+      const [match] = await db
+        .insert(ruleMatchLog)
+        .values({
+          mailboxAccountId: mailboxA,
+          ruleId: id,
+          senderKey: FIXTURE_SENDER_KEYS[0]!,
+          modeAtMatch: 'observe',
+          confidence: '0',
+          reason: 'old configuration',
+        })
+        .returning();
+      const saved = await service.patchRule(mailboxA, id, { configuration: config });
+      expect(saved).toMatchObject({
+        id,
+        presetKey: 'newsletter_graveyard',
+        version: 2,
+        name: config.name,
+        conditions: config.conditions,
+        actionKind: 'archive',
+        enabled: false,
+      });
+      expect(await service.getRule(mailboxA, id)).toMatchObject(saved!);
+      const [old] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, match!.id));
+      expect(old).toMatchObject({ resolution: 'dismissed', dismissReason: 'superseded' });
+      await expect(service.patchRule(mailboxA, id, { configuration: config })).rejects.toThrow(
+        'This rule changed',
+      );
+      await expect(service.patchRule(mailboxA, id, { confidenceThreshold: 0.3 })).rejects.toThrow(
+        'Use Edit rule',
+      );
+      expect(await service.patchRule(mailboxB, id, { configuration: config })).toBeNull();
+    });
+    it('rolls back the entire edit while an approved batch is queued, leaving the action intact', async () => {
+      const id = await getRuleId(db, mailboxA, 'newsletter_graveyard');
+      await db.insert(ruleMatchLog).values({
+        mailboxAccountId: mailboxA,
+        ruleId: id,
+        senderKey: FIXTURE_SENDER_KEYS[0]!,
+        modeAtMatch: 'observe',
+        confidence: '0',
+        reason: 'approved',
+        resolution: 'approved',
+        intentApplied: false,
+      });
+      const before = await service.getRule(mailboxA, id);
+      await expect(service.patchRule(mailboxA, id, { configuration: config })).rejects.toThrow(
+        'approved work',
+      );
+      expect(await service.getRule(mailboxA, id)).toEqual(before);
+      await expect(service.patchRule(mailboxA, id, { confidenceThreshold: 0.3 })).rejects.toThrow(
+        'approved work',
+      );
+    });
+    it.each(['active', 'paused', 'observe'] as const)(
+      'preserves stop state and returns Active to Observe (%s)',
+      async (mode) => {
+        const id = await getRuleId(db, mailboxA, 'newsletter_graveyard');
+        await db
+          .update(automationRules)
+          .set({ mode, enabled: true })
+          .where(eq(automationRules.id, id));
+        const saved = await service.patchRule(mailboxA, id, { configuration: config });
+        expect(saved?.mode).toBe(mode === 'active' ? 'observe' : mode);
+        expect(saved?.enabled).toBe(true);
+      },
+    );
   });
 });

@@ -119,7 +119,7 @@ for (const width of [320, 375, 1280]) {
         exact: true,
       });
       await edit.click();
-      await expect(library.getByRole('slider')).toBeVisible();
+      await expect(library.getByLabel('Confidence above (%)')).toBeVisible();
       await expectNoViewportOverflow(page);
       await expectNoUncontainedViewportEscape(page);
       await expect(page.getByRole('heading', { name: 'Pending suggestions' })).toBeVisible();
@@ -129,7 +129,7 @@ for (const width of [320, 375, 1280]) {
           exact: true,
         })
         .click();
-      await expect(library.getByRole('slider')).toHaveCount(0);
+      await expect(library.getByLabel('Confidence above (%)')).toHaveCount(0);
       await expectNoUncontainedViewportEscape(page);
     });
   }

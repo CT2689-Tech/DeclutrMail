@@ -1,3 +1,7 @@
+import type {
+  AutopilotRuleConditions,
+  AutopilotRuleConfiguration,
+} from '@declutrmail/shared/contracts';
 /**
  * Autopilot API — typed fetchers for the Autopilot endpoints
  * (D99-D105, D234). Mirrors the BE wire contract in
@@ -89,6 +93,8 @@ export interface AutopilotObserveDigestDto {
 
 /** One Autopilot rule, as the read service returns it. */
 export interface AutopilotRuleDto {
+  version?: number;
+  conditions?: AutopilotRuleConditions;
   id: string;
   presetKey: AutopilotPresetKey | null;
   isPreset: boolean;
@@ -136,6 +142,8 @@ export interface AutopilotRuleDto {
  * Mirrors `AutopilotRulePatch` in `autopilot.types.ts`.
  */
 export interface AutopilotRulePatchDto {
+  expectedVersion?: number;
+  configuration?: AutopilotRuleConfiguration;
   /** D101 — toggle the rule on / off. */
   enabled?: boolean;
   /** D10 / D105 — observe ↔ active ↔ paused. */
