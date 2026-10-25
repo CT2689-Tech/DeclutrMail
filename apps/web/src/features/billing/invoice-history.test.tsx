@@ -55,6 +55,52 @@ beforeEach(() => {
 });
 
 describe('InvoiceHistory', () => {
+  it('keeps a one-unit difference in large refund totals', async () => {
+    apiGet.mockResolvedValue({
+      data: {
+        invoices: [{ ...PAID_ROW, amount: '9007199254740993', refundedAmount: '9007199254740992' }],
+        unavailableProviders: [],
+        truncated: false,
+        omittedRows: 0,
+      },
+    });
+    wrap(<InvoiceHistory />);
+    expect(await screen.findByText('Partially refunded')).toBeInTheDocument();
+    expect(screen.queryByText('Refunded', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['1900', 'Refunded'],
+    ['500', 'Partially refunded'],
+  ])(
+    'shows a confirmed refund of %s and keeps the invoice download',
+    async (refundedAmount, label) => {
+      apiGet.mockResolvedValue({
+        data: {
+          invoices: [
+            { ...PAID_ROW, refundedAmount },
+            { ...PAID_ROW, id: 'txn_unreturned' },
+          ],
+          unavailableProviders: [],
+          truncated: false,
+          omittedRows: 0,
+        },
+      });
+      wrap(<InvoiceHistory />);
+      expect(await screen.findByText(label)).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(2);
+      fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+        target: { value: refundedAmount === '1900' ? 'refunded' : 'partially_refunded' },
+      });
+      expect(screen.getByRole('status')).toHaveTextContent('1 of 2 loaded invoices');
+      expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(1);
+      expect(screen.queryByText('Paid', { exact: true })).not.toBeInTheDocument();
+      expect(screen.getByRole('listitem')).toHaveAccessibleName(
+        new RegExp(`status ${label}, refunded \\$${refundedAmount === '1900' ? '19.00' : '5.00'}`),
+      );
+    },
+  );
+
   it.each(['complimentary Pro', 'Free', 'Pass'])(
     'loads past invoices for %s without a current subscription',
     async (state) => {

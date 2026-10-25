@@ -370,7 +370,9 @@ leave unset for sandbox.
 **New destination** → URL
 `https://<api-host>/api/webhooks/billing/paddle`, type webhook,
 events: `subscription.*`, `transaction.completed`,
-`transaction.payment_failed`, `adjustment.created`. Copy the
+`transaction.payment_failed`, `adjustment.created`, `adjustment.updated`.
+Both adjustment events are required: a pending sandbox refund preserves
+Backlog Pass access until the approved update arrives. Copy the
 destination's **secret key**:
 
 ```bash

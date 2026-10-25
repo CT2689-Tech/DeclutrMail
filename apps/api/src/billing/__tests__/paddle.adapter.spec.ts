@@ -866,6 +866,72 @@ describe('PaddleAdapter checkout + cancel', () => {
       const url = new URL(String(fetchSpy.mock.calls[0]?.[0]));
       expect(url.searchParams.get('customer_id')).toBe('ctm_owned');
       expect(url.searchParams.get('per_page')).toBe('30');
+      expect(url.searchParams.get('include')).toBe('adjustments_totals');
+    });
+
+    it.each([
+      { amount: '1900', refundedAmount: '0' },
+      { amount: '1900', refundedAmount: '500' },
+      { amount: '1900', refundedAmount: '1900' },
+      { amount: '9007199254740993', refundedAmount: '9007199254740992' },
+    ])(
+      'retains the original payment and PDF beside settled refund totals: %j',
+      async ({ amount, refundedAmount }) => {
+        const row = {
+          id: 'txn_owned',
+          status: 'completed',
+          created_at: '2026-07-30T18:00:27.000Z',
+          currency_code: 'USD',
+          details: { totals: { grand_total: amount } },
+          adjustments_totals: { currency_code: 'USD', breakdown: { refund: refundedAmount } },
+        };
+        const fetchSpy = vi
+          .fn()
+          .mockResolvedValue(new Response(JSON.stringify({ data: row }), { status: 200 }));
+        vi.stubGlobal('fetch', fetchSpy);
+        const result = await makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).invoiceTransaction(
+          'txn_owned',
+        );
+        expect(result.invoices[0]).toMatchObject({
+          amount,
+          status: 'paid',
+          refundedAmount,
+          documentAvailable: true,
+        });
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(new URL(String(fetchSpy.mock.calls[0]?.[0])).searchParams.get('include')).toBe(
+          'adjustments_totals',
+        );
+      },
+    );
+
+    it.each([
+      { currency_code: 'EUR', breakdown: { refund: '1900' } },
+      { currency_code: 'USD', breakdown: { refund: '-1' } },
+      { currency_code: 'USD', breakdown: { refund: '1901' } },
+      { currency_code: 'USD', breakdown: { refund: 1900 } },
+      { currency_code: 'USD', breakdown: {} },
+    ])('discloses a malformed refund total as an omitted row: %j', async (adjustments) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          transactionsResponse([
+            {
+              id: 'txn_bad_refund',
+              customer_id: 'ctm_owned',
+              status: 'completed',
+              created_at: '2026-07-30T18:00:27.000Z',
+              currency_code: 'USD',
+              details: { totals: { grand_total: '1900' } },
+              adjustments_totals: adjustments,
+            },
+          ]),
+        ),
+      );
+      const result = await makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listCustomerInvoices(
+        'ctm_owned',
+      );
+      expect(result).toMatchObject({ invoices: [], omitted: 1 });
     });
 
     it('rejects customer history that contains a foreign customer', async () => {

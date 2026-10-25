@@ -442,6 +442,8 @@ export const BillingInvoiceSchema = z.object({
   amount: z.string().min(1),
   currencyCode: z.string().min(1),
   status: z.enum(['paid', 'due', 'canceled', 'unknown']),
+  /** Confirmed refunds in the original currency's lowest unit; absent on older APIs/other rails. */
+  refundedAmount: z.string().regex(/^\d+$/).optional(),
   /** Provider-hosted invoice page, when the rail exposes a stable one. */
   hostedUrl: z.url().nullable(),
   /** Whether `GET /invoices/:id/document` can mint a document URL. */
