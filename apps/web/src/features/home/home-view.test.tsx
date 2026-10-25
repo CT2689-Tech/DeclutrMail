@@ -1,3 +1,4 @@
+import { renderToString } from 'react-dom/server';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -58,6 +59,70 @@ const metered = {
 };
 
 describe('HomeView', () => {
+  it('keeps the server preview disabled until its confirmation handler is attached', () => {
+    const html = renderToString(<HomeView state={ready} nextSteps={[unsub]} />);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Preview cleanup/);
+    render(<HomeView state={ready} nextSteps={[unsub]} />);
+    expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeEnabled();
+  });
+  it('shows returning context and confirmed impact without opening Details', () => {
+    render(
+      <HomeView
+        state={ready}
+        nextSteps={[unsub]}
+        statusLine="Gmail connected · Last scanned 5m ago"
+        visitSummary={<p>Since your last visit: 3 new emails scanned</p>}
+      />,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Last scanned 5m ago');
+    expect(screen.getByText(/Since your last visit/).closest('details')).toBeNull();
+    expect(screen.getByTestId('home-hero').closest('details')).toBeNull();
+    expect(screen.getByText('Details').closest('details')).not.toHaveAttribute('open');
+    expect(screen.getByText('Emails archived').closest('details')).not.toBeNull();
+  });
+
+  it.each([
+    'Your cleanup is in progress.',
+    'Reconnect Gmail to continue.',
+    '3 new senders need review.',
+  ])('prioritizes %s without unrelated sender previews or a competing primary action', (title) => {
+    render(
+      <HomeView
+        state={ready}
+        nextSteps={[{ ...unsub, senders: [{ id: 's1', name: 'Example', domain: 'example.test' }] }]}
+        priority={{ title, action: { label: 'Continue review', href: '/activity' } }}
+      />,
+    );
+    expect(screen.getByRole('heading', { name: title })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Preview cleanup' })).toBeNull();
+    expect(screen.queryByRole('list', { name: 'Some senders to review' })).toBeNull();
+    expect(document.querySelectorAll('.dm-button-link')).toHaveLength(1);
+    expect(document.querySelector('[data-home-fix-expected="false"]')).not.toBeNull();
+    expect(screen.getByTestId('home-hero')).toHaveTextContent('1,234');
+  });
+
+  it('keeps reconnect available even while an empty mailbox is queued', () => {
+    render(
+      <HomeView
+        state={{ kind: 'empty', syncing: true, queued: true, action }}
+        priority={{
+          title: 'Reconnect Gmail to continue.',
+          action: { label: 'Open Settings', href: '/settings#mailboxes' },
+        }}
+      />,
+    );
+    expect(screen.getByRole('link', { name: 'Open Settings' })).toBeInTheDocument();
+    expect(screen.queryByText(HOME_DECK.queuedTitle)).toBeNull();
+  });
+
+  it('scopes the no-suggestions message to cleanup rather than the whole inbox', () => {
+    render(<HomeView state={ready} noSuggestions />);
+    expect(
+      screen.getByRole('heading', { name: 'No suggested cleanup right now.' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Review senders' })).toBeInTheDocument();
+  });
+
   it('leads with one preview and discloses supporting context in Details', () => {
     render(
       <HomeView
@@ -75,7 +140,6 @@ describe('HomeView', () => {
     ).toBeNull();
     expect(screen.getByRole('button', { name: 'Preview cleanup' }).closest('details')).toBeNull();
     for (const content of [
-      screen.getByTestId('home-hero'),
       screen.getByText(/91% of the email/),
       screen.getByText(/≈ 7.7 GB/),
       screen.getByRole('link', { name: 'Open Later' }),
@@ -150,7 +214,8 @@ describe('HomeView', () => {
   it('keeps recorded progress and activity, and does not promote Pro', () => {
     render(<HomeView state={ready} tier="plus" />);
     expect(screen.getByTestId('home-hero')).toHaveTextContent('1,234');
-    expect(screen.getByRole('region', { name: 'Progress' }).querySelector('dl')).not.toBeNull();
+    expect(screen.getByRole('region', { name: 'Progress' }).closest('details')).toBeNull();
+    expect(screen.getByText('Emails archived').closest('details')).not.toBeNull();
     expect(screen.getByText('Emails archived')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'See your activity' })).toHaveAttribute(
       'href',
@@ -194,9 +259,7 @@ describe('HomeView', () => {
   it('offers the first cleanup before any recorded progress exists', () => {
     render(<HomeView state={{ kind: 'empty', syncing: false, action }} nextSteps={[unsub]} />);
     expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Progress' })).toHaveTextContent(
-      HOME_DECK.emptyTitle,
-    );
+    expect(screen.queryByRole('region', { name: 'Progress' })).toBeNull();
     expect(screen.queryByTestId('home-hero')).toBeNull();
   });
 
@@ -278,7 +341,7 @@ describe('HomeView', () => {
         previewReport={homePreviewReport('full')}
       />,
     );
-    expect(slots()).toEqual(['quota', 'primary', 'details', 'visit', 'report', 'plan']);
+    expect(slots()).toEqual(['quota', 'visit', 'primary', 'details', 'report', 'plan']);
   });
 
   it('keeps the route loading shell on the same slots without mounting HomeView', () => {
@@ -318,7 +381,7 @@ describe('HomeView', () => {
   it('empty: no number, and a syncing mailbox does not say it is reading Gmail', () => {
     const { rerender } = render(<HomeView state={{ kind: 'empty', syncing: false, action }} />);
     expect(screen.queryByTestId('home-hero')).toBeNull();
-    expect(screen.getByText('Nothing cleared yet.')).toBeInTheDocument();
+    expect(screen.getByText('Start your first cleanup.')).toBeInTheDocument();
     expect(screen.queryByText(HOME_DECK.emptyBody)).toBeNull();
     expect(screen.getByRole('link', { name: 'Review senders' })).toHaveAttribute(
       'href',

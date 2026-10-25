@@ -78,11 +78,11 @@ describe('Home scan hydration', () => {
     const server = new QueryClient(options);
     const browser = new QueryClient(options);
     await server.prefetchQuery({
-      queryKey: homeKeys.summary(),
+      queryKey: homeKeys.summary('mb-1'),
       queryFn: async () => EMPTY_SUMMARY,
     });
     await browser.prefetchQuery({
-      queryKey: homeKeys.summary(),
+      queryKey: homeKeys.summary('mb-1'),
       queryFn: async () => EMPTY_SUMMARY,
     });
     await browser.prefetchQuery({
@@ -123,11 +123,11 @@ describe('Home scan hydration', () => {
     const server = new QueryClient(options);
     const browser = new QueryClient(options);
     await server.prefetchQuery({
-      queryKey: homeKeys.summary(),
+      queryKey: homeKeys.summary('mb-1'),
       queryFn: async () => EMPTY_SUMMARY,
     });
     await browser.prefetchQuery({
-      queryKey: homeKeys.summary(),
+      queryKey: homeKeys.summary('mb-1'),
       queryFn: async () => EMPTY_SUMMARY,
     });
     await browser.prefetchQuery({
