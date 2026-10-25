@@ -67,7 +67,7 @@ export function HomeRouteLoading() {
       <header className={styles.header}>
         <h1>{HOME_DECK.homeTitle}</h1>
         <div className={styles.headerTools}>
-          <Link href="/senders" className={styles.reportLink}>
+          <Link href="/senders#inbox-report" className={styles.reportLink}>
             {HOME_DECK.focus.report}
           </Link>
           <div className={styles.planLine} data-home-slot="plan">

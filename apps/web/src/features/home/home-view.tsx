@@ -125,7 +125,7 @@ export function HomeView({
           {mailboxEmail && <p className={styles.mailboxIdentity}>{mailboxEmail}</p>}
         </div>
         <div className={styles.headerTools}>
-          <Link href="/senders" className={styles.reportLink}>
+          <Link href="/senders#inbox-report" className={styles.reportLink}>
             {HOME_DECK.focus.report}
           </Link>
           <div className={styles.planLine} data-home-slot="plan">

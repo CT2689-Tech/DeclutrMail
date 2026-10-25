@@ -5,6 +5,7 @@ import type { JSX } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { toast } from '@declutrmail/shared';
+import { WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 
 import { activityKeys } from '@/features/activity/api/query-keys';
@@ -49,6 +50,7 @@ export function InboxReportFirstLanding(props: {
   compact?: boolean;
   mailboxEmail?: string;
   senderNames?: Readonly<Record<string, { name: string }>>;
+  onReview?: (senderIds: readonly string[]) => void;
   onResolved(shown: boolean): void;
 }): JSX.Element | null {
   const { mailboxId, mailboxEmail, senderNames, onResolved } = props;
@@ -131,7 +133,14 @@ export function InboxReportFirstLanding(props: {
   }, [onResolved, reportQuery.data, reportQuery.isError, reportQuery.isSuccess]);
 
   useLayoutEffect(() => {
-    setDismissed(isReportDismissed(mailboxId));
+    const syncDismissed = () =>
+      setDismissed(window.location.hash === '#inbox-report' ? false : isReportDismissed(mailboxId));
+    syncDismissed();
+    window.addEventListener('hashchange', syncDismissed);
+    return () => window.removeEventListener('hashchange', syncDismissed);
+  }, [mailboxId]);
+
+  useLayoutEffect(() => {
     if (!report) {
       setCelebration(null);
       return;
@@ -228,7 +237,19 @@ export function InboxReportFirstLanding(props: {
     );
   };
 
-  if (!report) return null;
+  if (!report)
+    return (
+      <section id="inbox-report" className="dm-report" aria-label={WS5_COPY['report.eyebrow']}>
+        <p role="status">
+          {reportQuery.isError ? WS5_COPY['report.error'] : WS5_COPY['report.loading']}
+        </p>
+        {reportQuery.isError ? (
+          <button type="button" onClick={() => void reportQuery.refetch()}>
+            Retry report
+          </button>
+        ) : null}
+      </section>
+    );
   return (
     <InboxReportPanel
       report={report}
@@ -236,12 +257,20 @@ export function InboxReportFirstLanding(props: {
       mailboxId={mailboxId}
       mailboxEmail={mailboxEmail}
       {...(senderNames ? { senderNames } : {})}
+      {...(props.onReview ? { onReview: () => props.onReview?.(report.fix.senderKeys) } : {})}
       dismissed={dismissed}
       celebration={celebration}
       {...(undoToken ? { undoToken, onUndo: () => undoArchive(undoToken) } : {})}
       onDismiss={() => {
         setReportDismissed(mailboxId, true);
         setDismissed(true);
+        if (window.location.hash === '#inbox-report') {
+          window.history.replaceState(
+            window.history.state,
+            '',
+            window.location.pathname + window.location.search,
+          );
+        }
       }}
       onReopen={() => {
         setReportDismissed(mailboxId, false);

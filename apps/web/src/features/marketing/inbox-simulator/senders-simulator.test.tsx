@@ -243,7 +243,9 @@ describe('SendersSimulator — WS5 sample surfaces', () => {
     expect(screen.getByText(/mostly leave unread/)).toBeInTheDocument();
     expect(screen.getByText(WS5_COPY['report.trust'])).toBeInTheDocument();
     expect(
-      screen.getByText('1 of these senders includes an unsubscribe link.'),
+      screen.getByText(
+        '1 sender with an unsubscribe option had less than 10% marked read in the last 90 days.',
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }),

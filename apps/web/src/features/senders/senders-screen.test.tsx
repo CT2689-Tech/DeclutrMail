@@ -231,7 +231,33 @@ async function findRowStatus(): Promise<HTMLElement> {
 
 let lastClient: ReturnType<typeof createTestQueryClient>;
 
+function installDefaultReport() {
+  // Sender-action tests do not exercise report failures. Its optional read
+  // now has visible feedback, so supply a successful empty report unless
+  // the test installed a more specific handler first.
+  addFetchHandlers([
+    {
+      method: 'GET',
+      path: '/api/mailboxes/mb-1/inbox-report',
+      respond: () =>
+        jsonOk({
+          data: {
+            generatedAt: '2026-10-24T00:00:00.000Z',
+            mailboxSizeBucket: 'under_1gb',
+            insights: [],
+            fix: { senderKeys: [], sendersCount: 0, inboxEmailCount: 0 },
+            receivedCount: 0,
+            totalBytes: 0,
+            fallbackSenderCount: 0,
+            variant: 'fallback',
+          },
+        }),
+    },
+  ]);
+}
+
 function renderScreen() {
+  installDefaultReport();
   const client = createTestQueryClient();
   lastClient = client;
   return render(
@@ -255,6 +281,7 @@ async function undoFromThePill(token: string) {
 /** Like `renderScreen`, with the shared `ToastHost` mounted so tests can
  * assert toast copy (the app layout mounts it at the root). */
 function renderScreenWithToasts() {
+  installDefaultReport();
   const client = createTestQueryClient();
   lastClient = client;
   return render(
@@ -7281,6 +7308,73 @@ describe('guided review from Senders', () => {
       compositePreviewHandler(12),
     ];
   }
+  it('reviews the exact report set including senders outside the loaded list, without writes', async () => {
+    const writes = vi.fn();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () =>
+          jsonOk({
+            data: {
+              generatedAt: '2026-10-24T00:00:00.000Z',
+              mailboxSizeBucket: 'under_1gb',
+              insights: [
+                {
+                  id: 'mostly_unread_share',
+                  pct: 49,
+                  senderCount: 2,
+                  sweeperExcluded: 0,
+                  window: '90d',
+                },
+              ],
+              fix: { senderKeys: ['off-page', 'b'], sendersCount: 2, inboxEmailCount: 20 },
+              receivedCount: 50,
+              totalBytes: 100,
+              fallbackSenderCount: 2,
+              variant: 'full',
+            },
+          }),
+      },
+      {
+        method: 'GET',
+        path: '/api/senders/off-page',
+        respond: () =>
+          jsonOk({
+            data: {
+              ...ROW,
+              id: 'off-page',
+              displayName: 'Outside the loaded page',
+              recommendation: null,
+            },
+          }),
+      },
+      ...reviewHandlers(writes),
+    ]);
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Review them first' }));
+    const current = await screen.findByRole(
+      'region',
+      { name: 'Current sender' },
+      { timeout: 10000 },
+    );
+    expect(within(current).getByRole('heading', { name: 'Outside the loaded page' })).toBeVisible();
+    const queue = screen.getByRole('navigation', { name: 'Senders in this review' });
+    expect(within(queue).getAllByRole('button')).toHaveLength(2);
+    expect(within(queue).queryByRole('button', { name: 'Sender A' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next sender' }));
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('region', { name: 'Current sender' })).getByRole('heading', {
+          name: 'Sender B',
+        }),
+      ).toBeVisible(),
+    );
+    expect(writes).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to Senders' }));
+    expect(screen.getByRole('heading', { name: /^Senders$/ })).toBeVisible();
+  });
+
   it('reviews actual selected rows without a Triage intersection, and Back preserves selection', async () => {
     const writes = vi.fn();
     installFetchStub(reviewHandlers(writes));

@@ -2,6 +2,7 @@
 .dm-report {
   --dm-text-display-xl: 64px;
   position: relative;
+  scroll-margin-top: 96px;
   background: var(--dm-card);
   color: var(--dm-fg);
   border-radius: 20px;
@@ -46,7 +47,7 @@
   border: 0;
   color: var(--dm-primary);
   font-weight: 600;
-  min-height: 32px;
+  min-height: 44px;
 }
 
 .dm-report [data-report-fix] {
@@ -341,4 +342,18 @@
     opacity: 0;
     transform: rotate(var(--a)) translateX(calc(30px + var(--d))) scale(0.6);
   }
+}
+
+.dm-report button:focus-visible,
+.dm-report a:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 3px;
+}
+.dm-report button:not(:disabled):hover,
+.dm-report a:hover {
+  text-decoration: underline;
+}
+.dm-report button:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
