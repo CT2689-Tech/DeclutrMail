@@ -369,7 +369,7 @@ describe('Quiet watch rule inventory', () => {
     fireEvent.click(
       screen.getByRole('button', { name: 'Edit rule Review low-engagement senders for Archive' }),
     );
-    fireEvent.change(screen.getByRole('textbox', { name: 'Rule name' }), {
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Rule name' }), {
       target: { value: 'My draft rule' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Needs review' }));
@@ -620,6 +620,7 @@ describe('Quiet watch rule inventory', () => {
             version: 1,
             name: 'Review low-engagement senders for Archive',
             actionKind: 'archive',
+            reach: 'inbox_only',
             conditions: { kind: 'recommendation', verdict: 'archive', confidence: 0.8 },
           },
         },
@@ -1863,6 +1864,43 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 });
 
 describe('ActivateRuleModal — action-specific recovery', () => {
+  it('describes approved Delete batches with archived reach, without the unattended daily cap', () => {
+    render(
+      <ActivateRuleModal
+        rule={{
+          ...NEWSLETTER_GRAVEYARD,
+          actionKind: 'delete',
+          actionPayload: { reach: 'all_mail' },
+        }}
+        pendingCount={0}
+        pendingApproximate={false}
+        undoWindowDays={30}
+        preview={{
+          status: 'ready',
+          result: {
+            ...RULE_PREVIEW_RESULT,
+            actionableMessageCount: 2,
+            actionableSenderCount: 1,
+            reach: 'all_mail',
+          },
+        }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('Inbox + archived');
+    expect(dialog.textContent).toContain('5,000 emails');
+    expect(dialog.textContent).not.toContain('inbox email');
+    expect(dialog.textContent).not.toContain('Daily cap');
+    expect(
+      within(dialog).queryByRole('button', { name: 'Switch to Active' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('states that unsubscribe is irreversible and does not remove existing mail', () => {
     render(
       <ActivateRuleModal
@@ -2666,5 +2704,98 @@ describe('Autopilot rule status views', () => {
     });
     expect(screen.getByRole('button', { name: 'Paused or inactive · 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Acting · 0' })).toBeInTheDocument();
+  });
+});
+
+describe('built-in Delete batches', () => {
+  it('uses fresh matches in Your rules and restores visible focus if its preview opener disappears', async () => {
+    const preset = {
+      ...NEWSLETTER_GRAVEYARD,
+      actionKind: 'delete' as const,
+      actionPayload: { reach: 'all_mail' },
+      mode: 'observe' as const,
+      enabled: true,
+      version: 1,
+      observeDigest: { pendingTotal: 0, senders7d: 0, inboxMessagesNow: 0 },
+    };
+    let presets = [preset];
+    let failMatches = false;
+    installFetchStub([
+      { method: 'GET', path: '/api/autopilot/rules', respond: () => jsonOk({ data: presets }) },
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+      {
+        method: 'POST',
+        path: `/api/autopilot/rules/${preset.id}/preview`,
+        respond: () =>
+          failMatches
+            ? jsonServerError()
+            : jsonOk({
+                data: {
+                  ...RULE_PREVIEW_RESULT,
+                  actionableMessageCount: 2,
+                  actionableSenderCount: 1,
+                  reach: 'all_mail',
+                },
+              }),
+      },
+      {
+        method: 'POST',
+        path: `/api/autopilot/sender-rules/${preset.id}/preview`,
+        respond: () =>
+          jsonOk({
+            data: {
+              previewId: 'frozen',
+              ruleId: preset.id,
+              version: 1,
+              messageCount: 2,
+              totalEligibleCount: 2,
+              reach: 'all_mail',
+              action: 'delete',
+              olderThanDays: null,
+              senders: [],
+              expiresAt: new Date(Date.now() + 60000).toISOString(),
+              hasMore: false,
+            },
+          }),
+      },
+    ]);
+    const view = renderRoute();
+    expect(await screen.findByText(/2 matching emails/)).toBeVisible();
+    expect(screen.queryByText('Nothing needs review')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'With matches' }));
+    failMatches = true;
+    await view.client.invalidateQueries({ queryKey: ['autopilot', 'delete-review'] });
+    expect(await screen.findByText('Some Delete matches couldn’t be checked.')).toBeVisible();
+    expect(screen.queryByText('No rules ready for review.')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Preview matches for rule Newsletter graveyard' }),
+    ).not.toBeInTheDocument();
+    failMatches = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry matches' }));
+    const opener = await screen.findByRole('button', {
+      name: 'Preview matches for rule Newsletter graveyard',
+    });
+    opener.focus();
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText(/Inbox \+ archived/)).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeEnabled();
+    presets = [];
+    await view.client.invalidateQueries({ queryKey: ['autopilot', 'rules'] });
+    await waitFor(() => expect(opener).not.toBeInTheDocument());
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Autopilot' })).toHaveFocus());
   });
 });

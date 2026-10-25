@@ -54,12 +54,15 @@ describe('terminal action reconciliation', () => {
     const client = new QueryClient();
     const rulesKey = ['autopilot-sender-rules', 'mb'];
     const previewKey = ['autopilot-sender-rule-preview', 'mb', 'rule'];
+    const deleteKey = ['autopilot', 'delete-review', 'mb', 'preset'];
+    client.setQueryData(deleteKey, { matchingCount: 3 });
     client.setQueryData(rulesKey, { matchingCount: 3 });
     client.setQueryData(previewKey, { previewId: 'frozen' });
 
     reconcileAction(client, { status: 'done' }, 'recovered');
 
     expect(client.getQueryState(rulesKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(deleteKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(previewKey)?.isInvalidated).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 'use client';
 
+import { CleanupSelect } from '@/components/cleanup-select';
 import linkStyles from './billing-links.module.css';
 
 /**
@@ -192,7 +193,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
               Status{' '}
-              <select
+              <CleanupSelect
                 name="invoice-status"
                 autoComplete="off"
                 style={FILTER_STYLE}
@@ -206,7 +207,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                 <option value="due">Due invoices</option>
                 <option value="canceled">Canceled invoices</option>
                 <option value="unknown">Unknown status</option>
-              </select>
+              </CleanupSelect>
             </label>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
               From{' '}

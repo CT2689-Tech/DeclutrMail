@@ -1,5 +1,6 @@
 'use client';
 
+import { CleanupSelect } from '@/components/cleanup-select';
 import { useEffect, useId, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@declutrmail/shared';
@@ -219,14 +220,14 @@ export function SenderRuleEditor({
         {action === 'delete' ? (
           <label className={styles.field}>
             Include
-            <select
+            <CleanupSelect
               className={styles.select}
               value={reach}
               onChange={(e) => setReach(e.target.value as SenderRuleConfig['reach'])}
             >
               <option value="inbox_only">Inbox only</option>
-              <option value="all_mail">Inbox and archived</option>
-            </select>
+              <option value="all_mail">Inbox + archived</option>
+            </CleanupSelect>
           </label>
         ) : (
           <p className={styles.field}>
@@ -235,7 +236,7 @@ export function SenderRuleEditor({
         )}
         <label className={styles.field}>
           Email age
-          <select
+          <CleanupSelect
             className={styles.select}
             value={age ?? 'any'}
             onChange={(e) =>
@@ -248,7 +249,7 @@ export function SenderRuleEditor({
                 Older than {days} days
               </option>
             ))}
-          </select>
+          </CleanupSelect>
         </label>
       </div>
       {attempted && !valid && (

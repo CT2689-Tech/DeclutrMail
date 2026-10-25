@@ -19,6 +19,7 @@ import type { schema, SenderActionReach } from '@declutrmail/db';
 import { ActionLabelAppliedPayloadSchema, TOPICS } from '@declutrmail/events';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
 import {
+  isApprovalFirstDeletePreset,
   AutopilotSenderRuleConditionsSchema,
   LABEL_SENDER_PROTECTED_ERROR_CODE,
   RECOVERY_SENDER_PROTECTED_ERROR_CODE,
@@ -1158,8 +1159,9 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     if (
       !rule ||
       rule.mailboxAccountId !== job.mailboxAccountId ||
-      rule.isPreset ||
-      rule.presetKey !== null ||
+      (rule.isPreset
+        ? !isApprovalFirstDeletePreset(rule) || job.verb !== 'delete'
+        : rule.presetKey !== null) ||
       rule.scope !== 'account'
     ) {
       throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
@@ -1170,7 +1172,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // Approval freezes the job's action and IDs. Later edits affect future
     // previews; pause/retire still revoke admission before the first request.
     const conditions = AutopilotSenderRuleConditionsSchema.safeParse(rule.conditions);
-    if (!conditions.success) {
+    if (!conditions.success && !isApprovalFirstDeletePreset(rule)) {
       throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
     }
     const [mailbox] = await db
@@ -1230,8 +1232,12 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
             eq(automationRules.mailboxAccountId, job.mailboxAccountId),
             eq(automationRules.version, rule.version),
             sql`${automationRules.modeChangedAt} <= ${actionJobs.createdAt}`,
-            eq(automationRules.isPreset, false),
-            isNull(automationRules.presetKey),
+            eq(automationRules.isPreset, rule.isPreset),
+            rule.presetKey === null
+              ? isNull(automationRules.presetKey)
+              : eq(automationRules.presetKey, rule.presetKey),
+            eq(automationRules.actionKind, rule.actionKind),
+            eq(automationRules.actionPayload, rule.actionPayload),
             isNull(automationRules.retiredAt),
             eq(automationRules.enabled, true),
             eq(automationRules.mode, 'observe'),

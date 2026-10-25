@@ -50,6 +50,7 @@ import {
 } from '@declutrmail/events';
 import {
   initialUnsubscribeLifecycleStatus,
+  isApprovalFirstDeletePreset,
   AutopilotSenderRuleConditionsSchema,
   isErrorCode,
   normalizeUnsubscribeLifecycleStatus,
@@ -249,7 +250,6 @@ export class ActionsService {
           and(
             eq(automationRules.id, input.ruleId),
             eq(automationRules.mailboxAccountId, input.mailboxAccountId),
-            eq(automationRules.isPreset, false),
             isNull(automationRules.retiredAt),
           ),
         )
@@ -258,9 +258,14 @@ export class ActionsService {
       if (!rule) throw new NotFoundException('Rule not found.');
       const conditions = AutopilotSenderRuleConditionsSchema.safeParse(rule.conditions);
       if (
-        !conditions.success ||
         rule.scope !== 'account' ||
-        input.targets.some((t) => !conditions.data.senderKeys.includes(t.senderKey))
+        (rule.isPreset
+          ? !isApprovalFirstDeletePreset(rule) ||
+            input.action !== 'delete' ||
+            input.reach !== ((rule.actionPayload as { reach?: string }).reach ?? 'inbox_only') ||
+            input.olderThanDays !== null
+          : !conditions.success ||
+            input.targets.some((t) => !conditions.data.senderKeys.includes(t.senderKey)))
       )
         throw new BadRequestException('Preview senders do not belong to this rule.');
       if (rule.version !== input.ruleVersion)

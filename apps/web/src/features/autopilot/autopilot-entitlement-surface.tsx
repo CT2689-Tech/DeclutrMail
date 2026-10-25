@@ -276,7 +276,8 @@ function previewState(
   return { status: 'loading' };
 }
 
-function actionLabel(kind: 'archive' | 'unsubscribe' | 'later'): string {
+function actionLabel(kind: 'archive' | 'unsubscribe' | 'later' | 'delete'): string {
+  if (kind === 'delete') return 'Delete';
   if (kind === 'archive') return 'Archive';
   if (kind === 'unsubscribe') return 'Unsubscribe';
   return 'Later';

@@ -1,5 +1,6 @@
 'use client';
 
+import { CleanupSelect } from '@/components/cleanup-select';
 import {
   editorialColumnStyle,
   editorialTitleStyle,
@@ -245,7 +246,7 @@ function FilterBar(props: FilterBarProps): ReactElement {
     >
       <label style={labelStyle}>
         <span style={labelTextStyle}>Severity</span>
-        <select
+        <CleanupSelect
           className="dm-field"
           value={props.severity}
           onChange={(e) => props.onSeverity(e.target.value as SecurityEventSeverity | '')}
@@ -256,7 +257,7 @@ function FilterBar(props: FilterBarProps): ReactElement {
           <option value="critical">Critical</option>
           <option value="warning">Warning</option>
           <option value="info">Info</option>
-        </select>
+        </CleanupSelect>
       </label>
       <label style={labelStyle}>
         <span style={labelTextStyle}>Event type</span>

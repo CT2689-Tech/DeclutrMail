@@ -1,5 +1,6 @@
 'use client';
 
+import { CleanupSelect } from '@/components/cleanup-select';
 import { isFutureReturnTime } from '@/components/later-return-control';
 
 import {
@@ -879,7 +880,7 @@ export function ScreenerScreen({
                 }}
               >
                 Show
-                <select
+                <CleanupSelect
                   aria-label="Filter loaded senders"
                   value={queueFilter}
                   onChange={(event) => setQueueFilter(event.target.value as typeof queueFilter)}
@@ -890,7 +891,7 @@ export function ScreenerScreen({
                   <option value="multiple">More than one email</option>
                   <option value="unsubscribe">Can unsubscribe</option>
                   <option value="protected">Protected</option>
-                </select>
+                </CleanupSelect>
               </label>
               <label
                 style={{
@@ -903,7 +904,7 @@ export function ScreenerScreen({
                 }}
               >
                 Sort
-                <select
+                <CleanupSelect
                   aria-label="Sort loaded senders"
                   value={queueSort}
                   onChange={(event) => setQueueSort(event.target.value as typeof queueSort)}
@@ -913,7 +914,7 @@ export function ScreenerScreen({
                   <option value="queued">Newest first</option>
                   <option value="most_mail">Most email received</option>
                   <option value="first_seen">First seen longest ago</option>
-                </select>
+                </CleanupSelect>
               </label>
               <span style={{ gridColumn: '1 / -1', color: color.fgMuted, fontSize: text.sm }}>
                 Showing {visibleRows.length} of {state.rows.length} loaded senders

@@ -267,6 +267,9 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       // Custom rules (presetKey=NULL) and any future preset keys the
       // worker doesn't know about yet — V2.1 territory; skip per D197.
       if (!isPresetKey(rule.presetKey)) continue;
+      // Delete is always an explicitly approved, frozen message batch.
+      // It never creates legacy automatic or sender-level approvals.
+      if (rule.actionKind === 'delete') continue;
       const def = AUTOPILOT_PRESETS[rule.presetKey];
 
       // numeric(3,2) → number. The schema stores a string; the matcher

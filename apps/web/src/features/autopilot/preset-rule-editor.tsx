@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, useState } from 'react';
+import { CleanupSelect } from '@/components/cleanup-select';
 import { Button } from '@declutrmail/shared';
 import {
   AutopilotRuleConfigurationSchema,
@@ -39,6 +40,11 @@ export function PresetRuleEditor({
   const [actionKind, setAction] = useState<AutopilotRuleConfiguration['actionKind']>(
     rule.actionKind,
   );
+  const [reach, setReach] = useState<'inbox_only' | 'all_mail'>(
+    rule.actionKind === 'delete' && rule.actionPayload.reach === 'all_mail'
+      ? 'all_mail'
+      : 'inbox_only',
+  );
   const [error, setError] = useState<string | null>(null);
   const numberField = (
     label: string,
@@ -74,6 +80,7 @@ export function PresetRuleEditor({
           name,
           conditions,
           actionKind,
+          reach,
         });
         if (!parsed.success) {
           setError('Check the conditions and rule name, then save again.');
@@ -192,24 +199,45 @@ export function PresetRuleEditor({
       </fieldset>
       <label className={styles.field} htmlFor={`${id}-action`}>
         Action
-        <select
+        <CleanupSelect
           id={`${id}-action`}
           className={styles.input}
           value={actionKind}
           disabled={saving || disabled}
-          onChange={(e) => setAction(e.target.value as typeof actionKind)}
+          onChange={(e) => {
+            setAction(e.target.value as typeof actionKind);
+            setReach('inbox_only');
+          }}
         >
           <option value="archive">Archive</option>
+          <option value="delete">Delete</option>
           <option value="later">Later</option>
           <option value="unsubscribe">Unsubscribe</option>
-        </select>
+        </CleanupSelect>
       </label>
+      {actionKind !== 'unsubscribe' && (
+        <label className={styles.field} htmlFor={`${id}-reach`}>
+          Include
+          <CleanupSelect
+            id={`${id}-reach`}
+            className={styles.input}
+            value={reach}
+            disabled={saving || disabled || actionKind !== 'delete'}
+            onChange={(e) => setReach(e.target.value as typeof reach)}
+          >
+            <option value="inbox_only">Inbox only</option>
+            {actionKind === 'delete' && <option value="all_mail">Inbox + archived</option>}
+          </CleanupSelect>
+        </label>
+      )}
       <p className={styles.muted}>
-        {actionKind === 'unsubscribe'
-          ? 'Requests Unsubscribe from matching senders. Unsubscribe cannot be undone.'
-          : actionKind === 'later'
-            ? 'Moves matching Inbox emails to Later for 7 days. Undo is available in Activity.'
-            : 'Archives matching Inbox emails. Undo is available in Activity.'}
+        {actionKind === 'delete'
+          ? 'Moves matching email to Trash after you approve a preview. Future email is unchanged. Undo is available in Activity.'
+          : actionKind === 'unsubscribe'
+            ? 'Requests Unsubscribe from matching senders. Unsubscribe cannot be undone.'
+            : actionKind === 'later'
+              ? 'Moves matching Inbox emails to Later for 7 days. Undo is available in Activity.'
+              : 'Archives matching Inbox emails. Undo is available in Activity.'}
       </p>
       <p className={styles.muted}>
         {rule.mode === 'paused' || !rule.enabled

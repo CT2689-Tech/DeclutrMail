@@ -50,7 +50,7 @@ export type AutopilotRuleMode = 'observe' | 'active' | 'paused';
 export type AutopilotRuleScope = 'account' | 'all_accounts' | 'workspace';
 
 /** Action a rule emits. Mirrors `autopilot_action_kind` pgEnum. */
-export type AutopilotActionKind = 'archive' | 'unsubscribe' | 'later';
+export type AutopilotActionKind = 'archive' | 'unsubscribe' | 'later' | 'delete';
 
 /** Preset library at launch (D101 + D124). Custom rules are NULL. */
 export type AutopilotPresetKey =
@@ -225,8 +225,9 @@ export interface AutopilotMatchDismissResult {
 /** GET /api/autopilot/rules — list rules for the caller's mailbox. */
 export function fetchAutopilotRules(
   signal?: AbortSignal,
+  mailboxId?: string,
 ): Promise<Envelope<AutopilotRuleDto[], unknown>> {
-  return apiGet<AutopilotRuleDto[]>('/api/autopilot/rules', { signal });
+  return apiGet<AutopilotRuleDto[]>('/api/autopilot/rules', { signal, mailboxId });
 }
 
 /** GET /api/autopilot/pending-suggestions — D104 Observe-mode buffer. */
@@ -326,10 +327,12 @@ export function postApproveAllForRule(
 export function postRulePreview(
   ruleId: string,
   includeSenders = false,
+  mailboxId?: string,
 ): Promise<Envelope<AutopilotRulePreviewResult, unknown>> {
   return apiPost<AutopilotRulePreviewResult>(
     `/api/autopilot/rules/${encodeURIComponent(ruleId)}/preview`,
     includeSenders ? { includeSenders: true } : undefined,
+    { mailboxId },
   );
 }
 

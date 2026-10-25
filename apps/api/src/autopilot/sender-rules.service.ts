@@ -16,8 +16,10 @@ import {
   senderPolicies,
   senders,
   type AutomationRule,
+  type AutopilotPresetKey,
 } from '@declutrmail/db';
 import {
+  isApprovalFirstDeletePreset,
   decodeCursor,
   encodeCursor,
   type AutopilotSenderRule,
@@ -25,6 +27,7 @@ import {
   type AutopilotSenderRuleExecuteResult,
   type AutopilotSenderSearchResult,
 } from '@declutrmail/shared/contracts';
+import { materializeAutopilotSignals, matchConfiguredPreset } from '@declutrmail/workers';
 import { ActionsService } from '../actions/actions.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import {
@@ -49,6 +52,7 @@ type PreviewRequest = {
   action?: 'archive' | 'delete' | undefined;
   reach?: 'inbox_only' | 'all_mail' | undefined;
   olderThanDays?: 30 | 90 | 180 | null | undefined;
+  includedSenderKeys?: string[] | undefined;
   excludedSenderKeys?: string[] | undefined;
 };
 type CountScope = Pick<Definition, 'reach' | 'olderThanDays'>;
@@ -309,21 +313,29 @@ export class SenderRulesService {
     ruleId: string,
     input: PreviewRequest,
   ): Promise<AutopilotSenderRulePreview> {
-    const rule = await this.rule(mailboxId, ruleId);
+    const rule = await this.previewDefinition(mailboxId, ruleId);
     this.assertVersion(rule, input.version);
+    if (
+      rule.isPreset &&
+      (input.action !== undefined || input.reach !== undefined || input.olderThanDays !== undefined)
+    )
+      throw new BadRequestException('Save the rule before changing its preview scope.');
     const action = input.action ?? rule.actionKind;
     const reach = input.reach ?? rule.actionPayload.reach;
     const olderThanDays =
       input.olderThanDays === undefined ? rule.conditions.olderThanDays : input.olderThanDays;
     assertReach(action, reach);
     const excluded = [...new Set(input.excludedSenderKeys ?? [])];
-    if (excluded.some((k) => !rule.conditions.senderKeys.includes(k)))
-      throw new BadRequestException('Excluded senders must belong to this rule.');
     const checkedAt = new Date().toISOString();
     const metadata = await this.metadata(mailboxId, rule.conditions.senderKeys, checkedAt, [
       { reach, olderThanDays },
     ]);
-    const candidates = metadata.filter((s) => !s.protected && !excluded.includes(s.senderKey));
+    const candidates = metadata.filter(
+      (s) =>
+        !s.protected &&
+        !excluded.includes(s.senderKey) &&
+        (input.includedSenderKeys === undefined || input.includedSenderKeys.includes(s.senderKey)),
+    );
     const keys = candidates.map((s) => s.senderKey);
     const messages = keys.length
       ? await this.db
@@ -351,7 +363,16 @@ export class SenderRulesService {
           )
           .limit(SENDER_RULE_MAX_MESSAGES + 1)
       : [];
-    const frozen = messages.slice(0, SENDER_RULE_MAX_MESSAGES);
+    const batchKeys = new Set(
+      messages
+        .slice(0, SENDER_RULE_MAX_MESSAGES)
+        .map((m) => m.senderKey)
+        .filter((key): key is string => key !== null),
+    );
+    const boundedKeys = new Set([...batchKeys].slice(0, 100));
+    const frozen = messages
+      .slice(0, SENDER_RULE_MAX_MESSAGES)
+      .filter((m) => m.senderKey !== null && boundedKeys.has(m.senderKey));
     const targets = candidates.flatMap((s) => {
       const messageIds = frozen.filter((m) => m.senderKey === s.senderKey).map((m) => m.id);
       return messageIds.length ? [{ senderId: s.id, senderKey: s.senderKey, messageIds }] : [];
@@ -376,7 +397,7 @@ export class SenderRulesService {
       olderThanDays,
       messageCount: frozen.length,
       totalEligibleCount: Number(messages[0]?.total ?? 0),
-      hasMore: messages.length > SENDER_RULE_MAX_MESSAGES,
+      hasMore: Number(messages[0]?.total ?? 0) > frozen.length,
       protectedSenderCount: metadata.filter(
         (s) =>
           s.protected &&
@@ -398,7 +419,7 @@ export class SenderRulesService {
   ): Promise<AutopilotSenderRuleExecuteResult> {
     const replay = await this.actions.replayAutopilotFrozen(mailboxId, ruleId, previewId);
     if (replay) return { previewId, ...replay };
-    const rule = await this.rule(mailboxId, ruleId);
+    const rule = await this.batchRule(mailboxId, ruleId);
     const saved = await this.previews.read(mailboxId, ruleId, previewId);
     if (!saved)
       throw new GoneException({
@@ -422,6 +443,50 @@ export class SenderRulesService {
       targets: saved.targets,
     });
     return { previewId, ...result };
+  }
+
+  private async batchRule(mailboxId: string, id: string): Promise<AutomationRule> {
+    const [row] = await this.db
+      .select()
+      .from(automationRules)
+      .where(
+        and(
+          eq(automationRules.id, id),
+          eq(automationRules.mailboxAccountId, mailboxId),
+          isNull(automationRules.retiredAt),
+        ),
+      )
+      .limit(1);
+    if (!row || (!isSenderRule(row) && !isApprovalFirstDeletePreset(row)))
+      throw new NotFoundException('Rule not found.');
+    return row;
+  }
+
+  private async previewDefinition(mailboxId: string, id: string): Promise<SenderRule> {
+    const row = await this.batchRule(mailboxId, id);
+    if (isSenderRule(row)) return row;
+    const rows = await materializeAutopilotSignals(this.db, mailboxId, new Date());
+    const keys = rows
+      .filter(
+        ({ signals, decision }) =>
+          matchConfiguredPreset(
+            row.presetKey as AutopilotPresetKey,
+            { signals, triageDecision: decision },
+            row.confidenceThreshold === null ? null : Number(row.confidenceThreshold),
+            row.conditions,
+          ).matched,
+      )
+      .map((s) => s.senderKey);
+    // Only the preview query uses this resolved candidate set. Persisted conditions
+    // and execution admission remain a validated preset, never a sender-list rule.
+    return {
+      ...row,
+      actionKind: 'delete',
+      conditions: { kind: 'sender_list', senderKeys: keys, olderThanDays: null },
+      actionPayload: {
+        reach: (row.actionPayload as { reach?: 'inbox_only' | 'all_mail' }).reach ?? 'inbox_only',
+      },
+    };
   }
 
   private async rule(mailboxId: string, id: string): Promise<SenderRule> {
@@ -457,7 +522,7 @@ export class SenderRulesService {
     );
   }
 
-  private assertVersion(rule: SenderRule, version: number): void {
+  private assertVersion(rule: Pick<AutomationRule, 'version'>, version: number): void {
     if (rule.version !== version) throw changed();
   }
 

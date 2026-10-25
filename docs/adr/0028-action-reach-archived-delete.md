@@ -265,3 +265,20 @@ regardless of a mutable reach value. No post-Delete mirror is treated as
 proof of original placement. Existing completed journals keep their prior
 reverse semantics. A skipped provider hook retains its existing error
 reporting and cannot reconstruct placement after the request.
+
+## Amendment 2026-10-25 — reviewed built-in Autopilot Delete batches
+
+The founder requested Delete and Inbox + archived in existing-rule customization.
+Built-in rules may now use Delete through the same explicit, versioned,
+frozen-message preview and approval pipeline as sender-list rules. Delete never
+runs unattended and never uses the legacy sender-level approval sweep. Inbox only
+remains the default; only Delete may include archived mail. Archive/Later and
+Unsubscribe retain their existing reach semantics.
+
+Each accepted batch is bounded to 100 senders and 5,000 message IDs, with any
+remainder disclosed before confirmation. Schedule defers those exact IDs; later
+arrivals are not added. Preset material edits are refused while accepted work is
+queued or executing. Pause still revokes admission. Delete reuses the existing
+durable original-placement snapshot and normal Undo restoration. This supersedes
+the earlier statement that Autopilot has no per-run preview or Delete capability;
+it does not authorize unattended archived-mail cleanup.

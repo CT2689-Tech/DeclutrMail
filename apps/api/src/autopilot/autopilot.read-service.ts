@@ -56,6 +56,7 @@ import {
   ruleMatchSenderIsProtected,
   ruleMatchUnsubscribeAlreadyDone,
   workspaces,
+  senderActionWhere,
   senderPolicies,
   senders,
   triageDecisions,
@@ -557,7 +558,7 @@ export class AutopilotReadService {
     }
     if (patch.mode === 'active') {
       const [target] = await this.db
-        .select({ presetKey: automationRules.presetKey })
+        .select({ presetKey: automationRules.presetKey, actionKind: automationRules.actionKind })
         .from(automationRules)
         .where(
           and(
@@ -567,6 +568,8 @@ export class AutopilotReadService {
           ),
         )
         .limit(1);
+      if (target?.actionKind === 'delete')
+        throw new BadRequestException('Delete batches always require preview and approval.');
       if (target?.presetKey === 'auto_screen_new_senders') {
         throw new BadRequestException(
           'New-sender matches require review before moving mail to Later.',
@@ -593,7 +596,7 @@ export class AutopilotReadService {
       set.name = configuration.name;
       set.conditions = configuration.conditions;
       set.actionKind = configuration.actionKind;
-      set.actionPayload = sql`CASE WHEN ${automationRules.actionKind}::text = ${configuration.actionKind} THEN ${automationRules.actionPayload} ELSE '{}'::jsonb END`;
+      set.actionPayload = sql`(CASE WHEN ${automationRules.actionKind}::text = ${configuration.actionKind} THEN ${automationRules.actionPayload} ELSE '{}'::jsonb END) || jsonb_build_object('reach', ${configuration.reach ?? 'inbox_only'}::text)`;
       set.confidenceThreshold =
         configuration.conditions.kind === 'recommendation'
           ? configuration.conditions.confidence.toFixed(2)
@@ -603,7 +606,11 @@ export class AutopilotReadService {
       set.modeChangedAt = sql`now()`;
       set.observePromptDismissedAt = null;
     }
-    if (patch.enabled !== undefined) set.enabled = patch.enabled;
+    if (patch.enabled !== undefined) {
+      set.enabled = patch.enabled;
+      if (patch.mode === undefined && !materialChange)
+        set.modeChangedAt = sql`CASE WHEN ${automationRules.enabled} IS DISTINCT FROM ${patch.enabled} THEN now() ELSE ${automationRules.modeChangedAt} END`;
+    }
     if (patch.mode !== undefined) {
       set.mode = patch.mode;
       // Reset the Observe-window timer on any mode transition — and
@@ -705,6 +712,10 @@ export class AutopilotReadService {
           Object.keys(row.conditions as object).length > 0
         )
           throw new BadRequestException('Use Edit rule to change configured conditions.');
+        if (row.actionKind === 'delete' && (row.mode === 'active' || row.scope !== 'account'))
+          throw new BadRequestException(
+            'Delete rules require approval and apply to this mailbox only.',
+          );
         if (configuration) {
           const family = defaultAutopilotConditions(row.presetKey);
           if (
@@ -718,6 +729,23 @@ export class AutopilotReadService {
             );
         }
         if (materialChange) {
+          const [frozen] = await tx
+            .select({ id: actionJobs.id })
+            .from(actionJobs)
+            .where(
+              and(
+                eq(actionJobs.mailboxAccountId, mailboxAccountId),
+                sql`${actionJobs.selector}->'autopilot'->>'ruleId' = ${id}`,
+                inArray(actionJobs.status, ['queued', 'executing']),
+              ),
+            )
+            .limit(1);
+          if (frozen)
+            throw new ConflictException({
+              code: 'AUTOPILOT_RULE_APPROVED_WORK_PENDING',
+              message:
+                'This rule has approved work waiting or running. Let that batch finish, then save your changes.',
+            });
           // Serialize with approval UPDATEs before inspecting or retiring suggestions.
           const outstanding = await tx
             .select({ resolution: ruleMatchLog.resolution })
@@ -1279,6 +1307,20 @@ export class AutopilotReadService {
     matchIds: string[],
   ): Promise<AutopilotApproveResult> {
     this.requireActionQueue();
+    const [deleteMatch] = await this.db
+      .select({ id: ruleMatchLog.id })
+      .from(ruleMatchLog)
+      .innerJoin(automationRules, eq(automationRules.id, ruleMatchLog.ruleId))
+      .where(
+        and(
+          eq(ruleMatchLog.mailboxAccountId, mailboxAccountId),
+          inArray(ruleMatchLog.id, matchIds),
+          eq(automationRules.actionKind, 'delete'),
+        ),
+      )
+      .limit(1);
+    if (deleteMatch)
+      throw new BadRequestException('Preview a fresh Delete batch before approving it.');
 
     // Founder decision 2026-09-29 (a): refuse rather than silently no-op
     // when a still-pending suggestion in this batch belongs to a rule
@@ -1382,6 +1424,7 @@ export class AutopilotReadService {
           mode: automationRules.mode,
           version: automationRules.version,
           conditions: automationRules.conditions,
+          actionKind: automationRules.actionKind,
         })
         .from(automationRules)
         .where(
@@ -1393,6 +1436,8 @@ export class AutopilotReadService {
         .limit(1)
         .for('share');
       if (!rule) return null;
+      if (rule.actionKind === 'delete')
+        throw new BadRequestException('Preview a fresh Delete batch before approving it.');
       if (
         scope &&
         'matchedBefore' in scope &&
@@ -1526,8 +1571,34 @@ export class AutopilotReadService {
       matched.push({ senderKey, reason: result.reason, inboxCount, isUnsubscribed });
     }
 
+    const reach =
+      rule.actionKind === 'delete' &&
+      (rule.actionPayload as { reach?: string }).reach === 'all_mail'
+        ? ('all_mail' as const)
+        : ('inbox_only' as const);
+    const eligibleCounts =
+      rule.actionKind === 'delete' && matched.length > 0
+        ? await this.db
+            .select({ senderKey: mailMessages.senderKey, n: sql<number>`count(*)::int` })
+            .from(mailMessages)
+            .where(
+              and(
+                senderActionWhere({
+                  mailboxAccountId,
+                  senderKeys: matched.map((m) => m.senderKey),
+                  reach,
+                }),
+                sql`NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
+              ),
+            )
+            .groupBy(mailMessages.senderKey)
+        : [];
+    const deleteCounts = new Map(eligibleCounts.map((r) => [r.senderKey, r.n]));
+    const actionableCount = (m: { senderKey: string; inboxCount: number }) =>
+      rule.actionKind === 'delete' ? (deleteCounts.get(m.senderKey) ?? 0) : m.inboxCount;
+
     const actionable = matched.filter((m) =>
-      rule.actionKind === 'unsubscribe' ? !m.isUnsubscribed : m.inboxCount > 0,
+      rule.actionKind === 'unsubscribe' ? !m.isUnsubscribed : actionableCount(m) > 0,
     );
 
     // Pre-activation volume is learned from every Observe resolution:
@@ -1568,17 +1639,18 @@ export class AutopilotReadService {
       .select({ n: sql<number>`count(*)::int` })
       .from(ruleMatchLog)
       .where(and(eq(ruleMatchLog.ruleId, ruleId), ruleMatchIsQueuedAction()));
-    const waitingApprovedCount = waiting?.n ?? 0;
+    const waitingApprovedCount = rule.actionKind === 'delete' ? 0 : (waiting?.n ?? 0);
 
-    const senderPage = includeSenders
-      ? await this.previewStore.create(
-          mailboxAccountId,
-          ruleId,
-          actionable
-            .map(({ senderKey, reason, inboxCount }) => ({ senderKey, reason, inboxCount }))
-            .sort((a, b) => a.senderKey.localeCompare(b.senderKey)),
-        )
-      : null;
+    const senderPage =
+      includeSenders && rule.actionKind !== 'delete'
+        ? await this.previewStore.create(
+            mailboxAccountId,
+            ruleId,
+            actionable
+              .map(({ senderKey, reason, inboxCount }) => ({ senderKey, reason, inboxCount }))
+              .sort((a, b) => a.senderKey.localeCompare(b.senderKey)),
+          )
+        : null;
 
     // Sample sender identities (D7 allowlist) for the first N matches.
     const sampleMatches = matched.slice(0, PREVIEW_SAMPLE_SIZE);
@@ -1615,7 +1687,8 @@ export class AutopilotReadService {
       ruleId,
       wouldMatchCount: matched.length,
       actionableSenderCount: actionable.length,
-      actionableMessageCount: actionable.reduce((total, m) => total + m.inboxCount, 0),
+      actionableMessageCount: actionable.reduce((total, m) => total + actionableCount(m), 0),
+      reach,
       protectedWouldMatchCount,
       evaluatedSenders: eligible.length,
       dailyActionCap:
@@ -1648,7 +1721,7 @@ export class AutopilotReadService {
     const stored = await this.previewStore.read(mailboxAccountId, ruleId, previewId, page);
     if (!stored) return null;
     const [rule] = await this.db
-      .select({ presetKey: automationRules.presetKey })
+      .select({ presetKey: automationRules.presetKey, actionKind: automationRules.actionKind })
       .from(automationRules)
       .where(
         and(eq(automationRules.mailboxAccountId, mailboxAccountId), eq(automationRules.id, ruleId)),
@@ -1736,7 +1809,9 @@ function projectRule(
   // worker treats them as review-only, so the API must show the effective
   // behavior rather than promise unattended moves that cannot happen.
   const reviewOnly =
-    row.presetKey === 'auto_screen_new_senders' || row.presetKey === 'auto_archive_low_engagement';
+    row.actionKind === 'delete' ||
+    row.presetKey === 'auto_screen_new_senders' ||
+    row.presetKey === 'auto_archive_low_engagement';
   const mode = reviewOnly && row.mode === 'active' ? 'observe' : row.mode;
   const inObserve = mode === 'observe';
   const observeWindowEndsAtMs = row.modeChangedAt.getTime() + OBSERVE_WINDOW_MS;

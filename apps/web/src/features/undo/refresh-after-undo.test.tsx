@@ -31,11 +31,16 @@ describe('refreshAfterUndo', () => {
     client.setQueryData(previewKey, { previewId: 'approved-snapshot', totalCount: 3 });
     function RuleWatch() {
       useQuery({
-        queryKey: ['autopilot-sender-rules', 'mb'],
+        queryKey: ['autopilot', 'delete-review', 'mb', 'preset'],
         queryFn: async () => {
           reads += 1;
           return { matchingCount };
         },
+        staleTime: 30_000,
+      });
+      useQuery({
+        queryKey: ['autopilot-sender-rules', 'mb'],
+        queryFn: async () => ({ matchingCount }),
         staleTime: 30_000,
       });
       return null;
@@ -52,6 +57,9 @@ describe('refreshAfterUndo', () => {
 
     expect(reads).toBe(2);
     expect(client.getQueryData(['autopilot-sender-rules', 'mb'])).toEqual({ matchingCount: 3 });
+    expect(client.getQueryData(['autopilot', 'delete-review', 'mb', 'preset'])).toEqual({
+      matchingCount: 3,
+    });
     expect(client.getQueryState(previewKey)?.isInvalidated).toBe(false);
     expect(client.getQueryData(previewKey)).toEqual({
       previewId: 'approved-snapshot',
