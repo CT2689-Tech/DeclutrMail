@@ -189,7 +189,7 @@ describe('billing webhook controllers', () => {
      * mapper is stubbed rather than driven through a real fixture
      * (ultrareview, 2026-08-14).
      */
-    it('preserves a retryable AppException the mapper throws — never collapses it to a terminal 400', async () => {
+    it('preserves a retryable AppException the mapper throws instead of misclassifying it as 400', async () => {
       vi.stubEnv('PADDLE_WEBHOOK_SECRET', PADDLE_SECRET);
       const controller = makeController();
       vi.spyOn(controller['adapter'], 'mapWebhookEvent').mockImplementation(() => {
@@ -201,8 +201,8 @@ describe('billing webhook controllers', () => {
         code: 'BILLING_PROVIDER_ERROR',
         status: 502,
       });
-      // No dedup row — a 400 or a 200 here would each retire the
-      // delivery from Paddle's retry queue in a different wrong way.
+      // No dedup row — a 200 would retire the delivery, while a 400
+      // would misclassify the transient failure. Paddle retries non-2xx.
       expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
     });
   });

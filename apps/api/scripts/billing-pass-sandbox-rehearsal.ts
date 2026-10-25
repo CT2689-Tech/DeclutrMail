@@ -8,7 +8,12 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { asc, eq } from 'drizzle-orm';
 import { entitlementGrants, schema, users, workspaces } from '@declutrmail/db';
-import { OFFERS, PROMO_DISCOUNT_IDS, SANDBOX_PRICE_IDS } from '@declutrmail/shared/entitlements';
+import {
+  checkoutDiscountId,
+  OFFERS,
+  PROMO_DISCOUNT_IDS,
+  SANDBOX_PRICE_IDS,
+} from '@declutrmail/shared/entitlements';
 import { AutopilotReadService } from '../src/autopilot/autopilot.read-service.js';
 import { BillingCatalog } from '../src/billing/billing-catalog.js';
 import { BillingUpgradeRefundService } from '../src/billing/billing-upgrade-refund.service.js';
@@ -25,6 +30,7 @@ import {
   type RehearsalFailure,
 } from './helpers/rehearsal-failure.js';
 import {
+  discountIsUnexpired,
   discountMatchesPercent,
   discountPriceIds,
   paddleProviderCode,
@@ -438,6 +444,8 @@ installRehearsalFailureHandlers({
 
 try {
   evidence.phase = 'catalog';
+  if (checkoutDiscountId(process.env, ANNUAL) !== DISCOUNT)
+    throw new Error('Discount rehearsal requires an unexpired configured promotion');
   const passPrice = await api(`/prices/${PASS}`);
   const annualPrice = await api(`/prices/${ANNUAL}`);
   const discount = await api(`/discounts/${DISCOUNT}`);
@@ -464,6 +472,8 @@ try {
     ? restrict.filter((id) => typeof id === 'string' && id.startsWith('pri_')).length
     : 0;
   if (discount.data.status !== 'active') throw new Error('Discount was not active');
+  if (!discountIsUnexpired(discount.data.expires_at))
+    throw new Error('Discount expiry was invalid or elapsed');
   if (discount.data.type !== 'percentage' || Number(discount.data.amount) !== 30)
     throw new Error('Discount was not thirty percent');
   if (discount.data.recur !== false) throw new Error('Discount was not first payment only');
