@@ -571,14 +571,7 @@ function FixCard({
           {primary ? (
             <div className={styles.fixActions}>
               {canPreviewFix(step) ? (
-                <button
-                  type="button"
-                  data-dm-button=""
-                  className={`dm-button-link ${styles.primaryAction}`}
-                  onClick={() => onOpenFix(step)}
-                >
-                  {HOME_DECK.focus.preview}
-                </button>
+                <PreviewCleanupButton step={step} onOpenFix={onOpenFix} />
               ) : (
                 <PrimaryLink action={{ label: HOME_DECK.focus.review, href: '/senders' }} />
               )}
@@ -637,6 +630,29 @@ function FixCard({
   }
   const unreachable: never = step.kind;
   return unreachable;
+}
+
+/** Server-rendered controls wait until their confirmation handler is attached. */
+function PreviewCleanupButton({
+  step,
+  onOpenFix,
+}: {
+  step: HomeFixCandidate;
+  onOpenFix: (step: HomeFixCandidate) => void;
+}) {
+  const [interactive, setInteractive] = useState(false);
+  useEffect(() => setInteractive(true), []);
+  return (
+    <button
+      type="button"
+      data-dm-button=""
+      disabled={!interactive}
+      className={`dm-button-link ${styles.primaryAction}`}
+      onClick={() => onOpenFix(step)}
+    >
+      {HOME_DECK.focus.preview}
+    </button>
+  );
 }
 
 /** Same clock as the Later row in the shell. The count key is held, so the card shows none. */

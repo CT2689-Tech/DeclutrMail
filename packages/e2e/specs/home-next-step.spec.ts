@@ -8,10 +8,15 @@ import { applyJourneySeed } from '../helpers/seed-journeys';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
-async function seedHomeRecommendation(tier: 'free' | 'pro' = 'pro') {
+async function seedHomeRecommendation(tier: 'free' | 'pro' = 'pro', pendingReview = false) {
   const sql = dbConnect();
   try {
     await applyJourneySeed(sql);
+    // Protected senders can still await their first review. Bulk-cleanup
+    // fixtures have no review waiting; the attention test explicitly opts in.
+    if (!pendingReview) {
+      await sql`UPDATE screener_quarantine SET decided_at = now() WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    }
     await sql`UPDATE workspaces SET tier = ${tier} WHERE id = ${BILLING_SEED.workspaceId}`;
     await sql`DELETE FROM inbox_report_cache WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}`;
     await sql`UPDATE senders SET unsubscribe_method = 'one_click', unsubscribe_url = 'https://newsletter.synthetic.test/unsubscribe' WHERE id = ${BILLING_SEED.archiveSenderId}`;
@@ -32,6 +37,7 @@ test.afterEach(async () => {
     await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND provider_message_id = 'e2e-home-focus-unread'`;
     await sql`UPDATE senders SET unsubscribe_method = NULL, unsubscribe_url = NULL WHERE id = ${BILLING_SEED.archiveSenderId}`;
     await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+    await sql`UPDATE screener_quarantine SET decided_at = NULL WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
   } finally {
     await sql.end();
   }
@@ -65,27 +71,18 @@ test('return visit opens Home and does not confirm a next step', async ({ page }
 });
 
 test('pending first review takes priority over another bulk cleanup', async ({ page }) => {
-  await seedHomeRecommendation();
-  const sql = dbConnect();
-  try {
-    await sql`UPDATE sender_policies SET is_protected = false WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
-    await page.goto(
-      `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: BILLING_SEED.email })}`,
-    );
-    await expect(page.getByRole('heading', { name: '1 new sender needs review.' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Preview cleanup', exact: true })).toHaveCount(0);
-    await expect(page.locator('details')).not.toHaveAttribute('open');
-    const review = page.getByRole('link', { name: 'Review new senders', exact: true });
-    await expect(review).toHaveAttribute('href', '/senders?view=first-review');
-    await review.click();
-    await expect(page).toHaveURL(/\/senders\?view=first-review$/);
-    await expect(
-      page.getByRole('heading', { level: 1, name: 'Senders', exact: true }),
-    ).toBeVisible();
-  } finally {
-    await sql`UPDATE sender_policies SET is_protected = true WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
-    await sql.end();
-  }
+  await seedHomeRecommendation('pro', true);
+  await page.goto(
+    `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: BILLING_SEED.email })}`,
+  );
+  await expect(page.getByRole('heading', { name: '1 new sender needs review.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Preview cleanup', exact: true })).toHaveCount(0);
+  await expect(page.locator('details')).not.toHaveAttribute('open');
+  const review = page.getByRole('link', { name: 'Review new senders', exact: true });
+  await expect(review).toHaveAttribute('href', '/senders?view=first-review');
+  await review.click();
+  await expect(page).toHaveURL(/\/senders\?view=first-review$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Senders', exact: true })).toBeVisible();
 });
 
 for (const tier of ['pro', 'free'] as const) {

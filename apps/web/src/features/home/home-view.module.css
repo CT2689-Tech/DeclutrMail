@@ -563,6 +563,10 @@
   color: var(--dm-fg-muted);
   font-size: 14px;
 }
+.primaryAction:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
 
 .skeleton {
   display: flex;

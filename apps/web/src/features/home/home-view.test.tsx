@@ -1,3 +1,4 @@
+import { renderToString } from 'react-dom/server';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -58,6 +59,12 @@ const metered = {
 };
 
 describe('HomeView', () => {
+  it('keeps the server preview disabled until its confirmation handler is attached', () => {
+    const html = renderToString(<HomeView state={ready} nextSteps={[unsub]} />);
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Preview cleanup/);
+    render(<HomeView state={ready} nextSteps={[unsub]} />);
+    expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeEnabled();
+  });
   it('shows returning context and confirmed impact without opening Details', () => {
     render(
       <HomeView
