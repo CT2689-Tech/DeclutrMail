@@ -33,16 +33,18 @@ import { useHomeSenderPreview } from './api/use-home-sender-preview';
 import { useHomeSummary } from './api/use-home-summary';
 import { useHomeCleanupStatus } from './api/use-home-cleanup-status';
 import { useHomeAttention } from './api/use-home-attention';
+import { useHomeOverview } from './api/use-home-overview';
 import { homePriority, homeSyncLine } from './home-orientation';
 import { HomeArrivals } from './home-arrivals';
 import {
   homeCandidatesFromReport,
+  homeShortlist,
   homeLaterCandidate,
   rankHomeNextSteps,
   type HomeFixCandidate,
 } from './home-next-steps';
 import { composeHomeNumbers, type HomeState } from './home-state';
-import { HomeView } from './home-view';
+import { HomeView, homeLaterOverview } from './home-view';
 
 /**
  * Home — the landing screen. Container (D198): wires the reads, composes
@@ -82,6 +84,7 @@ export function HomeScreen() {
   const mailboxId = me.activeMailboxId;
   const activeMailbox = me.mailboxes.find((m) => m.id === mailboxId);
   const cleanupStatus = useHomeCleanupStatus(mailboxId);
+  const overview = useHomeOverview(mailboxId, tier, activeMailbox?.readiness === 'ready');
   const canReviewNew =
     hasActiveMailbox && hasCapability(tier, 'screener') && activeMailbox?.readiness === 'ready';
   const { newSenders, later } = useHomeAttention(mailboxId, canReviewNew);
@@ -106,7 +109,8 @@ export function HomeScreen() {
     sync: sync.isError ? undefined : sync.data,
     needsReconnect,
     cleanup: cleanupStatus,
-    newSenders: !canReviewNew || newSenders.isError ? null : (newSenders.data?.pending ?? null),
+    // Review backlog is visible beside the suggestion; it must not hide useful cleanup.
+    newSenders: null,
     laterAttention: later.isError
       ? 0
       : (later.data ?? []).filter(
@@ -120,8 +124,9 @@ export function HomeScreen() {
   const senderPreview = useHomeSenderPreview(
     mailboxId,
     nextSteps.find((step) => step.kind === 'unsub_archive')?.senderIds ?? [],
-    activeMailbox?.readiness === 'ready' && summary.data !== undefined && !summary.isError,
+    activeMailbox?.readiness === 'ready',
   );
+  const shortlist = homeShortlist(senderPreview.senders);
   // The stage sentence comes from a client poll. The server document has
   // only the leave line, so the first client render must match that.
   const [stageMounted, setStageMounted] = useState(false);
@@ -187,14 +192,41 @@ export function HomeScreen() {
       tier={tier}
       visitSummary={<HomeArrivals />}
       summary={cleanup.data ?? null}
-      nextSteps={nextSteps.map((step) =>
-        step.kind === 'unsub_archive' ? { ...step, senders: senderPreview } : step,
-      )}
+      nextSteps={[
+        ...(shortlist ? [shortlist] : []),
+        ...nextSteps.filter((step) => step.kind !== 'unsub_archive'),
+      ]}
       senderSizeView={SENDER_SIZE_VIEW}
       mailboxId={activeMailbox?.id ?? ''}
       mailboxEmail={activeMailbox?.email ?? null}
       reportLead={presentation.lead}
       supportText={presentation.support}
+      overview={activeMailbox?.readiness === 'ready' ? overview : undefined}
+      report={report.data ?? null}
+      reportStatus={
+        report.isError || (!shortlist && senderPreview.isError)
+          ? 'error'
+          : report.isPending || senderPreview.isLoading
+            ? 'loading'
+            : 'ready'
+      }
+      newSenders={{
+        status: newSenders.isError ? 'error' : newSenders.isPending ? 'loading' : 'ready',
+        data: newSenders.isError ? null : (newSenders.data?.pending ?? null),
+      }}
+      later={{
+        status: later.isError ? 'error' : later.isPending ? 'loading' : 'ready',
+        data: later.isError || !later.data ? null : homeLaterOverview(later.data, now),
+      }}
+      timeZone={me.user.timezone ?? 'UTC'}
+      onRefresh={() => {
+        void queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey.includes('home') ||
+            query.queryKey.includes('home-overview') ||
+            query.queryKey.includes('home-sender-preview'),
+        });
+      }}
       onConfirmFix={(step) => confirmHomeFix(step)}
     />
   );

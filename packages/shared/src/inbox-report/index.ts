@@ -13,6 +13,7 @@ export {
   reportWindow,
 } from './present';
 export type { ReportHeadline } from './present';
+export { MailboxSnapshotSchema, type MailboxSnapshot } from './snapshot';
 export {
   isReportableInternalDate,
   mailboxSizeBucket,

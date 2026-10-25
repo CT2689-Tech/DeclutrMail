@@ -22,9 +22,11 @@ function placeholderForMailbox<T>(mailboxId: string | null): PlaceholderDataFunc
 export function homeSummaryQueryOptions(
   reader: (signal: AbortSignal) => Promise<HomeSummary>,
   mailboxId?: string,
+  window: 'all' | '7d' = 'all',
 ) {
   return queryOptions({
-    queryKey: homeKeys.summary(mailboxId),
+    queryKey:
+      window === 'all' ? homeKeys.summary(mailboxId) : [...homeKeys.summary(mailboxId), window],
     queryFn: ({ signal }) => reader(signal),
     staleTime: 30_000,
   });

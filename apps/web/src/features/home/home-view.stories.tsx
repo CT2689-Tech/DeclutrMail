@@ -7,6 +7,7 @@
 // Variants: full, fallback, empty, sync-failed, no-F2, loading, error.
 
 import { HomeView } from './home-view';
+import { overviewFixture, reportFixture } from './home-view.fixture';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -53,13 +54,31 @@ const summary = {
 const steps = [
   {
     kind: 'unsub_archive' as const,
-    senderCount: 158,
+    senderCount: 3,
     emailCount: 2400,
     senderIds: ['a', 'b', 'c'],
     senders: [
-      { id: 'a', name: 'Fresh Finds Weekly', domain: 'freshfinds.synthetic.test' },
-      { id: 'b', name: 'Meadow Lane Dispatch', domain: 'meadow.synthetic.test' },
-      { id: 'c', name: 'North Letter', domain: 'north.synthetic.test' },
+      {
+        inboxCount: 900,
+        readRate: 0.02,
+        id: 'a',
+        name: 'Fresh Finds Weekly',
+        domain: 'freshfinds.synthetic.test',
+      },
+      {
+        inboxCount: 800,
+        readRate: 0.02,
+        id: 'b',
+        name: 'Meadow Lane Dispatch',
+        domain: 'meadow.synthetic.test',
+      },
+      {
+        inboxCount: 700,
+        readRate: 0.02,
+        id: 'c',
+        name: 'North Letter',
+        domain: 'north.synthetic.test',
+      },
     ],
   },
   { kind: 'largest' as const, senderCount: 10, sizeLabel: '2.1 GB', senderIds: ['b'] },
@@ -70,6 +89,11 @@ const steps = [
 export const Full: Story<typeof HomeView> = {
   args: {
     state: ready,
+    overview: overviewFixture,
+    report: reportFixture,
+    newSenders: { status: 'ready', data: 12 },
+    later: { status: 'ready', data: { due: 3, troubled: 0, nextAt: null } },
+    tier: 'pro',
     summary,
     nextSteps: steps,
     senderSizeView: true,
@@ -80,6 +104,11 @@ export const Full: Story<typeof HomeView> = {
 export const NoSizeView: Story<typeof HomeView> = {
   args: {
     state: ready,
+    overview: overviewFixture,
+    report: reportFixture,
+    newSenders: { status: 'ready', data: 12 },
+    later: { status: 'ready', data: { due: 3, troubled: 0, nextAt: null } },
+    tier: 'pro',
     summary,
     nextSteps: steps,
     senderSizeView: false,
@@ -116,9 +145,27 @@ export const UnknownImpact: Story<typeof HomeView> = {
         senderCount: 5,
         senderIds: ['a', 'b', 'c'],
         senders: [
-          { id: 'a', name: 'Fresh Finds Weekly', domain: 'freshfinds.synthetic.test' },
-          { id: 'b', name: 'Meadow Lane Dispatch', domain: 'meadow.synthetic.test' },
-          { id: 'c', name: 'North Letter', domain: 'north.synthetic.test' },
+          {
+            inboxCount: 900,
+            readRate: 0.02,
+            id: 'a',
+            name: 'Fresh Finds Weekly',
+            domain: 'freshfinds.synthetic.test',
+          },
+          {
+            inboxCount: 800,
+            readRate: 0.02,
+            id: 'b',
+            name: 'Meadow Lane Dispatch',
+            domain: 'meadow.synthetic.test',
+          },
+          {
+            inboxCount: 700,
+            readRate: 0.02,
+            id: 'c',
+            name: 'North Letter',
+            domain: 'north.synthetic.test',
+          },
         ],
       },
     ],

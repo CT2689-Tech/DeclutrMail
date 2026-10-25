@@ -1,7 +1,7 @@
-import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 
 import { ok, type Envelope } from '@declutrmail/shared/contracts';
-import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
+import type { InboxReportDto, MailboxSnapshot } from '@declutrmail/shared/inbox-report';
 
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
@@ -12,6 +12,16 @@ import { InboxReportService } from './inbox-report.service.js';
 @UseGuards(JwtGuard)
 export class InboxReportController {
   constructor(private readonly reports: InboxReportService) {}
+
+  @Get(':id/inbox-snapshot')
+  @RateLimit('triage-load')
+  async snapshot(
+    @CurrentUser() user: SessionPrincipal,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ): Promise<Envelope<MailboxSnapshot>> {
+    await this.reports.assertInWorkspace(user.workspaceId, id);
+    return ok(await this.reports.getSnapshot(id));
+  }
 
   @Get(':id/inbox-report')
   @RateLimit('triage-load')

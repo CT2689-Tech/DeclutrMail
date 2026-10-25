@@ -57,11 +57,11 @@ test('return visit opens Home and does not confirm a next step', async ({ page }
   const step = page.getByRole('button', { name: 'Preview cleanup', exact: true });
   const ready = page.locator('[data-home-fix-expected="true"]');
   await expect(ready).toHaveCount(1);
-  await expect(page.locator('details')).not.toHaveAttribute('open');
+  await expect(page.getByRole('region', { name: 'Your Inbox Report' })).toBeVisible();
   await expect(page.getByRole('list', { name: 'Some senders to review' })).toContainText(
     BILLING_SEED.archiveSenderName,
   );
-  await expect(page.locator('[data-home-impact]')).toContainText('3 emails in your inbox');
+  await expect(page.locator('[data-home-impact]')).toContainText('3 emails in your Inbox');
   await step.click();
   const dialog = page.getByRole('alertdialog');
   await expect(dialog).toContainText('Unsubscribe from 1 sender?');
@@ -70,15 +70,15 @@ test('return visit opens Home and does not confirm a next step', async ({ page }
   await expect(step).toBeFocused();
 });
 
-test('pending first review takes priority over another bulk cleanup', async ({ page }) => {
+test('pending first review remains visible alongside suggested cleanup', async ({ page }) => {
   await seedHomeRecommendation('pro', true);
   await page.goto(
     `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: BILLING_SEED.email })}`,
   );
-  await expect(page.getByRole('heading', { name: '1 new sender needs review.' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Preview cleanup', exact: true })).toHaveCount(0);
-  await expect(page.locator('details')).not.toHaveAttribute('open');
-  const review = page.getByRole('link', { name: 'Review new senders', exact: true });
+  await expect(page.getByRole('heading', { name: 'Start with 1 sender.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Preview cleanup', exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Your Inbox Report' })).toBeVisible();
+  const review = page.getByRole('link', { name: /^New senders/ });
   await expect(review).toHaveAttribute('href', '/senders?view=first-review');
   await review.click();
   await expect(page).toHaveURL(/\/senders\?view=first-review$/);

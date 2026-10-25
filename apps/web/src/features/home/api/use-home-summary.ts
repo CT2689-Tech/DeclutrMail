@@ -33,15 +33,24 @@ export interface HomeSummary {
   emailsByVerb?: Partial<Record<CanonicalVerb, number>>;
 }
 
-export function useHomeSummary(options: { enabled: boolean; mailboxId?: string | undefined }) {
+export function useHomeSummary(options: {
+  enabled: boolean;
+  mailboxId?: string | undefined;
+  window?: 'all' | '7d';
+}) {
+  const window = options.window ?? 'all';
   return useQuery({
-    ...homeSummaryQueryOptions(async (signal) => {
-      const envelope = await apiGet<HomeSummary>('/api/activity/summary?window=all', {
-        signal,
-        ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
-      });
-      return envelope.data;
-    }, options.mailboxId),
+    ...homeSummaryQueryOptions(
+      async (signal) => {
+        const envelope = await apiGet<HomeSummary>(`/api/activity/summary?window=${window}`, {
+          signal,
+          ...(options.mailboxId ? { mailboxId: options.mailboxId } : {}),
+        });
+        return envelope.data;
+      },
+      options.mailboxId,
+      window,
+    ),
     enabled: options.enabled,
   });
 }

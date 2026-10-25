@@ -1,0 +1,45 @@
+openapi: 3.0.3
+info:
+  title: DeclutrMail scanned mailbox snapshot
+  version: 1.0.0
+paths:
+  /api/mailboxes/{id}/inbox-snapshot:
+    get:
+      summary: Aggregate current scanned inbound metadata for an owned mailbox
+      description: Requires a signed-in session and mailbox ownership in the current workspace. Uses the triage-load rate-limit bucket. Inbox excludes Trash; received totals include archived and Trash mail. Size is Gmail's estimate for rows with known sizes. This is not Gmail storage quota or space freed. No provider requests or writes.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: D202 envelope containing a mailbox-wide snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required:
+                      [
+                        asOf,
+                        inboxCount,
+                        unreadInboxCount,
+                        receivedCount,
+                        totalBytes,
+                        sizeKnownCount,
+                      ]
+                    properties:
+                      asOf: { type: string, format: date-time }
+                      inboxCount: { type: integer, minimum: 0 }
+                      unreadInboxCount: { type: integer, minimum: 0 }
+                      receivedCount: { type: integer, minimum: 0 }
+                      totalBytes: { type: number, minimum: 0, nullable: true }
+                      sizeKnownCount: { type: integer, minimum: 0 }
+        '400': { description: Malformed mailbox UUID }
+        '401': { description: Session required }
+        '404': { description: Mailbox not owned by the current workspace }
+        '429': { description: Read rate limit exceeded }

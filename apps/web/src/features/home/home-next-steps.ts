@@ -13,6 +13,28 @@ export interface HomeSenderIdentity {
   name: string;
   domain: string;
   brandMark?: boolean;
+  inboxCount?: number | null;
+  readRate?: number | null;
+}
+
+/** The displayed shortlist and the preview always address the same verified senders. */
+export function homeShortlist(senders: readonly HomeSenderIdentity[]): HomeFixCandidate | null {
+  const current = senders
+    .filter(
+      (sender) =>
+        typeof sender.inboxCount === 'number' &&
+        Number.isFinite(sender.inboxCount) &&
+        sender.inboxCount > 0,
+    )
+    .slice(0, 3);
+  if (current.length === 0) return null;
+  return {
+    kind: 'unsub_archive',
+    senderCount: current.length,
+    senderIds: current.map((sender) => sender.id),
+    emailCount: current.reduce((total, sender) => total + sender.inboxCount!, 0),
+    senders: current,
+  };
 }
 
 export interface HomeFixCandidate {

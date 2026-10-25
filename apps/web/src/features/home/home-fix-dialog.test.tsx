@@ -90,14 +90,14 @@ describe('full Home when the WS5 keys exist', () => {
       const { rerender } = render(
         <HomeView state={ready} nextSteps={[step]} senderSizeView={senderSizeView} />,
       );
-      expect(screen.getByRole('heading', { name: 'Your Inbox Report' })).toBeInTheDocument();
-      const reportAction = screen.getByRole('link', { name: 'Open report' });
+      expect(screen.getByRole('heading', { name: 'Worth a look' })).toBeInTheDocument();
+      const reportAction = screen.getByRole('link', { name: 'Open Inbox Report' });
       expect(reportAction).toHaveAttribute('href', '/senders#inbox-report');
-      expect(reportAction.className.split(/\s+/)).toContain('dm-external-link');
+      expect(reportAction).not.toHaveClass('dm-button-link');
       expect(reportAction.className.split(/\s+/)).not.toContain('dm-button-link');
 
       rerender(<HomeView state={ready} nextSteps={[step]} senderSizeView={senderSizeView} />);
-      expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
+      expect(screen.getAllByRole('heading', { name: 'Worth a look' })).toHaveLength(1);
       const fix = await screen.findByRole('button', { name: 'Preview cleanup' });
       expect(fix.className.split(/\s+/)).toContain('dm-button-link');
     },
@@ -107,7 +107,7 @@ describe('full Home when the WS5 keys exist', () => {
 describe('Home unsubscribe step', () => {
   it('shows the unsubscribe step with the report heading once', async () => {
     const { rerender } = render(<HomeView state={ready} nextSteps={[step]} />);
-    expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { name: 'Worth a look' })).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /158 senders/ })).toBeInTheDocument();
 
@@ -118,7 +118,7 @@ describe('Home unsubscribe step', () => {
         reportLead="91% from 195 senders you mostly leave unread."
       />,
     );
-    expect(screen.getAllByRole('heading', { name: 'Your Inbox Report' })).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { name: 'Worth a look' })).toHaveLength(1);
     expect(screen.getByText(/195 senders you mostly leave unread/)).toBeInTheDocument();
   });
 });

@@ -6,6 +6,24 @@ import { INBOX_REPORT_THRESHOLDS as T } from '@declutrmail/shared/inbox-report';
 
 const REPORTABLE_FROM = '1995-01-01T00:00:00.000Z';
 
+/** One mailbox-indexed pass, independent of sender pagination and report cache. */
+export function mailboxSnapshotQuery(mailboxId: string): SQL {
+  return sql`
+    select
+      count(*)::int as received_count,
+      count(*) filter (
+        where 'INBOX' = any(m.label_ids) and not ('TRASH' = any(m.label_ids))
+      )::int as inbox_count,
+      count(*) filter (
+        where 'INBOX' = any(m.label_ids) and not ('TRASH' = any(m.label_ids)) and m.is_unread
+      )::int as unread_inbox_count,
+      sum(m.size_bytes)::bigint as total_bytes,
+      count(m.size_bytes)::int as size_known_count
+    from mail_messages m
+    where m.mailbox_account_id = ${mailboxId} and m.is_outbound = false
+  `;
+}
+
 /** Mailbox-level aggregates. Inbound only, and only dates the report may cite. */
 export function mailboxFactsQuery(mailboxId: string, sinceIso: string, threeYearsIso: string): SQL {
   const notSweeper = readStateNotSweeperMarked(mailboxId, 'm');

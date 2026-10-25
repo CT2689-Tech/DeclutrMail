@@ -483,3 +483,7 @@ The temporary IAM binding and role were removed; a subsequent CI digest read
 confirmed same-day duplicate suppression with the ongoing permissions only.
 The runbook now records this evidence in place of the earlier pending status.
 Relates to D159 and D160.
+
+## Home Action overview — 2026-10-25
+
+Relates to D198, D200 and D210. The approved Home composition now exposes a bounded sender shortlist, capability-gated attention queues, windowed Activity results, complete automation states, and mailbox insights. A workspace-authorized snapshot read aggregates all scanned inbound metadata, independently of sender pagination. See `docs/execution/home-action-overview-2026-10-25.md` for scope, state coverage, independent review and local verification. This entry does not assert deployment or production provider execution.

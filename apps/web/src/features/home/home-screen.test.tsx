@@ -1,6 +1,6 @@
 import { ToastHost } from '@declutrmail/shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 
 import type { Me } from '@/features/auth/api/me-contract';
@@ -121,6 +121,48 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, sno
   installFetchStub([
     {
       method: 'GET',
+      path: /\/api\/senders\/[^/]+$/,
+      respond: (_req, url) =>
+        jsonOk({
+          data: {
+            id: url.pathname.split('/').at(-1),
+            displayName: 'Synthetic newsletter',
+            domain: 'news.synthetic.test',
+            inboxCount: 20,
+            readRate: 0.02,
+            wroteToCount: 0,
+            policyType: null,
+            protectionFlags: { isProtected: false },
+          },
+        }),
+    },
+    {
+      method: 'GET',
+      path: /inbox-snapshot$/,
+      respond: () =>
+        jsonOk({
+          data: {
+            asOf: '2026-10-25T20:00:00Z',
+            inboxCount: 80,
+            unreadInboxCount: 60,
+            receivedCount: 80,
+            totalBytes: 1000,
+            sizeKnownCount: 80,
+          },
+        }),
+    },
+    { method: 'GET', path: '/api/activity', respond: () => jsonOk({ data: [] }) },
+    { method: 'GET', path: '/api/autopilot/rules', respond: () => jsonOk({ data: [] }) },
+    { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
+    {
+      method: 'GET',
+      path: '/api/autopilot/pending-suggestions',
+      respond: () => jsonOk({ data: [], meta: { total: 0 } }),
+    },
+    { method: 'GET', path: '/api/followups', respond: () => jsonOk({ data: [] }) },
+    { method: 'GET', path: '/api/briefs/today', respond: () => jsonOk({ data: null }) },
+    {
+      method: 'GET',
       path: '/api/home/visit',
       respond: () =>
         jsonOk({
@@ -154,7 +196,7 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, sno
       method: 'GET',
       path: '/api/activity/summary',
       respond: (_req, url) => {
-        calls.summary.push(url.search);
+        if (url.searchParams.get('window') === 'all') calls.summary.push(url.search);
         return summary ? summary() : jsonOk({ data: SUMMARY });
       },
     },
@@ -275,11 +317,11 @@ describe('HomeScreen', () => {
       name: 'Preview cleanup',
     });
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
-    expect(screen.getByText(/Each of those 29 senders had less than 10%/)).toBeInTheDocument();
+    expect(screen.getAllByText('2% marked read · 90 days')).toHaveLength(2);
     const lead = screen.getByText(/85% of the email/);
-    expect(lead.closest('details')).not.toBeNull();
+    expect(lead.closest('details')).toBeNull();
     expect(lead.closest('a')).toBeNull();
-    const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
+    const laterCard = screen.getByRole('link', { name: /^Later/ });
     expect(laterCard).toHaveTextContent('Later');
     expect(laterCard).not.toHaveTextContent('1 sender');
     fireEvent.click(unsubscribe);
@@ -364,6 +406,9 @@ describe('HomeScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: copy!.cancel }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(posts).toHaveLength(0);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Preview cleanup' }));
     await waitFor(() => expect(screen.getByRole('button', { name: copy!.button })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: copy!.button }));
@@ -398,7 +443,7 @@ describe('HomeScreen', () => {
     stub({ queueLength: 0, screenerPending: 4 });
     renderHome();
     expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
-    expect(await screen.findByRole('link', { name: 'Review new senders' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: /New senders/ })).toHaveAttribute(
       'href',
       '/senders?view=first-review',
     );
@@ -513,7 +558,7 @@ describe('HomeScreen', () => {
     expect(screen.getByText('You can close this tab and come back later.')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
     expect(screen.queryByText('Waiting to start.')).toBeNull();
-    expect(screen.getByTestId('home-scan-bar')).toBeInTheDocument();
+    expect(screen.queryByRole('progressbar')).toBeNull();
   });
 
   it('syncing home shows the stage the status read reports', async () => {
@@ -593,7 +638,11 @@ describe('HomeScreen', () => {
     expect(await screen.findByText(/couldn’t load Home/)).toBeInTheDocument();
 
     fail = false;
-    fireEvent.click(screen.getByRole('button'));
+    fireEvent.click(
+      within(screen.getByRole('region', { name: 'Your results' })).getByRole('button', {
+        name: /try again/i,
+      }),
+    );
     expect(await screen.findByTestId('home-hero')).toHaveTextContent('1,234');
   });
 
@@ -650,8 +699,9 @@ describe('HomeScreen', () => {
     );
     expect(await screen.findByText(/85% of the email/)).toBeInTheDocument();
 
-    const details = screen.getByText('Details').closest('details')!;
-    details.open = true;
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeEnabled(),
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Preview cleanup' }));
     expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
     authCell.me = { ...authCell.me, activeMailboxId: 'mb-2' };
@@ -974,9 +1024,7 @@ describe('HomeScreen', () => {
 
     await waitFor(
       () => {
-        expect(
-          screen.getByRole('heading', { name: /20 senders worth reviewing/ }),
-        ).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'View 20 suggested senders' })).toBeInTheDocument();
         expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]);
         expect(client.getQueryData(undoKeys.inFlight('mb-1'))).toEqual([]);
         // Restoration keeps its progress line until reconciliation releases
