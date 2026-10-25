@@ -1,5 +1,6 @@
 'use client';
 
+import { CleanupSelect } from '@/components/cleanup-select';
 import { editorialTitleStyle } from '@/features/editorial/page';
 
 import type { CSSProperties, ReactNode, SelectHTMLAttributes } from 'react';
@@ -367,24 +368,14 @@ export function SelectWell({
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { style?: CSSProperties }) {
   return (
-    <span
-      style={{
-        position: 'relative',
-        display: 'inline-flex',
-        alignItems: 'center',
-        maxWidth: '100%',
-        minWidth: 0,
-      }}
-    >
+    <>
       <style>{`.dm-select-well { transition: background ${motion.fast} ${motion.ease}; }
 .dm-select-well:hover:not(:disabled) { background: ${color.fillHover}; }
 .dm-select-well:focus-visible { outline: 2px solid ${color.primary}; outline-offset: 2px; }`}</style>
-      <select
+      <CleanupSelect
         {...props}
-        className={`dm-field dm-select-well${className ? ` ${className}` : ''}`}
+        className={`dm-select-well${className ? ` ${className}` : ''}`}
         style={{
-          appearance: 'none',
-          WebkitAppearance: 'none',
           ...tokens.field,
           fontVariantNumeric: 'tabular-nums',
           padding: '0 36px 0 12px',
@@ -396,20 +387,7 @@ export function SelectWell({
         }}
       >
         {children}
-      </select>
-      <span
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          right: 12,
-          display: 'inline-flex',
-          color: color.fgMuted,
-          pointerEvents: 'none',
-          transform: 'rotate(90deg)',
-        }}
-      >
-        <Chevron size={12} />
-      </span>
-    </span>
+      </CleanupSelect>
+    </>
   );
 }

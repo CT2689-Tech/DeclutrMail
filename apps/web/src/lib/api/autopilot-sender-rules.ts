@@ -51,18 +51,23 @@ export const retireSenderRule = (rule: SenderRule, mailboxId?: string) =>
     { mailboxId },
   ).then((e) => e.data);
 export const previewSenderRule = (
-  rule: SenderRule,
+  rule: Pick<SenderRule, 'id' | 'version'>,
   excludedSenderKeys: string[],
   signal: AbortSignal,
   mailboxId?: string,
+  includedSenderKeys?: string[],
 ) =>
   apiPost<SenderRulePreview>(
     `${base}/${encodeURIComponent(rule.id)}/preview`,
-    { version: rule.version, excludedSenderKeys },
+    {
+      version: rule.version,
+      excludedSenderKeys,
+      ...(includedSenderKeys ? { includedSenderKeys } : {}),
+    },
     { signal, mailboxId },
   ).then((e) => e.data);
 export const executeSenderRule = (
-  rule: SenderRule,
+  rule: Pick<SenderRule, 'id'>,
   previewId: string,
   idempotencyKey: string,
   mailboxId?: string,

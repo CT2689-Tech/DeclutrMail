@@ -171,6 +171,7 @@ export const AutopilotRulePreviewResultSchema = z
     actionableSenderCount: z.number().int().nonnegative(),
     /** Current INBOX messages belonging to those actionable senders. */
     actionableMessageCount: z.number().int().nonnegative(),
+    reach: z.enum(['inbox_only', 'all_mail']).optional(),
     /** Matching senders excluded because they are Protected. */
     protectedWouldMatchCount: z.number().int().nonnegative(),
     /** Senders evaluated (post protect-filter). */

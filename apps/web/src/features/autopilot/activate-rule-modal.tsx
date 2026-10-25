@@ -133,7 +133,7 @@ function ActivateRuleSheet({
   const [choice, setChoice] = useState<'act' | 'watch'>('act');
   const choiceId = useId();
   const name = presetDisplayName(rule.presetKey, rule.name);
-  const reviewOnly = isReviewOnlyPreset(rule.presetKey);
+  const reviewOnly = isReviewOnlyPreset(rule.presetKey, rule.actionKind);
 
   const enabling = intent === 'enable';
   // Turning a rule on without the unattended capability can only mean
@@ -251,7 +251,7 @@ function ActivateRuleSheet({
         { label: 'Pause', value: 'Any time, from the rule’s toggle or Pause all' },
       ]}
       trailing={
-        preview.status === 'ready' ? (
+        preview.status === 'ready' && rule.actionKind !== 'delete' ? (
           preview.result.senderPage ? (
             <RulePreviewSenders
               key={preview.result.senderPage.previewId}
@@ -368,6 +368,16 @@ function activationFacts(
   result: AutopilotRulePreviewResultDto,
   reviewOnly = false,
 ): SheetFactItem[] {
+  if (rule.actionKind === 'delete')
+    return [
+      {
+        label: 'Matching now',
+        value: `${plural(result.actionableSenderCount, 'sender')} · ${plural(result.actionableMessageCount, 'email')}`,
+      },
+      { label: 'Include', value: result.reach === 'all_mail' ? 'Inbox + archived' : 'Inbox only' },
+      { label: 'Batch limit', value: '100 senders · 5,000 emails' },
+      { label: 'Approval', value: 'Preview and approve each batch before anything moves to Trash' },
+    ];
   const weekly =
     result.weeklyVolume.basis === 'observed_7d'
       ? { label: 'Last 7 days', value: plural(result.weeklyVolume.observedMatches, 'match', 'es') }

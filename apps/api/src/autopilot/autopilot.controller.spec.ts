@@ -88,8 +88,15 @@ describe('AutopilotController configuration validation', () => {
     expect(patchRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, { configuration });
     expect(tierForWorkspace).not.toHaveBeenCalled();
   });
+  it('accepts explicitly reviewed Delete configuration and archived reach', async () => {
+    const { controller, patchRule } = makeController('plus');
+    const value = { ...configuration, actionKind: 'delete', reach: 'all_mail' };
+    await controller.patchRule(mailbox, principal, RULE_ID, { configuration: value });
+    expect(patchRule).toHaveBeenCalledWith(mailbox.id, RULE_ID, { configuration: value });
+  });
   it.each([
-    { configuration: { ...configuration, actionKind: 'delete' } },
+    { configuration: { ...configuration, actionKind: 'keep' } },
+    { configuration: { ...configuration, actionKind: 'archive', reach: 'all_mail' } },
     { configuration: { ...configuration, version: 0 } },
     { configuration: { ...configuration, conditions: { kind: 'subject', contains: 'sale' } } },
     { configuration, mode: 'active' },

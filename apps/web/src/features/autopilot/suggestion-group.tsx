@@ -64,7 +64,12 @@ export function SuggestionGroup({
           <h3>{name}</h3>
           <p>
             {rule
-              ? { archive: 'Archive', later: 'Later', unsubscribe: 'Unsubscribe' }[rule.actionKind]
+              ? {
+                  archive: 'Archive',
+                  later: 'Later',
+                  unsubscribe: 'Unsubscribe',
+                  delete: 'Delete',
+                }[rule.actionKind]
               : 'Rule unavailable'}
             {' · '}
             {matches.length}{' '}

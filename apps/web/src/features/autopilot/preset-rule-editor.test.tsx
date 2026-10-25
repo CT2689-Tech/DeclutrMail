@@ -41,6 +41,36 @@ describe('existing preset customization', () => {
     );
   });
 
+  it('offers approval-first Delete and explicit archived reach, then narrows when switching to Archive', async () => {
+    const save = vi.fn().mockResolvedValue(null);
+    render(
+      <PresetRuleEditor
+        rule={{ ...dormant, version: 4 }}
+        saving={false}
+        onSave={save}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'delete' } });
+    expect(screen.getByLabelText('Include')).toHaveValue('inbox_only');
+    fireEvent.change(screen.getByLabelText('Include'), { target: { value: 'all_mail' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save rule' }));
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith(
+        expect.objectContaining({ actionKind: 'delete', reach: 'all_mail', version: 4 }),
+      ),
+    );
+    fireEvent.change(screen.getByLabelText('Action'), { target: { value: 'archive' } });
+    expect(screen.getByLabelText('Include')).toHaveValue('inbox_only');
+    expect(screen.getByLabelText('Include')).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save rule' }));
+    await waitFor(() =>
+      expect(save).toHaveBeenLastCalledWith(
+        expect.objectContaining({ actionKind: 'archive', reach: 'inbox_only' }),
+      ),
+    );
+  });
+
   it('retains the draft on conflict and never silently adopts a refetched revision', async () => {
     const save = vi.fn().mockResolvedValue('Approved work is waiting.');
     const { rerender } = render(

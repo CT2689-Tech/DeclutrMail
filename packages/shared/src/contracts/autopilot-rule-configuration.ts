@@ -36,9 +36,14 @@ export const AutopilotRuleConfigurationSchema = z
     version: z.number().int().positive(),
     name: z.string().trim().min(1).max(80),
     conditions: AutopilotRuleConditionsSchema,
-    actionKind: z.enum(['archive', 'later', 'unsubscribe']),
+    actionKind: z.enum(['archive', 'later', 'unsubscribe', 'delete']),
+    reach: z.enum(['inbox_only', 'all_mail']).optional(),
   })
-  .strict();
+  .strict()
+  .refine((v) => v.reach !== 'all_mail' || v.actionKind === 'delete', {
+    message: 'Only Delete can include archived email.',
+    path: ['reach'],
+  });
 export type AutopilotRuleConfiguration = z.infer<typeof AutopilotRuleConfigurationSchema>;
 
 /** Empty stored conditions retain the installed preset's original behavior. */
@@ -71,5 +76,33 @@ export function defaultAutopilotConditions(
       };
     default:
       throw new Error('Unknown Autopilot preset.');
+  }
+}
+
+/** The frozen pipeline admits configured, mailbox-scoped preset Delete only. */
+export function isApprovalFirstDeletePreset(rule: {
+  isPreset: boolean;
+  presetKey: string | null;
+  scope: string;
+  actionKind: string;
+  conditions: unknown;
+  actionPayload: unknown;
+}): boolean {
+  if (!rule.isPreset || rule.actionKind !== 'delete' || rule.scope !== 'account') return false;
+  const conditions = AutopilotRuleConditionsSchema.safeParse(rule.conditions);
+  const payload = z
+    .object({ reach: z.enum(['inbox_only', 'all_mail']).optional() })
+    .safeParse(rule.actionPayload);
+  if (!conditions.success || !payload.success) return false;
+  try {
+    const family = defaultAutopilotConditions(rule.presetKey);
+    return (
+      conditions.data.kind === family.kind &&
+      (conditions.data.kind !== 'recommendation' ||
+        family.kind !== 'recommendation' ||
+        conditions.data.verdict === family.verdict)
+    );
+  } catch {
+    return false;
   }
 }

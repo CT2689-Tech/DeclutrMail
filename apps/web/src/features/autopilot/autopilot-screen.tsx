@@ -68,6 +68,9 @@ import { SuggestionGroup } from './suggestion-group';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
 import { addBreadcrumb, captureFeatureException } from '@/lib/sentry';
+import { DeleteRuleReview } from './delete-rule-review';
+import { FrozenRulePreview, type FrozenRuleTarget } from './frozen-rule-preview';
+import type { SenderRuleExecution } from '@/lib/api/autopilot-sender-rules';
 import { SenderRuleLibrary } from './sender-rule-library';
 import { useHydrated } from '@/lib/use-hydrated';
 import type {
@@ -315,6 +318,7 @@ export interface AutopilotWorkspace {
   view: 'review' | 'rules';
   onViewChange: (view: 'review' | 'rules') => void;
   headingRef?: RefObject<HTMLHeadingElement | null>;
+  approvedBatch?: (SenderRuleExecution & { ruleName: string }) | null;
 }
 
 export function AutopilotScreen({
@@ -340,6 +344,10 @@ export function AutopilotScreen({
   pendingPagination?: PendingPagination;
   pauseScope?: PauseRuleScope;
 }) {
+  const [frozenTarget, setFrozenTarget] = useState<FrozenRuleTarget | null>(null);
+  const [approvedBatch, setApprovedBatch] = useState<
+    (SenderRuleExecution & { ruleName: string }) | null
+  >(null);
   const [workspaceView, setWorkspaceView] = useState<'review' | 'rules'>('review');
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
@@ -381,6 +389,8 @@ export function AutopilotScreen({
   useEffect(() => {
     setSelectedIds(new Set());
     setApproveTarget(null);
+    setFrozenTarget(null);
+    setApprovedBatch(null);
   }, [activeMailboxId, pendingPagination?.pageKey]);
   /**
    * The rule whose D226 preview is open, and WHY.
@@ -413,7 +423,11 @@ export function AutopilotScreen({
         : null;
   };
   const modalOpen =
-    pauseConfirmOpen || approveTarget !== null || confirmTarget !== null || resumeTarget !== null;
+    pauseConfirmOpen ||
+    approveTarget !== null ||
+    confirmTarget !== null ||
+    resumeTarget !== null ||
+    frozenTarget !== null;
   const wasModalOpen = useRef(false);
   useEffect(() => {
     const closed = wasModalOpen.current && !modalOpen;
@@ -548,7 +562,7 @@ export function AutopilotScreen({
         (r) =>
           r.enabled &&
           r.mode === 'observe' &&
-          !isReviewOnlyPreset(r.presetKey) &&
+          !isReviewOnlyPreset(r.presetKey, r.actionKind) &&
           r.observeWindowElapsed &&
           r.observePromptDismissedAt == null &&
           (r.observeDigest?.pendingTotal ?? 0) > 0,
@@ -792,7 +806,8 @@ export function AutopilotScreen({
    */
   const onActivateConfirm = () =>
     commitConfirm(
-      (confirmTarget != null && isReviewOnlyPreset(confirmTarget.rule.presetKey)) ||
+      (confirmTarget != null &&
+        isReviewOnlyPreset(confirmTarget.rule.presetKey, confirmTarget.rule.actionKind)) ||
         (confirmTarget?.intent === 'enable' && !canActivate)
         ? 'observe'
         : 'active',
@@ -806,7 +821,15 @@ export function AutopilotScreen({
     rememberModalOpener();
     approveMatches.reset();
     approveAllForRule.reset();
-    setApproveTarget(target);
+    if (target.rule.actionKind === 'delete') {
+      setFrozenTarget({
+        kind: 'preset',
+        rule: target.rule,
+        ...(target.kind === 'selected'
+          ? { senderKeys: [...new Set(target.matches.map((m) => m.senderKey))] }
+          : {}),
+      });
+    } else setApproveTarget(target);
   };
 
   const isApproving = approveMatches.isPending || approveAllForRule.isPending;
@@ -1012,6 +1035,11 @@ export function AutopilotScreen({
       : []),
   ];
 
+  const openFrozen = (rule: AutopilotRuleDto) => {
+    rememberModalOpener();
+    setFrozenTarget({ kind: 'preset', rule });
+  };
+
   const renderPresetRule = (rule: AutopilotRuleDto) => (
     <RuleCard
       key={rule.id}
@@ -1031,158 +1059,174 @@ export function AutopilotScreen({
       onResume={() => onResume(rule)}
       previewOpen={previewRuleId === rule.id}
       preview={previewRuleId === rule.id ? previewState : null}
-      onTogglePreview={() => onTogglePreview(rule)}
+      onTogglePreview={() =>
+        rule.actionKind === 'delete' ? openFrozen(rule) : onTogglePreview(rule)
+      }
       onRetryPreview={() => onRetryPreview(rule)}
     />
   );
 
-  const renderReview = (customMatches: ReactNode, hasCustomMatches: boolean) => (
-    <>
-      {(state.kind !== 'error' || hasCustomMatches) &&
-        (renderLibrary ||
-          !(state.kind === 'empty' && state.rules.length === 0 && !hasCustomMatches)) && (
-          <section
-            aria-labelledby="pending-heading"
-            hidden={!!renderLibrary && workspaceView !== 'review'}
-            style={{
-              display: renderLibrary && workspaceView !== 'review' ? 'none' : 'flex',
-              flexDirection: 'column',
-              gap: 10,
-            }}
-          >
-            <div
+  const deleteRules = rules.filter(
+    (r) => r.actionKind === 'delete' && r.enabled && r.mode === 'observe',
+  );
+  const renderReview = (customMatches: ReactNode, hasCustomMatches: boolean) => {
+    const hasBatchRules = hasCustomMatches || deleteRules.length > 0;
+    return (
+      <>
+        {(state.kind !== 'error' || hasBatchRules) &&
+          (renderLibrary ||
+            !(state.kind === 'empty' && state.rules.length === 0 && !hasBatchRules)) && (
+            <section
+              aria-labelledby="pending-heading"
+              hidden={!!renderLibrary && workspaceView !== 'review'}
               style={{
-                display: 'flex',
-                alignItems: 'baseline',
-                justifyContent: 'space-between',
-                gap: 8,
-                flexWrap: 'wrap',
+                display: renderLibrary && workspaceView !== 'review' ? 'none' : 'flex',
+                flexDirection: 'column',
+                gap: 10,
               }}
             >
-              <h2
-                id="pending-heading"
-                ref={renderLibrary ? presetHeading : undefined}
-                tabIndex={-1}
-                style={{ ...tokens.typography.sectionTitle, margin: 0, color: color.fg }}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
               >
-                Needs review
-              </h2>
+                <h2
+                  id="pending-heading"
+                  ref={renderLibrary ? presetHeading : undefined}
+                  tabIndex={-1}
+                  style={{ ...tokens.typography.sectionTitle, margin: 0, color: color.fg }}
+                >
+                  Needs review
+                </h2>
+                {state.kind === 'ready' &&
+                  suggestionsState.kind === 'ready' &&
+                  (suggestions.length > 0 ||
+                    (!hasBatchRules && pendingPagination?.total != null)) && (
+                    <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                      <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                        {suggestions.length}
+                        {!pendingPagination && pendingBufferTruncated ? '+' : ''}
+                      </span>{' '}
+                      {pendingPagination
+                        ? `recorded sender match${suggestions.length === 1 ? '' : 'es'} on this page · ${pendingPagination.total === null ? 'total unavailable' : `${pendingPagination.total} at last check`}`
+                        : `recorded sender match${suggestions.length === 1 ? '' : 'es'}`}
+                    </span>
+                  )}
+              </div>
+              <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.6, color: color.fgSoft }}>
+                Your rules found these matches. Preview a batch, then approve what you want to run.
+                A sender may appear under more than one rule.
+              </p>
+
+              {customMatches}
+              {deleteRules.map((rule) => (
+                <DeleteRuleReview
+                  key={rule.id}
+                  rule={rule}
+                  mailboxId={activeMailboxId ?? undefined}
+                  onPreview={() => openFrozen(rule)}
+                />
+              ))}
+              {(state.kind === 'loading' || suggestionsState.kind === 'loading') && (
+                <SuggestionsSkeleton />
+              )}
+              {state.kind !== 'error' && suggestionsState.kind === 'error' && (
+                <ErrorState
+                  title="Couldn’t load matches for review"
+                  description={suggestionsState.message}
+                  onRetry={suggestionsState.retry}
+                />
+              )}
+              {state.kind === 'empty' && suggestionsState.kind === 'ready' && !hasBatchRules && (
+                <SuggestionsEmptyState />
+              )}
               {state.kind === 'ready' &&
                 suggestionsState.kind === 'ready' &&
-                (suggestions.length > 0 ||
-                  (!hasCustomMatches && pendingPagination?.total != null)) && (
-                  <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                    <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                      {suggestions.length}
-                      {!pendingPagination && pendingBufferTruncated ? '+' : ''}
-                    </span>{' '}
-                    {pendingPagination
-                      ? `recorded sender match${suggestions.length === 1 ? '' : 'es'} on this page · ${pendingPagination.total === null ? 'total unavailable' : `${pendingPagination.total} at last check`}`
-                      : `recorded sender match${suggestions.length === 1 ? '' : 'es'}`}
-                  </span>
-                )}
-            </div>
-            <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.6, color: color.fgSoft }}>
-              Your rules found these matches. Preview a batch, then approve what you want to run. A
-              sender may appear under more than one rule.
-            </p>
-
-            {customMatches}
-            {(state.kind === 'loading' || suggestionsState.kind === 'loading') && (
-              <SuggestionsSkeleton />
-            )}
-            {state.kind !== 'error' && suggestionsState.kind === 'error' && (
-              <ErrorState
-                title="Couldn’t load matches for review"
-                description={suggestionsState.message}
-                onRetry={suggestionsState.retry}
-              />
-            )}
-            {state.kind === 'empty' && suggestionsState.kind === 'ready' && !hasCustomMatches && (
-              <SuggestionsEmptyState />
-            )}
-            {state.kind === 'ready' &&
-              suggestionsState.kind === 'ready' &&
-              suggestions.length === 0 &&
-              !hasCustomMatches &&
-              (pendingPagination?.hasPrevious || (pendingPagination?.total ?? 0) > 0 ? (
-                <EmptyState
-                  title="No matches on this page"
-                  description="Matches may have changed. Return to newest to review what is waiting."
-                />
-              ) : (
-                <SuggestionsEmptyState />
-              ))}
-            {state.kind === 'ready' && suggestionsState.kind === 'ready' && groups.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                {groups.map((group) => (
-                  <SuggestionGroup
-                    key={group.rule?.id ?? `orphan-${group.matches[0]?.ruleId ?? 'none'}`}
-                    rule={group.rule}
-                    matches={group.matches}
-                    pendingApproximate={pendingBufferTruncated}
-                    selectedIds={selectedIds}
-                    onToggleSelect={onToggleSelect}
-                    onDismiss={onDismiss}
-                    dismissingMatchId={
-                      dismissMatch.isPending ? (dismissMatch.variables ?? null) : null
-                    }
-                    onApproveAll={(rule, matches) =>
-                      openApprove({
-                        rule,
-                        matches,
-                        kind: 'all',
-                        ...(pendingBufferTruncated
-                          ? { matchedBefore: new Date().toISOString() }
-                          : {}),
-                      })
-                    }
-                    onApproveSelected={(rule, matches) =>
-                      openApprove({ rule, matches, kind: 'selected' })
-                    }
+                suggestions.length === 0 &&
+                !hasBatchRules &&
+                (pendingPagination?.hasPrevious || (pendingPagination?.total ?? 0) > 0 ? (
+                  <EmptyState
+                    title="No matches on this page"
+                    description="Matches may have changed. Return to newest to review what is waiting."
                   />
+                ) : (
+                  <SuggestionsEmptyState />
                 ))}
-              </div>
-            )}
-            {pendingPagination &&
-              (pendingPagination.hasPrevious ||
-                pendingPagination.hasNext ||
-                ((pendingPagination.total ?? 0) > 0 && suggestions.length === 0)) && (
-                <nav
-                  aria-label="Pending suggestion pages"
-                  style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
-                >
-                  {(pendingPagination.hasPrevious || suggestions.length === 0) && (
-                    <Button tone="ghost" size="sm" onClick={pendingPagination.onNewest}>
-                      Newest suggestions
-                    </Button>
-                  )}
-                  <Button
-                    tone="ghost"
-                    size="sm"
-                    disabled={!pendingPagination.hasPrevious}
-                    onClick={pendingPagination.onPrevious}
-                  >
-                    Previous suggestions
-                  </Button>
-                  <Button
-                    tone="ghost"
-                    size="sm"
-                    disabled={
-                      !pendingPagination.hasNext ||
-                      pendingPagination.loading ||
-                      suggestionsState.kind !== 'ready'
-                    }
-                    onClick={pendingPagination.onNext}
-                  >
-                    {pendingPagination.loading ? 'Loading suggestions…' : 'Older suggestions'}
-                  </Button>
-                </nav>
+              {state.kind === 'ready' && suggestionsState.kind === 'ready' && groups.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                  {groups.map((group) => (
+                    <SuggestionGroup
+                      key={group.rule?.id ?? `orphan-${group.matches[0]?.ruleId ?? 'none'}`}
+                      rule={group.rule}
+                      matches={group.matches}
+                      pendingApproximate={pendingBufferTruncated}
+                      selectedIds={selectedIds}
+                      onToggleSelect={onToggleSelect}
+                      onDismiss={onDismiss}
+                      dismissingMatchId={
+                        dismissMatch.isPending ? (dismissMatch.variables ?? null) : null
+                      }
+                      onApproveAll={(rule, matches) =>
+                        openApprove({
+                          rule,
+                          matches,
+                          kind: 'all',
+                          ...(pendingBufferTruncated
+                            ? { matchedBefore: new Date().toISOString() }
+                            : {}),
+                        })
+                      }
+                      onApproveSelected={(rule, matches) =>
+                        openApprove({ rule, matches, kind: 'selected' })
+                      }
+                    />
+                  ))}
+                </div>
               )}
-          </section>
-        )}
-    </>
-  );
+              {pendingPagination &&
+                (pendingPagination.hasPrevious ||
+                  pendingPagination.hasNext ||
+                  ((pendingPagination.total ?? 0) > 0 && suggestions.length === 0)) && (
+                  <nav
+                    aria-label="Pending suggestion pages"
+                    style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+                  >
+                    {(pendingPagination.hasPrevious || suggestions.length === 0) && (
+                      <Button tone="ghost" size="sm" onClick={pendingPagination.onNewest}>
+                        Newest suggestions
+                      </Button>
+                    )}
+                    <Button
+                      tone="ghost"
+                      size="sm"
+                      disabled={!pendingPagination.hasPrevious}
+                      onClick={pendingPagination.onPrevious}
+                    >
+                      Previous suggestions
+                    </Button>
+                    <Button
+                      tone="ghost"
+                      size="sm"
+                      disabled={
+                        !pendingPagination.hasNext ||
+                        pendingPagination.loading ||
+                        suggestionsState.kind !== 'ready'
+                      }
+                      onClick={pendingPagination.onNext}
+                    >
+                      {pendingPagination.loading ? 'Loading suggestions…' : 'Older suggestions'}
+                    </Button>
+                  </nav>
+                )}
+            </section>
+          )}
+      </>
+    );
+  };
 
   return (
     <div
@@ -1199,6 +1243,7 @@ export function AutopilotScreen({
           view: workspaceView,
           onViewChange: setWorkspaceView,
           headingRef: workspaceHeading,
+          approvedBatch,
         },
         renderReview,
       )}
@@ -1485,6 +1530,20 @@ export function AutopilotScreen({
         onConfirm={onResumeConfirm}
       />
 
+      {frozenTarget && (
+        <FrozenRulePreview
+          key={`${activeMailboxId}:${frozenTarget.rule.id}`}
+          target={frozenTarget}
+          mailboxId={activeMailboxId ?? undefined}
+          available={state.kind === 'ready'}
+          onCancel={() => setFrozenTarget(null)}
+          onApproved={(result, name) => {
+            setApprovedBatch({ ...result, ruleName: name });
+            setFrozenTarget(null);
+            setWorkspaceView('review');
+          }}
+        />
+      )}
       {approveTarget != null && (
         <ApproveConfirmModal
           rule={approveTarget.rule}
@@ -1505,7 +1564,10 @@ export function AutopilotScreen({
       <ActivateRuleModal
         rule={confirmTarget?.rule ?? null}
         intent={confirmTarget?.intent ?? 'activate'}
-        canRunUnattended={canActivate && !isReviewOnlyPreset(confirmTarget?.rule.presetKey ?? null)}
+        canRunUnattended={
+          canActivate &&
+          !isReviewOnlyPreset(confirmTarget?.rule.presetKey ?? null, confirmTarget?.rule.actionKind)
+        }
         pendingAction={pendingCommit}
         mailboxEmail={activeEmail ?? undefined}
         pendingCount={

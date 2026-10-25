@@ -1,26 +1,21 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Button, ScreenIntro, Skeleton } from '@declutrmail/shared';
 import {
   hasCapability,
   minimumTierForCapability,
   TIER_MANIFEST,
-  undoWindowDaysFor,
 } from '@declutrmail/shared/entitlements';
 import { useOptionalAuth, getActiveMailboxEmail } from '@/features/auth/auth-provider';
-import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
-import { acceptActionFeedback } from '@/features/undo/feedback-store';
 import { apiErrorCode } from '@/lib/api/client';
 import { newIdempotencyKey } from '@/lib/api/actions';
 import {
   saveSenderRule,
   retireSenderRule,
   setSenderRuleMode,
-  previewSenderRule,
-  executeSenderRule,
   type SenderRule,
   type SenderRuleExecution,
   type SenderRuleConfig,
@@ -46,6 +41,8 @@ export function senderRuleSummary(
 }
 export { senderRuleFailureCopy } from './sender-rule-feedback';
 import { senderRuleFailureCopy } from './sender-rule-feedback';
+import { deleteRuleMatchOptions } from './delete-rule-review';
+import { FrozenRulePreview } from './frozen-rule-preview';
 import { ApprovedBatches } from './approved-batches';
 
 function ruleError(error: unknown, operation: 'save' | 'preview' | 'execute' | 'retire') {
@@ -138,6 +135,9 @@ export function SenderRuleLibraryScope({
     if (!receipt || workspace?.view === 'rules') return;
     approvalsRef.current?.querySelector<HTMLHeadingElement>('h2')?.focus();
   }, [receipt, workspace?.view]);
+  useEffect(() => {
+    if (workspace?.approvedBatch) setReceipt(workspace.approvedBatch);
+  }, [workspace?.approvedBatch]);
   const [filter, setFilter] = useState<'all' | 'ready' | 'paused'>('all');
   const reviewHeading = useRef<HTMLHeadingElement>(null);
   const [focusReview, setFocusReview] = useState(0);
@@ -159,6 +159,16 @@ export function SenderRuleLibraryScope({
   const pausableCustom = (rules.data ?? []).filter((rule) => rule.mode !== 'paused');
   const pausableCount = pausablePresets.length + pausableCustom.length;
   const canPause = presetsAvailable && rules.isSuccess && !rules.isError && runningCount > 0;
+  const deleteRules = presetRules.filter((rule) => rule.actionKind === 'delete');
+  const deleteMatches = useQueries({
+    queries: deleteRules.map((rule) => ({
+      ...deleteRuleMatchOptions(rule, mailboxId),
+      enabled: entitled,
+    })),
+  });
+  const deleteMatchById = new Map(
+    deleteRules.map((rule, index) => [rule.id, deleteMatches[index]]),
+  );
   const inventory = [
     ...presetRules.map((rule) => ({ kind: 'preset' as const, rule })),
     ...(rules.data ?? []).map((rule) => ({ kind: 'sender' as const, rule })),
@@ -171,7 +181,11 @@ export function SenderRuleLibraryScope({
         : `${item.rule.name} ${item.rule.senders.map((sender) => sender.name ?? sender.email ?? '').join(' ')}`;
     const pending =
       item.kind === 'preset'
-        ? (item.rule.observeDigest?.pendingTotal ?? 0)
+        ? item.rule.actionKind === 'delete'
+          ? deleteMatchById.get(item.rule.id)?.isSuccess
+            ? (deleteMatchById.get(item.rule.id)?.data?.actionableMessageCount ?? 0)
+            : 0
+          : (item.rule.observeDigest?.pendingTotal ?? 0)
         : item.rule.matchingMessageCount;
     return (
       name.toLowerCase().includes(query.toLowerCase()) &&
@@ -271,88 +285,7 @@ export function SenderRuleLibraryScope({
       );
     },
   });
-  const [excluded, setExcluded] = useState<string[]>([]);
-  const [previewGeneration, setPreviewGeneration] = useState(0);
-  const preview = useQuery({
-    queryKey: [
-      'autopilot-sender-rule-preview',
-      mailboxId,
-      selected?.id,
-      selected?.version,
-      excluded,
-      previewGeneration,
-    ],
-    queryFn: ({ signal }) => previewSenderRule(selected!, excluded, signal, mailboxId),
-    enabled: previewOpen && selected !== null,
-    retry: false,
-    staleTime: 0,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    placeholderData: (previous) => previous,
-  });
-  const previewChecking =
-    preview.isFetching || preview.isPlaceholderData || preview.fetchStatus === 'paused';
-  const trackedPreview = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      !previewOpen ||
-      !preview.data ||
-      preview.isFetching ||
-      trackedPreview.current === preview.data.previewId
-    )
-      return;
-    trackedPreview.current = preview.data.previewId;
-    void track('autopilot_sender_rule_changed', {
-      operation: 'preview',
-      action: preview.data.action,
-      reach: preview.data.reach,
-      sender_count: preview.data.senders.length,
-      message_count: preview.data.messageCount,
-    });
-  }, [previewOpen, preview.data, preview.isFetching]);
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!previewOpen) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [previewOpen]);
-  const expired = preview.data ? Date.parse(preview.data.expiresAt) <= now : false;
-  const idempotency = useRef('');
-  const execute = useMutation({
-    mutationFn: () =>
-      executeSenderRule(selected!, preview.data!.previewId, idempotency.current, mailboxId),
-    onSuccess: (result) => {
-      setReceipt({ ...result, ruleName: selected!.name });
-      workspace?.onViewChange('review');
-      setPreviewOpen(false);
-      invalidate();
-      void track('autopilot_sender_rule_changed', {
-        operation: 'confirm',
-        action: selected!.action,
-        reach: selected!.reach,
-        sender_count: preview.data?.senders.length ?? 0,
-        message_count: result.requestedCount,
-      });
-      void qc.invalidateQueries({ queryKey: ME_QUERY_KEY });
-      const senders =
-        preview.data?.senders.filter(
-          (s) => !s.protected && !excluded.includes(s.senderKey) && s.messageCount > 0,
-        ) ?? [];
-      if (result.actionIds.length > 0)
-        acceptActionFeedback(mailboxId, {
-          groupId: result.batchId,
-          verb: selected!.action,
-          mixedVerbs: false,
-          senderCount: senders.length,
-          senderIds: senders.map((s) => s.id),
-          senderKeys: senders.map((s) => s.senderKey),
-          startedAt: new Date().toISOString(),
-        });
-    },
-  });
-  const busy =
-    save.isPending || retire.isPending || mode.isPending || execute.isPending || pauseAll.isPending;
+  const busy = save.isPending || retire.isPending || mode.isPending || pauseAll.isPending;
   const choose = (rule: SenderRule) => {
     setSelected(rule);
     setEditing(null);
@@ -370,47 +303,13 @@ export function SenderRuleLibraryScope({
     save.reset();
     setNotice('');
   };
-  const refreshPreview = () => {
-    execute.reset();
-    idempotency.current = newIdempotencyKey();
-    setPreviewGeneration((value) => value + 1);
-  };
-  const refreshStalePreview = async () => {
-    const result = await rules.refetch();
-    if (result.isError) return;
-    const current = result.data?.find((rule) => rule.id === selected?.id);
-    if (!current) {
-      setPreviewOpen(false);
-      setSelected(result.data?.[0] ?? null);
-      setNotice('This rule was retired. Choose another rule or create a new one.');
-      setFocusReview((value) => value + 1);
-      return;
-    }
-    setSelected(current);
-    refreshPreview();
-  };
   const readyCustomRules = (rules.isError ? [] : (rules.data ?? [])).filter(
     (rule) => rule.enabled && rule.mode === 'observe' && rule.matchingMessageCount > 0,
   );
   const previewBatch = (rule: SenderRule) => {
     setSelected(rule);
-    setExcluded([]);
     setPreviewOpen(true);
-    refreshPreview();
   };
-  const canConfirm =
-    !!preview.data &&
-    !previewChecking &&
-    !preview.isError &&
-    !expired &&
-    preview.data.messageCount > 0 &&
-    preview.data.version === selected?.version &&
-    !execute.isPending &&
-    rules.isSuccess &&
-    !rules.isError &&
-    selected?.enabled === true &&
-    selected.mode === 'observe' &&
-    !planLocked;
   return (
     <div className={styles.screen} data-testid="sender-rule-library">
       <ScreenIntro
@@ -595,9 +494,7 @@ export function SenderRuleLibraryScope({
                               mode.mutate(rule);
                               return;
                             }
-                            setExcluded([]);
                             setPreviewOpen(true);
-                            refreshPreview();
                           }}
                         >
                           {rule.mode === 'paused' ? 'Resume rule' : 'Preview batch'}
@@ -607,17 +504,40 @@ export function SenderRuleLibraryScope({
                   );
                 })}
               </ul>
-              {inventoryComplete && filtered.length === 0 && (
-                <p className={styles.empty}>
-                  {query
-                    ? 'No rules match your search.'
-                    : filter === 'ready'
-                      ? 'No rules ready for review.'
-                      : filter === 'paused'
-                        ? 'No inactive rules.'
-                        : 'Your rules will appear here.'}
-                </p>
-              )}
+              {filter === 'ready' &&
+                deleteMatches.some((query) => query.isPending || query.isError) && (
+                  <p role={deleteMatches.some((query) => query.isError) ? 'alert' : 'status'}>
+                    {deleteMatches.some((query) => query.isError)
+                      ? 'Some Delete matches couldn’t be checked.'
+                      : 'Checking Delete matches…'}
+                    {deleteMatches.some((query) => query.isError) && (
+                      <Button
+                        tone="ghost"
+                        onClick={() =>
+                          void Promise.allSettled(deleteMatches.map((query) => query.refetch()))
+                        }
+                      >
+                        Retry matches
+                      </Button>
+                    )}
+                  </p>
+                )}
+              {inventoryComplete &&
+                filtered.length === 0 &&
+                !(
+                  filter === 'ready' &&
+                  deleteMatches.some((query) => query.isPending || query.isError)
+                ) && (
+                  <p className={styles.empty}>
+                    {query
+                      ? 'No rules match your search.'
+                      : filter === 'ready'
+                        ? 'No rules ready for review.'
+                        : filter === 'paused'
+                          ? 'No inactive rules.'
+                          : 'Your rules will appear here.'}
+                  </p>
+                )}
               {(page > 0 || filtered.length > (page + 1) * 6) && (
                 <nav className={styles.pagination} aria-label="Rule pages">
                   <Button
@@ -747,9 +667,7 @@ export function SenderRuleLibraryScope({
                             mode.mutate(selected);
                             return;
                           }
-                          setExcluded([]);
                           setPreviewOpen(true);
-                          refreshPreview();
                         }}
                       >
                         {selected.mode === 'paused' ? 'Resume rule' : 'Preview'}
@@ -914,118 +832,19 @@ export function SenderRuleLibraryScope({
         </ConfirmModalFrame>
       )}
       {previewOpen && selected && !planLocked && (
-        <ConfirmModalFrame
-          title={
-            preview.data && !previewChecking && !preview.isError
-              ? `${verb(preview.data.action)} ${num(preview.data.messageCount)} emails?`
-              : 'Check this batch'
-          }
-          subtitle={
-            selected.action === 'delete'
-              ? 'Move this batch to Trash. Future email is unchanged.'
-              : 'Move this batch out of Inbox.'
-          }
-          note={`Approving queues this batch. During a Schedule pause, it waits until the window ends. Undo from Activity within ${undoWindowDaysFor(auth?.me.tier ?? 'free')} days.`}
-          mailboxEmail={email ?? undefined}
-          confirmLabel={verb(selected.action)}
-          confirmBusyLabel="Queueing…"
-          confirmTone={selected.action === 'delete' ? 'danger' : 'primary'}
-          canConfirm={canConfirm}
-          isBusy={execute.isPending}
-          error={execute.isError ? ruleError(execute.error, 'execute') : null}
-          onCancel={() => {
-            if (!execute.isPending) setPreviewOpen(false);
+        <FrozenRulePreview
+          key={selected.id}
+          target={{ kind: 'sender', rule: selected }}
+          mailboxId={mailboxId}
+          available={rules.isSuccess && !rules.isError}
+          onCancel={() => setPreviewOpen(false)}
+          onApproved={(result, name) => {
+            setReceipt({ ...result, ruleName: name });
+            workspace?.onViewChange('review');
+            setPreviewOpen(false);
+            invalidate();
           }}
-          onConfirm={() => {
-            if (canConfirm) execute.mutate();
-          }}
-          footer={
-            expired || preview.isError || execute.isError ? (
-              <Button
-                tone="ghost"
-                disabled={execute.isPending || preview.isFetching}
-                onClick={() => void refreshStalePreview()}
-              >
-                Refresh preview
-              </Button>
-            ) : undefined
-          }
-        >
-          {preview.isFetching && !preview.data ? (
-            <p role="status" className={styles.muted}>
-              Checking current email…
-            </p>
-          ) : preview.isError ? (
-            <p role="alert" className={styles.error}>
-              {ruleError(preview.error, 'preview')}
-            </p>
-          ) : preview.data ? (
-            <>
-              {previewChecking && (
-                <p role="status" className={styles.muted}>
-                  {preview.fetchStatus === 'paused'
-                    ? 'Waiting for connection…'
-                    : 'Refreshing preview…'}
-                </p>
-              )}
-              <p className={styles.summary}>{senderRuleSummary(preview.data)}</p>
-              {expired && (
-                <p role="alert" className={styles.error}>
-                  This preview expired. Refresh to continue.
-                </p>
-              )}
-              {!previewChecking && preview.data.hasMore && (
-                <p className={styles.muted}>
-                  This batch includes {num(preview.data.messageCount)} of{' '}
-                  {num(preview.data.totalEligibleCount)} eligible emails. Preview again after it
-                  finishes for the next batch.
-                </p>
-              )}
-              {preview.data.messageCount === 0 && (
-                <p className={styles.empty}>No matching email in this batch.</p>
-              )}
-              {preview.data.protectedSenderCount > 0 && (
-                <p className={styles.muted}>
-                  {num(preview.data.protectedSenderCount)} Protected senders excluded.
-                </p>
-              )}
-            </>
-          ) : null}
-          <p className={styles.muted}>Choose which senders to include this time.</p>
-          {selected.senders.map((sender) => {
-            const match = preview.data?.senders.find((item) => item.senderKey === sender.senderKey);
-            const protectedSender = sender.protected || match?.protected;
-            return (
-              <label className={styles.sender} key={sender.senderKey}>
-                <input
-                  type="checkbox"
-                  checked={!excluded.includes(sender.senderKey) && !protectedSender}
-                  disabled={protectedSender || execute.isPending}
-                  onChange={(e) => {
-                    execute.reset();
-                    idempotency.current = newIdempotencyKey();
-                    setExcluded((current) =>
-                      e.target.checked
-                        ? current.filter((key) => key !== sender.senderKey)
-                        : [...current, sender.senderKey],
-                    );
-                  }}
-                />
-                <span>
-                  <strong>{sender.name ?? sender.email ?? 'Unknown sender'}</strong>
-                  <small>{sender.email}</small>
-                </span>
-                {protectedSender ? (
-                  <em>Protected</em>
-                ) : (
-                  <span className={styles.count}>
-                    {previewChecking ? 'Checking…' : match ? num(match.messageCount) : '—'}
-                  </span>
-                )}
-              </label>
-            );
-          })}
-        </ConfirmModalFrame>
+        />
       )}
     </div>
   );

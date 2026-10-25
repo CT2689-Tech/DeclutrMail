@@ -24,3 +24,10 @@ export const ApprovedWorkConflict = {
   },
 };
 export const Paused = { args: { ...args, rule: { ...NEWSLETTER_GRAVEYARD, mode: 'paused' } } };
+
+export const DeleteArchived = {
+  args: {
+    ...args,
+    rule: { ...NEWSLETTER_GRAVEYARD, actionKind: 'delete', actionPayload: { reach: 'all_mail' } },
+  },
+};

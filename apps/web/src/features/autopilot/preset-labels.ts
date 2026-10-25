@@ -26,8 +26,15 @@ const PRESET_LABEL_OVERRIDES: Partial<Record<AutopilotPresetKey, string>> = {
 };
 
 /** Presets whose matches always need a person to approve them. */
-export function isReviewOnlyPreset(presetKey: AutopilotPresetKey | null): boolean {
-  return presetKey === 'auto_screen_new_senders' || presetKey === 'auto_archive_low_engagement';
+export function isReviewOnlyPreset(
+  presetKey: AutopilotPresetKey | null,
+  actionKind?: string,
+): boolean {
+  return (
+    actionKind === 'delete' ||
+    presetKey === 'auto_screen_new_senders' ||
+    presetKey === 'auto_archive_low_engagement'
+  );
 }
 
 /**

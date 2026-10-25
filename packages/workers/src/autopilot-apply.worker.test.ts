@@ -207,6 +207,34 @@ async function enablePreset(
 }
 
 describe('AutopilotApplyWorker', () => {
+  it.each(['observe', 'active'] as const)(
+    'never produces sender-level Delete approvals in %s mode',
+    async (mode) => {
+      const db = await freshDb();
+      const mailbox = await seedMailbox(db);
+      await seedAutopilotPresets(db as never, mailbox);
+      const id = await enablePreset(db, mailbox, 'auto_screen_new_senders', {
+        enabled: true,
+        mode,
+      });
+      await db
+        .update(automationRules)
+        .set({ actionKind: 'delete', actionPayload: { reach: 'all_mail' } })
+        .where(eq(automationRules.id, id));
+      await seedSender(db, mailbox, {
+        email: 'new@example.test',
+        totalMessages: 1,
+        firstSeenAt: NOW,
+      });
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      await worker.processJob(
+        { mailboxAccountId: mailbox, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+      expect(await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.ruleId, id))).toEqual([]);
+    },
+  );
+
   it('uses saved conditions and the chosen Archive action for an existing Unsubscribe preset', async () => {
     const db = await freshDb();
     const mailbox = await seedMailbox(db);

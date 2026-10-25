@@ -64,6 +64,7 @@ export const AutopilotSenderRulePreviewRequestSchema = z
     action: AutopilotSenderRuleActionSchema.optional(),
     reach: AutopilotSenderRuleReachSchema.optional(),
     olderThanDays: AutopilotSenderRuleAgeSchema.optional(),
+    includedSenderKeys: z.array(senderKey).max(AUTOPILOT_RULE_SENDER_LIMIT).optional(),
     excludedSenderKeys: z.array(senderKey).max(AUTOPILOT_RULE_SENDER_LIMIT).optional(),
   })
   .strict();

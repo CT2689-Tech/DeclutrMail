@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AutopilotRuleConfiguration } from '@declutrmail/shared/contracts';
-import { PresetRuleEditor } from './preset-rule-editor';
+import dynamic from 'next/dynamic';
+const PresetRuleEditor = dynamic(
+  () => import('./preset-rule-editor').then((module) => module.PresetRuleEditor),
+  { loading: () => <p role="status">Loading rule editor…</p> },
+);
 import styles from './sender-rule-library.module.css';
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
@@ -105,7 +109,7 @@ export function RuleCard({
   // actually watching (enabled + Observe). Disabled rules stay quiet.
   const digestSummary = rule.enabled ? observeDigestSummary(rule) : null;
   const observeSummary = observeWindowSummary(rule, now);
-  const explanation = isReviewOnlyPreset(rule.presetKey)
+  const explanation = isReviewOnlyPreset(rule.presetKey, rule.actionKind)
     ? rule.enabled
       ? 'Matches wait for your approval; no mail moves on its own.'
       : null
@@ -320,7 +324,7 @@ export function RuleCard({
           ruleName={name}
           state={preview}
           onRetry={onRetryPreview}
-          requiresApproval={isReviewOnlyPreset(rule.presetKey)}
+          requiresApproval={isReviewOnlyPreset(rule.presetKey, rule.actionKind)}
         />
       )}
     </li>
@@ -333,6 +337,8 @@ const RULE_ROW_CSS = `.dm-rule-row + .dm-rule-row::before { content: ''; positio
 /** Canonical-verb description of the rule's action (D227 — K/A/U/L/D only). */
 function describeRuleAction(kind: AutopilotActionKind): string {
   switch (kind) {
+    case 'delete':
+      return 'Deletes after approval';
     case 'archive':
       return 'Archives';
     case 'unsubscribe':
