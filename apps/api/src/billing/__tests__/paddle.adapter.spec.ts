@@ -2266,3 +2266,143 @@ describe('Paddle deletion billing evidence', () => {
     },
   );
 });
+
+describe('PaddleAdapter.readPassRefund', () => {
+  const txn = 'txn_01m5rv36azwpkwewjnpy2z3qzv';
+  const adj = 'adj_01m5rv6me2exdqk7k8kfym5238';
+  const transaction = {
+    id: txn,
+    status: 'completed',
+    subscription_id: null,
+    details: { totals: { grand_total: '1900' } },
+  };
+  const refund = {
+    id: adj,
+    transaction_id: txn,
+    subscription_id: null,
+    action: 'refund',
+    status: 'approved',
+    type: 'full',
+  };
+  const response = (data: unknown) => new Response(JSON.stringify(data), { status: 200 });
+  function setup(rows: unknown[] = [refund], tx: unknown = transaction) {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response({ data: tx }))
+      .mockResolvedValueOnce(response({ data: rows, meta: { pagination: { has_more: false } } }));
+    vi.stubGlobal('fetch', fetch);
+    return {
+      fetch,
+      adapter: makeAdapter({ PADDLE_API_KEY: 'sandbox-test', PADDLE_ENV: 'sandbox' }),
+    };
+  }
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+  it('confirms an approved full refund using only the exact grant transaction', async () => {
+    const { fetch, adapter } = setup();
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'refunded', adjustmentId: adj });
+    expect(fetch.mock.calls.map((c) => String(c[0]))).toEqual([
+      'https://sandbox-api.paddle.com/transactions/' + txn,
+      'https://sandbox-api.paddle.com/adjustments?transaction_id=' + txn + '&per_page=50',
+    ]);
+    expect(fetch.mock.calls.every((c) => !c[1].method || c[1].method === 'GET')).toBe(true);
+  });
+  it.each([
+    { status: 'pending_approval' },
+    { status: 'rejected' },
+    { status: 'reversed' },
+    { type: 'partial' },
+    { action: 'credit' },
+    { action: 'chargeback' },
+  ])('preserves access for non-full/non-approved-refund facts %j', async (patch) => {
+    const { adapter } = setup([{ ...refund, ...patch }]);
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unchanged' });
+  });
+  it('does not turn cumulative partial or all-full subset items into a full refund', async () => {
+    const { adapter } = setup(
+      [1, 2].map((n) => ({
+        ...refund,
+        id: 'adj_' + String(n).repeat(26),
+        type: 'partial',
+        items: [{ type: 'full' }],
+        totals: { total: '950' },
+      })),
+    );
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unchanged' });
+  });
+  it.each([
+    null,
+    { id: adj },
+    { ...refund, transaction_id: 'txn_other' },
+    { ...refund, subscription_id: 'sub_other' },
+    { ...refund, type: undefined },
+    { ...refund, id: 'invalid' },
+  ])('refuses malformed or mismatched adjustment %j', async (row) => {
+    const { adapter } = setup([row]);
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unreadable' });
+  });
+  it.each([
+    { ...transaction, id: 'txn_other' },
+    { ...transaction, status: 'paid' },
+    { ...transaction, subscription_id: 'sub_other' },
+    { ...transaction, subscription_id: undefined },
+    { ...transaction, details: { totals: { grand_total: '0' } } },
+  ])('refuses a mismatched, unpaid, or subscription transaction', async (tx) => {
+    const { adapter, fetch } = setup([refund], tx);
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unreadable' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('pages to the end while retaining our transaction filter and host', async () => {
+    const { adapter, fetch } = setup([]);
+    fetch
+      .mockReset()
+      .mockResolvedValueOnce(response({ data: transaction }))
+      .mockResolvedValueOnce(
+        response({
+          data: [],
+          meta: {
+            pagination: {
+              has_more: true,
+              next: 'https://untrusted.example/adjustments?transaction_id=other&after=cursor',
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({ data: [refund], meta: { pagination: { has_more: false } } }),
+      );
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'refunded', adjustmentId: adj });
+    expect(fetch.mock.calls[2]![0]).toBe(
+      'https://sandbox-api.paddle.com/adjustments?transaction_id=' +
+        txn +
+        '&per_page=50&after=cursor',
+    );
+  });
+  it('does not act on a full refund from an incomplete capped listing', async () => {
+    const { adapter, fetch } = setup();
+    let n = 0;
+    fetch
+      .mockReset()
+      .mockResolvedValueOnce(response({ data: transaction }))
+      .mockImplementation(async () =>
+        response({
+          data: [refund],
+          meta: {
+            pagination: {
+              has_more: true,
+              next: 'https://sandbox-api.paddle.com/adjustments?after=' + ++n,
+            },
+          },
+        }),
+      );
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unreadable' });
+    expect(fetch).toHaveBeenCalledTimes(11);
+  });
+  it.each([403, 404, 500])('does not assert refund truth after HTTP %i', async (status) => {
+    const { adapter, fetch } = setup();
+    fetch.mockReset().mockResolvedValue(new Response('{}', { status }));
+    await expect(adapter.readPassRefund(txn)).resolves.toEqual({ kind: 'unreadable' });
+  });
+});

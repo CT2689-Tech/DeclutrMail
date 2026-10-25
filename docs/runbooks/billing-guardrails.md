@@ -445,3 +445,31 @@ compute and was the cause of the founding incident — when in doubt,
 `--min-instances=0 --max-instances=0` on `declutrmail-worker` is the
 universal circuit breaker. The API service is request-driven and
 self-quiets; the web app is static-leaning on Vercel.
+
+### Backlog Pass refund recovery
+
+The worker's startup and six-hour billing sweep also checks live, unrevoked
+purchased Paddle Pass grants. It reads the grant's exact completed, positive,
+one-time transaction and a complete bounded transaction-scoped adjustment list.
+Only an **approved, explicit `type=full` refund** is projected through the existing
+`pass_revoked` handler. Pending, rejected and partial refunds leave access intact;
+several partial refunds adding up to the purchase are not a full-refund verdict.
+Manual Passes, comps, other providers and expired grants are excluded. Original
+payment history and invoice ownership remain tied to the retained transaction.
+
+The API key used by the worker needs `transaction.read` and `adjustment.read`.
+A provider error, missing permission, mismatched or incomplete response is not
+refund evidence. The sweep reports `checked`, `recovered`, `unchanged`,
+`unreadable`, `failed` and `capped` under `billing.reconcile.pass_refunds`, also
+nested in `billing.reconcile.swept`. Investigate positive unreadable/failed counts;
+never infer recovery from a successful scheduler alone. Three consecutive
+unreadable/failed checks stop provider reads for that pass.
+
+This is a backstop: normal webhook processing remains immediate. Recovery waits
+until the next successful startup/six-hour sweep. Each run examines at most 100
+eligible grants (ten adjustment pages each); above the cap selection is random,
+so coverage is eventual with no per-grant latency guarantee. Revocation,
+workspace-tier projection and processing stamp commit atomically; projection
+failure leaves the grant eligible for the next sweep. Workspace projection reads
+are serialized so concurrent refunds cannot leave stale paid access. A late
+webhook preserves the first revocation timestamp.
