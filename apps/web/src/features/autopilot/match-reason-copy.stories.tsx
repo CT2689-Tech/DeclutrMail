@@ -33,7 +33,7 @@ export const InContext = {
   render: () => (
     <section style={{ fontFamily: tokens.font.sans, color: tokens.color.fg, maxWidth: 900 }}>
       <p>Development preview · fictional sender data</p>
-      <h2>Pending suggestions</h2>
+      <h2>Needs review</h2>
       <ul style={{ listStyle: 'none', padding: 0 }}>
         {PENDING_SUGGESTIONS.map((match, index) => (
           <PendingSuggestionRow

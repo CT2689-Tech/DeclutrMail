@@ -9,7 +9,15 @@ import {
   EditorialKicker,
 } from '@/features/editorial/page';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   Button,
   EmptyState,
@@ -188,11 +196,13 @@ export function AutopilotRoute() {
       renderLibrary={
         unsupported
           ? undefined
-          : (renderPresetRule) => (
+          : (renderPresetRule, workspace, renderReview) => (
               <SenderRuleLibrary
                 presetRules={rulesQuery.data ?? []}
                 presetsAvailable={rulesQuery.isSuccess && !rulesQuery.isError}
                 renderPresetRule={renderPresetRule}
+                workspace={workspace}
+                renderReview={renderReview}
               />
             )
       }
@@ -301,6 +311,12 @@ function isVisiblePresetOpener(element: HTMLElement): boolean {
   return true;
 }
 
+export interface AutopilotWorkspace {
+  view: 'review' | 'rules';
+  onViewChange: (view: 'review' | 'rules') => void;
+  headingRef?: RefObject<HTMLHeadingElement | null>;
+}
+
 export function AutopilotScreen({
   state,
   suggestionsState = { kind: 'ready' },
@@ -312,13 +328,19 @@ export function AutopilotScreen({
 }: {
   embedded?: boolean;
   renderLibrary?:
-    ((renderPresetRule: (rule: AutopilotRuleDto) => ReactNode) => ReactNode) | undefined;
+    | ((
+        renderPresetRule: (rule: AutopilotRuleDto) => ReactNode,
+        workspace: AutopilotWorkspace,
+        renderReview: (customMatches: ReactNode, hasCustomMatches: boolean) => ReactNode,
+      ) => ReactNode)
+    | undefined;
   state: AutopilotScreenState;
   suggestionsState?: SectionState;
   patternState?: SectionState;
   pendingPagination?: PendingPagination;
   pauseScope?: PauseRuleScope;
 }) {
+  const [workspaceView, setWorkspaceView] = useState<'review' | 'rules'>('review');
   const auth = useOptionalAuth();
   const activeMailboxId = auth?.me.activeMailboxId ?? null;
   // Which mailbox these rules run on — named in the confirm modals,
@@ -382,6 +404,7 @@ export function AutopilotScreen({
    */
   const [resumeTarget, setResumeTarget] = useState<AutopilotRuleDto | null>(null);
   const presetHeading = useRef<HTMLHeadingElement>(null);
+  const workspaceHeading = useRef<HTMLHeadingElement>(null);
   const modalOpener = useRef<HTMLElement | null>(null);
   const rememberModalOpener = () => {
     modalOpener.current =
@@ -401,7 +424,10 @@ export function AutopilotScreen({
     const frame = requestAnimationFrame(() => {
       if (document.querySelector('[aria-modal="true"]')) return;
       const opener = modalOpener.current;
-      const target = opener && isVisiblePresetOpener(opener) ? opener : presetHeading.current;
+      const target =
+        opener && isVisiblePresetOpener(opener)
+          ? opener
+          : (workspaceHeading.current ?? presetHeading.current);
       if (target && isVisiblePresetOpener(target)) target.focus();
     });
     return () => cancelAnimationFrame(frame);
@@ -1010,6 +1036,154 @@ export function AutopilotScreen({
     />
   );
 
+  const renderReview = (customMatches: ReactNode, hasCustomMatches: boolean) => (
+    <>
+      {(state.kind !== 'error' || hasCustomMatches) &&
+        (renderLibrary ||
+          !(state.kind === 'empty' && state.rules.length === 0 && !hasCustomMatches)) && (
+          <section
+            aria-labelledby="pending-heading"
+            hidden={!!renderLibrary && workspaceView !== 'review'}
+            style={{
+              display: renderLibrary && workspaceView !== 'review' ? 'none' : 'flex',
+              flexDirection: 'column',
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}
+            >
+              <h2
+                id="pending-heading"
+                ref={renderLibrary ? presetHeading : undefined}
+                tabIndex={-1}
+                style={{ ...tokens.typography.sectionTitle, margin: 0, color: color.fg }}
+              >
+                Needs review
+              </h2>
+              {state.kind === 'ready' &&
+                suggestionsState.kind === 'ready' &&
+                (suggestions.length > 0 ||
+                  (!hasCustomMatches && pendingPagination?.total != null)) && (
+                  <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+                    <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                      {suggestions.length}
+                      {!pendingPagination && pendingBufferTruncated ? '+' : ''}
+                    </span>{' '}
+                    {pendingPagination
+                      ? `recorded sender match${suggestions.length === 1 ? '' : 'es'} on this page · ${pendingPagination.total === null ? 'total unavailable' : `${pendingPagination.total} at last check`}`
+                      : `recorded sender match${suggestions.length === 1 ? '' : 'es'}`}
+                  </span>
+                )}
+            </div>
+            <p style={{ margin: 0, fontSize: text.sm, lineHeight: 1.6, color: color.fgSoft }}>
+              Your rules found these matches. Preview a batch, then approve what you want to run. A
+              sender may appear under more than one rule.
+            </p>
+
+            {customMatches}
+            {(state.kind === 'loading' || suggestionsState.kind === 'loading') && (
+              <SuggestionsSkeleton />
+            )}
+            {state.kind !== 'error' && suggestionsState.kind === 'error' && (
+              <ErrorState
+                title="Couldn’t load matches for review"
+                description={suggestionsState.message}
+                onRetry={suggestionsState.retry}
+              />
+            )}
+            {state.kind === 'empty' && suggestionsState.kind === 'ready' && !hasCustomMatches && (
+              <SuggestionsEmptyState />
+            )}
+            {state.kind === 'ready' &&
+              suggestionsState.kind === 'ready' &&
+              suggestions.length === 0 &&
+              !hasCustomMatches &&
+              (pendingPagination?.hasPrevious || (pendingPagination?.total ?? 0) > 0 ? (
+                <EmptyState
+                  title="No matches on this page"
+                  description="Matches may have changed. Return to newest to review what is waiting."
+                />
+              ) : (
+                <SuggestionsEmptyState />
+              ))}
+            {state.kind === 'ready' && suggestionsState.kind === 'ready' && groups.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+                {groups.map((group) => (
+                  <SuggestionGroup
+                    key={group.rule?.id ?? `orphan-${group.matches[0]?.ruleId ?? 'none'}`}
+                    rule={group.rule}
+                    matches={group.matches}
+                    pendingApproximate={pendingBufferTruncated}
+                    selectedIds={selectedIds}
+                    onToggleSelect={onToggleSelect}
+                    onDismiss={onDismiss}
+                    dismissingMatchId={
+                      dismissMatch.isPending ? (dismissMatch.variables ?? null) : null
+                    }
+                    onApproveAll={(rule, matches) =>
+                      openApprove({
+                        rule,
+                        matches,
+                        kind: 'all',
+                        ...(pendingBufferTruncated
+                          ? { matchedBefore: new Date().toISOString() }
+                          : {}),
+                      })
+                    }
+                    onApproveSelected={(rule, matches) =>
+                      openApprove({ rule, matches, kind: 'selected' })
+                    }
+                  />
+                ))}
+              </div>
+            )}
+            {pendingPagination &&
+              (pendingPagination.hasPrevious ||
+                pendingPagination.hasNext ||
+                ((pendingPagination.total ?? 0) > 0 && suggestions.length === 0)) && (
+                <nav
+                  aria-label="Pending suggestion pages"
+                  style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
+                >
+                  {(pendingPagination.hasPrevious || suggestions.length === 0) && (
+                    <Button tone="ghost" size="sm" onClick={pendingPagination.onNewest}>
+                      Newest suggestions
+                    </Button>
+                  )}
+                  <Button
+                    tone="ghost"
+                    size="sm"
+                    disabled={!pendingPagination.hasPrevious}
+                    onClick={pendingPagination.onPrevious}
+                  >
+                    Previous suggestions
+                  </Button>
+                  <Button
+                    tone="ghost"
+                    size="sm"
+                    disabled={
+                      !pendingPagination.hasNext ||
+                      pendingPagination.loading ||
+                      suggestionsState.kind !== 'ready'
+                    }
+                    onClick={pendingPagination.onNext}
+                  >
+                    {pendingPagination.loading ? 'Loading suggestions…' : 'Older suggestions'}
+                  </Button>
+                </nav>
+              )}
+          </section>
+        )}
+    </>
+  );
+
   return (
     <div
       style={{
@@ -1019,7 +1193,15 @@ export function AutopilotScreen({
         gap: 32,
       }}
     >
-      {renderLibrary?.(renderPresetRule)}
+      {renderLibrary?.(
+        renderPresetRule,
+        {
+          view: workspaceView,
+          onViewChange: setWorkspaceView,
+          headingRef: workspaceHeading,
+        },
+        renderReview,
+      )}
       {!embedded && <EditorialKicker>Automations / Your rules</EditorialKicker>}
       {/* The unified library owns the header when present. */}
       {!renderLibrary && (
@@ -1084,13 +1266,15 @@ export function AutopilotScreen({
         </p>
       )}
 
-      <AutopilotBannerStack banners={banners} />
+      <div hidden={!!renderLibrary && workspaceView !== 'rules'}>
+        <AutopilotBannerStack banners={banners} />
+      </div>
       {state.kind !== 'loading' && state.kind !== 'error' && patternState.kind === 'loading' && (
-        <p role="status">Checking rule suggestions…</p>
+        <p role="status">Checking new rule ideas…</p>
       )}
       {state.kind !== 'loading' && state.kind !== 'error' && patternState.kind === 'error' && (
         <ErrorState
-          title="Couldn’t check rule suggestions"
+          title="Couldn’t check new rule ideas"
           description={patternState.message}
           onRetry={patternState.retry}
         />
@@ -1273,141 +1457,7 @@ export function AutopilotScreen({
             </section>
           )}
 
-          {/* Pending suggestions (D104). With no rules yet there is nothing
-              that could be pending — one empty state, not two. */}
-          {!(state.kind === 'empty' && state.rules.length === 0) && (
-            <section
-              aria-labelledby="pending-heading"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 10,
-              }}
-            >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'baseline',
-                  justifyContent: 'space-between',
-                  gap: 8,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <h2
-                  id="pending-heading"
-                  ref={renderLibrary ? presetHeading : undefined}
-                  tabIndex={-1}
-                  style={{ ...tokens.typography.sectionTitle, margin: 0, color: color.fg }}
-                >
-                  Pending suggestions
-                </h2>
-                {state.kind === 'ready' &&
-                  suggestionsState.kind === 'ready' &&
-                  (suggestions.length > 0 || pendingPagination?.total != null) && (
-                    <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                      <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                        {suggestions.length}
-                        {!pendingPagination && pendingBufferTruncated ? '+' : ''}
-                      </span>{' '}
-                      {pendingPagination
-                        ? `on this page · ${pendingPagination.total === null ? 'total unavailable' : `${pendingPagination.total} waiting at last check`}`
-                        : 'waiting'}
-                    </span>
-                  )}
-              </div>
-
-              {(state.kind === 'loading' || suggestionsState.kind === 'loading') && (
-                <SuggestionsSkeleton />
-              )}
-              {suggestionsState.kind === 'error' && (
-                <ErrorState
-                  title="Couldn’t load pending suggestions"
-                  description={suggestionsState.message}
-                  onRetry={suggestionsState.retry}
-                />
-              )}
-              {state.kind === 'empty' && suggestionsState.kind === 'ready' && (
-                <SuggestionsEmptyState />
-              )}
-              {state.kind === 'ready' &&
-                suggestionsState.kind === 'ready' &&
-                suggestions.length === 0 &&
-                (pendingPagination?.hasPrevious || (pendingPagination?.total ?? 0) > 0 ? (
-                  <EmptyState
-                    title="No suggestions on this page"
-                    description="Pending suggestions may have changed. Return to newest to review what is waiting."
-                  />
-                ) : (
-                  <SuggestionsEmptyState />
-                ))}
-              {state.kind === 'ready' && suggestionsState.kind === 'ready' && groups.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-                  {groups.map((group) => (
-                    <SuggestionGroup
-                      key={group.rule?.id ?? `orphan-${group.matches[0]?.ruleId ?? 'none'}`}
-                      rule={group.rule}
-                      matches={group.matches}
-                      pendingApproximate={pendingBufferTruncated}
-                      selectedIds={selectedIds}
-                      onToggleSelect={onToggleSelect}
-                      onDismiss={onDismiss}
-                      dismissingMatchId={
-                        dismissMatch.isPending ? (dismissMatch.variables ?? null) : null
-                      }
-                      onApproveAll={(rule, matches) =>
-                        openApprove({
-                          rule,
-                          matches,
-                          kind: 'all',
-                          ...(pendingBufferTruncated
-                            ? { matchedBefore: new Date().toISOString() }
-                            : {}),
-                        })
-                      }
-                      onApproveSelected={(rule, matches) =>
-                        openApprove({ rule, matches, kind: 'selected' })
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-              {pendingPagination &&
-                (pendingPagination.hasPrevious ||
-                  pendingPagination.hasNext ||
-                  ((pendingPagination.total ?? 0) > 0 && suggestions.length === 0)) && (
-                  <nav
-                    aria-label="Pending suggestion pages"
-                    style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
-                  >
-                    {(pendingPagination.hasPrevious || suggestions.length === 0) && (
-                      <Button tone="ghost" size="sm" onClick={pendingPagination.onNewest}>
-                        Newest suggestions
-                      </Button>
-                    )}
-                    <Button
-                      tone="ghost"
-                      size="sm"
-                      disabled={!pendingPagination.hasPrevious}
-                      onClick={pendingPagination.onPrevious}
-                    >
-                      Previous suggestions
-                    </Button>
-                    <Button
-                      tone="ghost"
-                      size="sm"
-                      disabled={
-                        !pendingPagination.hasNext ||
-                        pendingPagination.loading ||
-                        suggestionsState.kind !== 'ready'
-                      }
-                      onClick={pendingPagination.onNext}
-                    >
-                      {pendingPagination.loading ? 'Loading suggestions…' : 'Older suggestions'}
-                    </Button>
-                  </nav>
-                )}
-            </section>
-          )}
+          {!renderLibrary && renderReview(null, false)}
         </>
       )}
 
@@ -1559,7 +1609,7 @@ function SuggestionsSkeleton() {
 function SuggestionsEmptyState() {
   return (
     <EmptyState
-      title="No pending suggestions"
+      title="Nothing needs review"
       description="New matches from your rules appear here."
     />
   );

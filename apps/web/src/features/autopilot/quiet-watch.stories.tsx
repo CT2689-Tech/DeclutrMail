@@ -4,7 +4,7 @@ import { QuietWatch } from './quiet-watch';
 const meta = {
   title: 'Autopilot/QuietWatch',
   component: QuietWatch,
-  args: { watching: 3, automatic: 0, paused: false, onReview: () => {} },
+  args: { watching: 3, automatic: 0, paused: false },
   parameters: { layout: 'padded' },
   tags: ['autodocs'],
 } satisfies Meta<typeof QuietWatch>;

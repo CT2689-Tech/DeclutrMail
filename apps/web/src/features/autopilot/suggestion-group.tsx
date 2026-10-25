@@ -6,6 +6,7 @@ import { useNow } from '@/lib/use-now';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
 import { PendingSuggestionRow } from './pending-suggestion-row';
 import { presetDisplayName } from './preset-labels';
+import styles from './review-queue.module.css';
 
 const { color, text } = tokens;
 
@@ -57,38 +58,43 @@ export function SuggestionGroup({
     : `Review all ${matches.length}`;
 
   return (
-    <section
-      aria-label={`Pending suggestions from ${name}`}
-      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-    >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'baseline',
-          justifyContent: 'space-between',
-          gap: 8,
-          flexWrap: 'wrap',
-        }}
-      >
-        <h3
-          style={{
-            fontSize: text.md,
-            fontWeight: 600,
-            letterSpacing: '-0.01em',
-            margin: 0,
-            color: color.fgSoft,
-          }}
-        >
-          From <span style={{ color: color.fg }}>“{name}”</span>
-          {daysLeft != null && (
-            <span style={{ fontWeight: 400, color: color.fgMuted }}> · {daysLeft}</span>
-          )}
-        </h3>
-        <span
-          style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
-        >
-          {matches.length} {pendingApproximate ? 'on this page' : 'waiting'}
-        </span>
+    <section aria-label={`Pending suggestions from ${name}`} className={styles.group}>
+      <div className={styles.groupHeader}>
+        <div>
+          <h3>{name}</h3>
+          <p>
+            {rule
+              ? { archive: 'Archive', later: 'Later', unsubscribe: 'Unsubscribe' }[rule.actionKind]
+              : 'Rule unavailable'}
+            {' · '}
+            {matches.length}{' '}
+            {pendingApproximate
+              ? 'sender matches on this page'
+              : `sender match${matches.length === 1 ? '' : 'es'}`}
+          </p>
+          {daysLeft && <small>{daysLeft}</small>}
+        </div>
+        {rule != null && ruleCanApprove(rule) && (
+          <div className={styles.groupActions}>
+            <Button
+              tone="default"
+              size="sm"
+              disabled={selectedInGroup.length === 0}
+              onClick={() => onApproveSelected(rule, selectedInGroup)}
+              ariaLabel={`Review selected suggestions from rule ${name}`}
+            >
+              Review selected{selectedInGroup.length > 0 ? ` (${selectedInGroup.length})` : ''}
+            </Button>
+            <Button
+              tone="primary"
+              size="sm"
+              onClick={() => onApproveAll(rule, matches)}
+              ariaLabel={`Review all suggestions from rule ${name}${pendingApproximate ? ' (including those not shown)' : ` (${matches.length})`}`}
+            >
+              {reviewAllLabel}
+            </Button>
+          </div>
+        )}
       </div>
 
       <ul
@@ -128,38 +134,19 @@ export function SuggestionGroup({
             padding: '10px 0',
           }}
         >
-          {showAll ? 'Show fewer suggestions' : `Show all ${matches.length} suggestions`}
+          {showAll ? 'Show fewer matches' : `Show all ${matches.length} matches`}
         </button>
       )}
 
-      {rule != null && ruleCanApprove(rule) && (
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-          <Button
-            tone="default"
-            size="sm"
-            onClick={() => onApproveSelected(rule, selectedInGroup)}
-            disabled={selectedInGroup.length === 0}
-            ariaLabel={`Review selected suggestions from rule ${name}`}
-          >
-            Review selected{selectedInGroup.length > 0 ? ` (${selectedInGroup.length})` : ''}
-          </Button>
-          <Button
-            tone="default"
-            size="sm"
-            onClick={() => onApproveAll(rule, matches)}
-            ariaLabel={`Review all suggestions from rule ${name}${pendingApproximate ? ' (including those not shown)' : ` (${matches.length})`}`}
-          >
-            {reviewAllLabel}
-          </Button>
-        </div>
-      )}
       {/* Founder decision 2026-09-29 (a): approving is blocked while the
           rule is off or paused — resuming would otherwise run every
           waiting approval with no preview. Resume/turn it on from the
           rules list above. */}
       {rule != null && !ruleCanApprove(rule) && (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, textAlign: 'right' }}>
-          {rule.mode === 'paused' ? 'Paused' : 'Off'} — resume the rule above to approve these.
+          {rule.mode === 'paused'
+            ? 'Paused — resume this rule before approving.'
+            : 'Off — enable this rule before approving.'}
         </p>
       )}
     </section>
@@ -174,10 +161,10 @@ function ruleCanApprove(rule: AutopilotRuleDto): boolean {
 /** "(N days left)" while the rule's observe window is running (D104 header). */
 function observeDaysLeft(rule: AutopilotRuleDto | null, now: number | null): string | null {
   if (rule == null || rule.mode !== 'observe' || rule.observeWindowEndsAt == null) return null;
-  if (rule.observeWindowElapsed) return 'Watch first review ready';
+  if (rule.observeWindowElapsed) return null;
   if (now === null) return null;
   const ends = new Date(rule.observeWindowEndsAt).getTime();
   if (Number.isNaN(ends)) return null;
   const days = Math.max(1, Math.ceil((ends - now) / (24 * 60 * 60 * 1000)));
-  return `${days} day${days === 1 ? '' : 's'} left`;
+  return `Watching period: ${days} day${days === 1 ? '' : 's'} remaining. You can review matches now.`;
 }

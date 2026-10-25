@@ -107,7 +107,9 @@ it.each(['suggestions', 'pattern'] as const)(
     });
     expect(recovered).not.toHaveBeenCalled();
     expect(container.textContent).toContain(
-      optional === 'suggestions' ? '1 on this page' : 'Watch for the same pattern?',
+      optional === 'suggestions'
+        ? '1 recorded sender match on this page'
+        : 'Watch for the same pattern?',
     );
   },
 );

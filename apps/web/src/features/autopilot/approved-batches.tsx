@@ -18,9 +18,11 @@ const number = (value: number) => value.toLocaleString('en-US');
 export function ApprovedBatches({
   mailboxId,
   receipt,
+  compactEmpty = false,
 }: {
   mailboxId: string;
   receipt: Receipt | null;
+  compactEmpty?: boolean;
 }) {
   const active = useInFlightActions(mailboxId);
   const hydrated = useHydrated();
@@ -49,10 +51,19 @@ export function ApprovedBatches({
       return JSON.stringify(next) === JSON.stringify(previous) ? previous : next;
     });
   }, [active.data, receipt]);
+  if (
+    compactEmpty &&
+    receipt === null &&
+    hydrated &&
+    !active.isPending &&
+    !active.isError &&
+    seen.length === 0
+  )
+    return null;
   return (
     <section aria-label="Approved batches" className={styles.approvals}>
       <div className={styles.top}>
-        <h2>Approved batches</h2>
+        <h2 tabIndex={-1}>Approved batches</h2>
         <Link href="/activity">All activity</Link>
       </div>
       {hydrated && active.isError && (

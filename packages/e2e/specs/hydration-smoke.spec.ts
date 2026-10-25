@@ -211,7 +211,7 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
       // A nonempty shell can precede the streamed sections and their diagnostics.
       await expectScreenMounted(page);
       await expect(
-        senderLibrary.getByRole('heading', { name: 'Your rules', exact: true }),
+        senderLibrary.getByRole('navigation', { name: 'Autopilot views' }),
       ).toBeVisible();
     } else {
       await expect(readOnlyPreview).toBeVisible();
@@ -223,7 +223,7 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
       'Loading Autopilot rules',
       'Loading Autopilot suggestions',
       'Loading your preset rules…',
-      'Checking rule suggestions…',
+      'Checking new rule ideas…',
     ])
       await expect(page.getByText(label, { exact: true })).toHaveCount(0);
   }
