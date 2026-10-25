@@ -606,6 +606,8 @@ export interface ProviderInvoice {
   amount: string;
   currencyCode: string;
   status: 'paid' | 'due' | 'canceled' | 'unknown';
+  /** Confirmed aggregate refunds; original payment amount and document remain intact. */
+  refundedAmount?: string;
   /** A stable provider-hosted page, when the rail exposes one. */
   hostedUrl: string | null;
   /** Whether `invoiceDocumentUrl` can mint a document for this row. */

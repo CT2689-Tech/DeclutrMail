@@ -94,21 +94,25 @@ export async function revokePassByTransaction(
       ),
     )
     .returning({ email: entitlementGrants.email });
-  if (revoked.length === 0) {
-    const [any] = await db
-      .select({ id: entitlementGrants.id })
+  let emails = revoked.map((row) => row.email);
+  if (emails.length === 0) {
+    const [existing] = await db
+      .select({ email: entitlementGrants.email })
       .from(entitlementGrants)
       .where(
         and(
           eq(entitlementGrants.providerTransactionId, providerTransactionId),
+          eq(entitlementGrants.source, 'pass'),
           isNotNull(entitlementGrants.provider),
+          isNotNull(entitlementGrants.revokedAt),
         ),
       )
       .limit(1);
-    if (!any) return { status: 'missing' };
-    return { status: 'revoked', workspaceIds: [] };
+    if (!existing) return { status: 'missing' };
+    // Revocation may have committed before tier projection failed. A retry
+    // still owes every owning workspace a projection before processing the event.
+    emails = [existing.email];
   }
-  const emails = revoked.map((row) => row.email);
   const workspaces = await db
     .select({ workspaceId: users.workspaceId })
     .from(users)

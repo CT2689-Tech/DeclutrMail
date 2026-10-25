@@ -198,7 +198,9 @@ into the GH secret from §3–4.
 - Subscribe to: `subscription.created`, `subscription.activated`,
   `subscription.updated`, `subscription.canceled`, `subscription.paused`,
   `subscription.resumed`, `subscription.past_due`, `transaction.completed`,
-  `transaction.payment_failed`, `adjustment.created` (refund/chargeback).
+  `transaction.payment_failed`, `adjustment.created`, `adjustment.updated`
+  (refund request/decision and chargeback). Approved refund updates are required
+  to revoke Backlog Pass access; a pending refund alone does not revoke it.
 
 **Razorpay** → Settings → **Webhooks** → add:
 
@@ -258,8 +260,10 @@ No agent can run this: it needs a real payment surface. In **sandbox**:
    retained period date, and no POST before the second confirmation. Resume and
    verify no new transaction/new billing period is created.
 7. **Cancel** → `cancel_at_period_end=true`, tier holds until period end.
-8. Walk the **refund/chargeback** path (Paddle `adjustment.created`) → maps to
-   scheduled cancellation, tier holds until the provider's terminal event.
+8. Walk the **refund/chargeback** path (`adjustment.created` and
+   `adjustment.updated`). A pending refund retains access; an approved full
+   refund ends it. A chargeback ends access immediately. For a Backlog Pass,
+   verify the purchased grant is revoked and its original invoice remains available.
 9. Repeat the core buy on **Razorpay** test mode (India ladder); verify plan
    changes and no-charge resume route to support rather than guessing provider
    behavior.
