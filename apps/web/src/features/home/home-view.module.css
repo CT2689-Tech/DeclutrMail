@@ -454,16 +454,11 @@
 }
 
 .visitSlot {
-  min-height: 40px;
 }
 
 @media (max-width: 480px) {
   .page {
     padding-top: 24px;
-  }
-  /* Two lines: eyebrow/title row plus the sender line. 40px fits one. */
-  .visitSlot {
-    min-height: 60px;
   }
   .header {
     align-items: flex-start;
@@ -555,54 +550,6 @@
   padding: 8px 10px;
   min-width: 0;
   max-width: 100%;
-  container-type: inline-size;
-  container-name: home-report;
-}
-
-/* The shipped home card brings its own shell. Don't wrap a second frame around it. */
-.report:has([data-surface='home']) {
-  border: 0;
-  background: transparent;
-  padding: 0;
-}
-
-/* Slot for InboxReportCard surface="home". The card brings its own shell.
-   The lead is the card's first child. Tile and trust stay in .reportFacts. */
-.reportCard:not(:has(a)) {
-  display: none;
-}
-
-.reportCard > a {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 16px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.reportCard > a strong,
-.reportCard > a :global(.dm-home-report-title) {
-  font-family: var(--dm-font-display);
-  font-size: var(--dm-type-section-title);
-  font-weight: 400;
-  letter-spacing: -0.025em;
-  line-height: 1.2;
-}
-
-.reportCard > a > span,
-.reportCard > a :global(.dm-home-report-body) {
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--dm-fg-soft);
-}
-
-.reportCard > a > span:last-child,
-.reportCard > a :global(.dm-home-report-cta) {
-  color: var(--dm-primary);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 
 .reportIntro h2 {
@@ -618,71 +565,6 @@
   font-size: 14px;
   line-height: 1.5;
   color: var(--dm-fg-soft);
-}
-
-.reportFacts {
-  display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.8fr);
-  gap: 8px 32px;
-  align-items: start;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-.reportFacts > * {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.lead {
-  margin: 0;
-}
-
-.leadFigure {
-  display: block;
-  min-height: 28px;
-  margin-bottom: 2px;
-  font-family: var(--dm-font-display);
-  font-size: 28px;
-  font-weight: 400;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-}
-
-.reportFacts > p {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--dm-fg-soft);
-}
-
-.storageTile {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-}
-
-.storageTile strong {
-  font-family: var(--dm-font-display);
-  font-size: var(--dm-type-stat);
-  font-weight: 400;
-  font-variant-numeric: tabular-nums;
-}
-
-.trust {
-  max-width: 68ch;
-}
-
-.reportFacts .trust {
-  grid-column: 1 / -1;
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--dm-line);
 }
 
 .steps {
@@ -769,7 +651,7 @@
 
 .progressLine {
   min-width: 0;
-  padding: 18px 0 0;
+  padding: 0;
 }
 
 .progressSentence {
@@ -785,12 +667,10 @@
 }
 
 .progressLine strong {
-  display: block;
-  margin: 22px 0 7px;
+  margin-right: 4px;
   color: var(--dm-fg);
-  font-family: var(--dm-font-display);
-  font-size: 44px;
-  font-weight: 400;
+  font-size: 16px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
 
@@ -894,10 +774,6 @@
     min-height: 28px;
   }
 
-  .reportFacts {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .dialogScrim {
     align-items: flex-end;
     padding: 0;
@@ -911,141 +787,131 @@
   }
 }
 
-@container home-report (max-width: 40rem) {
-  .reportFacts {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-/* Focus: one recommendation, with recorded progress in a quiet margin. */
-.focusGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 285px;
-  gap: 50px;
-  align-items: start;
-}
+/* One recommendation; supporting context is disclosed on request. */
 .focusLead {
   min-width: 0;
-  min-height: 346px;
-  padding: 30px 32px;
+  padding: 24px;
   border: 1px solid var(--dm-primary-border);
-  border-radius: 16px;
+  border-radius: var(--dm-radius-lg);
   background: var(--dm-primary-soft);
 }
-.focusLead .fixCard {
+.focusLead .fixCard,
+.focusLead .secondaryCard,
+.focusLead .beginning {
   padding: 0;
   border: 0;
   background: transparent;
 }
 .fixCard .focusTitle,
-.calmStart h2 {
-  margin: 24px 0 18px;
-  font-family: var(--dm-font-display);
-  font-size: clamp(32px, 3.4vw, 43px);
-  font-weight: 400;
-  line-height: 1.13;
+.calmStart h2,
+.focusLead .beginning h2 {
+  margin: 0 0 18px;
+  font-family: var(--dm-font-sans);
+  font-size: clamp(22px, 2.5vw, 28px);
+  font-weight: 500;
+  line-height: 1.25;
   letter-spacing: -0.025em;
   text-wrap: balance;
 }
-.fixCard .cleanupAction {
-  color: var(--dm-primary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.fixCard .focusImpact,
-.calmStart p {
-  max-width: 430px;
-  color: var(--dm-fg-soft);
-  font-size: 15px;
-  line-height: 1.7;
-  margin: 0;
-}
 .focusLead .fixActions {
-  margin-top: 26px;
-  gap: 10px 22px;
+  margin-top: 0;
 }
-.fixCard .reviewNote {
-  margin-top: 18px;
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--dm-fg-muted);
+.details {
+  margin-top: 16px;
+  border-top: 1px solid var(--dm-line);
+}
+.details > summary {
+  display: list-item;
+  width: fit-content;
+  min-height: 44px;
+  padding: 12px 4px;
+  box-sizing: border-box;
+  cursor: pointer;
+  color: var(--dm-fg-soft);
+  font-size: 14px;
+  touch-action: manipulation;
+}
+.details > summary:hover {
+  color: var(--dm-fg);
+}
+.details > summary:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 4px;
+}
+.detailsBody {
+  display: grid;
+  gap: 20px;
+  padding: 12px 0 0;
+}
+.detailsBody p {
+  max-width: 70ch;
+}
+.recommendationFacts p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--dm-fg-soft);
 }
 .progressHeading {
-  margin: 0;
+  margin: 0 0 8px;
   color: var(--dm-fg-soft);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
 }
 .progressDetails {
   display: grid;
-  gap: 14px;
-  margin: 24px 0 15px;
-  padding-top: 20px;
-  border-top: 1px solid var(--dm-line);
+  gap: 8px;
+  margin: 10px 0 0;
 }
 .progressDetails > div {
   display: flex;
-  justify-content: space-between;
   gap: 16px;
+  justify-content: space-between;
+  max-width: 400px;
 }
 .progressDetails dt {
   color: var(--dm-fg-muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 .progressDetails dd {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
 }
 .progressLine > a {
   display: inline-flex;
   align-items: center;
   min-height: 44px;
-  font-size: 12px;
-}
-.contextSection {
-  margin-top: 32px;
-}
-.contextHeading {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 14px;
-}
-.contextHeading > h2 {
-  margin: 0;
-  font-family: var(--dm-font-display);
-  font-size: 24px;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-}
-.contextHeading .visitSlot {
-  min-height: 0;
-}
-.contextHeading .visitSlot:empty {
-  display: none;
-}
-.contextHeading .arrivals {
-  padding: 0;
-}
-.contextHeading .arrivals .eyebrow {
-  font-size: 10px;
-}
-.contextHeading .arrivals h2 {
   font-size: 13px;
 }
 .secondarySteps {
   display: grid;
   gap: 12px;
-  margin-bottom: 20px;
 }
 .secondarySteps .secondaryCard {
-  background: transparent;
   border: 0;
-  border-top: 1px solid var(--dm-line);
-  border-radius: 0;
-  padding: 16px 0;
+  background: transparent;
+  padding: 0;
+}
+.detailsBody .report {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.detailsBody .report p {
+  margin: 6px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dm-fg-muted);
+}
+.detailsBody .report a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-right: 20px;
+  font-size: 13px;
+}
+.detailsBody .visitSlot:empty {
+  display: none;
 }
 .mailboxIdentity {
   max-width: 100%;
@@ -1062,85 +928,21 @@
   outline: 2px solid var(--dm-primary);
   outline-offset: 4px;
 }
-@media (max-width: 1100px) {
-  .focusGrid {
-    grid-template-columns: minmax(0, 1fr) 235px;
-    gap: 30px;
-  }
-  .focusLead {
-    padding: 28px;
-  }
-}
-@media (max-width: 900px) {
-  .page {
-    padding: 24px;
-  }
-  .focusGrid {
-    grid-template-columns: minmax(0, 1fr) 200px;
-    gap: 24px;
-  }
-  .focusLead {
-    padding: 26px;
-  }
-  .contextHeading {
-    flex-direction: column;
-    gap: 12px;
-  }
-}
 @media (max-width: 760px) {
   .page {
     padding: 20px 16px 32px;
   }
   .header {
+    align-items: flex-start;
     flex-direction: column;
-    align-items: stretch;
-    gap: 14px;
-    padding-bottom: 24px;
+    gap: 12px;
+    padding-bottom: 20px;
   }
   .header h1 {
-    font-size: 36px;
-  }
-  .focusGrid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
+    font-size: 32px;
   }
   .focusLead {
-    min-height: 0;
-    padding: 26px 24px;
-  }
-  .fixCard .focusTitle,
-  .calmStart h2 {
-    font-size: 36px;
-  }
-  .progressLine {
-    padding: 4px 2px 0;
-  }
-  .progressLine strong {
-    font-size: 36px;
-    margin-top: 14px;
-  }
-  .contextSection {
-    margin-top: 26px;
-  }
-}
-@media (max-width: 420px) {
-  .focusLead {
-    padding: 24px 20px;
-  }
-  .fixCard .focusTitle,
-  .calmStart h2 {
-    font-size: 33px;
-  }
-  .fixCard .focusImpact {
-    font-size: 14px;
-  }
-  .focusLead .fixActions {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 6px;
-  }
-  .fixActions > a:not(:global(.dm-button-link)) {
-    align-self: center;
+    padding: 20px;
   }
 }
 
@@ -1154,40 +956,7 @@
 
 .firstProgress {
   margin: 20px 0 10px;
-  font-family: var(--dm-font-display);
-  font-size: 26px;
+  font-size: 14px;
   line-height: 1.3;
   color: var(--dm-fg-soft);
-}
-
-.headerTools {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 7px;
-  min-width: 0;
-}
-.page .reportLink {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  border: 1px solid var(--dm-line);
-  border-radius: 9px;
-  padding: 0 14px;
-  font-size: 12px;
-  color: var(--dm-fg-soft);
-  text-decoration: none;
-}
-.page .reportLink:hover {
-  background: var(--dm-fill);
-  color: var(--dm-fg);
-  text-decoration: none;
-}
-@media (max-width: 760px) {
-  .headerTools {
-    align-items: flex-start;
-  }
-  .headerTools .reportLink {
-    display: none;
-  }
 }

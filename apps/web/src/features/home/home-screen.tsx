@@ -53,7 +53,7 @@ import { HomeView } from './home-view';
  * | no decisions, still syncing   | title, status, scan bar          |
  * | no decisions, scan failed     | "The scan stopped" + retry       |
  * | no decisions                  | "Nothing cleared yet" + button   |
- * | decisions                     | number + label + button          |
+ * | decisions                     | next action + closed Details     |
  *
  * A mailbox switch needs nothing here: `resetMailboxScopedCache`
  * invalidates every query, these included.
@@ -146,6 +146,7 @@ export function HomeScreen() {
 
   return (
     <HomeView
+      key={mailboxId}
       state={resolve()}
       tier={tier}
       visitSummary={<HomeArrivals />}
