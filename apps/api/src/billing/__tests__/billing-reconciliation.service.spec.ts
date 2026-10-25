@@ -1,5 +1,6 @@
 import { ordinaryRefundPolicy } from './fixtures.js';
 import {
+  entitlementGrants,
   pendingCheckouts,
   subscriptionEvents,
   subscriptions,
@@ -8,7 +9,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { and, eq } from 'drizzle-orm';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
@@ -79,12 +80,14 @@ function fakeAdapter(overrides: {
   fetchSubscription?: (id: string) => Promise<FetchSubscriptionResult>;
   searchSubscriptions?: (query: SubscriptionSearchQuery) => Promise<SubscriptionSearchResult>;
   cancelSubscription?: (id: string) => Promise<void>;
+  readPassRefund?: PaddleAdapter['readPassRefund'];
   providerCancellationFacts?: (
     id: string,
     cache?: CancellationFactsCache,
   ) => Promise<ProviderCancellationFacts | null>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
+    readPassRefund: overrides.readPassRefund,
     fetchSubscription:
       overrides.fetchSubscription ??
       (async (): Promise<FetchSubscriptionResult> => ({ kind: 'not_found' })),
@@ -506,6 +509,155 @@ describe('BillingReconciliationService (D249)', () => {
     expect(row!.status).toBe('active');
   });
 
+  async function seedPass(transactionId: string, extra: Record<string, unknown> = {}) {
+    await db.insert(entitlementGrants).values({
+      email: 'owner@example.test',
+      tier: 'plus',
+      source: 'pass',
+      provider: 'paddle',
+      providerTransactionId: transactionId,
+      reason: 'backlog_pass',
+      grantedBy: 'paddle',
+      expiresAt: new Date(Date.now() + 30 * 86400000),
+      ...extra,
+    });
+    await db.update(workspaces).set({ tier: 'plus' }).where(eq(workspaces.id, workspaceId));
+  }
+  it('recovers an approved Pass refund with NO refund webhook, preserving receipt and other grants', async () => {
+    await seedPass('txn_pass_refunded');
+    await seedPass('txn_other_pass');
+    const read = vi.fn(async (id: string) =>
+      id === 'txn_pass_refunded'
+        ? { kind: 'refunded' as const, adjustmentId: 'adj_approved' }
+        : { kind: 'unchanged' as const },
+    );
+    const svc = service(fakeAdapter({ readPassRefund: read }));
+    expect(await svc.reconcilePassRefunds()).toMatchObject({
+      checked: 2,
+      recovered: 1,
+      unchanged: 1,
+      failed: 0,
+    });
+    const grants = await db.select().from(entitlementGrants);
+    expect(
+      grants.find((g) => g.providerTransactionId === 'txn_pass_refunded')!.revokedAt,
+    ).not.toBeNull();
+    expect(grants.find((g) => g.providerTransactionId === 'txn_other_pass')!.revokedAt).toBeNull();
+    expect((await db.select().from(workspaces))[0]!.tier).toBe('plus');
+    const ledger = await db.select().from(subscriptionEvents);
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]!.eventType).toBe('reconciliation.pass_refund');
+    expect(ledger[0]!.processedAt).not.toBeNull();
+    expect(await svc.reconcilePassRefunds()).toMatchObject({ checked: 1, recovered: 0 });
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
+  });
+  it('rolls back a projection failure so the next sweep can still recover the last Pass', async () => {
+    await seedPass('txn_last_pass');
+    const projector = new BillingWebhookService(
+      db,
+      testCatalog(),
+      new AutopilotReadService(db),
+      ordinaryRefundPolicy,
+    );
+    const fault = vi
+      .spyOn(
+        projector as unknown as {
+          recomputeWorkspaceTier(db: DrizzleDb, id: string): Promise<void>;
+        },
+        'recomputeWorkspaceTier',
+      )
+      .mockRejectedValueOnce(new Error('temporary projection failure'));
+    const svc = new BillingReconciliationService(
+      db,
+      testCatalog(),
+      projector,
+      fakeAdapter({ readPassRefund: async () => ({ kind: 'refunded', adjustmentId: 'adj_full' }) }),
+      fakeAdapter({}),
+    );
+    expect(await svc.reconcilePassRefunds()).toMatchObject({ recovered: 0, failed: 1 });
+    expect((await db.select().from(entitlementGrants))[0]!.revokedAt).toBeNull();
+    expect((await db.select().from(subscriptionEvents))[0]!.processedAt).toBeNull();
+    expect((await db.select().from(workspaces))[0]!.tier).toBe('plus');
+    expect(await svc.reconcilePassRefunds()).toMatchObject({ recovered: 1, failed: 0 });
+    expect((await db.select().from(workspaces))[0]!.tier).toBe('free');
+    const revoked = (await db.select().from(entitlementGrants))[0]!.revokedAt;
+    expect(
+      await projector.process(
+        'paddle',
+        {
+          kind: 'pass_revoked',
+          providerEventId: 'evt_late_refund',
+          eventType: 'adjustment.updated',
+          providerTransactionId: 'txn_last_pass',
+          reason: 'refund',
+        },
+        {},
+      ),
+    ).toMatchObject({ kind: 'processed' });
+    expect((await db.select().from(entitlementGrants))[0]!.revokedAt).toEqual(revoked);
+    expect(await svc.reconcilePassRefunds()).toMatchObject({ checked: 0, recovered: 0 });
+    fault.mockRestore();
+  });
+  it('excludes comps, manual/expired/revoked Passes and unrelated providers', async () => {
+    await seedPass('txn_live');
+    await seedPass('txn_comp', { source: 'comp' });
+    await seedPass('txn_manual', { provider: null });
+    await seedPass('txn_expired', { expiresAt: new Date(Date.now() - 1000) });
+    await seedPass('txn_revoked', { revokedAt: new Date() });
+    await seedPass('txn_foreign', { provider: 'other' });
+    const read = vi.fn(async () => ({ kind: 'unchanged' as const }));
+    expect(
+      await service(fakeAdapter({ readPassRefund: read })).reconcilePassRefunds(),
+    ).toMatchObject({ checked: 1, unchanged: 1 });
+    expect(read).toHaveBeenCalledWith('txn_live');
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+  it('reports unreadable reads without revoking access and stops after three consecutive failures', async () => {
+    for (let n = 0; n < 4; n++) await seedPass('txn_' + n);
+    const read = vi.fn(async () => ({ kind: 'unreadable' as const }));
+    expect(
+      await service(fakeAdapter({ readPassRefund: read })).reconcilePassRefunds(),
+    ).toMatchObject({ checked: 3, unreadable: 3, recovered: 0 });
+    expect((await db.select().from(entitlementGrants)).every((g) => g.revokedAt === null)).toBe(
+      true,
+    );
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+  });
+
+  it.each(['throw', 'unresolved'] as const)(
+    'stops after three consecutive projection failures (%s)',
+    async (mode) => {
+      for (let n = 0; n < 4; n++) await seedPass('txn_fail_' + n);
+      const catalog = testCatalog();
+      const projector = new BillingWebhookService(
+        db,
+        catalog,
+        new AutopilotReadService(db),
+        ordinaryRefundPolicy,
+      );
+      const project = vi.spyOn(projector, 'process');
+      if (mode === 'throw') project.mockRejectedValue(new Error('temporary projection failure'));
+      else project.mockResolvedValue({ kind: 'unresolved', reason: 'unattributable' });
+      const svc = new BillingReconciliationService(
+        db,
+        catalog,
+        projector,
+        fakeAdapter({
+          readPassRefund: async () => ({ kind: 'refunded', adjustmentId: 'adj_full' }),
+        }),
+        fakeAdapter({}),
+      );
+      expect(await svc.reconcilePassRefunds()).toMatchObject({
+        checked: 3,
+        recovered: 0,
+        failed: 3,
+      });
+      expect(project).toHaveBeenCalledTimes(3);
+      expect((await db.select().from(entitlementGrants)).every((g) => g.revokedAt === null)).toBe(
+        true,
+      );
+    },
+  );
   // ── enforceLocalVerdicts — the one OUTBOUND write ────────────────
   //
   // A refund/chargeback is a verdict only we hold: Paddle records the

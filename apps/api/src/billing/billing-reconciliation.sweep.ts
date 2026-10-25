@@ -120,29 +120,7 @@ export async function runBillingReconciliationSweep(
     );
   }
 
-  const recomputed = await db.execute(sql`
-    UPDATE workspaces w
-    SET tier = (
-          SELECT c.t FROM (
-            SELECT s.tier AS t FROM subscriptions s
-            WHERE s.workspace_id = w.id
-              AND s.status IN ('active', 'past_due')
-              AND (s.entitlement_ends_at IS NULL OR s.entitlement_ends_at > now())
-            UNION ALL
-            ${liveGrantTiersSql('w.id')}
-            UNION ALL
-            SELECT 'free'::workspace_tier
-          ) c
-          ORDER BY ${tierRankSql('c.t')} DESC
-          LIMIT 1),
-        founding_member = COALESCE(
-          (SELECT bool_or(s.founding_member) FROM subscriptions s
-           WHERE s.workspace_id = w.id
-             AND s.status IN ('active', 'past_due')
-             AND (s.entitlement_ends_at IS NULL OR s.entitlement_ends_at > now())),
-          false),
-        updated_at = now()
-    WHERE EXISTS (
+  const recomputeFilter = sql`EXISTS (
       SELECT 1 FROM subscriptions s
       WHERE s.workspace_id = w.id
         AND s.status IN ('active', 'past_due')
@@ -168,7 +146,46 @@ export async function runBillingReconciliationSweep(
       JOIN users u ON u.email = g.email
       WHERE u.workspace_id = w.id
     )
-  `);
+  `;
+  const recomputed = await db.transaction(async (tx) => {
+    // Acquire locks in a separate statement BEFORE reading entitlement facts.
+    // UPDATE subqueries otherwise retain a pre-refund statement snapshot while
+    // waiting for its workspace lock, then can overwrite the committed Free.
+    const locked = resultRows(
+      await tx.execute(sql`
+      SELECT w.id FROM workspaces w WHERE ${recomputeFilter}
+      ORDER BY w.id FOR UPDATE
+    `),
+    )
+      .map((row) => row.id)
+      .filter((id): id is string => typeof id === 'string');
+    // A new grant may become visible after the selection. Only update rows we
+    // locked; its own projector handles the new grant, or the next sweep does.
+    return tx.execute(sql`
+    UPDATE workspaces w
+    SET tier = (
+          SELECT c.t FROM (
+            SELECT s.tier AS t FROM subscriptions s
+            WHERE s.workspace_id = w.id
+              AND s.status IN ('active', 'past_due')
+              AND (s.entitlement_ends_at IS NULL OR s.entitlement_ends_at > now())
+            UNION ALL
+            ${liveGrantTiersSql('w.id')}
+            UNION ALL
+            SELECT 'free'::workspace_tier
+          ) c
+          ORDER BY ${tierRankSql('c.t')} DESC
+          LIMIT 1),
+        founding_member = COALESCE(
+          (SELECT bool_or(s.founding_member) FROM subscriptions s
+           WHERE s.workspace_id = w.id
+             AND s.status IN ('active', 'past_due')
+             AND (s.entitlement_ends_at IS NULL OR s.entitlement_ends_at > now())),
+          false),
+        updated_at = now()
+    WHERE ${flippedFilter(locked)}
+    `);
+  });
 
   // D249 (Codex 2026-07-30): retain expired claims for 7 days instead
   // of deleting at expiry. Checkout-reopening never depended on this

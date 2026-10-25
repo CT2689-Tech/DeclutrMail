@@ -38,8 +38,14 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
-import { pendingCheckouts, subscriptions, subscriptionEvents, users } from '@declutrmail/db';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import {
+  entitlementGrants,
+  pendingCheckouts,
+  subscriptions,
+  subscriptionEvents,
+  users,
+} from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
@@ -95,6 +101,17 @@ export interface DriftSweepResult {
   subscriptionsUnreadable: number;
   providerErrors: number;
 }
+
+export interface PassRefundSweepResult {
+  checked: number;
+  recovered: number;
+  unchanged: number;
+  unreadable: number;
+  failed: number;
+  capped: boolean;
+}
+
+export const PASS_REFUND_SWEEP_MAX_ROWS = 100;
 
 /**
  * Counters for the verdict pass, which is no longer part of the drift
@@ -535,6 +552,83 @@ export class BillingReconciliationService {
       `billing.reconcile.pending_resolved workspace=${workspaceId} provider=${match.provider} sub=${match.sub.providerSubscriptionId} outcome=${outcome}`,
     );
     return outcome;
+  }
+
+  /** Boot/six-hour safety net for missed approved one-time Pass refunds.
+   * Provider reads precede the existing atomic projector. Unreadable evidence
+   * never removes access; an unfinished projection keeps its candidate live.
+   */
+  async reconcilePassRefunds(): Promise<PassRefundSweepResult> {
+    const observedAt = new Date();
+    const rows = await this.db
+      .select({ transactionId: entitlementGrants.providerTransactionId })
+      .from(entitlementGrants)
+      .where(
+        and(
+          eq(entitlementGrants.source, 'pass'),
+          eq(entitlementGrants.provider, 'paddle'),
+          isNotNull(entitlementGrants.providerTransactionId),
+          isNull(entitlementGrants.revokedAt),
+          or(isNull(entitlementGrants.expiresAt), gt(entitlementGrants.expiresAt, observedAt)),
+        ),
+      )
+      // Unchanged grants never update: oldest-first would permanently starve
+      // everything behind the cap. Random selection gives eventual coverage.
+      .orderBy(RANDOM_ROW_ORDER)
+      .limit(PASS_REFUND_SWEEP_MAX_ROWS);
+    const result: PassRefundSweepResult = {
+      checked: 0,
+      recovered: 0,
+      unchanged: 0,
+      unreadable: 0,
+      failed: 0,
+      capped: rows.length >= PASS_REFUND_SWEEP_MAX_ROWS,
+    };
+    if (result.capped) this.logger.warn('billing.reconcile.pass_refunds_capped');
+    let consecutiveFailures = 0;
+    for (const row of rows) {
+      if (consecutiveFailures >= DRIFT_SWEEP_TRIP_AFTER) break;
+      try {
+        const fact = await this.paddle.readPassRefund(row.transactionId!);
+        result.checked++;
+        if (fact.kind === 'unreadable') {
+          result.unreadable++;
+          consecutiveFailures++;
+          continue;
+        }
+        if (fact.kind === 'unchanged') {
+          consecutiveFailures = 0;
+          result.unchanged++;
+          continue;
+        }
+        const outcome = await this.webhookService.process(
+          'paddle',
+          {
+            kind: 'pass_revoked',
+            providerEventId: `recon-pass-refund:${row.transactionId}:${fact.adjustmentId}`,
+            eventType: 'reconciliation.pass_refund',
+            providerTransactionId: row.transactionId!,
+            reason: 'refund',
+          },
+          { occurred_at: observedAt.toISOString() },
+        );
+        if (outcome.kind === 'processed' || outcome.kind === 'duplicate') {
+          result.recovered++;
+          consecutiveFailures = 0;
+        } else {
+          result.failed++;
+          consecutiveFailures++;
+        }
+      } catch (err) {
+        result.failed++;
+        consecutiveFailures++;
+        this.logger.error(
+          `billing.reconcile.pass_refund_failed txn=${row.transactionId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    this.logger.log(`billing.reconcile.pass_refunds ${JSON.stringify(result)}`);
+    return result;
   }
 
   /**
