@@ -165,6 +165,35 @@ test(homeVisitTitle, async ({ page }) => {
     await expect(
       summary.getByText(pluralCopy(sinceLast.senders, 2, { n: '2' }), { exact: true }),
     ).toBeVisible();
+    // The visible GET is a read-only peek. Wait for the browser's POST to
+    // persist that visit before changing the data its snapshot is built from.
+    await expect
+      .poll(async () => {
+        const visitId = await page.evaluate((scope) => {
+          const saved = localStorage.getItem(`declutrmail:visit:${scope}`);
+          return saved ? ((JSON.parse(saved) as { id?: string }).id ?? null) : null;
+        }, `${fixture.userId}:${fixture.mailboxId}`);
+        if (!visitId) return false;
+        const [row] = await sql<
+          {
+            visits: Array<{
+              visitId: string;
+              indexedEmails: number | null;
+              indexedSenders: number | null;
+            }> | null;
+          }[]
+        >`
+        SELECT preferences->'mailboxVisits'->${fixture.mailboxId}::text AS visits
+        FROM users WHERE id = ${fixture.userId}
+      `;
+        return (
+          row?.visits?.some(
+            (visit) =>
+              visit.visitId === visitId && visit.indexedEmails === 3 && visit.indexedSenders === 2,
+          ) ?? false
+        );
+      })
+      .toBe(true);
     await sql`UPDATE mail_messages SET created_at = now() + interval '1 day' WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await page.goto('/senders');
     await page.goto('/home');
