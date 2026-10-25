@@ -65,7 +65,7 @@ describe('InboxReportPanel', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText(/91%/).length).toBe(1);
     expect(screen.getByText('Last 90 days')).toBeInTheDocument();
-    expect(screen.getByText('Based on 1,139 emails in a@example.com')).toBeInTheDocument();
+    expect(screen.getByText('Based on 1,139 scanned emails in a@example.com')).toBeInTheDocument();
     expect(screen.getByText('Sizes are Gmail’s estimates.')).toBeInTheDocument();
     expect(screen.queryByText('about 9 in 10')).not.toBeInTheDocument();
     expect(screen.getByText(/Each of those 2 senders had less than 10%/)).toBeInTheDocument();
@@ -79,6 +79,41 @@ describe('InboxReportPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
     expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from 2 senders?');
     expect(onFixConfirmed).not.toHaveBeenCalled();
+  });
+
+  it('labels each insight with its own scope and dates the snapshot', async () => {
+    const report: InboxReportDto = {
+      ...full,
+      insights: [
+        { id: 'years_deep', oldestYear: 2012, olderPct: 70 },
+        full.insights[0]!,
+        { id: 'trash_bytes', bytes: 300_000_000, count: 80 },
+      ],
+    };
+    render(<InboxReportPanel report={report} onDismiss={vi.fn()} onReopen={vi.fn()} />);
+    expect(document.querySelector('[data-report-window]')).toHaveTextContent('All scanned email');
+    expect(screen.getByText('Last 90 days')).toBeVisible();
+    expect(screen.getByText('In Gmail Trash at snapshot time')).toBeVisible();
+    await waitFor(() =>
+      expect(document.querySelector('time')).toHaveAttribute('dateTime', report.generatedAt),
+    );
+  });
+
+  it('reviews only the capped fallback set and never claims the inbox is healthy', () => {
+    const review = vi.fn();
+    render(
+      <InboxReportPanel
+        report={{ ...full, variant: 'fallback', fallbackSenderCount: 72 }}
+        onReview={review}
+        onDismiss={vi.fn()}
+        onReopen={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/good shape/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show those 2 senders' }));
+    expect(review).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/72 senders/)).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('keeps Archive disabled until the live preview count resolves', async () => {
@@ -154,7 +189,7 @@ describe('InboxReportPanel', () => {
         celebration={{ archived: 4, senders: 1 }}
       />,
     );
-    expect(screen.getByText(/nothing stands out yet/)).toBeInTheDocument();
+    expect(screen.getByText(/No sender suggestions from this snapshot/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Make a share card' })).toBeNull();
     expect(screen.queryByText(/Archived/)).toBeNull();
@@ -370,12 +405,12 @@ describe('InboxReportPanel', () => {
     );
     const report = document.querySelector('.dm-report');
     const fix = screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' });
-    const review = screen.getByRole('link', { name: 'Review them first' });
+    const review = screen.getByRole('link', { name: 'Review senders' });
     expect(report).not.toBeNull();
     expect(fix).toHaveAttribute('data-report-fix');
     expect(report).toContainElement(fix);
     expect(report).toContainElement(review);
-    expect(review).toHaveAttribute('href', '/senders?fix=s1,s2');
+    expect(review).toHaveAttribute('href', '/senders');
   });
 
   it('collapses to the reopen strip', () => {
@@ -393,7 +428,7 @@ describe('InboxReportCard', () => {
     expect(card).toHaveAttribute('data-mailbox', 'mb');
     expect(card?.tagName).toBe('DIV');
     const action = screen.getByRole('link', { name: 'Open report' });
-    expect(action).toHaveAttribute('href', '/senders');
+    expect(action).toHaveAttribute('href', '/senders#inbox-report');
     expect(action).not.toHaveAttribute('data-dm-button');
     expect(action).toHaveClass('dm-home-report-cta', 'dm-external-link', 'dm-tap-target');
     expect(action).not.toHaveClass('dm-button-link');

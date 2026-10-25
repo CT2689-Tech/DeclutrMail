@@ -6,10 +6,35 @@ import {
   reportGlyph,
   reportHeadline,
   reportSupport,
+  reportWindow,
 } from './present';
 import type { InboxReportInsight } from './types';
 
 describe('report presentation', () => {
+  it('separates recent, historical, and current Trash scopes', () => {
+    expect(
+      reportWindow({
+        id: 'mostly_unread_share',
+        pct: 40,
+        senderCount: 2,
+        sweeperExcluded: 0,
+        window: '90d',
+      }),
+    ).toBe('Last 90 days');
+    expect(reportWindow({ id: 'large_mail', bytes: 1e9, count: 200, top10Bytes: 0 })).toBe(
+      'All scanned email',
+    );
+    expect(reportWindow({ id: 'trash_bytes', bytes: 3e8, count: 200 })).toBe(
+      'In Gmail Trash at snapshot time',
+    );
+  });
+
+  it('does not claim there are ten senders in a smaller mailbox', () => {
+    expect(reportHeadline({ id: 'top10_share', pct: 100 }).sentence).toBe(
+      '100% of your scanned email comes from up to 10 senders.',
+    );
+  });
+
   it('formats sizes as MB under 1 GB and GB above it', () => {
     expect(formatReportSize(1_500_000)).toBe('1.5 MB');
     expect(formatReportSize(1_500_000_000)).toBe('1.5 GB');
@@ -86,13 +111,13 @@ describe('report presentation', () => {
 
   it('formats fallback totals without changing the one-sender sentence', () => {
     expect(reportFallback({ receivedCount: 20950, fallbackSenderCount: 1200 }).body).toContain(
-      '20,950 emails',
+      '20,950 scanned emails',
     );
     expect(reportFallback({ receivedCount: 20950, fallbackSenderCount: 1200 }).body).toContain(
       '1,200 senders',
     );
     expect(reportFallback({ receivedCount: 12, fallbackSenderCount: 1 }).body).toContain(
-      '12 emails',
+      '12 scanned emails',
     );
   });
 
@@ -105,7 +130,7 @@ describe('report presentation', () => {
     );
     expect(reportFallback({ receivedCount: 12, fallbackSenderCount: 0 }).cta).toBeNull();
     expect(reportFallback({ receivedCount: 12, fallbackSenderCount: 0 }).body).toContain(
-      'nothing stands out yet',
+      'No sender suggestions from this snapshot',
     );
   });
 });

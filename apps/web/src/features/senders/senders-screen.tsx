@@ -3142,6 +3142,26 @@ function SendersScreenContent({
                   {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
                   senderNames={reportSenderNames}
                   onResolved={noteReportResolved}
+                  onReview={(ids) => {
+                    if (!actionMailboxId) return;
+                    // Report ids can be outside the loaded page or current filters.
+                    // Only navigation identity is snapshotted; GuidedSenderCard
+                    // re-reads current facts and the normal preview owns actions.
+                    review.start(
+                      ids.map(
+                        (id, index) =>
+                          senders.find((sender) => sender.id === id) ?? {
+                            id,
+                            name: `Sender ${index + 1}`,
+                            domain: '',
+                            brandMark: false,
+                          },
+                      ),
+                      'selected',
+                    );
+                    if (onStartGuided) onStartGuided();
+                    else setLocalGuided(true);
+                  }}
                 />
               </div>
             ) : null}

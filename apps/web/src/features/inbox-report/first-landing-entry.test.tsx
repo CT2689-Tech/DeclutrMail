@@ -37,6 +37,75 @@ afterEach(() => {
 });
 
 describe('InboxReportFirstLanding', () => {
+  it('Home reopens a dismissed report, and Close still works on that deep link', async () => {
+    localStorage.setItem('dm-inbox-report-dismissed:mb-1', '1');
+    window.history.replaceState(null, '', '/senders#inbox-report');
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Close Inbox Report' }));
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeVisible();
+    expect(window.location.hash).toBe('');
+    localStorage.removeItem('dm-inbox-report-dismissed:mb-1');
+  });
+
+  it('shows loading, then a recoverable error, then the report after retry', async () => {
+    let fail: ((response: Response) => void) | undefined;
+    const response = new Promise<Response>((resolve) => {
+      fail = resolve;
+    });
+    let calls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => (++calls === 1 ? response : jsonOk({ data: report })),
+      },
+    ]);
+    const client = createTestQueryClient();
+    client.setDefaultOptions({ queries: { retry: false } });
+    render(
+      <QueryWrapper client={client}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Putting your Inbox Report together…');
+    await act(async () => {
+      fail?.(jsonServerError());
+    });
+    expect(await screen.findByRole('status')).toHaveTextContent('Couldn’t load your Inbox Report');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry report' }));
+    expect(await screen.findByRole('button', { name: 'Close Inbox Report' })).toBeVisible();
+  });
+
+  it('passes the report IDs to review without submitting cleanup', async () => {
+    const review = vi.fn();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} onReview={review} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Review them first' }));
+    expect(review).toHaveBeenCalledWith(['s1']);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it.each(['archive', 'delete'] as const)(
     'forwards the selected age from the %s add-on to the cleanup request',
     async (mode) => {

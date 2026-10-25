@@ -270,7 +270,7 @@ describe('HomeView', () => {
     const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
     expect(laterCard).toHaveTextContent(HOME_DECK.laterBody);
     expect(laterCard).not.toHaveTextContent('3');
-    expect(homePreviewReport('caught-up')?.calm).toMatch(/47 emails/);
+    expect(homePreviewReport('caught-up')?.calm).toMatch(/47 scanned emails/);
     expect(homePreviewReport('syncing')).toBeNull();
     expect(homePreviewReport('empty')).toBeNull();
     cardGate.shape = 'none';
@@ -452,6 +452,10 @@ describe('HomeView', () => {
     ).toEqual(['plan', 'primary', 'visit', 'report']);
     expect(container.querySelector('[data-home-skeleton]')).not.toBeNull();
     expect(container.querySelector('a.dm-tap-target')).not.toBeNull();
+    expect(screen.getByRole('link', { name: 'Inbox Report' })).toHaveAttribute(
+      'href',
+      '/senders#inbox-report',
+    );
   });
 
   it('does not name a plan on the route skeleton before the plan is known', () => {
@@ -471,7 +475,7 @@ describe('HomeView', () => {
     if (homeCalmTemplate() === null) {
       expect(screen.queryByTestId('home-calm')).toBeNull();
     } else {
-      expect(screen.getByTestId('home-calm')).toHaveTextContent('47 emails');
+      expect(screen.getByTestId('home-calm')).toHaveTextContent('47 scanned emails');
     }
     expect(screen.queryByText(/share card/i)).toBeNull();
     expect(screen.queryByRole('region', { name: 'Suggested next steps' })).toBeNull();

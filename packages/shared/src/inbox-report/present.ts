@@ -99,6 +99,13 @@ export function reportHeadline(insight: InboxReportInsight): ReportHeadline {
   }
 }
 
+/** Each insight names the data window its query actually uses. */
+export function reportWindow(insight: InboxReportInsight): string {
+  if (insight.id === 'mostly_unread_share') return WS5_COPY['report.window.90d'];
+  if (insight.id === 'trash_bytes') return WS5_COPY['report.window.trash'];
+  return WS5_COPY['report.window.all'];
+}
+
 export function reportSupport(insight: InboxReportInsight): string | null {
   if (insight.id === 'mostly_unread_share') {
     const copy = WS5_COPY['report.mostlyUnread.support'];

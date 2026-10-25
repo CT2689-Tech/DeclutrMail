@@ -10,6 +10,7 @@ import {
   reportGlyph,
   reportHeadline,
   reportSupport,
+  reportWindow,
   type InboxReportDto,
 } from '@declutrmail/shared/inbox-report';
 import {
@@ -270,7 +271,7 @@ export function InboxReportPanel({
       : null;
   const support = report.insights[0] ? reportSupport(report.insights[0]) : null;
   const facts = calm ? [] : report.insights.slice(1, 3);
-  const fallback = reportFallback(report);
+  const fallback = reportFallback({ ...report, fallbackSenderCount: report.fix.sendersCount });
   const fixCopy = WS5_COPY['report.fix.primary'];
   const fixLabel =
     !calm && isPluralCopy(fixCopy)
@@ -287,6 +288,7 @@ export function InboxReportPanel({
 
   return (
     <section
+      id="inbox-report"
       className="dm-report is-revealed"
       aria-label={WS5_COPY['report.eyebrow']}
       data-variant={report.variant}
@@ -322,7 +324,15 @@ export function InboxReportPanel({
           {calm ? (
             <div>
               <p>{fallback.body}</p>
-              {fallback.cta ? <button type="button">{fallback.cta}</button> : null}
+              {fallback.cta ? (
+                onReview ? (
+                  <button type="button" onClick={onReview}>
+                    {fallback.cta}
+                  </button>
+                ) : (
+                  <a href="/senders">Review senders</a>
+                )
+              ) : null}
             </div>
           ) : (
             <div>
@@ -342,7 +352,7 @@ export function InboxReportPanel({
                     </p>
                   ) : null}
                   <p className="dm-report-meta" data-report-window>
-                    {WS5_COPY['report.window.90d']}
+                    {report.insights[0] ? reportWindow(report.insights[0]) : null}
                   </p>
                   {glyph ? (
                     <div
@@ -361,9 +371,10 @@ export function InboxReportPanel({
                 </div>
                 <div className="dm-report-side">
                   {facts.map((insight) => (
-                    <p key={insight.id} data-reveal>
-                      {reportHeadline(insight).sentence}
-                    </p>
+                    <div key={insight.id} data-reveal>
+                      <p>{reportHeadline(insight).sentence}</p>
+                      <p className="dm-report-meta">{reportWindow(insight)}</p>
+                    </div>
                   ))}
                   <p>
                     {mailboxEmail ? (
@@ -405,9 +416,7 @@ export function InboxReportPanel({
                       {WS5_COPY['report.fix.review']}
                     </button>
                   ) : (
-                    <a href={`/senders?fix=${report.fix.senderKeys.join(',')}`}>
-                      {WS5_COPY['report.fix.review']}
-                    </a>
+                    <a href="/senders">Review senders</a>
                   )}
                   <button type="button" onClick={onDismiss}>
                     {WS5_COPY['report.fix.notNow']}
@@ -447,6 +456,15 @@ export function InboxReportPanel({
               ) : null}
             </div>
           )}
+          <ReportSnapshot generatedAt={report.generatedAt} />
+          {calm && mailboxEmail ? (
+            <p className="dm-report-meta">
+              {fillCopy(WS5_COPY['report.basis'], {
+                total: report.receivedCount.toLocaleString('en-US'),
+                mailboxEmail,
+              })}
+            </p>
+          ) : null}
           {!calm && resetDate ? (
             <div>
               {catalog.passEnabled ? (
@@ -510,6 +528,27 @@ export function InboxReportPanel({
       ) : null}
     </section>
   );
+}
+
+function ReportSnapshot({ generatedAt }: { generatedAt: string }) {
+  const [label, setLabel] = useState<string | null>(null);
+  useEffect(() => {
+    const date = new Date(generatedAt);
+    setLabel(
+      Number.isNaN(date.getTime())
+        ? null
+        : new Intl.DateTimeFormat('en-US', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          }).format(date),
+    );
+  }, [generatedAt]);
+  return label ? (
+    <p className="dm-report-meta">
+      Snapshot · <time dateTime={generatedAt}>{label}</time>
+    </p>
+  ) : null;
 }
 
 function reportFixRequest(

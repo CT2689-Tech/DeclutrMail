@@ -10,6 +10,7 @@ export {
   reportGlyph,
   reportHeadline,
   reportSupport,
+  reportWindow,
 } from './present';
 export type { ReportHeadline } from './present';
 export {
