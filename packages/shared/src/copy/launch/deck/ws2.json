@@ -287,7 +287,16 @@
         "other": "{n} emails in your inbox."
       },
       "preview": "Preview cleanup",
-      "review": "Review the senders",
+      "review": "Review senders",
+      "reviewTitle": {
+        "one": "1 sender worth reviewing.",
+        "other": "{n} senders worth reviewing."
+      },
+      "details": "Details",
+      "privacy": "What we store",
+      "previewLoading": "Checking current inbox emails…",
+      "previewError": "Couldn’t refresh this cleanup. Try again.",
+      "previewEmpty": "This cleanup is no longer available.",
       "safety": "You choose what happens before any email moves.",
       "progress": "Your progress",
       "allTime": "All time",

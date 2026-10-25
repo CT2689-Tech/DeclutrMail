@@ -159,6 +159,8 @@ test(homeVisitTitle, async ({ page }) => {
   try {
     const sinceLast = WS2_COPY.liveFix.home.sinceLast;
     const summary = page.getByRole('region', { name: sinceLast.eyebrow });
+    await expect(page.locator('details')).not.toHaveAttribute('open');
+    await page.getByText('Details', { exact: true }).click();
     await expect(
       summary.getByRole('heading', { name: pluralCopy(sinceLast.title, 3, { n: '3' }) }),
     ).toBeVisible();
@@ -169,6 +171,8 @@ test(homeVisitTitle, async ({ page }) => {
     await page.goto('/senders');
     await page.goto('/home');
     await page.reload();
+    await expect(page.locator('details')).not.toHaveAttribute('open');
+    await page.getByText('Details', { exact: true }).click();
     await expect(
       summary.getByRole('heading', { name: pluralCopy(sinceLast.title, 3, { n: '3' }) }),
     ).toBeVisible();

@@ -56,6 +56,7 @@ const steps = [
   { kind: 'later_due' as const, senderCount: 3, senderIds: ['c'] },
 ];
 
+/** Details starts closed; expand it to inspect history and report facts. */
 export const Full: Story<typeof HomeView> = {
   args: {
     state: ready,
@@ -126,3 +127,5 @@ export const Loading: Story<typeof HomeView> = {
 export const LoadError: Story<typeof HomeView> = {
   args: { state: { kind: 'error', error: new Error('offline'), retry: () => {} } },
 };
+
+export const LaterOnly: Story<typeof HomeView> = { args: { state: ready, nextSteps: [steps[2]!] } };

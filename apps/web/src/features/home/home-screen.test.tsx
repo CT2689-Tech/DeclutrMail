@@ -193,6 +193,29 @@ function stub({ summary, queueLength = 0, screenerPending = 0, sync, report, sno
       respond: () => (report ? report() : jsonOk({ data: EMPTY_REPORT })),
     },
     {
+      method: 'POST',
+      path: '/api/actions/preview/bulk',
+      respond: () =>
+        jsonOk({
+          data: {
+            senders: ['s1', 's2'].map((senderId) => ({
+              senderId,
+              name: senderId,
+              protected: false,
+              counts: {
+                all: 20,
+                olderThan30d: 0,
+                olderThan90d: 0,
+                olderThan180d: 0,
+                olderThan365d: 0,
+              },
+            })),
+            totals: { all: 40 },
+            protectedCount: 0,
+          },
+        }),
+    },
+    {
       method: 'GET',
       path: '/api/snoozed',
       respond: () => (snoozed ? snoozed() : jsonOk({ data: [] })),
@@ -253,8 +276,8 @@ describe('HomeScreen', () => {
     });
     expect(screen.getByRole('region', { name: 'Suggested next steps' })).toBeInTheDocument();
     expect(screen.getByText(/Each of those 29 senders had less than 10%/)).toBeInTheDocument();
-    const lead = screen.getByText('85%');
-    expect(lead.closest('[data-surface="home"]')).not.toBeNull();
+    const lead = screen.getByText(/85% of the email/);
+    expect(lead.closest('details')).not.toBeNull();
     expect(lead.closest('a')).toBeNull();
     const laterCard = screen.getByRole('link', { name: 'Open Later' }).closest('article');
     expect(laterCard).toHaveTextContent('Later');
@@ -342,7 +365,8 @@ describe('HomeScreen', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(posts).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Preview cleanup' }));
-    fireEvent.click(await screen.findByRole('button', { name: copy!.button }));
+    await waitFor(() => expect(screen.getByRole('button', { name: copy!.button })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: copy!.button }));
     await waitFor(() => expect(posts).toHaveLength(1));
     expect(posts[0]).toEqual({
       body: { mode: 'archive', senderIds: ['s1', 's2'] },
@@ -621,8 +645,12 @@ describe('HomeScreen', () => {
         <HomeScreen />
       </QueryClientProvider>,
     );
-    expect(await screen.findByText('85%')).toBeInTheDocument();
+    expect(await screen.findByText(/85% of the email/)).toBeInTheDocument();
 
+    const details = screen.getByText('Details').closest('details')!;
+    details.open = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Preview cleanup' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
     authCell.me = { ...authCell.me, activeMailboxId: 'mb-2' };
     view.rerender(
       <QueryClientProvider client={client}>
@@ -633,7 +661,8 @@ describe('HomeScreen', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(screen.queryByText('85%')).not.toBeInTheDocument();
+    expect(screen.queryByText(/85% of the email/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(screen.getByRole('status', { name: 'Loading Home' })).toBeInTheDocument();
 
     for (const release of releaseMb2) release(jsonOk({ data: EMPTY_REPORT }));
@@ -943,7 +972,7 @@ describe('HomeScreen', () => {
     await waitFor(
       () => {
         expect(
-          screen.getByRole('heading', { name: /A closer look at.*20 senders/ }),
+          screen.getByRole('heading', { name: /20 senders worth reviewing/ }),
         ).toBeInTheDocument();
         expect(client.getQueryData(undoKeys.tray('mb-1'))).toEqual([]);
         expect(client.getQueryData(undoKeys.inFlight('mb-1'))).toEqual([]);
