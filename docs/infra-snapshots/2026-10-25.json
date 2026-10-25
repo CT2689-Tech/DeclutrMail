@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-25",
-  "snapshot_ts": "2026-10-25T05:56:40Z",
+  "snapshot_ts": "2026-10-25T05:58:27Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -21,7 +21,7 @@
           "status": {
             "conditions": [
               {
-                "status": "Unknown"
+                "status": "True"
               }
             ]
           }
@@ -181,7 +181,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-api-00943-xat"
+              "revisionName": "declutrmail-api-00946-vec"
             }
           ]
         }
