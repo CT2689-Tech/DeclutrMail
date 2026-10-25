@@ -136,7 +136,7 @@ function bulkMoveParts(
 }
 
 /**
- * Toast for one unsubscribe-backlog confirmation. Deck strings only.
+ * Completed synthetic result formatter. Never use for an accepted live move.
  * `{m}` counts one-click requests. A mailto handoff uses the Send line
  * and never says a request was already sent.
  */
@@ -218,19 +218,23 @@ export function unsubscribeBacklogToast(result: UnsubscribeBacklogResult): strin
   return withSkipClauses(base, skipped);
 }
 
-/** A watched one-click result and the move's Undo pill own completion feedback. */
+/** Submission is not completion. The shared tray owns queued move results. */
 export function unsubscribeBacklogSubmissionToast(result: UnsubscribeBacklogResult): string {
-  const sender = result.senders[0];
-  if (
-    result.backlog &&
-    result.senders.length === 1 &&
-    sender?.unsubStatus === 'requested' &&
-    sender.executionActionId
-  ) {
-    return '';
+  if (!result.backlog) return unsubscribeBacklogToast(result);
+  // Manual instructions and pre-execution failures/skips are not worker outcomes.
+  // Keep those facts, without converting the requested move count into success.
+  const parts: string[] = [];
+  if (result.senders.some((sender) => sender.unsubStatus === 'manual')) {
+    parts.push(WS5_COPY['f1.toast.mailto']);
   }
-  // Manual instructions, skips and failed submissions still need a surface.
-  return unsubscribeBacklogToast(result);
+  const failed = result.senders.filter((sender) => sender.unsubStatus === 'failed').length;
+  if (failed > 0 && isPluralCopy(WS5_COPY['f1.toast.bulkFailed'])) {
+    parts.push(pluralCopy(WS5_COPY['f1.toast.bulkFailed'], failed, { k: shownCount(failed) }));
+  }
+  parts.push(
+    ...bulkSkippedClauses(result.senders.filter((sender) => sender.unsubStatus === 'skipped')),
+  );
+  return parts.join(' · ');
 }
 
 /**

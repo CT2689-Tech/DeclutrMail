@@ -26,6 +26,7 @@ function ReportStory({ fallback = false, empty = false, historical = false }) {
     ? {
         ...report,
         variant: 'fallback',
+        insights: [],
         receivedCount: 0,
         fix: { senderKeys: [], sendersCount: 0, inboxEmailCount: 0 },
         fallbackSenderCount: 0,
@@ -33,7 +34,11 @@ function ReportStory({ fallback = false, empty = false, historical = false }) {
     : {
         ...report,
         variant: fallback ? 'fallback' : 'full',
-        insights: historical ? report.insights.slice(1) : report.insights,
+        insights: historical
+          ? report.insights.slice(1)
+          : fallback
+            ? report.insights.slice(0, 1)
+            : report.insights,
       };
   return (
     <QueryClientProvider client={client}>
