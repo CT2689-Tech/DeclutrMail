@@ -87,5 +87,13 @@ unsubscribe result stayed visible as a failure while Archive was in progress.
 
 Release checkpoints are separate: this file records local verification. Required
 remote checks, merge queue, automatic deployment and public serving readback are
-recorded on the PR. Disposable account data and services will be removed after
-verification; there is no production test residue.
+recorded on the PR. Disposable account services and both containers were removed after verification;
+there is no production test residue.
+
+Full CI exposed four Triage integration assertions and the unsubscribe-backlog
+journey that explicitly expected accepted work to say Archived/Deleted. These
+were corrected to require progress without success; the journey now injects a
+complete terminal fixture and checks the actual count and Undo. Request, scope,
+failure, manual handoff and reversal assertions remain. The Triage action file
+passes all 123 tests locally and the supplemental changes were independently
+reviewed. Remote journey execution is a separate CI checkpoint.

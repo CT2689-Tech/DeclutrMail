@@ -10,8 +10,9 @@ import { BILLING_SEED } from '../helpers/seed-billing';
 /**
  * Signed-in Unsubscribe + backlog through the real screens.
  * The synthetic fixture has no Gmail token and this lane has no worker,
- * so the spec asserts the preview, the request, and the toast, then
- * deletes the rows it enqueued.
+ * so the spec asserts preview, acceptance and progress without success,
+ * then injects a terminal fixture to verify the actual count and Undo.
+ * It deletes the rows it enqueued; no provider execution is claimed.
  */
 
 const MAILTO_SENDER = {
@@ -29,11 +30,6 @@ const NO_LINK_SENDER = {
 function confirmSheet(page: Page) {
   return page.getByRole('dialog').or(page.getByRole('alertdialog'));
 }
-
-const ARCHIVE_TOAST =
-  /Unsubscribe requested · Archived \d+ emails?|Archived \d+ emails? · Unsubscribe failed:/;
-const DELETE_TOAST =
-  /Unsubscribe requested · Deleted \d+ emails?|Deleted \d+ emails? · Unsubscribe failed:/;
 
 const api = new ApiClient();
 let sql: postgres.Sql;
@@ -190,7 +186,8 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   };
   expect(triageRequest).toMatchObject({ mode: 'archive', olderThanDays: null });
   expect(triageRequest.reach ?? null).toBeNull();
-  await expect(page.getByText(ARCHIVE_TOAST)).toBeVisible();
+  await expect(page.locator('[data-dm-tray-notice="working"]')).toContainText('Archiving');
+  await expect(page.getByText(/Archived \d+ emails?/)).toHaveCount(0);
 
   // The default lane has no Gmail worker, so the archive job stays queued
   // and no undo token is issued. Stamp the journal the worker would write,
@@ -207,7 +204,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   expect(job?.id).toBeTruthy();
   const payload = JSON.stringify({
     kind: 'archive',
-    messageIds: ['e2e-bill-m1', 'e2e-bill-m2'],
+    messageIds: ['e2e-bill-m1'],
     priorLabels: ['INBOX'],
   });
   const [issued] = await sql<{ token: string }[]>`
@@ -217,16 +214,24 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   `;
   const token = issued!.token;
   await sql`
-    UPDATE action_jobs SET undo_token = ${token}, status = 'done' WHERE id = ${job!.id}
+    UPDATE action_jobs SET undo_token = ${token}, status = 'done', affected_count = 1 WHERE id = ${job!.id}
   `;
   await sql`
     INSERT INTO activity_log (
       mailbox_account_id, sender_key, source, action, affected_count, undo_token, action_job_id
     )
     VALUES (
-      ${mailboxId}, ${BILLING_SEED.archiveSenderKey}, 'triage', 'archive', 2, ${token}, ${job!.id}
+      ${mailboxId}, ${BILLING_SEED.archiveSenderKey}, 'triage', 'archive', 1, ${token}, ${job!.id}
     )
   `;
+  // One affected email differs from the two requested: completion must use the result.
+  await expect(
+    page.getByRole('button', { name: 'Show 1 recent action — undo available' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Show 1 recent action — undo available' }).click();
+  await expect(page.locator('[data-dm-undo-tray="open"]')).toContainText('1 email');
+  await expect(page.locator('[data-dm-undo-tray="open"]')).not.toContainText('2 emails');
+  await expect(page.getByRole('button', { name: `Undo Archive for ${senderName}` })).toBeVisible();
   await page.goto('/activity');
   await expectScreenMounted(page);
   const undoPost = page.waitForResponse(
@@ -250,6 +255,13 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
       AND 'INBOX' = ANY(label_ids)
   `;
   expect(stillInbox!.n).toBe(2);
+  // This lane has no worker. Complete the injected reverse state before the
+  // next decision so an earlier synthetic job does not own the sender lock.
+  await sql`
+    UPDATE action_jobs SET status = 'done', affected_count = 1
+    WHERE mailbox_account_id = ${mailboxId} AND direction = 'reverse' AND undo_token = ${token}
+  `;
+  await sql`UPDATE undo_journal SET reverted_at = now() WHERE token = ${token}`;
 
   await page.goto('/senders');
   await expectScreenMounted(page);
@@ -286,7 +298,10 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
     mode: 'delete',
     olderThanDays: null,
   });
-  await expect(page.getByText(DELETE_TOAST)).toBeVisible();
+  await expect(
+    page.locator('[data-dm-tray-notice="working"]').filter({ hasText: 'Deleting' }),
+  ).toBeVisible();
+  await expect(page.getByText(/Deleted \d+ emails?/)).toHaveCount(0);
 });
 
 test('an email-only sender opens the mailto handoff and does not claim a draft', async ({
