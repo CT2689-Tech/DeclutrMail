@@ -95,6 +95,32 @@ it('a rejected loader allows retry without releasing or replacing the attempt', 
   expect(onClosed).not.toHaveBeenCalled();
   expect(readPendingCheckout(held.workspaceId)?.attemptId).toBe('own-id');
 });
+it('only the customer closing the opened overlay reports a cause; a launch failure does not', async () => {
+  let events: Parameters<typeof launchCheckout>[1];
+  vi.mocked(launchCheckout).mockImplementationOnce(async (_session, e) => {
+    events = e;
+  });
+  const onClosed = vi.fn();
+  render(
+    <CheckoutRecovery
+      held={held}
+      mayOpen={() => true}
+      onOpened={vi.fn()}
+      onClosed={onClosed}
+      onCompleted={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Retry checkout window' }));
+  await waitFor(() => expect(events).toBeDefined());
+  events?.onClosed?.();
+  expect(onClosed).toHaveBeenLastCalledWith('overlay_closed');
+
+  onClosed.mockClear();
+  vi.mocked(launchCheckout).mockRejectedValueOnce(new CheckoutLaunchError(false));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry checkout window' }));
+  await waitFor(() => expect(onClosed).toHaveBeenCalledTimes(1));
+  expect(onClosed).toHaveBeenLastCalledWith();
+});
 it.each(['unmount', 'replace', 'expire'])(
   'fences a loader that finishes after %s',
   async (kind) => {

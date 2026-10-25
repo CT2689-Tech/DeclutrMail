@@ -224,6 +224,11 @@ export function BillingScreen({
       mounted.current = false;
     };
   }, []);
+  // The checkout attempt whose overlay was closed IN THIS TAB without a
+  // completed event. In-memory only, on purpose: after a reload or a dead
+  // tab nothing says the customer saw the overlay close, so that lock
+  // keeps the manual release.
+  const closedUnpaidAttempt = useRef<string | null>(null);
   // The pending payment lock. Persisted per workspace (localStorage) so
   // it survives reloads and reaches every tab of this browser — React
   // state alone is tab-local, and between checkout.completed and the
@@ -782,9 +787,11 @@ export function BillingScreen({
                   retryCheckout.attemptId,
                 );
               }}
-              onClosed={() => {
+              onClosed={(cause) => {
                 if (!mounted.current || currentOwner.current !== retryCheckout.workspaceId) return;
                 setHeldCheckout(null);
+                if (cause === 'overlay_closed')
+                  closedUnpaidAttempt.current = retryCheckout.attemptId;
                 surfaceAttemptLock(retryCheckout.attemptId);
               }}
             />
@@ -792,6 +799,7 @@ export function BillingScreen({
           <PaymentProcessingNotice
             phase={processingPhase}
             kind={pending.kind}
+            {...(pending.offer !== undefined ? { offer: pending.offer } : {})}
             onRelease={onReleasePendingLock}
             onProviderCheck={
               // D249 — checkout-shaped waits run the pending-checkout
@@ -799,7 +807,7 @@ export function BillingScreen({
               // subscriptions instead (an immediate upgrade leaves no
               // claim row, and the checkout ladder would call a charged
               // upgrade "no payment found"). Resume waits stay un-checked.
-              pending.kind === 'checkout' || pending.kind === 'checkout_intent'
+              !pending.offer && (pending.kind === 'checkout' || pending.kind === 'checkout_intent')
                 ? async () => {
                     const outcome = await reconcileCheckout.mutateAsync({
                       // The local record as the hint — load-bearing once
@@ -817,6 +825,27 @@ export function BillingScreen({
                       // wrote the truth — pull it; the tier flip clears
                       // this notice through the normal detector.
                       void subscriptionQuery.refetch();
+                    }
+                    // Two independent signals, never one: the customer
+                    // closed the overlay in THIS tab, AND the provider
+                    // answered that it holds no matching payment.
+                    // `none_found` only — `no_pending` can mean nothing
+                    // was asked. Re-read the lock: it may have been
+                    // released or replaced while the check was in flight.
+                    const current = readPendingCheckout(workspaceId);
+                    if (
+                      outcome === 'none_found' &&
+                      mounted.current &&
+                      currentOwner.current === workspaceId &&
+                      pending.kind === 'checkout_intent' &&
+                      pending.attemptId !== undefined &&
+                      closedUnpaidAttempt.current === pending.attemptId &&
+                      current?.kind === 'checkout_intent' &&
+                      current.attemptId === pending.attemptId
+                    ) {
+                      closedUnpaidAttempt.current = null;
+                      onReleasePendingLock();
+                      toast('Checkout closed — no payment found.');
                     }
                     return outcome;
                   }
@@ -1042,7 +1071,10 @@ export function BillingScreen({
             () => undefined,
           );
         }}
-        onCheckoutClosed={surfaceAttemptLock}
+        onCheckoutClosed={(attemptId, cause) => {
+          if (cause === 'overlay_closed') closedUnpaidAttempt.current = attemptId;
+          surfaceAttemptLock(attemptId);
+        }}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
         mayOpenCheckout={(attemptId) => {
           const record = readPendingCheckout(workspaceId);
@@ -1280,6 +1312,7 @@ function cancelErrorMessage(error: unknown): string {
 export function PaymentProcessingNotice({
   phase = 'fresh',
   kind = 'checkout',
+  offer,
   onRelease,
   onProviderCheck,
 }: {
@@ -1289,6 +1322,9 @@ export function PaymentProcessingNotice({
    *  only what actually happened (a plan change/resume made no new
    *  overlay payment). */
   kind?: PendingKind;
+  /** A Backlog Pass is a one-time purchase, not a plan upgrade — the
+   *  copy names what was actually bought. */
+  offer?: 'pass_onetime';
   /** User-asserted "no charge went through" release (unconfirmed only).
    *  Reached only through the two-step confirm below — a wrong release
    *  invites a second charge, so the risk is stated before the act
@@ -1311,8 +1347,12 @@ export function PaymentProcessingNotice({
     'idle',
   );
   const isChangeWait = kind === 'change' || kind === 'change_unconfirmed';
+  // The reconcile ladder searches SUBSCRIPTION prices; a one-time Pass
+  // payment is invisible to it, so its "none found" would be absence of
+  // evidence worded as evidence. A Pass wait never asks.
   const reconcilable =
     (kind === 'checkout' || kind === 'checkout_intent' || isChangeWait) &&
+    offer !== 'pass_onetime' &&
     onProviderCheck !== undefined;
   // checkout_intent and change_unconfirmed surface with an UNKNOWN
   // outcome at any phase — ask the provider immediately. A confirmed
@@ -1362,12 +1402,16 @@ export function PaymentProcessingNotice({
             : 'Resume accepted';
   // What the wait is FOR, per kind — a first purchase is not a "plan
   // change" and the copy must not claim one (UI-truth rule).
+  const passName = fillStory(WS1_COPY['planName.pass']);
+  const isPass = offer === 'pass_onetime';
   const awaited =
     kind === 'change' || kind === 'change_unconfirmed'
       ? 'plan change'
       : kind === 'resume'
         ? 'resume'
-        : 'plan upgrade';
+        : isPass
+          ? passName
+          : 'plan upgrade';
   const recoveryButtonStyle = {
     maxWidth: '100%',
     minWidth: 0,
@@ -1400,36 +1444,24 @@ export function PaymentProcessingNotice({
           ? `${acted} — your ${awaited} hasn’t come through yet.`
           : phase === 'slow'
             ? 'Still confirming — this is taking longer than usual.'
-            : `${acted} — confirming your plan.`}
+            : `${acted} — confirming your ${isPass ? passName : 'plan'}.`}
       </h2>
-      <dl style={{ display: 'grid', gap: 10, margin: 0 }}>
-        <div>
-          <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What we know</dt>
-          <dd style={{ margin: 0, color: color.fgSoft }}>
-            {kind === 'checkout'
-              ? 'Payment received. Your new plan will show here in a minute.'
-              : kind === 'checkout_intent'
-                ? 'Checkout started, but we do not yet know whether a payment completed.'
-                : kind === 'change_unconfirmed'
-                  ? 'We’re still confirming your plan change.'
-                  : kind === 'resume'
-                    ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
-                    : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}
-          </dd>
-        </div>
-        <div>
-          <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What happens next</dt>
-          <dd style={{ margin: 0, color: color.fgSoft }}>
-            This page keeps checking automatically. Billing changes stay paused to avoid charging
-            you twice.
-            {phase === 'fresh'
-              ? kind === 'checkout_intent'
-                ? ' Use the checkout window to continue, or check payment status if it closed.'
-                : ' Confirmation usually arrives within a minute.'
-              : ' You can wait here or return later.'}
-          </dd>
-        </div>
-      </dl>
+      <p style={{ margin: 0, color: color.fgSoft }}>
+        {kind === 'checkout'
+          ? `Payment received. Your ${isPass ? passName : 'new plan'} will show here in a minute.`
+          : kind === 'checkout_intent'
+            ? 'Checkout started, but we do not yet know whether a payment completed.'
+            : kind === 'change_unconfirmed'
+              ? 'We’re still confirming your plan change.'
+              : kind === 'resume'
+                ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
+                : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}{' '}
+        {phase === 'fresh'
+          ? kind === 'checkout_intent'
+            ? 'Billing stays paused; continue in the checkout window if it’s still open.'
+            : 'Billing stays paused; confirmation usually arrives within a minute.'
+          : 'Billing stays paused; you can wait here or return later.'}
+      </p>
       {phase !== 'fresh' ? (
         <p style={{ margin: 0, fontSize: text.sm }}>
           Need help?{' '}

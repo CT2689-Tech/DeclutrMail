@@ -180,6 +180,21 @@ export const PaymentUnconfirmed: Story<typeof BillingScreen> = {
   ),
 };
 
+/** A Backlog Pass is a one-time purchase: named as one, and never put
+ *  through the subscription check (reconcile cannot see a Pass payment). */
+export const PassUnconfirmed: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
+      <PaymentProcessingNotice
+        phase="unconfirmed"
+        kind="checkout"
+        offer="pass_onetime"
+        onRelease={() => {}}
+      />
+    </div>
+  ),
+};
+
 /** Active Pro subscriber — renewal date, provider, cancel affordance. */
 export const ProSubscriber: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>

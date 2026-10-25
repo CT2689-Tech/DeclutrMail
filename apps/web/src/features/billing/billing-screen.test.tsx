@@ -66,6 +66,7 @@ vi.mock('@/features/billing/checkout', async (importOriginal) => ({
 
 vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 
+import { ToastHost } from '@declutrmail/shared';
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, METER, meterChipLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -1420,13 +1421,13 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
     expect(screen.getByText('Free covers 1 Gmail account.')).toBeInTheDocument();
-    expect(within(notice).getByText('What we know')).toBeInTheDocument();
-    expect(within(notice).getByText('What happens next')).toBeInTheDocument();
+    expect(within(notice).queryByText('What we know')).not.toBeInTheDocument();
+    expect(within(notice).queryByText('What happens next')).not.toBeInTheDocument();
     expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
       'href',
       'mailto:support@declutrmail.com',
     );
-    expect(notice).toHaveTextContent('Billing changes stay paused to avoid charging you twice.');
+    expect(notice).toHaveTextContent('Billing stays paused');
     const currentAccess = screen.getByTestId('current-plan-card');
     expect(within(currentAccess).getByText('Free')).toBeInTheDocument();
     expect(currentAccess).toHaveTextContent(
@@ -1991,6 +1992,185 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('BillingScreen — closing checkout without paying', () => {
+  /** Reconcile / release hits, so a test can say what the screen asked. */
+  function stubCheckout(
+    reconcile: () => Response | Promise<Response>,
+    checkout: () => Response = paddleSessionOk,
+  ) {
+    const calls = { reconcile: 0, release: 0 };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      { method: 'POST', path: '/api/billing/checkout', respond: checkout },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: () => {
+          calls.reconcile += 1;
+          return reconcile();
+        },
+      },
+      {
+        method: 'DELETE',
+        path: '/api/billing/checkout/pending',
+        respond: () => {
+          calls.release += 1;
+          return jsonOk({ data: { released: true } });
+        },
+      },
+    ]);
+    return calls;
+  }
+  const outcome = (value: string) => () => jsonOk({ data: { outcome: value } });
+
+  async function openProCheckoutAndClose() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    act(() => capturedCheckoutEvents().onClosed?.());
+  }
+
+  it('overlay closed here + provider finds nothing → the reservation releases itself, no assertion asked', async () => {
+    const calls = stubCheckout(outcome('none_found'));
+    // Toasts render only through a mounted host, which BillingScreen lacks.
+    render(<ToastHost />);
+    renderScreen();
+    await openProCheckoutAndClose();
+
+    expect(await screen.findByText('Checkout closed — no payment found.')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+    );
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    // The server claim goes too — otherwise CHECKOUT_IN_FLIGHT would
+    // refuse the retry this release exists to allow.
+    await waitFor(() => expect(calls.release).toBe(1));
+    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+  });
+
+  it.each(['payment_in_progress', 'unresolved', 'no_pending', 'granted'])(
+    'overlay closed here + provider says %s → the lock stays; nothing is released for the customer',
+    async (value) => {
+      const calls = stubCheckout(outcome(value));
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      await within(notice).findByTestId('provider-check');
+      await waitFor(() => expect(calls.reconcile).toBeGreaterThanOrEqual(1));
+      expect(calls.release).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+      expect(screen.queryByText('Checkout closed — no payment found.')).not.toBeInTheDocument();
+    },
+  );
+
+  it('overlay closed here + provider unreachable → the lock stays and the manual release is offered', async () => {
+    const calls = stubCheckout(() => jsonServerError());
+    renderScreen();
+    await openProCheckoutAndClose();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(await within(notice).findByRole('button', { name: 'Review checkout' })).toBeVisible();
+    expect(calls.release).toBe(0);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+  });
+
+  it('a lock the customer was not seen closing (reload) is never released by the check alone', async () => {
+    // Same provider answer as the releasing test; the only difference is
+    // that nothing in this tab witnessed the overlay close.
+    writePendingCheckout('w', 'checkout_intent', 'free', null, 'pro', 'annual', 'reloaded-attempt');
+    const calls = stubCheckout(outcome('none_found'));
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await within(notice).findByRole('button', { name: 'Review checkout' });
+    expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
+      'no completed payment found for this checkout',
+    );
+    expect(calls.release).toBe(0);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    expect(screen.queryByText('Checkout closed — no payment found.')).not.toBeInTheDocument();
+  });
+
+  it('a post-claim failure surfaces the lock but does not count as a closed overlay', async () => {
+    const calls = stubCheckout(
+      outcome('none_found'),
+      () =>
+        new Response(
+          JSON.stringify({ error: { code: 'BILLING_PROVIDER_ERROR', message: 'unreachable' } }),
+          { status: 502, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    renderScreen();
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    await within(notice).findByRole('button', { name: 'Review checkout' });
+    expect(calls.release).toBe(0);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+  });
+
+  it('a Backlog Pass is named as a Pass and never put through the subscription check', async () => {
+    mockPassEnabled = true;
+    const calls = stubCheckout(outcome('none_found'));
+    renderScreen(null, undefined, { pricingV2: true });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Get Backlog Pass' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    act(() => capturedCheckoutEvents().onClosed?.());
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Checkout started — confirming your Backlog Pass.');
+    expect(notice).not.toHaveTextContent(/plan upgrade|confirming your plan/);
+    // Reconcile searches subscription prices; it cannot see a one-time
+    // Pass payment, so its "none found" would say nothing. No check, no
+    // claim, no auto-release — the customer's own assertion stays.
+    expect(await within(notice).findByRole('button', { name: 'Review checkout' })).toBeVisible();
+    expect(within(notice).queryByTestId('provider-check')).not.toBeInTheDocument();
+    expect(within(notice).queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument();
+    expect(calls.reconcile).toBe(0);
+    expect(calls.release).toBe(0);
+    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
+      kind: 'checkout_intent',
+      offer: 'pass_onetime',
+    });
+  });
+
+  it('an old unconfirmed Pass lock says the Pass has not come through, not a plan upgrade', async () => {
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'annual',
+        offer: 'pass_onetime',
+        at: Date.now() - 16 * 60_000,
+      }),
+    );
+    const calls = stubCheckout(outcome('none_found'));
+    renderScreen();
+
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent(
+      'Checkout reported completion — your Backlog Pass hasn’t come through yet.',
+    );
+    expect(notice).toHaveTextContent('Payment received. Your Backlog Pass will show here');
+    expect(notice).not.toHaveTextContent('plan upgrade');
+    expect(within(notice).queryByTestId('provider-check')).not.toBeInTheDocument();
+    expect(calls.reconcile).toBe(0);
   });
 });
 
@@ -5072,7 +5252,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(notice).toHaveTextContent('confirming your plan');
+    expect(notice).toHaveTextContent('confirming your Backlog Pass');
     // The unlock effect has a settled read here. Falling through to the
     // Plus matcher would already have cleared this lock.
     await act(async () => {
@@ -5143,7 +5323,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     );
 
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(notice).toHaveTextContent('Checkout started — confirming your plan.');
+    expect(notice).toHaveTextContent('Checkout started — confirming your Backlog Pass.');
     expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
       kind: 'checkout_intent',
       offer: 'pass_onetime',
