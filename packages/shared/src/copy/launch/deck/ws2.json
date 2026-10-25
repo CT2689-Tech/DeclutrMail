@@ -293,6 +293,7 @@
         "other": "{n} senders worth reviewing."
       },
       "details": "Details",
+      "senderPreview": "Some senders to review",
       "privacy": "What we store",
       "previewLoading": "Checking current inbox emails…",
       "previewError": "Couldn’t refresh this cleanup. Try again.",

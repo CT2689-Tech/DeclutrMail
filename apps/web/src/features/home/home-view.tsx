@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { ErrorState, Skeleton } from '@declutrmail/shared';
+import { Avatar, ErrorState, Skeleton } from '@declutrmail/shared';
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
 import { planName, type TierId } from '@declutrmail/shared/entitlements';
 import { QuotaChipSlot } from '@/features/shell/quota-chip-slot';
@@ -233,16 +233,6 @@ function HomeBody({
       <div className={styles.detailsBody}>
         {primary?.kind === 'unsub_archive' && (
           <div className={styles.recommendationFacts}>
-            {canPreviewFix(primary) && (
-              <p data-home-impact="">
-                {fillDeck(
-                  primary.emailCount === 1
-                    ? HOME_DECK.focus.impact.one
-                    : HOME_DECK.focus.impact.other,
-                  { n: formatCount(primary.emailCount!) },
-                )}
-              </p>
-            )}
             {canPreviewFix(primary) && (
               <Link href="/senders" className="dm-external-link dm-tap-target">
                 {HOME_DECK.focus.review}
@@ -501,6 +491,9 @@ function FixCard({
   onOpenFix: (step: HomeFixCandidate) => void;
 }) {
   if (step.kind === 'unsub_archive') {
+    const previewSenders = (step.senders ?? [])
+      .filter((sender) => step.senderIds.includes(sender.id))
+      .slice(0, 3);
     const copy = previewReport?.fix ?? homeFixCopy();
     const namesSenders = previewReport !== null || homeReportNamesSenders();
     if (copy === null || !namesSenders) return null;
@@ -516,41 +509,73 @@ function FixCard({
     const support = supportLine(supportTemplate, supportText);
     if (heading === null || label === null) return null;
     return (
-      <article className={primary ? styles.fixCard : styles.secondaryCard} data-step={step.kind}>
-        {primary ? (
-          <h3 className={styles.focusTitle}>
-            {fillDeck(
-              step.senderCount === 1
-                ? HOME_DECK.focus.reviewTitle.one
-                : HOME_DECK.focus.reviewTitle.other,
-              { n: formatCount(step.senderCount) },
-            )}
-          </h3>
-        ) : (
-          <>
-            <h3>{heading}</h3>
-            {support !== null && <p>{support}</p>}
-          </>
-        )}
-        {primary ? (
-          <div className={styles.fixActions}>
-            {canPreviewFix(step) ? (
-              <button
-                type="button"
-                data-dm-button=""
-                className={`dm-button-link ${styles.primaryAction}`}
-                onClick={() => onOpenFix(step)}
-              >
-                {HOME_DECK.focus.preview}
-              </button>
-            ) : (
-              <PrimaryLink action={{ label: HOME_DECK.focus.review, href: '/senders' }} />
-            )}
-          </div>
-        ) : (
-          <button type="button" className={styles.textButton} onClick={() => onOpenFix(step)}>
-            {label}
-          </button>
+      <article
+        className={
+          primary
+            ? `${styles.fixCard} ${previewSenders.length ? styles.withSenders : ''}`
+            : styles.secondaryCard
+        }
+        data-step={step.kind}
+      >
+        <div className={styles.recommendationMain}>
+          {primary ? (
+            <h3 className={styles.focusTitle}>
+              {fillDeck(
+                step.senderCount === 1
+                  ? HOME_DECK.focus.reviewTitle.one
+                  : HOME_DECK.focus.reviewTitle.other,
+                { n: formatCount(step.senderCount) },
+              )}
+            </h3>
+          ) : (
+            <>
+              <h3>{heading}</h3>
+              {support !== null && <p>{support}</p>}
+            </>
+          )}
+          {primary && canPreviewFix(step) && (
+            <p className={styles.impact} data-home-impact="">
+              {fillDeck(
+                step.emailCount === 1 ? HOME_DECK.focus.impact.one : HOME_DECK.focus.impact.other,
+                { n: formatCount(step.emailCount!) },
+              )}
+            </p>
+          )}
+          {primary ? (
+            <div className={styles.fixActions}>
+              {canPreviewFix(step) ? (
+                <button
+                  type="button"
+                  data-dm-button=""
+                  className={`dm-button-link ${styles.primaryAction}`}
+                  onClick={() => onOpenFix(step)}
+                >
+                  {HOME_DECK.focus.preview}
+                </button>
+              ) : (
+                <PrimaryLink action={{ label: HOME_DECK.focus.review, href: '/senders' }} />
+              )}
+            </div>
+          ) : (
+            <button type="button" className={styles.textButton} onClick={() => onOpenFix(step)}>
+              {label}
+            </button>
+          )}
+        </div>
+        {primary && previewSenders.length > 0 && (
+          <ul className={styles.senderPreview} aria-label={HOME_DECK.focus.senderPreview}>
+            {previewSenders.map((sender) => (
+              <li key={sender.id}>
+                <Avatar
+                  name={sender.name}
+                  domain={sender.domain}
+                  hasMark={sender.brandMark === true}
+                  size={36}
+                />
+                <bdi title={sender.name}>{sender.name}</bdi>
+              </li>
+            ))}
+          </ul>
         )}
       </article>
     );

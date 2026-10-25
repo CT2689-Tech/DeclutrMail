@@ -10,6 +10,9 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 
 export const homeKeys = {
   all: [...activityKeys.all, 'home'] as const,
+  // Display-only identities must not join awaited action/Undo rebuild reads.
+  senderPreview: (mailboxId: string | null, senderId: string) =>
+    ['home-sender-preview', mailboxId, senderId] as const,
   summary: () => [...activityKeys.all, 'home', 'summary'] as const,
   visit: (mailboxId: string | null) => [...activityKeys.all, 'home', 'visit', mailboxId] as const,
 };

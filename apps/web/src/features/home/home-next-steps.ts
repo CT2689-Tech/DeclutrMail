@@ -7,6 +7,13 @@ export const HOME_NEXT_STEP_KINDS = ['unsub_archive', 'largest', 'later_due'] as
 
 export type HomeNextStepKind = (typeof HOME_NEXT_STEP_KINDS)[number];
 
+export interface HomeSenderIdentity {
+  id: string;
+  name: string;
+  domain: string;
+  brandMark?: boolean;
+}
+
 export interface HomeFixCandidate {
   kind: HomeNextStepKind;
   senderCount: number;
@@ -14,6 +21,7 @@ export interface HomeFixCandidate {
   sizeLabel?: string;
   senderIds: readonly string[];
   senderName?: string;
+  senders?: readonly HomeSenderIdentity[];
 }
 
 export type HomeV1Mode = 'full' | 'fallback' | 'empty' | 'sync-failed' | 'loading' | 'error';
