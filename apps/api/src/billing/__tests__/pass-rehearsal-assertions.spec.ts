@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  discountIsUnexpired,
   discountMatchesPercent,
   discountPriceIds,
   paddleProviderCode,
@@ -24,6 +25,19 @@ import {
 } from '../../../scripts/helpers/sandbox-checkout-pay.js';
 
 describe('Backlog Pass sandbox rehearsal checks', () => {
+  it('requires an unexpired provider discount before the promotion rehearsal', () => {
+    const expiry = '2026-10-19T23:59:00Z';
+    const now = Date.parse(expiry);
+    expect(discountIsUnexpired(expiry, now - 1)).toBe(true);
+    expect(discountIsUnexpired(expiry, now)).toBe(false);
+    expect(discountIsUnexpired(expiry, now + 1)).toBe(false);
+    expect(discountIsUnexpired(null, now)).toBe(true);
+    expect(discountIsUnexpired(undefined, now)).toBe(false);
+    expect(discountIsUnexpired('invalid', now)).toBe(false);
+    expect(discountIsUnexpired(now + 1, now)).toBe(false);
+    expect(discountIsUnexpired(null, NaN)).toBe(false);
+  });
+
   it('accepts a thirty percent discount and a full-price renewal', () => {
     expect(discountMatchesPercent('5900', '1770', 30)).toBe(true);
     expect(discountMatchesPercent('5900', '0', 30)).toBe(false);

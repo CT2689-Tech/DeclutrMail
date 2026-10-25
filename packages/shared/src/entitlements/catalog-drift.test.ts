@@ -4,6 +4,7 @@ import {
   PROMO,
   PROMO_DISCOUNT_IDS,
   SANDBOX_INDIA_PRICE_IDS,
+  SANDBOX_PRICE_IDS,
   SANDBOX_PROMO_EXPIRES_AT,
   checkoutDiscountId,
 } from './pricing.config';
@@ -17,6 +18,7 @@ import {
 
 const PLUS = 'pri_plus_annual_fixture';
 const PASS = 'pri_pass_fixture';
+const ACTIVE_SANDBOX_PROMO = Date.parse('2026-10-18T12:00:00Z');
 
 const manifest: ManifestPriceCheck[] = [
   { id: PLUS, usdCents: 5900, inrPaise: 199900, taxInclusive: true },
@@ -122,9 +124,13 @@ describe('checkCatalogDrift', () => {
     expect(promoDiscountId({} as NodeJS.ProcessEnv)).toBe('FILL_ME');
     expect(checkoutDiscountId({ PADDLE_ENV: 'production' } as NodeJS.ProcessEnv)).toBeNull();
     expect(checkoutDiscountId({} as NodeJS.ProcessEnv)).toBeNull();
-    expect(checkoutDiscountId({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv)).toBe(
-      PROMO_DISCOUNT_IDS.sandbox,
-    );
+    expect(
+      checkoutDiscountId(
+        { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv,
+        undefined,
+        ACTIVE_SANDBOX_PROMO,
+      ),
+    ).toBe(PROMO_DISCOUNT_IDS.sandbox);
     expect(promoExpiresAt({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv)).toBe(
       SANDBOX_PROMO_EXPIRES_AT,
     );
@@ -134,14 +140,29 @@ describe('checkCatalogDrift', () => {
       checkoutDiscountId(
         { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv,
         SANDBOX_INDIA_PRICE_IDS.plus_annual,
+        ACTIVE_SANDBOX_PROMO,
       ),
     ).toBe(PROMO_DISCOUNT_IDS.sandbox);
     expect(
       checkoutDiscountId(
         { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv,
         SANDBOX_INDIA_PRICE_IDS.pass_onetime,
+        ACTIVE_SANDBOX_PROMO,
       ),
     ).toBe(PROMO_DISCOUNT_IDS.sandbox);
+  });
+
+  it.each([
+    SANDBOX_PRICE_IDS.plus_annual,
+    SANDBOX_PRICE_IDS.pass_onetime,
+    SANDBOX_INDIA_PRICE_IDS.plus_annual,
+    SANDBOX_INDIA_PRICE_IDS.pass_onetime,
+  ])('omits an expired sandbox discount for %s', (priceId) => {
+    const env = { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv;
+    const expiry = Date.parse(SANDBOX_PROMO_EXPIRES_AT);
+    expect(checkoutDiscountId(env, priceId, expiry - 1)).toBe(PROMO_DISCOUNT_IDS.sandbox);
+    expect(checkoutDiscountId(env, priceId, expiry)).toBeNull();
+    expect(checkoutDiscountId(env, priceId, expiry + 1)).toBeNull();
   });
 
   it('fails a USD-only price that still has an India override', () => {

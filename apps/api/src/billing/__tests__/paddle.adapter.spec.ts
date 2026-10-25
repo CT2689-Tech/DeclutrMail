@@ -444,6 +444,7 @@ function postedTransaction(fetchSpy: ReturnType<typeof vi.fn>): {
 describe('PaddleAdapter checkout + cancel', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('createCheckout posts a USD transaction and returns no price id', async () => {
@@ -514,6 +515,7 @@ describe('PaddleAdapter checkout + cancel', () => {
   });
 
   it('puts the sandbox PH30 discount on a launch-price transaction only', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T12:00:00Z'));
     const fetchSpy = stubTransaction();
     const adapter = makeAdapter({
       PADDLE_CLIENT_TOKEN: 'test_abc',
@@ -544,7 +546,30 @@ describe('PaddleAdapter checkout + cancel', () => {
     expect(postedTransaction(fetchSpy).body).not.toHaveProperty('discount_id');
   });
 
+  it.each([SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime])(
+    'creates checkout without the expired sandbox discount for %s',
+    async (providerPriceId) => {
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-24T12:00:00Z'));
+      const fetchSpy = stubTransaction();
+      const adapter = makeAdapter({
+        PADDLE_CLIENT_TOKEN: 'test_abc',
+        PADDLE_API_KEY: 'pdl_test_key',
+        PADDLE_ENV: 'sandbox',
+      });
+      const session = await adapter.createCheckout({
+        workspaceId: WORKSPACE,
+        userEmail: 'user@example.com',
+        tierId: 'plus',
+        cycle: 'annual',
+        providerPriceId,
+      });
+      expect(postedTransaction(fetchSpy).body).not.toHaveProperty('discount_id');
+      expect(session).toMatchObject({ provider: 'paddle', transactionId: LOCKED_TXN });
+    },
+  );
+
   it('puts PH30 on the Pass transaction and does not return it to the client', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T12:00:00Z'));
     const fetchSpy = stubTransaction();
     const adapter = makeAdapter({
       PADDLE_CLIENT_TOKEN: 'test_abc',
@@ -575,6 +600,7 @@ describe('PaddleAdapter checkout + cancel', () => {
   });
 
   it('charges the India price in INR only for a trusted IN country', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T12:00:00Z'));
     const fetchSpy = stubTransaction('INR');
     const adapter = makeAdapter({
       PADDLE_CLIENT_TOKEN: 'test_abc',

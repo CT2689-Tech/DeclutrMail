@@ -532,12 +532,15 @@ export function usableDiscountId(id: string | null | undefined): string | null {
   return id;
 }
 
-/** PH30 id for this price, or null while live is FILL_ME or the price is outside the offer. */
+/** Omit expired or unprovisioned discounts and prices outside the offer. */
 export function checkoutDiscountId(
   env: NodeJS.ProcessEnv = process.env,
   priceId?: string | null,
+  nowMs: number = Date.now(),
 ): string | null {
   const sandbox = env.PADDLE_ENV === 'sandbox';
+  const expiresAt = sandbox ? SANDBOX_PROMO_EXPIRES_AT : PROMO.endsAt;
+  if (!Number.isFinite(nowMs) || nowMs >= Date.parse(expiresAt)) return null;
   const id = usableDiscountId(sandbox ? PROMO_DISCOUNT_IDS.sandbox : PROMO_DISCOUNT_IDS.live);
   if (!id) return null;
   if (priceId === undefined) return id;
