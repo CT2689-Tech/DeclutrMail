@@ -113,6 +113,7 @@ for (const width of [320, 375, 1280]) {
       await expect(page.getByRole('heading', { name: 'Autopilot', exact: true })).toBeVisible();
       await expectNoViewportOverflow(page);
       await expectNoUncontainedViewportEscape(page);
+      await page.getByRole('button', { name: /^Your rules/ }).click();
       const library = page.getByRole('complementary', { name: 'Rule library' });
       const edit = library.getByRole('button', {
         name: 'Edit rule Review low-engagement senders for Archive',
@@ -122,7 +123,7 @@ for (const width of [320, 375, 1280]) {
       await expect(library.getByLabel('Confidence above (%)')).toBeVisible();
       await expectNoViewportOverflow(page);
       await expectNoUncontainedViewportEscape(page);
-      await expect(page.getByRole('heading', { name: 'Pending suggestions' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Needs review' })).not.toBeVisible();
       await library
         .getByRole('button', {
           name: 'Close rule Review low-engagement senders for Archive',
@@ -172,6 +173,7 @@ for (const viewport of [
     test.use({ viewport, reducedMotion: 'reduce' });
     test('searchable selection, saved defaults, exact preview and recovery', async ({ page }) => {
       await page.goto(url);
+      await page.getByRole('button', { name: /^Your rules/ }).click();
       await expect(page.getByRole('button', { name: /^Newsletter cleanup Delete/ })).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -203,6 +205,7 @@ for (const viewport of [
     });
     test('global pause and library disclosure remain keyboard reachable', async ({ page }) => {
       await page.goto(url);
+      await page.getByRole('button', { name: /^Your rules/ }).click();
       const pause = page.getByRole('button', { name: 'Pause all', exact: true });
       await expect(pause).toBeEnabled();
       await pause.focus();

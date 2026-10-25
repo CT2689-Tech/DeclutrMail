@@ -49,12 +49,14 @@ createRoot(document.getElementById('root')!).render(
             rules: [{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' }],
             suggestions: [],
           }}
-          renderLibrary={(renderPresetRule) => (
+          renderLibrary={(renderPresetRule, workspace, renderReview) => (
             <SenderRuleLibraryScope
               mailboxId="fixture-mailbox"
               presetRules={[{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' }]}
               presetsAvailable
               renderPresetRule={renderPresetRule}
+              workspace={workspace}
+              renderReview={renderReview}
             />
           )}
         />

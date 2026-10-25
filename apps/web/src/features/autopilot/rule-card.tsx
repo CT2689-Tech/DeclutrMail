@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { AutopilotRuleConfiguration } from '@declutrmail/shared/contracts';
 import { PresetRuleEditor } from './preset-rule-editor';
+import styles from './sender-rule-library.module.css';
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import { Switch } from '@/features/settings/switch';
@@ -203,6 +204,17 @@ export function RuleCard({
             ⌄
           </span>
         </Button>
+        {libraryRow && !detailsOpen && (
+          <Button
+            tone="ghost"
+            size="sm"
+            onClick={onTogglePreview}
+            disabled={!canEdit}
+            ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
+          >
+            {previewOpen ? 'Hide preview' : 'Preview matches'}
+          </Button>
+        )}
         {rule.mode === 'paused' && (
           <Button
             tone="default"
@@ -247,34 +259,37 @@ export function RuleCard({
               }}
             />
           )}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            <span>{lastRunSummary(rule, now !== null)}</span>
-            <span aria-hidden="true">·</span>
-            <span>
-              {pendingCount === undefined
-                ? 'Pending suggestions not loaded'
-                : pendingApproximate
-                  ? `${pendingCount}+ pending`
-                  : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
-            </span>
-            {observeSummary != null && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span>{observeSummary}</span>
-              </>
-            )}
-          </div>
+          <details className={styles.diagnostics}>
+            <summary>Rule activity and recorded matches</summary>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <span>{lastRunSummary(rule, now !== null)}</span>
+              <span aria-hidden="true">·</span>
+              <span>
+                {pendingCount === undefined
+                  ? 'Pending suggestions not loaded'
+                  : pendingApproximate
+                    ? `${pendingCount}+ pending`
+                    : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
+              </span>
+              {observeSummary != null && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>{observeSummary}</span>
+                </>
+              )}
+            </div>
 
-          {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
-          {digestSummary != null && <div style={{ color: color.fgSoft }}>{digestSummary}</div>}
+            {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
+            {digestSummary != null && <div style={{ color: color.fgSoft }}>{digestSummary}</div>}
+          </details>
 
           {!libraryRow && rule.confidenceThreshold != null && (
             <ThresholdSlider
@@ -372,7 +387,7 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
     }
     return 'Future matches run automatically; results appear in Activity.';
   }
-  return 'Matches become suggestions for your approval.';
+  return 'Matching senders wait for your review.';
 }
 
 /**

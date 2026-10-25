@@ -35,6 +35,7 @@ import { SenderRuleEditor, useDebouncedQuery } from './sender-rule-editor';
 import styles from './sender-rule-library.module.css';
 import { QuietWatch } from './quiet-watch';
 import { presetDisplayName } from './preset-labels';
+import type { AutopilotWorkspace } from './autopilot-screen';
 
 const num = (value: number) => value.toLocaleString('en-US');
 const verb = (action: SenderRuleConfig['action']) => (action === 'archive' ? 'Archive' : 'Delete');
@@ -72,10 +73,14 @@ export function SenderRuleLibrary({
   presetRules = [],
   presetsAvailable = false,
   renderPresetRule,
+  workspace,
+  renderReview,
 }: {
   presetRules?: AutopilotRuleDto[];
   presetsAvailable?: boolean;
   renderPresetRule: (rule: AutopilotRuleDto) => ReactNode;
+  workspace?: AutopilotWorkspace | undefined;
+  renderReview?: ((customMatches: ReactNode, hasCustomMatches: boolean) => ReactNode) | undefined;
 }) {
   const auth = useOptionalAuth();
   const mailboxId = auth?.me.activeMailboxId ?? undefined;
@@ -87,6 +92,8 @@ export function SenderRuleLibrary({
       presetRules={presetRules}
       presetsAvailable={presetsAvailable}
       renderPresetRule={renderPresetRule}
+      workspace={workspace}
+      renderReview={renderReview}
     />
   );
 }
@@ -96,11 +103,15 @@ export function SenderRuleLibraryScope({
   presetRules = [],
   presetsAvailable = false,
   renderPresetRule,
+  workspace,
+  renderReview,
 }: {
   mailboxId: string | undefined;
   presetRules?: AutopilotRuleDto[];
   presetsAvailable?: boolean;
   renderPresetRule: (rule: AutopilotRuleDto) => ReactNode;
+  workspace?: AutopilotWorkspace | undefined;
+  renderReview?: ((customMatches: ReactNode, hasCustomMatches: boolean) => ReactNode) | undefined;
 }) {
   const auth = useOptionalAuth();
   const email = auth ? getActiveMailboxEmail(auth.me) : undefined;
@@ -118,10 +129,15 @@ export function SenderRuleLibraryScope({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const libraryHeading = useRef<HTMLHeadingElement>(null);
+  const approvalsRef = useRef<HTMLDivElement>(null);
   const [notice, setNotice] = useState('');
   const [receipt, setReceipt] = useState<(SenderRuleExecution & { ruleName?: string }) | null>(
     null,
   );
+  useEffect(() => {
+    if (!receipt || workspace?.view === 'rules') return;
+    approvalsRef.current?.querySelector<HTMLHeadingElement>('h2')?.focus();
+  }, [receipt, workspace?.view]);
   const [filter, setFilter] = useState<'all' | 'ready' | 'paused'>('all');
   const reviewHeading = useRef<HTMLHeadingElement>(null);
   const [focusReview, setFocusReview] = useState(0);
@@ -308,6 +324,7 @@ export function SenderRuleLibraryScope({
       executeSenderRule(selected!, preview.data!.previewId, idempotency.current, mailboxId),
     onSuccess: (result) => {
       setReceipt({ ...result, ruleName: selected!.name });
+      workspace?.onViewChange('review');
       setPreviewOpen(false);
       invalidate();
       void track('autopilot_sender_rule_changed', {
@@ -346,6 +363,7 @@ export function SenderRuleLibraryScope({
     retire.reset();
   };
   const beginCreate = () => {
+    workspace?.onViewChange('rules');
     createKey.current = newIdempotencyKey();
     setEditing('create');
     setDetailOpen(true);
@@ -371,6 +389,15 @@ export function SenderRuleLibraryScope({
     setSelected(current);
     refreshPreview();
   };
+  const readyCustomRules = (rules.isError ? [] : (rules.data ?? [])).filter(
+    (rule) => rule.enabled && rule.mode === 'observe' && rule.matchingMessageCount > 0,
+  );
+  const previewBatch = (rule: SenderRule) => {
+    setSelected(rule);
+    setExcluded([]);
+    setPreviewOpen(true);
+    refreshPreview();
+  };
   const canConfirm =
     !!preview.data &&
     !previewChecking &&
@@ -394,8 +421,10 @@ export function SenderRuleLibraryScope({
       />
       <header className={styles.header}>
         <div>
-          <h1>Autopilot</h1>
-          <p>Good rules. A lighter inbox.</p>
+          <h1 ref={workspace?.headingRef} tabIndex={-1}>
+            Autopilot
+          </h1>
+          <p>Rules watch for matches. You choose what happens next.</p>
         </div>
         <div className={styles.tools}>
           <Link className={styles.settingsLink} href="/autopilot/settings">
@@ -420,6 +449,21 @@ export function SenderRuleLibraryScope({
           </Button>
         </div>
       </header>
+      {workspace && (
+        <nav className={styles.views} aria-label="Autopilot views">
+          {(['review', 'rules'] as const).map((view) => (
+            <button
+              key={view}
+              type="button"
+              aria-pressed={workspace.view === view}
+              onClick={() => workspace.onViewChange(view)}
+            >
+              {view === 'review' ? 'Needs review' : 'Your rules'}
+              {view === 'rules' && inventoryComplete && <span>{inventory.length}</span>}
+            </button>
+          ))}
+        </nav>
+      )}
       {!planLocked && rules.isSuccess && !rules.isError && presetsAvailable && (
         <QuietWatch
           watching={
@@ -427,10 +471,6 @@ export function SenderRuleLibraryScope({
           }
           automatic={runningPresets.filter((rule) => rule.mode === 'active').length}
           paused={pausableCount < (rules.data?.length ?? 0) + presetRules.length}
-          onReview={() => {
-            libraryHeading.current?.scrollIntoView({ block: 'start' });
-            libraryHeading.current?.focus({ preventScroll: true });
-          }}
         />
       )}
       {notice && (
@@ -449,7 +489,7 @@ export function SenderRuleLibraryScope({
           <Link href="/billing">Explore plans</Link>
         </section>
       ) : (
-        <div className={styles.split}>
+        <div className={styles.split} hidden={workspace?.view === 'review'}>
           <aside className={styles.library} aria-label="Rule library">
             <div id="sender-rule-library-content" className={styles.libraryContent}>
               <div className={styles.libraryHead}>
@@ -481,7 +521,11 @@ export function SenderRuleLibraryScope({
                       setCursors([]);
                     }}
                   >
-                    {value === 'all' ? 'All rules' : value === 'ready' ? 'Ready' : 'Inactive'}
+                    {value === 'all'
+                      ? 'All rules'
+                      : value === 'ready'
+                        ? 'With matches'
+                        : 'Inactive'}
                   </button>
                 ))}
               </div>
@@ -781,7 +825,58 @@ export function SenderRuleLibraryScope({
           </div>
         </div>
       )}
-      {!planLocked && mailboxId && <ApprovedBatches mailboxId={mailboxId} receipt={receipt} />}
+      <div ref={approvalsRef} hidden={workspace?.view === 'rules'}>
+        {!planLocked && mailboxId && (
+          <ApprovedBatches
+            mailboxId={mailboxId}
+            receipt={receipt}
+            compactEmpty={workspace !== undefined}
+          />
+        )}
+      </div>
+      {renderReview?.(
+        rules.isError ? (
+          <div role="alert" className={styles.card}>
+            <p className={styles.error}>Couldn’t check your saved rule matches.</p>
+            <Button tone="ghost" onClick={() => void rules.refetch()}>
+              Retry rules
+            </Button>
+          </div>
+        ) : rules.isPending ? (
+          <p role="status" className={styles.muted}>
+            Checking saved rule matches…
+          </p>
+        ) : readyCustomRules.length > 0 ? (
+          <section className={styles.readyRules} aria-label="Sender rule batches to review">
+            {readyCustomRules.map((rule) => (
+              <section className={styles.card} key={rule.id} aria-label={`Review ${rule.name}`}>
+                <div className={styles.top}>
+                  <div>
+                    <h3>{rule.name}</h3>
+                    <p className={styles.muted}>{senderRuleSummary(rule)}</p>
+                  </div>
+                  <Button
+                    tone="primary"
+                    size="sm"
+                    disabled={busy || planLocked}
+                    ariaLabel={`Preview batch for ${rule.name}`}
+                    onClick={() => previewBatch(rule)}
+                  >
+                    Preview batch
+                  </Button>
+                </div>
+                <p className={styles.muted}>
+                  {num(rule.matchingMessageCount)} matching emails from{' '}
+                  {num(rule.matchingSenderCount)}{' '}
+                  {rule.matchingSenderCount === 1 ? 'sender' : 'senders'}. Preview checks the
+                  current batch.
+                </p>
+              </section>
+            ))}
+          </section>
+        ) : null,
+        readyCustomRules.length > 0 || rules.isError || rules.isPending,
+      )}
       {pauseOpen && !planLocked && (
         <ConfirmModalFrame
           title={`Pause ${num(pausableCount)} rules?`}

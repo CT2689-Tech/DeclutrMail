@@ -1,0 +1,105 @@
+.group {
+  background: var(--dm-card);
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-lg);
+  padding: 20px;
+  min-width: 0;
+}
+.groupHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+.groupHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.groupHeader p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: var(--dm-fg-soft);
+  line-height: 1.6;
+}
+.groupHeader small {
+  color: var(--dm-fg-muted);
+  font-size: 11px;
+  display: block;
+  margin-top: 6px;
+}
+.groupActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+.row > input {
+  margin-top: 4px !important;
+}
+.row[data-selected='true'] {
+  background: var(--dm-primary-soft);
+}
+.identity,
+.identityHeading,
+.metadata,
+.evidence {
+  min-width: 0;
+}
+.name {
+  overflow-wrap: anywhere;
+}
+.email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.evidence {
+  color: var(--dm-fg-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.metadata time {
+  font-size: 11px;
+  color: var(--dm-fg-muted);
+}
+.skip {
+  margin-top: -6px;
+}
+@media (max-width: 480px) {
+  .group {
+    padding: 16px;
+  }
+  .groupHeader {
+    gap: 12px;
+  }
+  .groupActions {
+    width: 100%;
+  }
+  .groupActions > button {
+    flex: 1;
+    min-height: 44px;
+  }
+  .row {
+    gap: 10px;
+    grid-template-columns: 20px minmax(0, 1fr) 44px;
+  }
+  .skip button {
+    padding-inline: 4px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

@@ -64,6 +64,7 @@ export function PresetRuleEditor({
   );
   return (
     <form
+      className={styles.editor}
       aria-label={`Customize ${presetDisplayName(rule.presetKey, rule.name)}`}
       onSubmit={async (e) => {
         e.preventDefault();
@@ -136,7 +137,7 @@ export function PresetRuleEditor({
           </>
         )}
         {conditions.kind === 'dormant' && (
-          <>
+          <div className={styles.conditionGrid}>
             {numberField(
               'Last email more than (days ago)',
               conditions.lastSeenAfterDays,
@@ -181,9 +182,13 @@ export function PresetRuleEditor({
               5,
               10000,
             )}
-            <p className={styles.muted}>All conditions must match.</p>
-          </>
+          </div>
         )}
+        <p className={styles.muted}>
+          {conditions.kind === 'new_sender'
+            ? 'Either condition can match.'
+            : 'All conditions must match.'}
+        </p>
       </fieldset>
       <label className={styles.field} htmlFor={`${id}-action`}>
         Action

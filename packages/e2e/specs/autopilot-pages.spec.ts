@@ -93,9 +93,13 @@ test('review pages cover the backlog and recover when the older page is exhauste
   // Dismiss any consent overlay before interacting with the lower review section.
   const essential = page.getByRole('button', { name: 'Essential only', exact: true });
   if (await essential.isVisible()) await essential.click();
-  await expect(page.getByText('50 on this page · 61 waiting at last check')).toBeVisible();
+  await expect(
+    page.getByText('50 recorded sender matches on this page · 61 at last check'),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Older suggestions', exact: true }).click();
-  await expect(page.getByText('11 on this page · 61 waiting at last check')).toBeVisible();
+  await expect(
+    page.getByText('11 recorded sender matches on this page · 61 at last check'),
+  ).toBeVisible();
   await expect(page.getByText(`Matched ${matchedAt.slice(0, 10)} UTC`).first()).toBeVisible();
 
   // Dismiss each older suggestion through the real UI/API; Gmail is unchanged.
@@ -105,15 +109,21 @@ test('review pages cover the backlog and recover when the older page is exhauste
       .first()
       .click();
     await expect(
-      page.getByText(`${remaining - 1} on this page · ${50 + remaining - 1} waiting at last check`),
+      page.getByText(
+        `${remaining - 1} recorded sender match${remaining === 2 ? '' : 'es'} on this page · ${50 + remaining - 1} at last check`,
+      ),
     ).toBeVisible();
   }
-  await expect(page.getByText('No suggestions on this page', { exact: true })).toBeVisible();
+  await expect(page.getByText('No matches on this page', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Newest suggestions', exact: true }).click();
-  await expect(page.getByText('50 on this page · 50 waiting at last check')).toBeVisible();
+  await expect(
+    page.getByText('50 recorded sender matches on this page · 50 at last check'),
+  ).toBeVisible();
   await page.reload();
   await expectScreenMounted(page);
-  await expect(page.getByText('50 on this page · 50 waiting at last check')).toBeVisible();
+  await expect(
+    page.getByText('50 recorded sender matches on this page · 50 at last check'),
+  ).toBeVisible();
   const dismissed = await sql<{ count: string }[]>`
     SELECT count(*)::text AS count FROM rule_match_log
     WHERE rule_id = ${ruleId} AND resolution = 'dismissed' AND dismiss_reason = 'user'
@@ -131,6 +141,7 @@ test('customizes an existing preset through the real API and preserves it on rel
   await expectScreenMounted(page);
   const essential = page.getByRole('button', { name: 'Essential only', exact: true });
   if (await essential.isVisible()) await essential.click();
+  await page.getByRole('button', { name: /^Your rules/ }).click();
   await page.getByRole('button', { name: 'Edit rule E2E existing rule', exact: true }).click();
   const editor = page.getByRole('form', { name: 'Customize E2E existing rule', exact: true });
   await editor.getByRole('textbox', { name: 'Rule name', exact: true }).fill('E2E customized rule');
@@ -146,6 +157,7 @@ test('customizes an existing preset through the real API and preserves it on rel
   await expect(edit).toBeVisible();
   await expect(edit).toBeFocused();
   await page.reload();
+  await page.getByRole('button', { name: /^Your rules/ }).click();
   await edit.click();
   const saved = page.getByRole('form', { name: 'Customize E2E customized rule', exact: true });
   await expect(

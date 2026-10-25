@@ -459,3 +459,113 @@
   margin: 0;
   padding: 0;
 }
+
+/* Match the Senders workspace: one quiet container for the list. */
+.split[hidden] {
+  display: none;
+}
+.library {
+  background: var(--dm-card);
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-lg);
+  padding: 16px 20px;
+}
+.views {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid var(--dm-line-soft);
+}
+.views button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 0 12px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--dm-fg-soft);
+  cursor: pointer;
+}
+.views button[aria-pressed='true'] {
+  color: var(--dm-fg);
+  border-bottom-color: var(--dm-primary);
+}
+.views button span {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dm-fg-muted);
+}
+.views button:focus-visible {
+  outline: 2px solid var(--dm-ring);
+  outline-offset: 3px;
+}
+.input,
+.select {
+  background: var(--dm-card);
+}
+.conditionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+.editor {
+  padding: 0 20px 20px;
+  border: 1px solid var(--dm-line-soft);
+  border-radius: var(--dm-radius-lg);
+  background: var(--dm-bg);
+  margin-top: 12px;
+}
+.editor .input {
+  background: var(--dm-card);
+}
+.diagnostics {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.diagnostics summary {
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--dm-fg-soft);
+}
+.diagnostics summary::before {
+  content: '▸';
+  margin-right: 8px;
+}
+.diagnostics[open] summary::before {
+  content: '▾';
+}
+@media (max-width: 480px) {
+  .header .tools {
+    width: 100%;
+  }
+  .header .tools > * {
+    flex: 1;
+  }
+  .library {
+    padding: 12px 16px;
+  }
+  .editor {
+    padding: 0 12px 16px;
+  }
+  .conditionGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.readyRules {
+  display: grid;
+  gap: 16px;
+}
+.readyRules .top {
+  margin-bottom: 0;
+  flex-wrap: wrap;
+}
+.readyRules .muted {
+  margin-bottom: 0;
+}

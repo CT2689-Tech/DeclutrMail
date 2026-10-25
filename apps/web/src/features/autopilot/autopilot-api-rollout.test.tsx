@@ -139,6 +139,7 @@ it('recovers from the legacy preset surface to the growing library without a rel
     state.client.invalidateQueries({ queryKey: ['autopilot-sender-rules', 'mailbox-a'] }),
   );
   expect(await screen.findByTestId('sender-rule-library')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
   expect(
     await screen.findByRole('button', { name: /^Newsletter cleanup Delete/ }),
   ).toBeInTheDocument();
@@ -177,8 +178,8 @@ it('keeps an open preset preview and focus through recovery, then returns focus 
   expect(within(affectedRules).getAllByRole('listitem')).toHaveLength(2);
   expect(within(affectedRules).getByText('Newsletter cleanup')).toBeInTheDocument();
   cancel.focus();
-  const heading = screen.getByRole('heading', { name: 'Pending suggestions', level: 2 });
-  expect(screen.getByRole('list', { name: 'Autopilot rules' })).toBeVisible();
+  const heading = screen.getByRole('heading', { name: 'Autopilot', level: 1 });
+  expect(screen.getByRole('list', { name: 'Autopilot rules', hidden: true })).not.toBeVisible();
   expect(opener).not.toBeInTheDocument();
 
   fireEvent.click(cancel);
@@ -221,10 +222,36 @@ it('keeps a pending preset pause through recovery and completes its focus handof
   await act(async () => state.completePause());
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   await waitFor(() =>
-    expect(screen.getByRole('heading', { name: 'Pending suggestions', level: 2 })).toHaveFocus(),
+    expect(screen.getByRole('heading', { name: 'Autopilot', level: 1 })).toHaveFocus(),
   );
   await waitFor(() => expect(screen.getByRole('button', { name: 'Pause all' })).toBeDisabled());
-  expect(screen.getByRole('list', { name: 'Autopilot rules' })).toBeVisible();
+  expect(screen.getByRole('list', { name: 'Autopilot rules', hidden: true })).not.toBeVisible();
+});
+
+it('restores focus to the visible page heading when a Rules-view opener disappears', async () => {
+  const state = fixture(200);
+  const pause = await screen.findByRole('button', { name: 'Pause all' });
+  await waitFor(() => expect(pause).toBeEnabled());
+  fireEvent.click(pause);
+  let dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Pause all' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
+  const resume = await screen.findByRole('button', {
+    name: `Resume rule ${AUTO_UNSUBSCRIBE_NOISY.name}`,
+  });
+  resume.focus();
+  fireEvent.click(resume);
+  dialog = await screen.findByRole('dialog');
+  await act(async () => {
+    state.client.setQueryData(['autopilot', 'rules'], []);
+  });
+  await waitFor(() => expect(resume).not.toBeInTheDocument());
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { name: 'Autopilot', level: 1 })).toHaveFocus(),
+  );
+  expect(screen.getByRole('heading', { name: 'Autopilot', level: 1 })).toBeVisible();
 });
 
 it('preserves a visible preset opener when cancelling without capability recovery', async () => {
@@ -254,6 +281,7 @@ it('keeps the plan CTA after a downgrade even when the missing-endpoint error is
 
 it('keeps a server failure visible in the growing library instead of claiming the API is older', async () => {
   fixture(500);
+  fireEvent.click(await screen.findByRole('button', { name: /^Your rules/ }));
   expect(
     await screen.findByRole('heading', { name: 'Sender rules unavailable' }),
   ).toBeInTheDocument();

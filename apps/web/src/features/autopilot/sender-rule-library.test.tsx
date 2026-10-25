@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -186,6 +187,46 @@ async function loaded() {
 }
 
 describe('sender rule library', () => {
+  it('focuses the first approved batch after leaving the rules view', async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
+    });
+    clients.push(client);
+    function Workspace() {
+      const [view, onViewChange] = useState<'review' | 'rules'>('review');
+      return (
+        <SenderRuleLibraryScope
+          mailboxId="mailbox-a"
+          presetRules={[]}
+          presetsAvailable
+          renderPresetRule={() => null}
+          workspace={{ view, onViewChange }}
+        />
+      );
+    }
+    render(
+      <QueryClientProvider client={client}>
+        <Workspace />
+      </QueryClientProvider>,
+    );
+    await screen.findByText('1 watching');
+    expect(screen.queryByRole('heading', { name: 'Approved batches' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
+    const preview = await screen.findByRole('button', { name: `Preview batch for ${rule.name}` });
+    preview.focus();
+    fireEvent.click(preview);
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByRole('heading', { name: 'Archive 12 emails?' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Archive' }));
+    const heading = await screen.findByRole('heading', { name: 'Approved batches' });
+    await waitFor(() => expect(heading).toHaveFocus());
+    expect(heading).toBeVisible();
+    expect(screen.queryByRole('complementary', { name: 'Rule library' })).toBeNull();
+    expect(
+      await screen.findByText('Batch queued. Schedule applies before it starts.'),
+    ).toBeVisible();
+  });
+
   it('keeps a row-opened preview focused inside the dialog and returns to that row', async () => {
     setup();
     const opener = await screen.findByRole('button', { name: `Preview batch for ${rule.name}` });
@@ -221,7 +262,7 @@ describe('sender rule library', () => {
     expect(within(library).getByRole('list').children).toHaveLength(2);
     expect(within(library).getByText('Paused built-in')).toBeVisible();
     expect(within(library).getByText('Off built-in')).toBeVisible();
-    fireEvent.click(within(library).getByRole('button', { name: 'Ready' }));
+    fireEvent.click(within(library).getByRole('button', { name: 'With matches' }));
     expect(within(library).getByRole('list').children).toHaveLength(2);
     expect(within(library).queryByText('Paused built-in')).not.toBeInTheDocument();
     view.unmount();
