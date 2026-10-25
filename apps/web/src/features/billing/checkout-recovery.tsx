@@ -27,9 +27,7 @@ export function CheckoutRecovery({
   mayOpen: () => boolean;
   onOpened: () => void;
   onCompleted: () => void;
-  /** `overlay_closed` only when the customer closed the overlay opened
-   *  here; the expiry and launch-failure exits carry no cause. */
-  onClosed: (cause?: 'overlay_closed') => void;
+  onClosed: () => void;
 }) {
   const busy = useRef(false);
   const mounted = useRef(true);
@@ -62,20 +60,16 @@ export function CheckoutRecovery({
           onClosed();
           return;
         }
-        await launchCheckout(
-          held.session,
-          { onCompleted, onClosed: () => onClosed('overlay_closed') },
-          () => {
-            const current = readPendingCheckout(held.workspaceId);
-            return (
-              mounted.current &&
-              mayOpen() &&
-              Date.now() < held.expiresAt &&
-              current?.kind === 'checkout_intent' &&
-              current.attemptId === held.attemptId
-            );
-          },
-        );
+        await launchCheckout(held.session, { onCompleted, onClosed }, () => {
+          const current = readPendingCheckout(held.workspaceId);
+          return (
+            mounted.current &&
+            mayOpen() &&
+            Date.now() < held.expiresAt &&
+            current?.kind === 'checkout_intent' &&
+            current.attemptId === held.attemptId
+          );
+        });
         onOpened();
       });
     } catch (err) {

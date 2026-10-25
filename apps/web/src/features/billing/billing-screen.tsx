@@ -787,11 +787,9 @@ export function BillingScreen({
                   retryCheckout.attemptId,
                 );
               }}
-              onClosed={(cause) => {
+              onClosed={() => {
                 if (!mounted.current || currentOwner.current !== retryCheckout.workspaceId) return;
                 setHeldCheckout(null);
-                if (cause === 'overlay_closed')
-                  closedUnpaidAttempt.current = retryCheckout.attemptId;
                 surfaceAttemptLock(retryCheckout.attemptId);
               }}
             />
@@ -1412,6 +1410,28 @@ export function PaymentProcessingNotice({
         : isPass
           ? passName
           : 'plan upgrade';
+  // The heading already says what the provider did; the body adds only
+  // what it does not, then what happens next — each fact once, and no
+  // "in a minute" promise once the heading says it has not come through.
+  const known =
+    kind === 'checkout'
+      ? 'Payment received.'
+      : kind === 'checkout_intent'
+        ? 'We do not yet know whether a payment completed.'
+        : kind === 'resume'
+          ? 'No charge was started; your existing paid period continues.'
+          : kind === 'change'
+            ? 'Your new plan is not confirmed here yet.'
+            : null;
+  const next =
+    phase !== 'fresh'
+      ? 'you can wait here or return later.'
+      : kind === 'checkout_intent'
+        ? 'continue in the checkout window if it’s still open.'
+        : kind === 'checkout'
+          ? `your ${isPass ? passName : 'new plan'} will show here in a minute.`
+          : 'confirmation usually arrives within a minute.';
+  const body = [known, `Billing changes stay paused; ${next}`].filter(Boolean).join(' ');
   const recoveryButtonStyle = {
     maxWidth: '100%',
     minWidth: 0,
@@ -1446,22 +1466,7 @@ export function PaymentProcessingNotice({
             ? 'Still confirming — this is taking longer than usual.'
             : `${acted} — confirming your ${isPass ? passName : 'plan'}.`}
       </h2>
-      <p style={{ margin: 0, color: color.fgSoft }}>
-        {kind === 'checkout'
-          ? `Payment received. Your ${isPass ? passName : 'new plan'} will show here in a minute.`
-          : kind === 'checkout_intent'
-            ? 'Checkout started, but we do not yet know whether a payment completed.'
-            : kind === 'change_unconfirmed'
-              ? 'We’re still confirming your plan change.'
-              : kind === 'resume'
-                ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
-                : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}{' '}
-        {phase === 'fresh'
-          ? kind === 'checkout_intent'
-            ? 'Billing stays paused; continue in the checkout window if it’s still open.'
-            : 'Billing stays paused; confirmation usually arrives within a minute.'
-          : 'Billing stays paused; you can wait here or return later.'}
-      </p>
+      <p style={{ margin: 0, color: color.fgSoft }}>{body}</p>
       {phase !== 'fresh' ? (
         <p style={{ margin: 0, fontSize: text.sm }}>
           Need help?{' '}

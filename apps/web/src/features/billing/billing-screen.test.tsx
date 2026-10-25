@@ -1427,7 +1427,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       'href',
       'mailto:support@declutrmail.com',
     );
-    expect(notice).toHaveTextContent('Billing stays paused');
+    expect(notice).toHaveTextContent('Billing changes stay paused');
     const currentAccess = screen.getByTestId('current-plan-card');
     expect(within(currentAccess).getByText('Free')).toBeInTheDocument();
     expect(currentAccess).toHaveTextContent(
@@ -2167,7 +2167,9 @@ describe('BillingScreen — closing checkout without paying', () => {
     expect(notice).toHaveTextContent(
       'Checkout reported completion — your Backlog Pass hasn’t come through yet.',
     );
-    expect(notice).toHaveTextContent('Payment received. Your Backlog Pass will show here');
+    // No "in a minute" promise under a heading that says it has not come through.
+    expect(notice).toHaveTextContent('Payment received. Billing changes stay paused;');
+    expect(notice).not.toHaveTextContent('in a minute');
     expect(notice).not.toHaveTextContent('plan upgrade');
     expect(within(notice).queryByTestId('provider-check')).not.toBeInTheDocument();
     expect(calls.reconcile).toBe(0);
@@ -3827,7 +3829,9 @@ describe('BillingScreen — paid subscriber', () => {
     // by the paid→paid switch test above).
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Plan change unconfirmed — confirming your plan.');
-    expect(notice).toHaveTextContent('We’re still confirming your plan change.');
+    // Outcome-neutral: the provider's response was lost, so nothing is
+    // claimed as accepted or received.
+    expect(notice).not.toHaveTextContent(/accepted|received/i);
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
     expect(changeAttempts).toBe(1);

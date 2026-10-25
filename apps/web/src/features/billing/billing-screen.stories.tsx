@@ -181,7 +181,9 @@ export const PaymentUnconfirmed: Story<typeof BillingScreen> = {
 };
 
 /** A Backlog Pass is a one-time purchase: named as one, and never put
- *  through the subscription check (reconcile cannot see a Pass payment). */
+ *  through the subscription check (reconcile cannot see a Pass payment).
+ *  The check below would answer `none_found`; the notice must ignore it,
+ *  so no "Last checked" line renders. */
 export const PassUnconfirmed: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) => (
     <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
@@ -190,6 +192,36 @@ export const PassUnconfirmed: Story<typeof BillingScreen> = {
         kind="checkout"
         offer="pass_onetime"
         onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
+      />
+    </div>
+  ),
+};
+
+/** The Pass checkout closed without a completed event: the manual release
+ *  is offered at once, with no provider-check claim (see PassUnconfirmed). */
+export const PassCheckoutStarted: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
+      <PaymentProcessingNotice
+        kind="checkout_intent"
+        offer="pass_onetime"
+        onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
+      />
+    </div>
+  ),
+};
+
+/** A plan checkout the provider has no completed payment for: the
+ *  re-check and the two-step release are both offered. */
+export const CheckoutStartedNothingFound: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 200, padding: 12 }}>
+      <PaymentProcessingNotice
+        kind="checkout_intent"
+        onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
       />
     </div>
   ),
