@@ -226,6 +226,37 @@ export type FetchSubscriptionResult =
   | { kind: 'found_unmapped'; providerStatus: string };
 
 /**
+ * What the provider's OWN record of one checkout transaction says about
+ * whether it can still turn into a payment. Read-only: nothing here
+ * cancels, edits or retries anything (ADR-0046 leaves provider-side
+ * cancellation unapproved outside the sandbox).
+ *
+ *   - `unpaid`   the transaction exists, belongs to this workspace, has
+ *                not been paid, and shows NO payment attempt that is
+ *                still moving. The only answer that may support "no
+ *                payment found" — and only for THIS transaction.
+ *   - `stopped`  the provider canceled it; it can never be paid.
+ *   - `paid`     captured, or already attached to a subscription.
+ *   - `in_flight` a payment attempt exists that is not finished (3DS,
+ *                a bank or wallet still deciding, an authorization not
+ *                yet captured). Real activity — never "no payment".
+ *   - `unknown`  anything we cannot classify with certainty: a status
+ *                or attempt state we do not recognise, a missing
+ *                attempts list, a mismatched id or workspace, a 404.
+ *                Absence of evidence — it supports no claim either way.
+ */
+export type CheckoutHold = 'unpaid' | 'stopped' | 'paid' | 'in_flight' | 'unknown';
+
+/**
+ * Optional on `BillingProvider` because only some rails create a
+ * transaction we can name before payment. A provider without it is
+ * simply never "exact".
+ */
+export interface CheckoutHoldReader {
+  fetchCheckoutHold(transactionId: string, workspaceId: string): Promise<CheckoutHold>;
+}
+
+/**
  * D249 — inputs to the claimless/hint subscription search. Each
  * provider uses the keys it can actually query by: Paddle looks
  * customers up by `email`; Razorpay lists by `providerPriceIds`
@@ -509,6 +540,13 @@ export interface BillingProvider {
    * SubscriptionSearchQuery.
    */
   searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult>;
+
+  /**
+   * Exact, read-only answer for the one transaction the server created
+   * for a checkout (see CheckoutHold). Throws `BILLING_PROVIDER_ERROR`
+   * on network/5xx, which the reconciler maps to `provider_unavailable`.
+   */
+  fetchCheckoutHold?: CheckoutHoldReader['fetchCheckoutHold'];
 
   /**
    * D119 / ADR-0035 — a self-serve payment-method surface, when the rail

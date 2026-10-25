@@ -230,22 +230,30 @@ export class BillingController {
         message: parsed.error.issues[0]?.message ?? 'Invalid reconcile request.',
       });
     }
-    const outcome =
-      parsed.data.kind === 'change'
-        ? // The hint is what the caller AWAITS — it splits "nothing new"
-          // into confirmed-recorded vs change-never-happened (see the
-          // service doc; a hintless check stays neutral).
-          await this.reconciliation.reconcileWorkspaceSubscriptions(principal.workspaceId, {
-            tier: parsed.data.toTier,
-            cycle: parsed.data.cycle,
-            startedAt: parsed.data.startedAt,
-          })
-        : await this.reconciliation.reconcilePendingCheckout(principal.workspaceId, {
-            tier: parsed.data.toTier,
-            cycle: parsed.data.cycle,
-            startedAt: parsed.data.startedAt,
-          });
-    return ok({ outcome });
+    if (parsed.data.kind === 'change') {
+      // The hint is what the caller AWAITS — it splits "nothing new"
+      // into confirmed-recorded vs change-never-happened (see the
+      // service doc; a hintless check stays neutral).
+      const outcome = await this.reconciliation.reconcileWorkspaceSubscriptions(
+        principal.workspaceId,
+        {
+          tier: parsed.data.toTier,
+          cycle: parsed.data.cycle,
+          startedAt: parsed.data.startedAt,
+        },
+      );
+      return ok({ outcome });
+    }
+    const { outcome, exact } = await this.reconciliation.reconcilePendingCheckoutDetailed(
+      principal.workspaceId,
+      {
+        tier: parsed.data.toTier,
+        cycle: parsed.data.cycle,
+        startedAt: parsed.data.startedAt,
+        offer: parsed.data.offer,
+      },
+    );
+    return ok({ outcome, exact });
   }
 
   /** POST /api/billing/cancel — D118 cancel at period end (no proration). */

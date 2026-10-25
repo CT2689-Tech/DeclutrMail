@@ -15,6 +15,7 @@ import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import {
   CancellationFactsCache,
+  CheckoutHold,
   FetchSubscriptionResult,
   ProviderCancellationFacts,
   NormalizedSubscription,
@@ -83,8 +84,11 @@ function fakeAdapter(overrides: {
     id: string,
     cache?: CancellationFactsCache,
   ) => Promise<ProviderCancellationFacts | null>;
+  /** Absent by default: an adapter without the exact read is never exact. */
+  fetchCheckoutHold?: (transactionId: string, workspaceId: string) => Promise<CheckoutHold>;
 }): PaddleAdapter & RazorpayAdapter {
   return {
+    ...(overrides.fetchCheckoutHold ? { fetchCheckoutHold: overrides.fetchCheckoutHold } : {}),
     fetchSubscription:
       overrides.fetchSubscription ??
       (async (): Promise<FetchSubscriptionResult> => ({ kind: 'not_found' })),
@@ -1665,5 +1669,280 @@ describe('BillingReconciliationService (D249)', () => {
     const [row] = await db.select().from(subscriptions);
     expect(row).toMatchObject({ status: 'active', cancelSource: 'refund' });
     expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
+  });
+});
+
+describe('BillingReconciliationService — exact checkout hold (D249 follow-up)', () => {
+  let db: DrizzleDb;
+  let workspaceId: string;
+  const TXN = 'txn_01abcdefghjkmnpqrstvwxyz12';
+
+  beforeEach(async () => {
+    db = await freshDb();
+    const [ws] = await db
+      .insert(workspaces)
+      .values({ name: 'Exact WS' })
+      .returning({ id: workspaces.id });
+    workspaceId = ws!.id;
+    await db.insert(users).values({ workspaceId, email: 'owner@example.test' });
+  });
+
+  function service(paddle: PaddleAdapter, razorpay?: RazorpayAdapter) {
+    const catalog = testCatalog();
+    return new BillingReconciliationService(
+      db,
+      catalog,
+      new BillingWebhookService(db, catalog, new AutopilotReadService(db), ordinaryRefundPolicy),
+      paddle,
+      razorpay ?? (fakeAdapter({}) as RazorpayAdapter),
+    );
+  }
+
+  async function seedClaim(
+    input: {
+      provider?: 'paddle' | 'razorpay';
+      providerRef?: string | null;
+      offer?: 'pass_onetime' | null;
+    } = {},
+  ) {
+    await db.insert(pendingCheckouts).values({
+      workspaceId,
+      provider: input.provider ?? 'paddle',
+      tier: 'plus',
+      billingCycle: input.offer === 'pass_onetime' ? 'annual' : 'monthly',
+      providerRef: input.providerRef === undefined ? TXN : input.providerRef,
+      offer: input.offer ?? null,
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+    });
+  }
+
+  /** An adapter whose exact read and subscription search are both observable. */
+  function observed(opts: {
+    hold?: CheckoutHold | 'throws';
+    subs?: NormalizedSubscription[];
+    inProgress?: number;
+  }) {
+    const calls = { hold: [] as Array<[string, string]>, search: 0, fetchSub: [] as string[] };
+    const paddle = fakeAdapter({
+      ...(opts.hold === undefined
+        ? {}
+        : {
+            fetchCheckoutHold: async (id: string, ws: string) => {
+              calls.hold.push([id, ws]);
+              if (opts.hold === 'throws') throw new Error('paddle down');
+              return opts.hold!;
+            },
+          }),
+      searchSubscriptions: async () => {
+        calls.search += 1;
+        return { subscriptions: opts.subs ?? [], inProgress: opts.inProgress ?? 0 };
+      },
+      fetchSubscription: async (id) => {
+        calls.fetchSub.push(id);
+        return { kind: 'not_found' };
+      },
+    });
+    return { paddle, calls };
+  }
+
+  describe('a plan checkout', () => {
+    it.each(['unpaid', 'stopped'] as const)(
+      'empty search + transaction %s → none_found, and EXACT',
+      async (hold) => {
+        await seedClaim();
+        const { paddle, calls } = observed({ hold });
+        const result = await service(paddle).reconcilePendingCheckoutDetailed(workspaceId);
+        expect(result).toEqual({ outcome: 'none_found', exact: true });
+        expect(calls.hold).toEqual([[TXN, workspaceId]]);
+        // Additive: the search still ran, so another attempt's payment is still seen.
+        expect(calls.search).toBe(1);
+      },
+    );
+
+    it.each(['paid', 'in_flight'] as const)(
+      'empty search + transaction %s → payment_in_progress, never none_found',
+      async (hold) => {
+        await seedClaim();
+        const { paddle } = observed({ hold });
+        expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+          outcome: 'payment_in_progress',
+          exact: false,
+        });
+      },
+    );
+
+    it.each(['unknown', 'throws'] as const)(
+      'transaction %s → today’s none_found, NOT exact',
+      async (hold) => {
+        await seedClaim();
+        const { paddle } = observed({ hold });
+        expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+          outcome: 'none_found',
+          exact: false,
+        });
+      },
+    );
+
+    it('an unreadable transaction does not stop a lost grant being recovered by the search', async () => {
+      await seedClaim();
+      const { paddle } = observed({
+        hold: 'throws',
+        subs: [activePlusSub('sub_found', new Date())],
+      });
+      expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+        outcome: 'granted',
+        exact: false,
+      });
+    });
+
+    it('an unpaid transaction does not hide a subscription the search found', async () => {
+      await seedClaim();
+      const { paddle } = observed({
+        hold: 'unpaid',
+        subs: [activePlusSub('sub_found', new Date())],
+      });
+      expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+        outcome: 'granted',
+        exact: false,
+      });
+    });
+
+    it('provider activity found by the search outranks an unpaid transaction → payment_in_progress', async () => {
+      await seedClaim();
+      const { paddle } = observed({ hold: 'unpaid', inProgress: 1 });
+      expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+        outcome: 'payment_in_progress',
+        exact: false,
+      });
+    });
+
+    it('a claim with no stashed transaction (older, or the stash failed) is never exact', async () => {
+      await seedClaim({ providerRef: null });
+      const { paddle, calls } = observed({ hold: 'unpaid' });
+      expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+        outcome: 'none_found',
+        exact: false,
+      });
+      expect(calls.hold).toEqual([]);
+    });
+
+    it('a Paddle transaction id is never sent to the subscription GET', async () => {
+      await seedClaim();
+      const { paddle, calls } = observed({ hold: 'unpaid' });
+      await service(paddle).reconcilePendingCheckoutDetailed(workspaceId);
+      expect(calls.fetchSub).toEqual([]);
+    });
+
+    it('an adapter without the exact read is never exact', async () => {
+      await seedClaim();
+      const { paddle } = observed({});
+      expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+        outcome: 'none_found',
+        exact: false,
+      });
+    });
+
+    it('Razorpay is untouched: its ref still names a subscription and no exact read happens', async () => {
+      await seedClaim({ provider: 'razorpay', providerRef: 'sub_rzp_1' });
+      const fetched: string[] = [];
+      const holdCalls: string[] = [];
+      const rzp = fakeAdapter({
+        fetchSubscription: async (id) => {
+          fetched.push(id);
+          return { kind: 'not_found' };
+        },
+        fetchCheckoutHold: async (id) => {
+          holdCalls.push(id);
+          return 'unpaid';
+        },
+      });
+      const result = await service(fakeAdapter({}), rzp).reconcilePendingCheckoutDetailed(
+        workspaceId,
+      );
+      expect(result.exact).toBe(false);
+      expect(fetched).toEqual(['sub_rzp_1']);
+      expect(holdCalls).toEqual([]);
+    });
+
+    it('the plain method returns the same outcome string it always did', async () => {
+      await seedClaim();
+      const { paddle } = observed({ hold: 'unpaid' });
+      expect(await service(paddle).reconcilePendingCheckout(workspaceId)).toBe('none_found');
+    });
+  });
+
+  describe('a Backlog Pass', () => {
+    // A Pass is a one-time transaction: the subscription search can never
+    // see it, so the exact read is the only witness and nothing else may
+    // speak for it.
+    it.each(['unpaid', 'stopped'] as const)(
+      'transaction %s → none_found, exact — and the search is never consulted',
+      async (hold) => {
+        await seedClaim({ offer: 'pass_onetime' });
+        const { paddle, calls } = observed({ hold });
+        expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+          outcome: 'none_found',
+          exact: true,
+        });
+        expect(calls.search).toBe(0);
+      },
+    );
+
+    it.each(['paid', 'in_flight'] as const)(
+      'transaction %s → payment_in_progress',
+      async (hold) => {
+        await seedClaim({ offer: 'pass_onetime' });
+        const { paddle } = observed({ hold });
+        expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+          outcome: 'payment_in_progress',
+          exact: false,
+        });
+      },
+    );
+
+    it.each(['unknown', 'throws'] as const)(
+      'transaction %s → provider_unavailable: nothing asserted, never none_found',
+      async (hold) => {
+        await seedClaim({ offer: 'pass_onetime' });
+        const { paddle, calls } = observed({ hold });
+        expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+          outcome: 'provider_unavailable',
+          exact: false,
+        });
+        expect(calls.search).toBe(0);
+      },
+    );
+
+    it('a Pass claim with no stashed transaction → provider_unavailable, not a subscription answer', async () => {
+      await seedClaim({ offer: 'pass_onetime', providerRef: null });
+      const { paddle, calls } = observed({ hold: 'unpaid' });
+      expect(await service(paddle).reconcilePendingCheckoutDetailed(workspaceId)).toEqual({
+        outcome: 'provider_unavailable',
+        exact: false,
+      });
+      expect(calls.search).toBe(0);
+    });
+
+    it('a swept claim plus a Pass hint → provider_unavailable (no transaction to ask about)', async () => {
+      const { paddle, calls } = observed({ hold: 'unpaid' });
+      const result = await service(paddle).reconcilePendingCheckoutDetailed(workspaceId, {
+        tier: 'plus',
+        cycle: 'annual',
+        offer: 'pass_onetime',
+      });
+      expect(result).toEqual({ outcome: 'provider_unavailable', exact: false });
+      expect(calls.search).toBe(0);
+      expect(calls.hold).toEqual([]);
+    });
+
+    it('the claim outranks the hint: a subscription claim is not turned into a Pass by a stale hint', async () => {
+      await seedClaim({ offer: null });
+      const { paddle, calls } = observed({ hold: 'unpaid' });
+      const result = await service(paddle).reconcilePendingCheckoutDetailed(workspaceId, {
+        offer: 'pass_onetime',
+      });
+      expect(result).toEqual({ outcome: 'none_found', exact: true });
+      expect(calls.search).toBe(1);
+    });
   });
 });

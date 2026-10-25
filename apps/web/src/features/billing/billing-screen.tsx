@@ -219,6 +219,11 @@ export function BillingScreen({
   mayStartCheckout.current = false;
   const mounted = useRef(true);
   const releaseRequest = useRef<AbortController | null>(null);
+  // The checkout attempt whose overlay was closed IN THIS TAB without a
+  // completed event. In-memory only, on purpose: after a reload or a dead
+  // tab nothing says the customer saw the overlay close, so that lock
+  // keeps the manual release.
+  const closedUnpaidAttempt = useRef<string | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -880,9 +885,9 @@ export function BillingScreen({
               // subscriptions instead (an immediate upgrade leaves no
               // claim row, and the checkout ladder would call a charged
               // upgrade "no payment found"). Resume waits stay un-checked.
-              !pending.offer && (pending.kind === 'checkout' || pending.kind === 'checkout_intent')
+              pending.kind === 'checkout' || pending.kind === 'checkout_intent'
                 ? async () => {
-                    const outcome = await reconcileCheckout.mutateAsync({
+                    const answer = await reconcileCheckout.mutateAsync({
                       // The local record as the hint — load-bearing once
                       // the server claim has TTL'd and been swept (the
                       // stale-lock case): the server can still search
@@ -891,19 +896,50 @@ export function BillingScreen({
                         ? { toTier: pending.toTier }
                         : {}),
                       ...(pending.toCycle ? { cycle: pending.toCycle } : {}),
+                      ...(pending.offer ? { offer: pending.offer } : {}),
                       startedAt: new Date(pending.at).toISOString(),
                     });
+                    // A Pass is answered only from its own transaction. An
+                    // API that predates the exact read answers from the
+                    // subscription search, which cannot see a one-time
+                    // payment, so nothing it says about a Pass is evidence;
+                    // and a Pass `none_found` that is not exact is not
+                    // evidence either. (A current API sends `exact`.)
+                    const outcome =
+                      pending.offer &&
+                      (answer.exact === undefined ||
+                        (answer.outcome === 'none_found' && answer.exact !== true))
+                        ? 'provider_unavailable'
+                        : answer.outcome;
                     if (outcome === 'granted' || outcome === 'already_recorded') {
                       // The projection (or an earlier webhook) already
                       // wrote the truth — pull it; the tier flip clears
                       // this notice through the normal detector.
                       void subscriptionQuery.refetch();
                     }
+                    // Two independent signals, both required: the
+                    // customer closed the overlay in THIS tab, and Paddle's
+                    // own record of THIS checkout's transaction is unpaid
+                    // or canceled. An empty search alone never releases
+                    // anything. The release is scoped to this attempt, so
+                    // a lock another attempt took meanwhile is untouched.
+                    if (
+                      outcome === 'none_found' &&
+                      answer.exact === true &&
+                      mounted.current &&
+                      currentOwner.current === workspaceId &&
+                      pending.kind === 'checkout_intent' &&
+                      pending.attemptId !== undefined &&
+                      closedUnpaidAttempt.current === pending.attemptId
+                    ) {
+                      closedUnpaidAttempt.current = null;
+                      releaseCheckoutClaim(pending.attemptId);
+                    }
                     return outcome;
                   }
                 : pending.kind === 'change' || pending.kind === 'change_unconfirmed'
                   ? async () => {
-                      const outcome = await reconcileCheckout.mutateAsync({
+                      const { outcome } = await reconcileCheckout.mutateAsync({
                         kind: 'change',
                         // The awaited target — the server uses it to split
                         // "unchanged" into recorded-confirmation vs
@@ -1120,7 +1156,10 @@ export function BillingScreen({
           if (record?.attemptId === attemptId) setPending(record);
           releaseCheckoutClaim(attemptId);
         }}
-        onCheckoutClosed={surfaceAttemptLock}
+        onCheckoutClosed={(attemptId, cause) => {
+          if (cause === 'overlay_closed') closedUnpaidAttempt.current = attemptId;
+          surfaceAttemptLock(attemptId);
+        }}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
         mayOpenCheckout={(attemptId) => {
           const record = readPendingCheckout(workspaceId);
@@ -1397,12 +1436,8 @@ export function PaymentProcessingNotice({
     'idle',
   );
   const isChangeWait = kind === 'change' || kind === 'change_unconfirmed';
-  // The reconcile ladder searches SUBSCRIPTION prices; a one-time Pass
-  // payment is invisible to it, so its "none found" would be absence of
-  // evidence worded as evidence. A Pass wait never asks.
   const reconcilable =
     (kind === 'checkout' || kind === 'checkout_intent' || isChangeWait) &&
-    offer !== 'pass_onetime' &&
     onProviderCheck !== undefined;
   // checkout_intent and change_unconfirmed surface with an UNKNOWN
   // outcome at any phase — ask the provider immediately. A confirmed

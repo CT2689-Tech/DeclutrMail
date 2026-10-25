@@ -376,11 +376,26 @@ export const BillingReconcileRequestSchema = z.object({
    * tell those opposite truths apart and stays neutral.
    */
   kind: z.enum(['checkout', 'change']).optional(),
+  /**
+   * The wait is a Backlog Pass: a one-time purchase the subscription
+   * search cannot see. The server's own claim outranks this when it still
+   * exists; this covers a swept claim. A Pass is answered only from the
+   * exact transaction, never from the search.
+   */
+  offer: z.literal('pass_onetime').optional(),
 });
 export type BillingReconcileRequest = z.infer<typeof BillingReconcileRequestSchema>;
 
 export const BillingReconcileResponseSchema = z.object({
   outcome: BillingReconcileOutcomeSchema,
+  /**
+   * `true` only on a `none_found` that rests on Paddle's own record of
+   * the one transaction this checkout created (unpaid or canceled), not
+   * on an empty search. Absent from an older API, which a caller must
+   * read as `false`. A caller may act on a `none_found` without the
+   * customer's assertion only when this is `true`.
+   */
+  exact: z.boolean().optional(),
 });
 export type BillingReconcileResponse = z.infer<typeof BillingReconcileResponseSchema>;
 

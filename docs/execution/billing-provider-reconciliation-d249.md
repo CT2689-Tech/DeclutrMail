@@ -39,13 +39,31 @@ two phases already were).
 
 Resolution ladder for a pending claim, strictest first:
 
+0. **Paddle's own transaction (exact, read-only).** `createCheckout` already
+   creates the Paddle transaction server-side before the overlay opens, so its
+   `txn_…` id is stored on the claim (only onto the claim that call created;
+   no ledger event, so the deletion guard is untouched). Reconcile reads that
+   one transaction (`GET /transactions/{id}`) and classifies it: `unpaid`
+   (draft/ready, attempts list present, every attempt canceled or dropped),
+   `stopped` (canceled), `paid` (paid, completed, linked to a subscription, or
+   a captured attempt), `in_flight` (an attempt that is created, authorized,
+   flagged, needs action, or is pending) and `unknown` (anything it cannot
+   positively recognise, including a missing attempts list, another workspace's
+   attribution, or a 404). It is additive: `paid`/`in_flight` turn an empty
+   search into `payment_in_progress`, and `unpaid`/`stopped` make an empty
+   search's `none_found` **exact**. A Backlog Pass is answered from this read
+   alone (the subscription search cannot see a one-time payment); without it a
+   Pass answers `provider_unavailable`. It never cancels or edits anything:
+   ADR-0046 leaves provider-side cancellation unapproved outside the sandbox,
+   so "unpaid" means "not paid as of this read", not "cannot be paid later".
+   Unverified against a live Paddle account from this repo; the status and
+   attempt vocabulary is from Paddle's docs.
 1. `pending_checkouts.provider_ref` → `fetchSubscription(ref)`. Razorpay
    creates the provider-side subscription server-side at checkout, so its id
    is known before payment and stored on the claim (new nullable column;
    the "no provider session ids" note on that table is amended — the
    reconciler is a legitimate consumer, and the ref is a subscription id,
-   not a payment credential). Paddle's overlay creates the transaction
-   client-side, so `provider_ref` stays null there.
+   not a payment credential). Paddle is read differently (step 0 below).
 2. `searchSubscriptionsByEmail(owner email)` → candidates filtered to the
    claim: catalog-resolved (tier, cycle) must match, status must be a
    granting one, and `providerCreatedAt` (when present) must be ≥ claim

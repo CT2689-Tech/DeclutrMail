@@ -8,6 +8,8 @@ Auto-releasing a plan checkout when the overlay closed and reconcile said `none_
 
 The server already creates the Paddle transaction before the overlay opens (`PaddleAdapter.createCheckout`, `POST /transactions`) and returns its `txn_` id, but only Razorpay's id is stored on the claim (`billing.service.ts`, `provider_ref`). The comment in `pending-checkouts.ts` saying Paddle creates the transaction client-side is out of date.
 
-**Rule (provisional):** Never treat a reconcile `none_found` as evidence about a Pass, and never release a lock automatically on an email search. A lock may release without the customer's assertion only on direct evidence about that exact checkout: the stored `txn_` id read back from Paddle. Building that is a billing-provider change and needs its own adversarial review.
+**Follow-up built (read-only):** the claim now stores the `txn_` id, reconcile reads that exact transaction (`unpaid`, `stopped`, `paid`, `in_flight`, `unknown`; everything unrecognised is `unknown`), and a `none_found` is marked `exact` only when that read says unpaid or canceled. A Pass is answered from that read alone. ADR-0046 leaves provider-side cancellation unapproved outside the sandbox, so it never cancels: "unpaid" means unpaid as of the read, not unpayable later (a saved checkout link replaying a payment stays unproven).
+
+**Rule (provisional):** Never treat a reconcile `none_found` as evidence about a Pass, and never release a lock automatically on an email search. A lock may release without the customer's assertion only on direct evidence about that exact checkout (the stored `txn_` id read back from Paddle) plus the customer closing the overlay in this tab. Anything the read cannot positively classify is `unknown` and supports no claim.
 
 **Distillation trigger:** "promote to CLAUDE.md §8 if another one-time offer is added without a reconcile path, or if a check that cannot see its subject is found a third time"

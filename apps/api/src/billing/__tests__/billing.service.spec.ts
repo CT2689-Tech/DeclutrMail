@@ -13,7 +13,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
@@ -309,6 +309,123 @@ describe('BillingService', () => {
       .where(eq(subscriptionEvents.eventType, 'local.checkout_attempted'));
     expect(attempts).toHaveLength(3);
     expect(new Set(attempts.map((row) => row.providerEventId)).size).toBe(3);
+  });
+
+  describe('naming the Paddle transaction on the claim (D249 follow-up)', () => {
+    const TXN = 'txn_01ky067arw41802a6ssessknxh';
+    const dto = { tierId: 'plus', cycle: 'monthly', provider: 'paddle' } as const;
+
+    it('stores the server-created transaction id on THIS claim and writes no ledger artifact', async () => {
+      await service.createCheckout(principal, dto);
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBe(TXN);
+      // Account deletion's guard reads `local.checkout_artifact`; the stash
+      // must not widen what that guard sees.
+      expect(
+        await db
+          .select()
+          .from(subscriptionEvents)
+          .where(eq(subscriptionEvents.eventType, 'local.checkout_artifact')),
+      ).toHaveLength(0);
+    });
+
+    it('stores it for a Backlog Pass too', async () => {
+      vi.stubEnv('PRICING_V2', 'true');
+      vi.stubEnv('BILLING_PASS_ENABLED', 'true');
+      vi.stubEnv('PADDLE_ENV', 'production');
+      vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
+      vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_01m4ss18n1c9r5s9p973tef9v2');
+      try {
+        await service.createCheckout(principal, {
+          tierId: 'plus',
+          cycle: 'annual',
+          provider: 'paddle',
+          offer: 'pass_onetime',
+        });
+        const [claim] = await db.select().from(pendingCheckouts);
+        expect(claim).toMatchObject({ offer: 'pass_onetime', providerRef: TXN });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('a re-claim after release starts without the earlier attempt’s transaction', async () => {
+      await service.createCheckout(principal, dto);
+      await service.releasePendingCheckout(principal.workspaceId);
+      paddleCheckout.mockResolvedValueOnce({
+        provider: 'paddle',
+        kind: 'overlay',
+        transactionId: 'txn_01aaaaaaaaaaaaaaaaaaaaaaaa',
+        clientToken: 'test_tok',
+        environment: 'sandbox',
+      });
+      await service.createCheckout(principal, dto);
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBe('txn_01aaaaaaaaaaaaaaaaaaaaaaaa');
+    });
+
+    it('never stamps a transaction onto a claim it did not create', async () => {
+      // The provider call returns while a DIFFERENT claim now owns the
+      // slot (released and re-claimed in between). The earlier attempt's
+      // transaction must not label the newer claim — it would turn an
+      // unpaid transaction into exact evidence about a checkout that may
+      // be paid.
+      paddleCheckout.mockImplementationOnce(async () => {
+        await db.delete(pendingCheckouts);
+        await db.insert(pendingCheckouts).values({
+          workspaceId: principal.workspaceId,
+          provider: 'paddle',
+          tier: 'plus',
+          billingCycle: 'monthly',
+          expiresAt: new Date(Date.now() + 30 * 60_000),
+        });
+        return {
+          provider: 'paddle',
+          kind: 'overlay',
+          transactionId: TXN,
+          clientToken: 'test_tok',
+          environment: 'sandbox',
+        };
+      });
+      await service.createCheckout(principal, dto);
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBeNull();
+    });
+
+    it('finds its own claim even when the stashing session reads timestamps in another time zone', async () => {
+      // Two connections need not share a time zone, and a timestamptz's
+      // text form follows it. The claim's identity must not.
+      paddleCheckout.mockImplementationOnce(async () => {
+        await db.execute(sql`set time zone 'Asia/Kolkata'`);
+        return {
+          provider: 'paddle',
+          kind: 'overlay',
+          transactionId: TXN,
+          clientToken: 'test_tok',
+          environment: 'sandbox',
+        };
+      });
+      await service.createCheckout(principal, dto);
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBe(TXN);
+    });
+
+    it('a failed stash never fails the checkout — reconciliation just falls back', async () => {
+      const original = db.update.bind(db);
+      const failing = vi.spyOn(db, 'update').mockImplementation(((table: unknown) => {
+        if (table === pendingCheckouts) throw new Error('stash write refused');
+        return original(table as never);
+      }) as never);
+      try {
+        await expect(service.createCheckout(principal, dto)).resolves.toMatchObject({
+          transactionId: TXN,
+        });
+      } finally {
+        failing.mockRestore();
+      }
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBeNull();
+    });
   });
 
   it('checkout resolves the catalog price, records billing_region, delegates to the adapter', async () => {

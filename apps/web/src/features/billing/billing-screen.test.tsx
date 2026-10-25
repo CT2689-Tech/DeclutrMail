@@ -2284,23 +2284,33 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
   });
 });
 
-describe('BillingScreen — Backlog Pass notice', () => {
-  /** Reconcile / release hits, so a test can say what the screen asked. */
-  function stubCheckout(reconcile: () => Response | Promise<Response>) {
-    const calls = { reconcile: 0, release: 0 };
+describe('BillingScreen — closing checkout without paying (exact transaction check)', () => {
+  type Answer = { outcome: string; exact?: boolean };
+  /** What the screen asked the server, so a test can say what happened. */
+  function stubCheckout(
+    reconcile: (n: number) => Answer | Response | Promise<Answer | Response>,
+    checkout: () => Response = paddleSessionOk,
+  ) {
+    const calls = {
+      reconcile: 0,
+      release: 0,
+      bodies: [] as Array<Record<string, unknown>>,
+    };
     installFetchStub([
       {
         method: 'GET',
         path: '/api/billing/subscription',
         respond: () => jsonOk({ data: FREE_BODY }),
       },
-      { method: 'POST', path: '/api/billing/checkout', respond: paddleSessionOk },
+      { method: 'POST', path: '/api/billing/checkout', respond: checkout },
       {
         method: 'POST',
         path: '/api/billing/reconcile',
-        respond: () => {
+        respond: async (req) => {
           calls.reconcile += 1;
-          return reconcile();
+          calls.bodies.push((await req.json()) as Record<string, unknown>);
+          const answer = await reconcile(calls.reconcile);
+          return answer instanceof Response ? answer : jsonOk({ data: answer });
         },
       },
       {
@@ -2314,63 +2324,233 @@ describe('BillingScreen — Backlog Pass notice', () => {
     ]);
     return calls;
   }
-  const outcome = (value: string) => () => jsonOk({ data: { outcome: value } });
+  const exactNone: Answer = { outcome: 'none_found', exact: true };
 
-  it('a Backlog Pass is named as a Pass and never put through the subscription check', async () => {
+  async function openProCheckoutAndClose() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    act(() => capturedCheckoutEvents().onClosed?.());
+  }
+  async function openPassCheckoutAndClose() {
     mockPassEnabled = true;
-    const calls = stubCheckout(outcome('none_found'));
     renderScreen(null, undefined, { pricingV2: true });
-
     fireEvent.click(await screen.findByRole('button', { name: 'Get Backlog Pass' }));
     const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
     act(() => capturedCheckoutEvents().onClosed?.());
+  }
 
-    const notice = await screen.findByTestId('payment-processing-notice');
-    expect(notice).toHaveTextContent('Checkout started — confirming your Backlog Pass.');
-    expect(notice).not.toHaveTextContent(/plan upgrade|confirming your plan/);
-    // Reconcile searches subscription prices; it cannot see a one-time
-    // Pass payment, so its "none found" would say nothing. No check, no
-    // claim — the customer's own assertion stays the way out.
-    expect(await within(notice).findByRole('button', { name: 'Review checkout' })).toBeVisible();
-    expect(within(notice).queryByTestId('provider-check')).not.toBeInTheDocument();
-    expect(within(notice).queryByRole('button', { name: 'Check again' })).not.toBeInTheDocument();
-    expect(calls.reconcile).toBe(0);
-    expect(calls.release).toBe(0);
-    expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
-      kind: 'checkout_intent',
-      offer: 'pass_onetime',
+  describe('a plan checkout', () => {
+    it('overlay closed here + Paddle’s own record says unpaid → the hold releases itself', async () => {
+      const calls = stubCheckout(() => exactNone);
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      await waitFor(() =>
+        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+      );
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+      // The SERVER claim goes too — otherwise CHECKOUT_IN_FLIGHT would
+      // refuse the retry this release exists to allow.
+      expect(calls.release).toBe(1);
+      expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+      expect(calls.bodies[0]).not.toHaveProperty('offer');
+    });
+
+    it.each([
+      ['an empty search that is not exact', { outcome: 'none_found', exact: false }],
+      ['an API that predates the field', { outcome: 'none_found' }],
+      ['payment in progress', { outcome: 'payment_in_progress', exact: false }],
+      ['an unresolved projection', { outcome: 'unresolved', exact: false }],
+      ['nothing pending', { outcome: 'no_pending', exact: false }],
+      ['a granted payment', { outcome: 'granted', exact: false }],
+      ['an unreachable provider', { outcome: 'provider_unavailable', exact: false }],
+    ])('overlay closed here + %s → the lock stays for the customer', async (_label, answer) => {
+      const calls = stubCheckout(() => answer);
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      await within(notice).findByTestId('provider-check');
+      expect(calls.release).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    });
+
+    it('a server error leaves the lock and the manual release', async () => {
+      const calls = stubCheckout(() => jsonServerError());
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      expect(await within(notice).findByRole('button', { name: 'Review checkout' })).toBeVisible();
+      expect(calls.release).toBe(0);
+    });
+
+    it('exact evidence without the close in this tab (a reload) never releases', async () => {
+      // Same answer as the releasing test; the only difference is that
+      // nothing in this tab saw the overlay close.
+      writePendingCheckout(
+        'w',
+        'checkout_intent',
+        'free',
+        null,
+        'pro',
+        'annual',
+        'reloaded-attempt',
+      );
+      const calls = stubCheckout(() => exactNone);
+      renderScreen();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      await within(notice).findByRole('button', { name: 'Review checkout' });
+      expect(calls.release).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    });
+
+    it('a post-claim failure surfaces the lock but is not a closed overlay', async () => {
+      const calls = stubCheckout(
+        () => exactNone,
+        () =>
+          new Response(
+            JSON.stringify({ error: { code: 'BILLING_PROVIDER_ERROR', message: 'unreachable' } }),
+            { status: 502, headers: { 'content-type': 'application/json' } },
+          ),
+      );
+      renderScreen();
+      fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Continue to checkout' }));
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      await within(notice).findByRole('button', { name: 'Review checkout' });
+      expect(calls.release).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    });
+
+    it('a lock replaced while the check is in flight is not released by the old answer', async () => {
+      let answer: (r: Response) => void = () => undefined;
+      const calls = stubCheckout(
+        () => new Promise<Response>((resolve) => (answer = resolve)) as Promise<Response>,
+      );
+      renderScreen();
+      await openProCheckoutAndClose();
+      await waitFor(() => expect(calls.reconcile).toBe(1));
+
+      // Another attempt takes the slot while Paddle is still being asked.
+      window.localStorage.setItem(
+        pendingCheckoutKey('w'),
+        JSON.stringify({
+          workspaceId: 'w',
+          kind: 'checkout_intent',
+          fromTier: 'free',
+          fromCycle: null,
+          toTier: 'plus',
+          toCycle: 'monthly',
+          at: Date.now(),
+          attemptId: 'a-newer-attempt',
+        }),
+      );
+      await act(async () => answer(jsonOk({ data: exactNone })));
+
+      expect(calls.release).toBe(0);
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
+        attemptId: 'a-newer-attempt',
+      });
+    });
+
+    it('“Check again” after payment in progress releases once Paddle says unpaid', async () => {
+      const calls = stubCheckout((n) =>
+        n === 1 ? { outcome: 'payment_in_progress', exact: false } : exactNone,
+      );
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      fireEvent.click(await within(notice).findByRole('button', { name: 'Check again' }));
+      await waitFor(() =>
+        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+      );
+      expect(calls.release).toBe(1);
     });
   });
 
-  it('an old unconfirmed Pass lock says the Pass has not come through, not a plan upgrade', async () => {
-    window.localStorage.setItem(
-      pendingCheckoutKey('w'),
-      JSON.stringify({
-        workspaceId: 'w',
-        kind: 'checkout',
-        fromTier: 'free',
-        fromCycle: null,
-        toTier: 'plus',
-        toCycle: 'annual',
-        offer: 'pass_onetime',
-        at: Date.now() - 16 * 60_000,
-      }),
-    );
-    const calls = stubCheckout(outcome('none_found'));
-    renderScreen();
+  describe('a Backlog Pass', () => {
+    it('is named as a Pass, asked about by offer, and released by its own transaction', async () => {
+      const calls = stubCheckout(() => exactNone);
+      await openPassCheckoutAndClose();
 
-    const notice = await screen.findByTestId('payment-processing-notice');
-    expect(notice).toHaveTextContent(
-      'Checkout reported completion — your Backlog Pass hasn’t come through yet.',
+      await waitFor(() =>
+        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
+      );
+      expect(calls.bodies[0]).toMatchObject({ offer: 'pass_onetime' });
+      expect(calls.release).toBe(1);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    });
+
+    it('while the check is unresolved the notice reads as a Pass and offers nothing false', async () => {
+      stubCheckout(() => ({ outcome: 'payment_in_progress', exact: false }));
+      await openPassCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      expect(notice).toHaveTextContent('Checkout started — confirming your Backlog Pass.');
+      expect(notice).not.toHaveTextContent(/plan upgrade|confirming your plan/);
+      await within(notice).findByTestId('provider-check');
+      expect(
+        within(notice).queryByRole('button', { name: 'Review checkout' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['an API that predates the exact read', { outcome: 'none_found' }],
+      ['a none_found that is not exact', { outcome: 'none_found', exact: false }],
+      ['a granted answer from the subscription search', { outcome: 'granted' }],
+    ])(
+      'against %s, nothing is claimed about a Pass and nothing is released',
+      async (_label, answer) => {
+        const calls = stubCheckout(() => answer);
+        await openPassCheckoutAndClose();
+
+        const notice = await screen.findByTestId('payment-processing-notice');
+        const check = await within(notice).findByTestId('provider-check');
+        expect(check).toHaveTextContent('couldn’t check with the payment provider automatically');
+        expect(check).not.toHaveTextContent('no completed payment found');
+        // The manual two-step stays the way out.
+        expect(
+          await within(notice).findByRole('button', { name: 'Review checkout' }),
+        ).toBeVisible();
+        expect(calls.release).toBe(0);
+      },
     );
-    // No "in a minute" promise under a heading that says it has not come through.
-    expect(notice).toHaveTextContent('Payment received. Billing changes stay paused;');
-    expect(notice).not.toHaveTextContent('in a minute');
-    expect(notice).not.toHaveTextContent('plan upgrade');
-    expect(within(notice).queryByTestId('provider-check')).not.toBeInTheDocument();
-    expect(calls.reconcile).toBe(0);
+
+    it('an old unconfirmed Pass lock keeps its manual release even on exact evidence', async () => {
+      window.localStorage.setItem(
+        pendingCheckoutKey('w'),
+        JSON.stringify({
+          workspaceId: 'w',
+          kind: 'checkout',
+          fromTier: 'free',
+          fromCycle: null,
+          toTier: 'plus',
+          toCycle: 'annual',
+          offer: 'pass_onetime',
+          at: Date.now() - 16 * 60_000,
+        }),
+      );
+      const calls = stubCheckout(() => exactNone);
+      renderScreen();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      expect(notice).toHaveTextContent(
+        'Checkout reported completion — your Backlog Pass hasn’t come through yet.',
+      );
+      // No "in a minute" promise under a heading that says it has not come through.
+      expect(notice).toHaveTextContent('Payment received. Billing changes stay paused;');
+      expect(notice).not.toHaveTextContent('in a minute');
+      expect(notice).not.toHaveTextContent('plan upgrade');
+      await within(notice).findByRole('button', { name: 'Review checkout' });
+      expect(calls.release).toBe(0);
+    });
   });
 });
 

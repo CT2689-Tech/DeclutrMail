@@ -22,15 +22,26 @@ import { apiPost } from '@/lib/api/client';
 
 import { billingMutationFailure } from './mutation-failure';
 
+export interface ReconcileResult {
+  outcome: BillingReconcileOutcome;
+  /**
+   * `true` only when a `none_found` rests on the provider's own record of
+   * the one transaction this checkout created. `undefined` means the API
+   * predates the field (a web deploy ahead of its API) — read it as "not
+   * exact", and never as "exact".
+   */
+  exact: BillingReconcileResponse['exact'];
+}
+
 export function useReconcileCheckout() {
-  return useMutation<BillingReconcileOutcome, Error, BillingReconcileRequest>({
+  return useMutation<ReconcileResult, Error, BillingReconcileRequest>({
     onError: billingMutationFailure('reconcile'),
     mutationFn: async (hint) => {
       // The local pending record rides along as a search hint so a
       // stale lock (server claim already TTL'd + swept) still gets a
       // real provider search instead of `no_pending`.
       const envelope = await apiPost<BillingReconcileResponse>('/api/billing/reconcile', hint);
-      return envelope.data.outcome;
+      return { outcome: envelope.data.outcome, exact: envelope.data.exact };
     },
   });
 }

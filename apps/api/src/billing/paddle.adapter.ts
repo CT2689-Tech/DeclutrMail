@@ -32,6 +32,7 @@ import { checkoutDiscountId, selectPaddleCheckoutPrice } from '@declutrmail/shar
 import { AppException } from '../common/app-exception.js';
 import type {
   BillingProvider,
+  CheckoutHold,
   CreateCheckoutInput,
   FetchSubscriptionResult,
   NormalizedBillingEvent,
@@ -194,7 +195,23 @@ interface PaddleTransaction {
    *  `subscription_payment_method_change` verification artifact below —
    *  QA-billing-20260901-07. */
   origin?: string | null;
+  /** Payment attempts. Read only by `fetchCheckoutHold`, which treats a
+   *  missing list as "cannot see the attempts", never as "none". */
+  payments?: Array<{ status?: unknown } | null> | null;
 }
+
+/** Payment-attempt states Paddle documents as still moving (3DS, a bank
+ *  or wallet deciding, an authorization not yet captured). Source:
+ *  developer.paddle.com/webhooks/transactions/transaction-completed. */
+const PADDLE_ATTEMPT_IN_FLIGHT = new Set([
+  'created',
+  'authorized',
+  'authorized_flagged',
+  'action_required',
+  'pending_no_action_required',
+]);
+/** Attempt states that are over without a payment. */
+const PADDLE_ATTEMPT_ENDED = new Set(['canceled', 'dropped']);
 
 /** ADR-0046: fixture-only preparation; never returned by production checkout. */
 export interface SandboxCheckoutIdentity {
@@ -1577,6 +1594,57 @@ export class PaddleAdapter implements BillingProvider {
       kind: 'found',
       subscription: { ...normalized, providerCreatedAt: sub.created_at ?? null },
     };
+  }
+
+  /**
+   * What Paddle's record of ONE checkout transaction says about whether
+   * it can still become a payment — `GET /transactions/{id}`, nothing
+   * else. Read-only by design: ADR-0046 leaves provider-side
+   * cancellation unapproved outside the sandbox, so this never edits or
+   * cancels, and `unpaid` therefore means "not paid as of this read",
+   * not "cannot be paid later".
+   *
+   * FAILS CLOSED. Only a shape this positively recognises is `unpaid`:
+   * status `draft`/`ready`, an attempts list that is present, and every
+   * attempt either canceled or dropped. A missing list, a status or an
+   * attempt state outside the documented sets, a different workspace's
+   * attribution, a mismatched id or a 404 are all `unknown` — which
+   * supports no claim at all. A thrown error is the caller's
+   * `provider_unavailable`.
+   *
+   * Sourced from Paddle's docs (not exercised against a live account
+   * from this repo): transaction statuses draft/ready/billed/paid/
+   * completed/canceled/past_due, and payment-attempt states created/
+   * authorized/authorized_flagged/captured/canceled/action_required/
+   * pending_no_action_required/dropped.
+   */
+  async fetchCheckoutHold(transactionId: string, workspaceId: string): Promise<CheckoutHold> {
+    if (!/^txn_[a-z\d]{26}$/.test(transactionId)) return 'unknown';
+    const body = await this.authedGet(
+      `/transactions/${encodeURIComponent(transactionId)}`,
+      `checkout_hold txn=${transactionId}`,
+    );
+    if (body === null) return 'unknown';
+    const t = (body as { data?: PaddleTransaction }).data;
+    if (!t || t.id !== transactionId || typeof t.status !== 'string') return 'unknown';
+    // The id came from OUR claim row, but a mismatch here would mean the
+    // read answered about someone else's checkout — never classify it.
+    if (verifiedWorkspaceId(t.custom_data, this.env.PADDLE_WEBHOOK_SECRET) !== workspaceId)
+      return 'unknown';
+    if (typeof t.subscription_id === 'string' || t.status === 'paid' || t.status === 'completed')
+      return 'paid';
+    if (t.status === 'canceled') return 'stopped';
+    if (t.status !== 'draft' && t.status !== 'ready') return 'unknown';
+    if (!Array.isArray(t.payments)) return 'unknown';
+    let sawUnrecognised = false;
+    for (const attempt of t.payments) {
+      const state = attempt?.status;
+      if (state === 'captured') return 'paid';
+      if (typeof state === 'string' && PADDLE_ATTEMPT_IN_FLIGHT.has(state)) return 'in_flight';
+      if (typeof state === 'string' && PADDLE_ATTEMPT_ENDED.has(state)) continue;
+      sawUnrecognised = true;
+    }
+    return sawUnrecognised ? 'unknown' : 'unpaid';
   }
 
   /**

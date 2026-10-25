@@ -307,7 +307,16 @@ export class BillingService {
           },
           setWhere: sql`${pendingCheckouts.expiresAt} < now()`,
         })
-        .returning({ workspaceId: pendingCheckouts.workspaceId });
+        .returning({
+          workspaceId: pendingCheckouts.workspaceId,
+          // Epoch seconds as text, not a Date and not a timestamp's own text:
+          // the insert path stamps microseconds, which a JS Date would round
+          // to milliseconds, and a timestamptz's text form follows the
+          // session time zone, which two connections need not share. Epoch
+          // text is exact and zone-free. Identifies THIS claim for the
+          // stash below.
+          claimStamp: sql<string>`extract(epoch from ${pendingCheckouts.createdAt})::text`,
+        });
       if (claim.length > 0)
         await tx.insert(subscriptionEvents).values({
           provider: dto.provider,
@@ -401,6 +410,32 @@ export class BillingService {
           .update(pendingCheckouts)
           .set({ providerRef: session.subscriptionId })
           .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
+      } catch (err) {
+        this.logger.warn(
+          `billing.checkout.provider_ref_stash_failed workspace=${principal.workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
+    // A Paddle checkout is a transaction the server has already created
+    // (`session.transactionId`). Naming it on the claim lets
+    // reconciliation ask Paddle about THIS checkout exactly instead of
+    // searching by email. Claim row only — no ledger event, so account
+    // deletion's artifact guard is unchanged. Written only onto the claim
+    // this call created, so a released-and-reclaimed slot can never carry
+    // an earlier attempt's transaction. Best-effort: a failed write only
+    // means reconciliation falls back to what it did before.
+    if (session.provider === 'paddle' && session.transactionId) {
+      try {
+        await this.db
+          .update(pendingCheckouts)
+          .set({ providerRef: session.transactionId })
+          .where(
+            and(
+              eq(pendingCheckouts.workspaceId, principal.workspaceId),
+              sql`extract(epoch from ${pendingCheckouts.createdAt})::text = ${claimed[0]!.claimStamp}`,
+            ),
+          );
       } catch (err) {
         this.logger.warn(
           `billing.checkout.provider_ref_stash_failed workspace=${principal.workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
