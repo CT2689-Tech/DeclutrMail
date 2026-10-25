@@ -10,9 +10,12 @@ real card, real Gmail account or production billing data was used.
 Integration owner: Codex root, isolated worktree `58a9`, branch
 `codex/paddle-fresh-purchase`, based on `ecd4818507cdd83e360fb2e9d13715a6daecdf1b`.
 Own the shared checkout-discount helper, its catalog/adapter regressions, the
-manual promotion-rehearsal preflight, webhook comment correction and this audit. No schema, lockfile or shared
+manual promotion-rehearsal preflight, Billing recovery/cache ownership, its stories/tests, webhook comment correction and this audit. No schema, lockfile or shared
 provider configuration changes; no dependent PR. Open PRs were checked for
-Billing overlap. Anchored sections and bottom Account navigation are preserved.
+Billing overlap. A final check found independently opened PR #1131 touching the
+same Billing screen, stories and tests; its checkout-close policy/copy work must
+retain this claim-release ordering when integrating. This PR does not change
+that other branch or its release state. Anchored sections and bottom Account navigation are preserved.
 
 The fixture began on Free, with no subscription, provider customer mapping,
 entitlement grant or subscription event. Only synthetic account/mailbox readiness
@@ -52,6 +55,30 @@ discount assertions. An isolated execution with a fake sandbox credential,
 fixed expired clock and all fetches blocked exited at catalog preflight with
 zero network calls/writes. Provider-expiry boundary tests pass; the full manual
 Pass/discount rehearsal was not executed.
+
+**P2 — confirmed no-charge recovery could stay locked until reload.** The
+failed-discount attempt exposed a second real issue: clearing local pending state
+before deleting the server claim let the cached positive claim synthesize a new
+wait. The later server-null response never removed that wait. A focused component
+regression failed against the old behavior and passed after the repair.
+
+Recovery now keeps the wait until the server confirms `released: true`, cancels
+older subscription reads, patches only the cached pending-claim field and then
+clears the originating local wait. Failed or malformed responses retain the hold
+and show retry. Repeated clicks, unmount/account change and replacement attempts
+are guarded. The known-abandoned-overlay path uses the same release ordering;
+intentional plan/setup refreshes remain intact. A server-synthesized wait follows
+a settled successful server-null read, while persisted ambiguous payments and
+plan changes stay protected. Confirmation and its double-charge warning remain.
+
+A separate browser recovery check used the final production web build with a
+loopback HTTP fixture, no credentials/database/provider calls: keyboard Enter
+showed busy/inert controls; an injected DELETE 500 retained the hold with a visible
+retry; retry 200 restored plan selection without reload; a later reload stayed
+unlocked. At 320px, light/dark error and confirmation layouts had no horizontal
+overflow; original theme/viewport were restored and no runtime errors appeared.
+Optional mail endpoints were intentionally disabled in this UI fixture. This
+recovery check is distinct from the actual Paddle purchase evidence below.
 
 ## Actual end-to-end evidence
 
@@ -107,11 +134,14 @@ charge, live billing write or real mailbox mutation was performed.
   pre-existing warnings. Changed-file formatting and implementation-log checks
   passed.
 - API catalog/adapter/service suites: 265 passed. Webhook controller suite:
-  14 passed; rehearsal helper suite: 7 passed. Shared: 950 passed; config: 38 passed; events: 76 passed.
+  14 passed; rehearsal helper suite: 7 passed. Shared: 950 passed; config:
+  38 passed; events: 76 passed. Billing web: 450 passed across 29 files, including
+  174 screen cases and optional-recovery-chunk success/failure. Total: 1,800 tests.
 - The first shared run had one glossary-scan timeout under concurrent load.
   That test passed alone, then the entire 950-test shared suite passed unchanged.
 - Reconstructed isolated harness checks: 15 mock assertions, zero external
   network calls. These are tooling checks, separate from actual payment evidence.
+- Final recovery web typecheck/lint and Storybook build passed.
 - Fresh production build passed. Bundle budget: 50 routes within caps and one
   declared redirect verified; 32 public routes prerendered. An initial budget
   run used a stopped local API and failed route discovery; the unchanged build
