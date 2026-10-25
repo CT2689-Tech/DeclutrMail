@@ -338,7 +338,12 @@ export function SenderRuleStoryFrame({
 function LibraryStory({ scenario }: { scenario: SenderRuleStoryScenario }) {
   return (
     <SenderRuleStoryFrame key={scenario} scenario={scenario}>
-      <SenderRuleLibraryScope mailboxId={mailboxId} presetRules={[]} presetsAvailable />
+      <SenderRuleLibraryScope
+        mailboxId={mailboxId}
+        presetRules={[]}
+        presetsAvailable
+        renderPresetRule={() => null}
+      />
     </SenderRuleStoryFrame>
   );
 }

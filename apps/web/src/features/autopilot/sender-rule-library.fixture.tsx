@@ -6,7 +6,7 @@ import {
   PENDING_SUGGESTIONS,
   PRESET_RULES_ALL_FIVE,
 } from './fixtures';
-import { AutopilotRoute } from './autopilot-screen';
+import { AutopilotRoute, AutopilotScreen } from './autopilot-screen';
 import { autopilotKeys } from './api/query-keys';
 
 const route = new URLSearchParams(location.search).get('scenario') === 'route';
@@ -42,10 +42,21 @@ createRoot(document.getElementById('root')!).render(
       {route ? (
         <AutopilotRoute />
       ) : (
-        <SenderRuleLibraryScope
-          mailboxId="fixture-mailbox"
-          presetRules={[{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' }]}
-          presetsAvailable
+        <AutopilotScreen
+          embedded
+          state={{
+            kind: 'ready',
+            rules: [{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' }],
+            suggestions: [],
+          }}
+          renderLibrary={(renderPresetRule) => (
+            <SenderRuleLibraryScope
+              mailboxId="fixture-mailbox"
+              presetRules={[{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: true, mode: 'active' }]}
+              presetsAvailable
+              renderPresetRule={renderPresetRule}
+            />
+          )}
         />
       )}
     </main>

@@ -6,7 +6,7 @@ import {
   EditorialKicker,
 } from '@/features/editorial/page';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Button,
   EmptyState,
@@ -179,13 +179,20 @@ export function AutopilotRoute() {
     senderRulesEntitled &&
     mailboxId !== null &&
     isSenderRulesUnsupported(senderRulesQuery.error);
-  const [presetsExpanded, setPresetsExpanded] = useState(false);
-  useEffect(() => {
-    if (unsupported) setPresetsExpanded(true);
-  }, [unsupported]);
   const presetScreen = (
     <AutopilotScreen
       embedded={!unsupported}
+      renderLibrary={
+        unsupported
+          ? undefined
+          : (renderPresetRule) => (
+              <SenderRuleLibrary
+                presetRules={rulesQuery.data ?? []}
+                presetsAvailable={rulesQuery.isSuccess && !rulesQuery.isError}
+                renderPresetRule={renderPresetRule}
+              />
+            )
+      }
       state={state}
       pauseScope={{
         rules: [...(rulesQuery.data ?? []), ...(senderRulesQuery.data ?? [])],
@@ -219,41 +226,12 @@ export function AutopilotRoute() {
       style={{
         ...(unsupported ? { minWidth: 0 } : editorialColumnStyle),
         display: 'grid',
-        // Expanded presets must not impose their intrinsic width on the page.
+        // Rule controls must not impose their intrinsic width on the page.
         gridTemplateColumns: 'minmax(0, 1fr)',
         gap: unsupported ? 0 : 36,
       }}
     >
-      {!unsupported && (
-        <SenderRuleLibrary
-          presetRules={rulesQuery.data ?? []}
-          presetsAvailable={rulesQuery.isSuccess && !rulesQuery.isError}
-        />
-      )}
-      {/* Keep preset previews and pending mutations mounted across API recovery. */}
-      <details
-        open={unsupported || presetsExpanded}
-        onToggle={(event) => {
-          if (!unsupported) setPresetsExpanded(event.currentTarget.open);
-        }}
-      >
-        <summary
-          hidden={unsupported}
-          style={{ cursor: 'pointer', padding: '14px 0', color: color.fgSoft, fontSize: text.md }}
-        >
-          Preset rules ·{' '}
-          {rulesQuery.isSuccess
-            ? `${(rulesQuery.data ?? []).filter((rule) => rule.enabled && rule.mode === 'active').length} Active`
-            : 'Status unavailable'}
-          {' · '}
-          {hydrated && suggestionsQuery.isSuccess
-            ? `${suggestionsQuery.data.meta?.total ?? suggestionsQuery.data.data.length} awaiting review`
-            : suggestionsQuery.isError
-              ? 'Review unavailable'
-              : 'Checking review…'}
-        </summary>
-        {presetScreen}
-      </details>
+      {presetScreen}
     </div>
   );
 }
@@ -327,8 +305,11 @@ export function AutopilotScreen({
   pendingPagination,
   embedded = false,
   pauseScope,
+  renderLibrary,
 }: {
   embedded?: boolean;
+  renderLibrary?:
+    ((renderPresetRule: (rule: AutopilotRuleDto) => ReactNode) => ReactNode) | undefined;
   state: AutopilotScreenState;
   suggestionsState?: SectionState;
   patternState?: SectionState;
@@ -927,7 +908,9 @@ export function AutopilotScreen({
   // outranks a prompt to act, which outranks a suggestion to start
   // something new; the slot's "+N" steps to the rest.
   const banners = [
-    ...(allPaused ? [{ key: 'paused', node: <PausedBanner rules={rules} /> }] : []),
+    ...(!renderLibrary && allPaused
+      ? [{ key: 'paused', node: <PausedBanner rules={rules} /> }]
+      : []),
     ...(state.kind === 'ready' &&
     suggestionsState.kind === 'ready' &&
     elapsedObserveRules.length > 0
@@ -963,6 +946,29 @@ export function AutopilotScreen({
       : []),
   ];
 
+  const renderPresetRule = (rule: AutopilotRuleDto) => (
+    <RuleCard
+      key={rule.id}
+      rule={rule}
+      libraryRow={renderLibrary !== undefined}
+      canEdit={state.kind === 'ready'}
+      canActivate={canActivate}
+      canChangeMode={suggestionsState.kind === 'ready'}
+      pendingCount={
+        suggestionsState.kind === 'ready' ? (pendingCountByRule.get(rule.id) ?? 0) : undefined
+      }
+      pendingApproximate={pendingBufferTruncated}
+      isSaving={savingRuleId === rule.id}
+      onToggleEnabled={(next) => onToggleEnabled(rule, next)}
+      onCommitThreshold={(value) => onCommitThreshold(rule, value)}
+      onResume={() => onResume(rule)}
+      previewOpen={previewRuleId === rule.id}
+      preview={previewRuleId === rule.id ? previewState : null}
+      onTogglePreview={() => onTogglePreview(rule)}
+      onRetryPreview={() => onRetryPreview(rule)}
+    />
+  );
+
   return (
     <div
       style={{
@@ -972,44 +978,47 @@ export function AutopilotScreen({
         gap: 32,
       }}
     >
+      {renderLibrary?.(renderPresetRule)}
       {!embedded && <EditorialKicker>Automations / Your rules</EditorialKicker>}
-      {/* Header — one line: title + the master pause (D105). */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 16,
-        }}
-      >
-        {embedded ? (
-          <h2
-            ref={presetHeading}
-            tabIndex={-1}
-            style={{ ...tokens.typography.sectionTitle, margin: 0 }}
-          >
-            Preset rules
-          </h2>
-        ) : (
-          <h1 ref={presetHeading} tabIndex={-1} style={editorialTitleStyle}>
-            Autopilot
-          </h1>
-        )}
-        {!embedded && (
-          <Button
-            tone="default"
-            onClick={() => {
-              rememberModalOpener();
-              setPauseConfirmOpen(true);
-            }}
-            disabled={state.kind !== 'ready' || !hasRunningRules}
-            ariaLabel={embedded ? 'Pause every preset rule' : 'Pause every Autopilot rule'}
-          >
-            Pause all
-          </Button>
-        )}
-      </div>
+      {/* The unified library owns the header when present. */}
+      {!renderLibrary && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 16,
+          }}
+        >
+          {embedded ? (
+            <h2
+              ref={presetHeading}
+              tabIndex={-1}
+              style={{ ...tokens.typography.sectionTitle, margin: 0 }}
+            >
+              Preset rules
+            </h2>
+          ) : (
+            <h1 ref={presetHeading} tabIndex={-1} style={editorialTitleStyle}>
+              Autopilot
+            </h1>
+          )}
+          {!embedded && (
+            <Button
+              tone="default"
+              onClick={() => {
+                rememberModalOpener();
+                setPauseConfirmOpen(true);
+              }}
+              disabled={state.kind !== 'ready' || !hasRunningRules}
+              ariaLabel={embedded ? 'Pause every preset rule' : 'Pause every Autopilot rule'}
+            >
+              Pause all
+            </Button>
+          )}
+        </div>
+      )}
 
       {/* The explainer is tier-conditional: the under-tier wording must
           never promise unattended action, which is a per-rule setting that
@@ -1028,7 +1037,7 @@ export function AutopilotScreen({
           }
         />
       )}
-      {embedded && (
+      {embedded && !renderLibrary && (
         <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
           Presets can watch for your approval or act on their own when set to Active.
         </p>
@@ -1129,7 +1138,7 @@ export function AutopilotScreen({
         </nav>
       )}
 
-      {state.kind === 'ready' && rules.length > 0 && (
+      {!renderLibrary && state.kind === 'ready' && rules.length > 0 && (
         <div role="group" aria-label="Filter rules by status" className="dm-filter-tabs">
           {(
             [
@@ -1168,79 +1177,60 @@ export function AutopilotScreen({
       {state.kind !== 'error' && (
         <>
           {/* Rules management (D101) */}
-          <section
-            aria-labelledby="rules-heading"
-            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
-          >
-            <h2
-              id="rules-heading"
-              style={{
-                ...tokens.typography.sectionTitle,
-                margin: 0,
-                paddingLeft: 16,
-                color: color.fg,
-              }}
+          {!renderLibrary && (
+            <section
+              aria-labelledby="rules-heading"
+              style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
             >
-              Rules
-            </h2>
-            {state.kind === 'loading' && <RulesSkeleton />}
-            {state.kind === 'empty' && (
-              <EmptyState
-                title="No Autopilot rules yet"
-                description="Rules appear after your mailbox finishes its first sync."
-              />
-            )}
-            {state.kind === 'ready' && rules.length > 0 && visibleRules.length === 0 && (
-              <EmptyState
-                title="No rules in this view"
-                action={
-                  <Button tone="ghost" onClick={() => setRuleFilter('all')}>
-                    Show all rules
-                  </Button>
-                }
-              />
-            )}
-            {state.kind === 'ready' && visibleRules.length > 0 && (
-              <ul
-                aria-label="Autopilot rules"
+              <h2
+                id="rules-heading"
                 style={{
-                  listStyle: 'none',
-                  padding: 0,
+                  ...tokens.typography.sectionTitle,
                   margin: 0,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  // One raised group; rows divide with inset hairlines.
-                  background: color.card,
-                  border: `1px solid ${color.border}`,
-                  borderRadius: radius.xl,
-                  overflow: 'hidden',
+                  paddingLeft: 16,
+                  color: color.fg,
                 }}
               >
-                {visibleRules.map((rule) => (
-                  <RuleCard
-                    key={rule.id}
-                    rule={rule}
-                    canActivate={canActivate}
-                    canChangeMode={suggestionsState.kind === 'ready'}
-                    pendingCount={
-                      suggestionsState.kind === 'ready'
-                        ? (pendingCountByRule.get(rule.id) ?? 0)
-                        : undefined
-                    }
-                    pendingApproximate={pendingBufferTruncated}
-                    isSaving={savingRuleId === rule.id}
-                    onToggleEnabled={(next) => onToggleEnabled(rule, next)}
-                    onCommitThreshold={(value) => onCommitThreshold(rule, value)}
-                    onResume={() => onResume(rule)}
-                    previewOpen={previewRuleId === rule.id}
-                    preview={previewRuleId === rule.id ? previewState : null}
-                    onTogglePreview={() => onTogglePreview(rule)}
-                    onRetryPreview={() => onRetryPreview(rule)}
-                  />
-                ))}
-              </ul>
-            )}
-          </section>
+                Rules
+              </h2>
+              {state.kind === 'loading' && <RulesSkeleton />}
+              {state.kind === 'empty' && (
+                <EmptyState
+                  title="No Autopilot rules yet"
+                  description="Rules appear after your mailbox finishes its first sync."
+                />
+              )}
+              {state.kind === 'ready' && rules.length > 0 && visibleRules.length === 0 && (
+                <EmptyState
+                  title="No rules in this view"
+                  action={
+                    <Button tone="ghost" onClick={() => setRuleFilter('all')}>
+                      Show all rules
+                    </Button>
+                  }
+                />
+              )}
+              {state.kind === 'ready' && visibleRules.length > 0 && (
+                <ul
+                  aria-label="Autopilot rules"
+                  style={{
+                    listStyle: 'none',
+                    padding: 0,
+                    margin: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    // One raised group; rows divide with inset hairlines.
+                    background: color.card,
+                    border: `1px solid ${color.border}`,
+                    borderRadius: radius.xl,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {visibleRules.map(renderPresetRule)}
+                </ul>
+              )}
+            </section>
+          )}
 
           {/* Pending suggestions (D104). With no rules yet there is nothing
               that could be pending — one empty state, not two. */}
@@ -1264,6 +1254,8 @@ export function AutopilotScreen({
               >
                 <h2
                   id="pending-heading"
+                  ref={renderLibrary ? presetHeading : undefined}
+                  tabIndex={-1}
                   style={{ ...tokens.typography.sectionTitle, margin: 0, color: color.fg }}
                 >
                   Pending suggestions

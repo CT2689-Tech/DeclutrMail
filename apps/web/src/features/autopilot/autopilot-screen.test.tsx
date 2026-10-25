@@ -29,6 +29,7 @@ import { ToastHost, useUiStore } from '@declutrmail/shared';
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AutopilotRoute, AutopilotScreen } from './autopilot-screen';
+import { FIXTURE_RULES } from './sender-rule-browser-data.fixture';
 import { ActivateRuleModal } from './activate-rule-modal';
 import { ApproveConfirmModal } from './approve-confirm-modal';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -311,6 +312,149 @@ describe('Autopilot pending pages', () => {
       expect(screen.getByText(/on this page · 61 waiting/)).toHaveTextContent('50 on this page'),
     );
     expect(screen.queryByText('Older fixture')).not.toBeInTheDocument();
+  });
+});
+
+describe('Quiet watch rule inventory', () => {
+  afterEach(() => resetFetchStub());
+
+  it('does not call the whole inventory paused when a custom rule is watching', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => jsonOk({ data: [{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, mode: 'paused' }] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/sender-rules',
+        respond: () => jsonOk({ data: [FIXTURE_RULES[0]] }),
+      },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    renderRoute();
+    expect(await screen.findByText('1 watching')).toBeVisible();
+    expect(screen.queryByText(/Every rule is paused/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Paused since/)).not.toBeInTheDocument();
+    const library = screen.getByRole('complementary', { name: 'Rule library' });
+    expect(
+      within(library).getByRole('heading', { name: 'Your rules' }).parentElement,
+    ).toHaveTextContent('2');
+  });
+
+  it('disables cached preset settings after a failed read and recovers with Retry', async () => {
+    let fail = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => (fail ? jsonServerError() : jsonOk({ data: [AUTO_ARCHIVE_LOW_ENGAGEMENT] })),
+      },
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    const view = renderRoute();
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Edit rule Review low-engagement senders for Archive',
+      }),
+    );
+    expect(screen.getByRole('slider')).toBeEnabled();
+    fail = true;
+    await view.client.invalidateQueries({ queryKey: ['autopilot', 'rules'] });
+    await screen.findByRole('heading', { name: 'We couldn’t load your Autopilot' });
+    expect(screen.getByRole('slider')).toBeDisabled();
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(
+      screen.getByRole('button', {
+        name: 'Preview matches for rule Review low-engagement senders for Archive',
+      }),
+    ).toBeDisabled();
+    expect(screen.getByRole('heading', { name: 'Your rules' }).parentElement).toHaveTextContent(
+      '—',
+    );
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
+    await waitFor(() => expect(screen.getByRole('slider')).toBeEnabled());
+  });
+
+  it('lists the two watching presets without custom rules and edits the real threshold', async () => {
+    const presets = [AUTO_ARCHIVE_LOW_ENGAGEMENT, AUTO_UNSUBSCRIBE_NOISY];
+    const patches: unknown[] = [];
+    installFetchStub([
+      { method: 'GET', path: '/api/autopilot/rules', respond: () => jsonOk({ data: presets }) },
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+      {
+        method: 'PATCH',
+        path: `/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}`,
+        respond: async (request) => {
+          patches.push(await request.json());
+          return jsonOk({ data: { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, confidenceThreshold: 0.8 } });
+        },
+      },
+    ]);
+    renderRoute();
+    const library = await screen.findByRole('complementary', { name: 'Rule library' });
+    expect(
+      await within(library).findByText('Review low-engagement senders for Archive'),
+    ).toBeVisible();
+    expect(within(library).getByText(AUTO_UNSUBSCRIBE_NOISY.name)).toBeVisible();
+    expect(
+      within(library).getByRole('heading', { name: 'Your rules' }).parentElement,
+    ).toHaveTextContent('2');
+    expect(
+      screen.queryByRole('heading', { name: 'Your first sender rule' }),
+    ).not.toBeInTheDocument();
+    expect(within(library).queryByRole('slider')).not.toBeInTheDocument();
+    fireEvent.click(
+      within(library).getByRole('button', {
+        name: 'Edit rule Review low-engagement senders for Archive',
+      }),
+    );
+    const slider = within(library).getByRole('slider');
+    fireEvent.change(slider, { target: { value: '0.8' } });
+    fireEvent.pointerUp(slider);
+    await waitFor(() => expect(patches).toEqual([{ confidenceThreshold: 0.8 }]));
+    fireEvent.change(within(library).getByRole('searchbox', { name: 'Search rules' }), {
+      target: { value: 'unsubscribe' },
+    });
+    await waitFor(() =>
+      expect(
+        within(library).queryByText('Review low-engagement senders for Archive'),
+      ).not.toBeInTheDocument(),
+    );
+    expect(within(library).getByText(AUTO_UNSUBSCRIBE_NOISY.name)).toBeVisible();
   });
 });
 
