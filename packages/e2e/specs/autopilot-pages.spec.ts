@@ -10,6 +10,7 @@ import { applyJourneySeed } from '../helpers/seed-journeys';
 /** Owned synthetic review records only: no worker, Gmail or approval intents. */
 const api = new ApiClient();
 const ruleId = randomUUID();
+const editorRuleId = randomUUID();
 const senderKeys = Array.from({ length: 61 }, (_, i) =>
   createHash('sha256').update(`autopilot-pages-${ruleId}-${i}`).digest('hex'),
 );
@@ -40,7 +41,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (sql) {
     // Rule cascade deletes only this test's matches; names/keys are unique.
-    await sql`DELETE FROM automation_rules WHERE id = ${ruleId} AND mailbox_account_id = ${mailboxId}`;
+    await sql`DELETE FROM automation_rules WHERE id IN (${ruleId}, ${editorRuleId}) AND mailbox_account_id = ${mailboxId}`;
     await sql`DELETE FROM senders WHERE mailbox_account_id = ${mailboxId} AND sender_key IN ${sql(senderKeys)}`;
     await sql.end();
   }
@@ -118,4 +119,55 @@ test('review pages cover the backlog and recover when the older page is exhauste
     WHERE rule_id = ${ruleId} AND resolution = 'dismissed' AND dismiss_reason = 'user'
   `;
   expect(Number(dismissed[0]?.count)).toBe(11);
+});
+
+test('customizes an existing preset through the real API and preserves it on reload', async ({
+  page,
+}) => {
+  await sql`INSERT INTO automation_rules (id, mailbox_account_id, preset_key, is_preset, name, enabled, mode, action_kind)
+    VALUES (${editorRuleId}, ${mailboxId}, 'long_dormant_unsubscribe', true, 'E2E existing rule', false, 'observe', 'unsubscribe')`;
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/autopilot');
+  await expectScreenMounted(page);
+  const essential = page.getByRole('button', { name: 'Essential only', exact: true });
+  if (await essential.isVisible()) await essential.click();
+  await page.getByRole('button', { name: 'Edit rule E2E existing rule', exact: true }).click();
+  const editor = page.getByRole('form', { name: 'Customize E2E existing rule', exact: true });
+  await editor.getByRole('textbox', { name: 'Rule name', exact: true }).fill('E2E customized rule');
+  await editor
+    .getByRole('spinbutton', { name: 'Last email more than (days ago)', exact: true })
+    .fill('90');
+  await editor
+    .getByRole('spinbutton', { name: 'Lifetime read rate below (%)', exact: true })
+    .fill('10');
+  await editor.getByRole('combobox', { name: 'Action', exact: true }).selectOption('archive');
+  await editor.getByRole('button', { name: 'Save rule', exact: true }).press('Enter');
+  const edit = page.getByRole('button', { name: 'Edit rule E2E customized rule', exact: true });
+  await expect(edit).toBeVisible();
+  await expect(edit).toBeFocused();
+  await page.reload();
+  await edit.click();
+  const saved = page.getByRole('form', { name: 'Customize E2E customized rule', exact: true });
+  await expect(
+    saved.getByRole('spinbutton', { name: 'Last email more than (days ago)', exact: true }),
+  ).toHaveValue('90');
+  await expect(saved.getByRole('combobox', { name: 'Action', exact: true })).toHaveValue('archive');
+  const [row] =
+    await sql`SELECT version, enabled, mode, conditions, action_kind FROM automation_rules WHERE id=${editorRuleId}`;
+  expect(row).toMatchObject({
+    version: 2,
+    enabled: false,
+    mode: 'observe',
+    action_kind: 'archive',
+    conditions: {
+      kind: 'dormant',
+      lastSeenAfterDays: 90,
+      lastSeenWithinDays: null,
+      minMessages: 5,
+      readRateBelow: 0.1,
+    },
+  });
+  await saved.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(edit).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

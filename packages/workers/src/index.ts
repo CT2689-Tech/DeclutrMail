@@ -221,7 +221,7 @@ export type {
   SenderSignals,
   UnsubscribeChannel,
 } from '@declutrmail/shared/triage-engine';
-export { AUTOPILOT_PRESETS } from './autopilot-presets.js';
+export { AUTOPILOT_PRESETS, matchConfiguredPreset } from './autopilot-presets.js';
 export type {
   PresetDefinition,
   PresetInput,

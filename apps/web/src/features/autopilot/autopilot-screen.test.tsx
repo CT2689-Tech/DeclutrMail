@@ -379,11 +379,11 @@ describe('Quiet watch rule inventory', () => {
         name: 'Edit rule Review low-engagement senders for Archive',
       }),
     );
-    expect(screen.getByRole('slider')).toBeEnabled();
+    expect(screen.getByLabelText('Confidence above (%)')).toBeEnabled();
     fail = true;
     await view.client.invalidateQueries({ queryKey: ['autopilot', 'rules'] });
     await screen.findByRole('heading', { name: 'We couldn’t load your Autopilot' });
-    expect(screen.getByRole('slider')).toBeDisabled();
+    expect(screen.getByLabelText('Confidence above (%)')).toBeDisabled();
     expect(screen.getByRole('switch')).toBeDisabled();
     expect(
       screen.getByRole('button', {
@@ -395,7 +395,7 @@ describe('Quiet watch rule inventory', () => {
     );
     fail = false;
     fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
-    await waitFor(() => expect(screen.getByRole('slider')).toBeEnabled());
+    await waitFor(() => expect(screen.getByLabelText('Confidence above (%)')).toBeEnabled());
   });
 
   it('lists the two watching presets without custom rules and edits the real threshold', async () => {
@@ -436,16 +436,27 @@ describe('Quiet watch rule inventory', () => {
     expect(
       screen.queryByRole('heading', { name: 'Your first sender rule' }),
     ).not.toBeInTheDocument();
-    expect(within(library).queryByRole('slider')).not.toBeInTheDocument();
+    expect(within(library).queryByLabelText('Confidence above (%)')).not.toBeInTheDocument();
     fireEvent.click(
       within(library).getByRole('button', {
         name: 'Edit rule Review low-engagement senders for Archive',
       }),
     );
-    const slider = within(library).getByRole('slider');
-    fireEvent.change(slider, { target: { value: '0.8' } });
-    fireEvent.pointerUp(slider);
-    await waitFor(() => expect(patches).toEqual([{ confidenceThreshold: 0.8 }]));
+    const confidence = within(library).getByLabelText('Confidence above (%)');
+    fireEvent.change(confidence, { target: { value: '80' } });
+    fireEvent.click(within(library).getByRole('button', { name: 'Save rule' }));
+    await waitFor(() =>
+      expect(patches).toEqual([
+        {
+          configuration: {
+            version: 1,
+            name: 'Review low-engagement senders for Archive',
+            actionKind: 'archive',
+            conditions: { kind: 'recommendation', verdict: 'archive', confidence: 0.8 },
+          },
+        },
+      ]),
+    );
     fireEvent.change(within(library).getByRole('searchbox', { name: 'Search rules' }), {
       target: { value: 'unsubscribe' },
     });
@@ -972,7 +983,9 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(dialog).getByText(/no mail moves until you approve/i)).toBeInTheDocument();
     expect(within(dialog).queryByText(/act now/i)).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Turn on' }));
-    await waitFor(() => expect(observed).toEqual([{ enabled: true, mode: 'observe' }]));
+    await waitFor(() =>
+      expect(observed).toEqual([{ enabled: true, mode: 'observe', expectedVersion: 1 }]),
+    );
   });
 
   it('offers review only when turning on low-engagement Archive', async () => {
@@ -1004,7 +1017,9 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(dialog).getByText(/no mail moves until you approve/i)).toBeInTheDocument();
     expect(within(dialog).queryByRole('radio', { name: /act now/i })).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Turn on' }));
-    await waitFor(() => expect(observed).toEqual([{ enabled: true, mode: 'observe' }]));
+    await waitFor(() =>
+      expect(observed).toEqual([{ enabled: true, mode: 'observe', expectedVersion: 1 }]),
+    );
   });
 
   it('“Act now” (the default choice) patches enabled + mode=active in ONE request', async () => {
@@ -1039,7 +1054,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(observed[0]!.path).toBe(`/api/autopilot/rules/${LONG_DORMANT_UNSUBSCRIBE.id}`);
     // ONE patch, both fields. Two sequential calls would leave a window
     // where the rule is on in whichever mode the row happened to hold.
-    expect(observed[0]!.body).toEqual({ enabled: true, mode: 'active' });
+    expect(observed[0]!.body).toEqual({ enabled: true, mode: 'active', expectedVersion: 1 });
   });
 
   it('“Watch first” patches enabled + mode=observe — a choice, not a tier', async () => {
@@ -1071,7 +1086,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(watch);
 
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe', expectedVersion: 1 });
   });
 
   it('gates BOTH commit paths on the preview resolving (D226)', async () => {
@@ -1156,7 +1171,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(confirm);
 
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe', expectedVersion: 1 });
   });
 
   it('shows the busy label for the commit that was chosen, not the other one', async () => {
@@ -1233,7 +1248,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
 
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe', expectedVersion: 1 });
   });
 
   it('keeps the modal open and the toggle Off when the commit fails', async () => {
@@ -1639,7 +1654,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 
     await userEvent.click(confirm);
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]!.body).toEqual({ mode: 'active' });
+    expect(observed[0]!.body).toEqual({ mode: 'active', expectedVersion: 1 });
   });
 
   it('keeps Confirm locked when the dry-run fails; retry re-fires it (D226)', async () => {
@@ -2298,7 +2313,7 @@ describe('AutopilotScreen — approvals blocked on paused/off rules + Resume pre
     await userEvent.click(within(dialog).getByRole('button', { name: /^resume$/i }));
     await waitFor(() => expect(patched).toHaveLength(1));
     expect(patched[0]!.path).toBe(`/api/autopilot/rules/${paused.id}`);
-    expect(patched[0]!.body).toEqual({ mode: 'observe' });
+    expect(patched[0]!.body).toEqual({ mode: 'observe', expectedVersion: 1 });
   });
 
   it('Resume says nothing is waiting when there is nothing approved, but still requires confirmation', async () => {

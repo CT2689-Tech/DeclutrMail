@@ -594,6 +594,19 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'This rule changed. Refresh it and review the current matches.',
   },
+  AUTOPILOT_RULE_APPROVED_WORK_PENDING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'This rule has approved work waiting or running. Review the approved batch, then save your changes.',
+  },
+  AUTOPILOT_RULE_SAVE_BUSY: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'This rule is busy. Try saving again.',
+  },
   AUTOPILOT_RULE_PAUSED: {
     status: 409,
     severityTier: 'inline_recoverable',

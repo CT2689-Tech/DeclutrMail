@@ -1,4 +1,8 @@
 import type {
+  AutopilotRuleConditions,
+  AutopilotRuleConfiguration,
+} from '@declutrmail/shared/contracts';
+import type {
   AutopilotActionKind,
   AutopilotMatchMode,
   AutopilotMatchResolution,
@@ -45,6 +49,8 @@ export interface AutopilotObserveDigest {
 
 /** One Autopilot rule, as the read service returns it. */
 export interface AutopilotRule {
+  version?: number;
+  conditions?: AutopilotRuleConditions;
   id: string;
   /**
    * System preset identifier. NULL for custom rules. At V2 launch the
@@ -96,6 +102,8 @@ export interface AutopilotRule {
 
 /** Allowed `PATCH /autopilot/rules/:id` body. All fields optional. */
 export interface AutopilotRulePatch {
+  expectedVersion?: number;
+  configuration?: AutopilotRuleConfiguration;
   /** D34 / D101 — toggle the rule on / off. */
   enabled?: boolean;
   /** D101 / D105 — observe ↔ active ↔ paused. */

@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { AutopilotRuleConfiguration } from '@declutrmail/shared/contracts';
+import { PresetRuleEditor } from './preset-rule-editor';
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import { Switch } from '@/features/settings/switch';
@@ -44,6 +46,7 @@ export function RuleCard({
   isSaving,
   onToggleEnabled,
   onCommitThreshold,
+  onSaveConfiguration,
   onResume,
   previewOpen,
   preview,
@@ -70,6 +73,7 @@ export function RuleCard({
   /** True while any PATCH for THIS rule is in flight. */
   isSaving: boolean;
   onToggleEnabled: (next: boolean) => void;
+  onSaveConfiguration?: (configuration: AutopilotRuleConfiguration) => Promise<string | null>;
   /**
    * Fires on slider release with the new threshold in [0,1]. Resolves
    * `true` when the server accepted the PATCH, `false` when it rejected
@@ -84,8 +88,17 @@ export function RuleCard({
   onTogglePreview: () => void;
   onRetryPreview: () => void;
 }) {
+  const rowRef = useRef<HTMLLIElement>(null);
   const now = useNow();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const restoreEditorFocus = useRef(false);
+  useEffect(() => {
+    if (!restoreEditorFocus.current || detailsOpen || isSaving) return;
+    const button = rowRef.current?.querySelector<HTMLButtonElement>('button[aria-expanded]');
+    if (button && !button.disabled) button.focus();
+    else rowRef.current?.focus();
+    restoreEditorFocus.current = false;
+  }, [detailsOpen, isSaving]);
   const name = presetDisplayName(rule.presetKey, rule.name);
   // D10/D101 — Observe-mode digest, only meaningful while the rule is
   // actually watching (enabled + Observe). Disabled rules stay quiet.
@@ -100,6 +113,8 @@ export function RuleCard({
 
   return (
     <li
+      ref={rowRef}
+      tabIndex={-1}
       data-rule-id={rule.id}
       className="dm-rule-row"
       style={{
@@ -168,6 +183,7 @@ export function RuleCard({
         <Button
           tone={libraryRow ? 'default' : 'ghost'}
           size="sm"
+          disabled={isSaving || !canEdit}
           onClick={() => setDetailsOpen((open) => !open)}
           ariaLabel={
             libraryRow
@@ -212,6 +228,25 @@ export function RuleCard({
             color: color.fgMuted,
           }}
         >
+          {libraryRow && onSaveConfiguration && (
+            <PresetRuleEditor
+              rule={rule}
+              saving={isSaving}
+              disabled={!canEdit}
+              onCancel={() => {
+                restoreEditorFocus.current = true;
+                setDetailsOpen(false);
+              }}
+              onSave={async (configuration) => {
+                const error = await onSaveConfiguration(configuration);
+                if (error === null) {
+                  restoreEditorFocus.current = true;
+                  setDetailsOpen(false);
+                }
+                return error;
+              }}
+            />
+          )}
           <div
             style={{
               display: 'flex',
@@ -241,7 +276,7 @@ export function RuleCard({
           {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
           {digestSummary != null && <div style={{ color: color.fgSoft }}>{digestSummary}</div>}
 
-          {rule.confidenceThreshold != null && (
+          {!libraryRow && rule.confidenceThreshold != null && (
             <ThresholdSlider
               ruleName={name}
               committed={rule.confidenceThreshold}

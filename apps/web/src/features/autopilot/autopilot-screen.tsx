@@ -1,5 +1,8 @@
 'use client';
 
+import { apiErrorCode } from '@/lib/api/client';
+import type { AutopilotRuleConfiguration } from '@declutrmail/shared/contracts';
+
 import {
   editorialColumnStyle,
   editorialTitleStyle,
@@ -575,6 +578,29 @@ export function AutopilotScreen({
     );
   };
 
+  const onSaveConfiguration = async (
+    rule: AutopilotRuleDto,
+    configuration: AutopilotRuleConfiguration,
+  ): Promise<string | null> => {
+    try {
+      await patchRule.mutateAsync({ ruleId: rule.id, patch: { configuration } });
+      setPreviewRuleId(null);
+      toast('Rule saved', 'info');
+      return null;
+    } catch (err) {
+      switch (apiErrorCode(err)) {
+        case 'AUTOPILOT_RULE_SAVE_BUSY':
+          return 'This rule is busy. Try saving again.';
+        case 'AUTOPILOT_RULE_CHANGED':
+          return 'This rule changed. Reload the page, then edit it again.';
+        case 'AUTOPILOT_RULE_APPROVED_WORK_PENDING':
+          return 'This rule has approved work waiting or running. Let that batch finish, then save your changes.';
+        default:
+          return 'Couldn’t save the rule. Try again.';
+      }
+    }
+  };
+
   const onCommitThreshold = async (rule: AutopilotRuleDto, value: number): Promise<boolean> => {
     try {
       await patchRule.mutateAsync({ ruleId: rule.id, patch: { confidenceThreshold: value } });
@@ -610,7 +636,13 @@ export function AutopilotScreen({
     const rule = resumeTarget;
     addBreadcrumb({ category: 'action', message: 'autopilot: rule resumed', level: 'info' });
     patchRule.mutate(
-      { ruleId: rule.id, patch: { mode: 'observe' } },
+      {
+        ruleId: rule.id,
+        patch: {
+          mode: 'observe',
+          ...(rule.version === undefined ? {} : { expectedVersion: rule.version }),
+        },
+      },
       {
         onSuccess: () => {
           setResumeTarget(null);
@@ -663,7 +695,10 @@ export function AutopilotScreen({
     // the PRIMARY button commits `observe`, so deriving the source from
     // the mode would put the busy label on a button that isn't there.
     setPendingCommit(source);
-    const patch = intent === 'enable' ? { enabled: true, mode } : { mode };
+    const patch = {
+      ...(intent === 'enable' ? { enabled: true, mode } : { mode }),
+      ...(rule.version === undefined ? {} : { expectedVersion: rule.version }),
+    };
     addBreadcrumb({
       category: 'action',
       message: `autopilot: rule ${intent === 'enable' ? `enabled in ${mode}` : 'switched to active'}`,
@@ -786,7 +821,9 @@ export function AutopilotScreen({
       // see `openApprove`'s caller), send the cutoff instead: the FE
       // never fetched every id "Approve all ~N" promises.
       const scope: AutopilotApproveAllScopeDto =
-        matchedBefore != null ? { matchedBefore } : { matchIds: matches.map((m) => m.id) };
+        matchedBefore != null
+          ? { matchedBefore, ...(rule.version === undefined ? {} : { ruleVersion: rule.version }) }
+          : { matchIds: matches.map((m) => m.id) };
       approveAllForRule.mutate({ ruleId: rule.id, scope }, { onSuccess, onError });
     } else {
       approveMatches.mutate(
@@ -796,10 +833,13 @@ export function AutopilotScreen({
     }
   };
 
-  const approveError = mutationErrorMessage(
-    approveMatches.error ?? approveAllForRule.error,
-    'Approve failed. Please retry.',
-  );
+  const approveError =
+    apiErrorCode(approveMatches.error ?? approveAllForRule.error) === 'AUTOPILOT_RULE_CHANGED'
+      ? 'This rule changed. Cancel and refresh to review its current matches.'
+      : mutationErrorMessage(
+          approveMatches.error ?? approveAllForRule.error,
+          'Approve failed. Please retry.',
+        );
   const activateError = mutationErrorMessage(
     confirmTarget != null ? patchRule.error : null,
     confirmTarget?.intent === 'enable'
@@ -961,6 +1001,7 @@ export function AutopilotScreen({
       isSaving={savingRuleId === rule.id}
       onToggleEnabled={(next) => onToggleEnabled(rule, next)}
       onCommitThreshold={(value) => onCommitThreshold(rule, value)}
+      onSaveConfiguration={(configuration) => onSaveConfiguration(rule, configuration)}
       onResume={() => onResume(rule)}
       previewOpen={previewRuleId === rule.id}
       preview={previewRuleId === rule.id ? previewState : null}
@@ -1476,6 +1517,8 @@ function derivePreviewState(
 
 /** Modal-error string from a mutation error (null when no error). */
 function mutationErrorMessage(err: unknown, fallback: string): string | null {
+  if (apiErrorCode(err) === 'AUTOPILOT_RULE_CHANGED')
+    return 'This rule changed. Close this view and refresh before trying again.';
   if (err == null) return null;
   return fallback;
 }

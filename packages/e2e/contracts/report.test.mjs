@@ -10,7 +10,7 @@ const files = [
   ['sender-policy', 1],
   ['protection-review', 1],
   ['followups-dismiss', 1],
-  ['autopilot-pages', 1],
+  ['autopilot-pages', 2],
   ['later-recovery', 1],
   ['quiet-hours', 1],
   ['brief-preview', 1],
@@ -48,6 +48,14 @@ function check(body) {
   }
 }
 test('complete journey report passes', () => assert.equal(check(report()), 0));
+test('missing the existing-rule editor journey fails despite the other Autopilot journey passing', () => {
+  const body = report();
+  const index = body.suites[0].specs.findIndex((spec) =>
+    spec.file.endsWith('/autopilot-pages.spec.ts'),
+  );
+  body.suites[0].specs.splice(index, 1);
+  assert.notEqual(check(body), 0);
+});
 test('one missing required journey fails despite eleven passing tests', () => {
   const body = report();
   body.suites[0].specs.shift();
