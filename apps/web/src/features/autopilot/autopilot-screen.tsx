@@ -590,7 +590,7 @@ export function AutopilotScreen({
     } catch (err) {
       switch (apiErrorCode(err)) {
         case 'AUTOPILOT_RULE_SAVE_BUSY':
-          return 'Another rule action is finishing. Try saving again.';
+          return 'This rule is busy. Try saving again.';
         case 'AUTOPILOT_RULE_CHANGED':
           return 'This rule changed. Reload the page, then edit it again.';
         case 'AUTOPILOT_RULE_APPROVED_WORK_PENDING':

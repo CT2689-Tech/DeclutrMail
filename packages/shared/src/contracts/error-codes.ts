@@ -605,7 +605,7 @@ export const ERROR_CODES = {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: true,
-    message: 'Another rule action is finishing. Try saving again.',
+    message: 'This rule is busy. Try saving again.',
   },
   AUTOPILOT_RULE_PAUSED: {
     status: 409,

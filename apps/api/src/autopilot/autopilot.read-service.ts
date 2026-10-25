@@ -826,7 +826,7 @@ export class AutopilotReadService {
         if (pg?.code === '40P01' || pg?.cause?.code === '40P01')
           throw new ConflictException({
             code: 'AUTOPILOT_RULE_SAVE_BUSY',
-            message: 'Another rule action is finishing. Try saving again.',
+            message: 'This rule is busy. Try saving again.',
           });
         throw error;
       });

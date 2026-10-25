@@ -46,8 +46,8 @@ No new Gmail fields, content collection, database migration or telemetry payload
 ## Verification and boundaries
 
 - 216 Autopilot web tests; 119 API/controller/service tests plus 17 exception-filter
-  tests; 61 matcher/apply tests; 69 action-worker tests; 13 shared contract/literal
-  guard tests passed. Worker tests include Schedule deferral and action recovery.
+  tests; 61 matcher/apply tests; 69 action-worker tests; 949 shared tests, including contract, glossary and literal
+  guards, passed. All 22 browser harness tests passed, including the missing-editor-journey negative control. Worker tests include Schedule deferral and action recovery.
 - Negative control: restoring the fixed preset matcher made the new configured
   rule integration assertion fail; restoring configurable matching passes.
 - Workspace typecheck, lint (six existing warnings, no errors), formatting,
