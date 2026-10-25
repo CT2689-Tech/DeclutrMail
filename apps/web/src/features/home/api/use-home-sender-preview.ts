@@ -9,7 +9,7 @@ export function useHomeSenderPreview(
   mailboxId: string | null,
   senderIds: readonly string[],
   enabled: boolean,
-): HomeSenderIdentity[] {
+): { senders: HomeSenderIdentity[]; isLoading: boolean; isError: boolean } {
   const ids = enabled && mailboxId ? [...new Set(senderIds)].slice(0, 3) : [];
   const queries = useQueries({
     queries: ids.map((id) => ({
@@ -20,13 +20,31 @@ export function useHomeSenderPreview(
           signal,
         });
         const name = data.displayName?.trim() || data.domain?.trim();
-        if (data.id !== id || !name || data.protectionFlags?.isProtected) return null;
-        return { id, name, domain: data.domain, brandMark: data.brandMark === true };
+        if (
+          data.id !== id ||
+          !name ||
+          data.protectionFlags?.isProtected !== false ||
+          data.policyType === 'keep' ||
+          (data.wroteToCount ?? 0) > 0
+        )
+          return null;
+        return {
+          id,
+          name,
+          domain: data.domain,
+          brandMark: data.brandMark === true,
+          inboxCount: data.inboxCount ?? null,
+          readRate: data.readRate ?? null,
+        };
       },
       // Optional names must not hold shared cleanup/Undo reconciliation open.
       retry: false,
-      staleTime: 5 * 60_000,
+      staleTime: 30_000,
     })),
   });
-  return queries.flatMap((query) => (query.data ? [query.data] : []));
+  return {
+    senders: queries.flatMap((query) => (query.data ? [query.data] : [])),
+    isLoading: queries.some((query) => query.isPending),
+    isError: queries.some((query) => query.isError),
+  };
 }

@@ -6,6 +6,7 @@ import { AppShell } from '@declutrmail/shared';
 import { STAGE_SENTENCE } from '@/features/onboarding/sync-stage-copy';
 
 import { HomeView } from './home-view';
+import { overviewFixture, reportFixture } from './home-view.fixture';
 import { homePreviewReport } from './home-preview-report';
 import { HOME_PREVIEW_STATES, type HomePreviewState } from './home-preview-state';
 import styles from './home-view.module.css';
@@ -35,13 +36,31 @@ const summary = {
 const steps = [
   {
     kind: 'unsub_archive' as const,
-    senderCount: 158,
+    senderCount: 3,
     emailCount: 2400,
     senderIds: ['a', 'b', 'c'],
     senders: [
-      { id: 'a', name: 'Fresh Finds Weekly', domain: 'freshfinds.synthetic.test' },
-      { id: 'b', name: 'Meadow Lane Dispatch', domain: 'meadow.synthetic.test' },
-      { id: 'c', name: 'North Letter', domain: 'north.synthetic.test' },
+      {
+        inboxCount: 900,
+        readRate: 0.02,
+        id: 'a',
+        name: 'Fresh Finds Weekly',
+        domain: 'freshfinds.synthetic.test',
+      },
+      {
+        inboxCount: 800,
+        readRate: 0.02,
+        id: 'b',
+        name: 'Meadow Lane Dispatch',
+        domain: 'meadow.synthetic.test',
+      },
+      {
+        inboxCount: 700,
+        readRate: 0.02,
+        id: 'c',
+        name: 'North Letter',
+        domain: 'north.synthetic.test',
+      },
     ],
   },
   { kind: 'largest' as const, senderCount: 10, sizeLabel: '2.1 GB', senderIds: ['b'] },
@@ -71,6 +90,11 @@ export function HomePreview({ state }: { state: HomePreviewState }) {
           </nav>
           <HomeView
             {...fixture(state)}
+            overview={state === 'full' || state === 'no-size' ? overviewFixture : undefined}
+            report={state === 'full' || state === 'no-size' ? reportFixture : null}
+            newSenders={{ status: 'ready', data: 12 }}
+            later={{ status: 'ready', data: { due: 3, troubled: 0, nextAt: null } }}
+            tier="pro"
             mailboxId="mb-preview"
             previewReport={homePreviewReport(state)}
           />

@@ -43,7 +43,9 @@ describe('Home suggested sender identities', () => {
       () => useHomeSenderPreview('mb-a', ['c', 'a', 'c', 'b', 'd'], true),
       setup(),
     );
-    await waitFor(() => expect(result.current.map((row) => row.id)).toEqual(['c', 'a', 'b']));
+    await waitFor(() =>
+      expect(result.current.senders.map((row) => row.id)).toEqual(['c', 'a', 'b']),
+    );
     expect(reads).toEqual(['c', 'a', 'b'].map((id) => ({ id, mailbox: 'mb-a' })));
   });
 
@@ -80,13 +82,13 @@ describe('Home suggested sender identities', () => {
     await waitFor(() =>
       expect(client.getQueryState(homeKeys.senderPreview('mb-a', 'gone'))?.status).toBe('error'),
     );
-    expect(result.current.map((row) => row.id)).toEqual(['a']);
+    expect(result.current.senders.map((row) => row.id)).toEqual(['a']);
     expect(missingReads).toBe(1);
     rerender({ ids: ['wrong'] });
     await waitFor(() =>
       expect(client.getQueryState(homeKeys.senderPreview('mb-a', 'wrong'))?.status).toBe('success'),
     );
-    expect(result.current).toEqual([]);
+    expect(result.current.senders).toEqual([]);
   });
 
   it('drops previous-account identities while a new account read is pending, including late responses', async () => {
@@ -108,9 +110,9 @@ describe('Home suggested sender identities', () => {
       { ...setup(), initialProps: { mailbox: 'mb-a' } },
     );
     rerender({ mailbox: 'mb-b' });
-    await waitFor(() => expect(result.current[0]?.name).toBe('Mailbox B sender'));
+    await waitFor(() => expect(result.current.senders[0]?.name).toBe('Mailbox B sender'));
     await act(async () => release(jsonOk({ data: sender('a', 'Mailbox A sender') })));
-    expect(result.current.map((row) => row.name)).toEqual(['Mailbox B sender']);
+    expect(result.current.senders.map((row) => row.name)).toEqual(['Mailbox B sender']);
   });
 
   it('does not make confirmed Undo wait for a stalled optional name read', async () => {
@@ -157,11 +159,11 @@ describe('Home suggested sender identities', () => {
       ...setup(),
       initialProps: { ids: ['a'] },
     });
-    await waitFor(() => expect(result.current[0]?.id).toBe('a'));
+    await waitFor(() => expect(result.current.senders[0]?.id).toBe('a'));
     rerender({ ids: ['b'] });
-    expect(result.current).toEqual([]);
+    expect(result.current.senders).toEqual([]);
     await act(async () => release(jsonOk({ data: sender('b') })));
-    await waitFor(() => expect(result.current[0]?.id).toBe('b'));
+    await waitFor(() => expect(result.current.senders[0]?.id).toBe('b'));
   });
 
   it.each([
@@ -183,7 +185,7 @@ describe('Home suggested sender identities', () => {
       () => useHomeSenderPreview(props.mailbox, ['a'], props.enabled),
       setup(),
     );
-    expect(result.current).toEqual([]);
+    expect(result.current.senders).toEqual([]);
     expect(calls).toBe(0);
   });
 });

@@ -159,7 +159,7 @@ test(homeVisitTitle, async ({ page }) => {
   try {
     const sinceLast = WS2_COPY.liveFix.home.sinceLast;
     const summary = page.getByRole('region', { name: sinceLast.eyebrow });
-    await expect(page.locator('details')).not.toHaveAttribute('open');
+    await expect(page.getByRole('region', { name: 'Your results' })).toBeVisible();
     await expect(
       summary.getByRole('heading', { name: pluralCopy(sinceLast.title, 3, { n: '3' }) }),
     ).toBeVisible();
@@ -199,7 +199,7 @@ test(homeVisitTitle, async ({ page }) => {
     await page.goto('/senders');
     await page.goto('/home');
     await page.reload();
-    await expect(page.locator('details')).not.toHaveAttribute('open');
+    await expect(page.getByRole('region', { name: 'Your results' })).toBeVisible();
     await expect(
       summary.getByRole('heading', { name: pluralCopy(sinceLast.title, 3, { n: '3' }) }),
     ).toBeVisible();
@@ -280,7 +280,7 @@ test('Home retries the displayed inbox and truthfully reports queued recovery', 
   try {
     await sql`UPDATE provider_sync_state SET readiness_status='failed', current_stage='failed', error_code='TransientError', initial_recovery_attempts=5, initial_retry_at=NULL, initial_attempt_id=NULL, last_history_id=987654321 WHERE mailbox_account_id=${fixture.mailboxId}`;
     await page.reload();
-    const recovery = page.getByRole('region', { name: 'Gmail account needs attention' });
+    const recovery = page.getByRole('region', { name: 'Mailbox needs attention' });
     const response = page.waitForResponse(
       (res) =>
         res.url().endsWith('/api/v1/sync/initial/retry') && res.request().method() === 'POST',
