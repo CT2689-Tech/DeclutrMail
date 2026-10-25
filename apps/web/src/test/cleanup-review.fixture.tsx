@@ -62,8 +62,12 @@ function Fixture() {
     setAccepted(JSON.stringify(payload));
     setOpen(false);
   };
-  const inboxCount = pickBucketCount(counts, days)!;
-  const allMailCount = pickBucketCount(archived, days)!;
+  const scenario = new URLSearchParams(location.search).get('scenario');
+  const empty = { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };
+  const inboxBuckets = scenario ? empty : counts;
+  const allMailBuckets = scenario === 'empty' ? empty : scenario ? { ...empty, all: 2 } : archived;
+  const inboxCount = pickBucketCount(inboxBuckets, days)!;
+  const allMailCount = scenario === 'unavailable' ? null : pickBucketCount(allMailBuckets, days)!;
   return (
     <main style={{ maxWidth: 640, margin: 'auto', padding: 12 }}>
       <h1>Cleanup review fixture</h1>
@@ -100,7 +104,7 @@ function Fixture() {
           mailboxEmail="fixture@example.invalid"
           verb="Unsubscribe"
           row={{ ...TRIAGE_QUEUE[0]!, senderName: sender.name, inboxCount: 12 }}
-          inboxCount={reach === 'all_mail' ? allMailCount : inboxCount}
+          inboxCount={reach === 'all_mail' ? (allMailCount ?? 'unavailable') : inboxCount}
           reach={reach}
           onReachChange={setReach}
           onCancel={cancel}
@@ -135,11 +139,11 @@ function Fixture() {
           verb="delete"
           row={{ ...SCREENER_QUEUE[0]!, senderName: sender.name, brandMark: false }}
           inboxCount={inboxCount}
-          inboxTotal={12}
+          inboxTotal={inboxBuckets.all}
           windowDays={days}
           onWindowChange={setDays}
           allMailCount={allMailCount}
-          allMailTotal={20}
+          allMailTotal={scenario === 'unavailable' ? null : allMailBuckets.all}
           reach={reach}
           onReachChange={setReach}
           confirming={false}

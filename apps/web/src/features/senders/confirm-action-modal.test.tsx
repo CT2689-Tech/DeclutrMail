@@ -1461,9 +1461,9 @@ describe('ConfirmActionModal — ADR-0028 reach (Inbox only / Inbox + archived)'
         compositePreview={nothingAnywhere}
       />,
     );
-    // Matching zeros hide the checkbox. Confirm stays blocked either way.
-    expect(reachRow()).toBeNull();
-    expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
+    // Empty scopes remain inspectable; confirmation still requires matching mail.
+    expect(reachRow()).toBeEnabled();
+    expect(screen.getByText('Both choices cover the same emails right now.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Nothing in your inbox from/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Delete/ })).toBeDisabled();
   });
@@ -2863,7 +2863,7 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
     },
   );
 
-  it('hides Include archived email when inbox and all-mail counts match', () => {
+  it('keeps Include archived email unchecked when inbox and all-mail counts match', () => {
     const onConfirm = vi.fn();
     render(
       <ConfirmActionModal
@@ -2877,8 +2877,8 @@ describe('ConfirmActionModal — explicit period and scope choices', () => {
         }}
       />,
     );
-    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
-    expect(screen.queryByText('Both choices cover the same emails right now.')).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
+    expect(screen.getByText('Both choices cover the same emails right now.')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(onConfirm).toHaveBeenLastCalledWith(expect.not.objectContaining({ reach: 'all_mail' }));
   });

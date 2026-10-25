@@ -513,7 +513,8 @@ describe('Unsubscribe uses the action preview contract', () => {
         compositePreview={{ ...widePreview, allMail: { ...widePreview.allMail, counts } }}
       />,
     );
-    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeEnabled();
   });
 
   it('uses only eligible bulk archived counts and blocks incomplete all-mail coverage', () => {

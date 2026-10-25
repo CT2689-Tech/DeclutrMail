@@ -239,7 +239,7 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
     ).toBeInTheDocument();
   });
 
-  it('hides the checkbox when the inbox and all-mail counts match', () => {
+  it('keeps the scope choice visible when inbox and all-mail counts match', () => {
     render(
       <DecidePreview
         verb="delete"
@@ -252,7 +252,8 @@ describe('DecidePreview — ADR-0028 reach chips (Delete only)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(screen.queryByRole('checkbox', { name: 'Include archived email' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeEnabled();
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
   });
 
   it('hides the checkbox on a non-Delete verb and disables it when archived mail cannot be counted', () => {
