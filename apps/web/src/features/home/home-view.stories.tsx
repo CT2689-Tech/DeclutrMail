@@ -150,3 +150,44 @@ export const LoadError: Story<typeof HomeView> = {
 };
 
 export const LaterOnly: Story<typeof HomeView> = { args: { state: ready, nextSteps: [steps[2]!] } };
+
+export const Returning: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    nextSteps: steps,
+    statusLine: 'Gmail connected · Last scanned 5m ago',
+    visitSummary: <p>Since your last visit: 24 new emails scanned · 3 new senders</p>,
+    priority: {
+      title: '3 new senders need review.',
+      action: { label: 'Review new senders', href: '/senders?view=first-review' },
+    },
+  },
+};
+
+export const CleanupRunning: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    nextSteps: steps,
+    statusLine: 'Gmail connected · Last scanned just now',
+    priority: {
+      title: 'Your cleanup is in progress.',
+      action: { label: 'Open Activity', href: '/activity' },
+    },
+  },
+};
+
+export const NoSuggestions: Story<typeof HomeView> = {
+  args: { state: ready, statusLine: 'Gmail connected · Last scanned 5m ago', noSuggestions: true },
+};
+
+export const ReconnectWhileReady: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    nextSteps: steps,
+    statusLine: 'Gmail needs reconnect',
+    priority: {
+      title: 'Reconnect Gmail to continue.',
+      action: { label: 'Open Settings', href: '/settings#mailboxes' },
+    },
+  },
+};

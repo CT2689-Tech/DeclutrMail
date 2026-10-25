@@ -2614,6 +2614,7 @@ async function bootstrap(): Promise<void> {
       // pass may flip dunning rows; the drift pass then verifies what
       // remains live against the provider (D249).
       const drift = await billingReconciliationService.reconcileLiveSubscriptions();
+      const passRefunds = await billingReconciliationService.reconcilePassRefunds();
       // The verdict counters (verdictsEnforced / verdictsUnenforced /
       // verdictsRefuted) left this line: refund + chargeback enforcement
       // now runs on BillingVerdictWorker's 10-minute tick (D253) and
@@ -2630,6 +2631,7 @@ async function bootstrap(): Promise<void> {
           subscriptionsUnchanged: drift.subscriptionsUnchanged,
           subscriptionsUnreadable: drift.subscriptionsUnreadable,
           providerErrors: drift.providerErrors,
+          passRefunds,
         }),
       );
     } catch (err) {

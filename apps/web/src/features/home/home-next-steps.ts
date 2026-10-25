@@ -1,4 +1,5 @@
 import { getFixSet } from '@declutrmail/shared/inbox-report';
+import type { SnoozedSenderRow } from '@declutrmail/shared/contracts';
 
 import type { HomeState } from './home-state';
 
@@ -46,13 +47,22 @@ export function rankHomeNextSteps(
     .slice(0, 3);
 }
 
-/** Later card from the Later list. Empty means no card. The report does not carry Later. */
-export function homeLaterCandidate(rows: readonly { senderId: string }[]): HomeFixCandidate | null {
-  if (!Array.isArray(rows) || rows.length === 0) return null;
+/** Only due or troubled timers, never future scheduled mail. A missing clock is unknown. */
+export function homeLaterCandidate(
+  rows: readonly Pick<SnoozedSenderRow, 'senderId' | 'snoozedUntil' | 'returnStatus'>[],
+  now: number | null,
+): HomeFixCandidate | null {
+  const due = rows.filter(
+    (row) =>
+      row.returnStatus === 'missed' ||
+      row.returnStatus === 'retrying' ||
+      (now !== null && Date.parse(row.snoozedUntil) <= now),
+  );
+  if (due.length === 0) return null;
   return {
     kind: 'later_due',
-    senderCount: rows.length,
-    senderIds: rows.map((row) => row.senderId),
+    senderCount: due.length,
+    senderIds: due.map((row) => row.senderId),
   };
 }
 

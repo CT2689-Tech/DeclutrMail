@@ -19,9 +19,12 @@ function placeholderForMailbox<T>(mailboxId: string | null): PlaceholderDataFunc
   };
 }
 
-export function homeSummaryQueryOptions(reader: (signal: AbortSignal) => Promise<HomeSummary>) {
+export function homeSummaryQueryOptions(
+  reader: (signal: AbortSignal) => Promise<HomeSummary>,
+  mailboxId?: string,
+) {
   return queryOptions({
-    queryKey: homeKeys.summary(),
+    queryKey: homeKeys.summary(mailboxId),
     queryFn: ({ signal }) => reader(signal),
     staleTime: 30_000,
   });

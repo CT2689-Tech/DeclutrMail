@@ -264,6 +264,9 @@ interface PaddleAdjustment {
   items?: Array<{ type?: string }>;
 }
 
+export type PassRefundRead =
+  { kind: 'refunded'; adjustmentId: string } | { kind: 'unchanged' } | { kind: 'unreadable' };
+
 function refundReference(
   a: PaddleAdjustment,
 ): { refundReference: RefundReference } | Record<string, never> {
@@ -1577,6 +1580,78 @@ export class PaddleAdapter implements BillingProvider {
       kind: 'found',
       subscription: { ...normalized, providerCreatedAt: sub.created_at ?? null },
     };
+  }
+
+  /** Read only a transaction already attributed by a purchased Pass grant.
+   * Aggregate refund totals cannot distinguish a full refund from accumulated
+   * partials. Require one explicit, approved full refund instead. No email search,
+   * browser attribution, provider mutation, or webhook-secret dependency.
+   */
+  async readPassRefund(transactionId: string): Promise<PassRefundRead> {
+    const unreadable = { kind: 'unreadable' } as const;
+    if (!/^txn_[a-z\d]{26}$/.test(transactionId)) return unreadable;
+    try {
+      const transaction = (await this.authedGet(
+        `/transactions/${encodeURIComponent(transactionId)}`,
+        `pass_refund_transaction txn=${transactionId}`,
+      )) as { data?: PaddleTransaction } | null;
+      const t = transaction?.data;
+      const amount = t?.details?.totals?.grand_total;
+      if (
+        t?.id !== transactionId ||
+        t.status !== 'completed' ||
+        t.subscription_id !== null ||
+        typeof amount !== 'string' ||
+        !/^\d+$/.test(amount) ||
+        BigInt(amount) <= 0n
+      )
+        return unreadable;
+
+      const query = new URLSearchParams({ transaction_id: transactionId, per_page: '50' });
+      let path = `/adjustments?${query}`;
+      let fullRefundId: string | undefined;
+      const cursors = new Set<string>();
+      for (let page = 0; page < 10; page++) {
+        const body = (await this.authedGet(path, `pass_refunds txn=${transactionId}`)) as {
+          data?: PaddleAdjustment[];
+          meta?: { pagination?: { has_more?: boolean; next?: string } };
+        } | null;
+        if (!Array.isArray(body?.data) || typeof body.meta?.pagination?.has_more !== 'boolean')
+          return unreadable;
+        for (const a of body.data) {
+          if (
+            !a ||
+            typeof a.id !== 'string' ||
+            !/^adj_[a-z\d]{26}$/.test(a.id) ||
+            a.transaction_id !== transactionId ||
+            a.subscription_id !== null ||
+            typeof a.action !== 'string' ||
+            typeof a.status !== 'string' ||
+            (a.type !== 'full' && a.type !== 'partial')
+          )
+            return unreadable;
+          if (a.action === 'refund' && a.status === 'approved' && a.type === 'full')
+            fullRefundId = a.id;
+        }
+        if (!body.meta.pagination.has_more)
+          return fullRefundId
+            ? { kind: 'refunded', adjustmentId: fullRefundId }
+            : { kind: 'unchanged' };
+        const nextUrl = body.meta.pagination.next;
+        if (!nextUrl || !URL.canParse(nextUrl)) return unreadable;
+        const next = new URL(nextUrl);
+        const after = next.searchParams.get('after');
+        if (next.pathname !== '/adjustments' || !after || cursors.has(after)) return unreadable;
+        cursors.add(after);
+        // Preserve our exact transaction scope and host on EVERY page.
+        const nextQuery = new URLSearchParams(query);
+        nextQuery.set('after', after);
+        path = `/adjustments?${nextQuery}`;
+      }
+      return unreadable;
+    } catch {
+      return unreadable;
+    }
   }
 
   /**

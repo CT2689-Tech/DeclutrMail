@@ -49,6 +49,7 @@ import { publishSubscriptionNotices, subscriptionNoticeSnapshot } from './billin
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
+  entitlementGrants,
   pendingCheckouts,
   billingCustomers,
   subscriptionEvents,
@@ -1426,18 +1427,41 @@ export class BillingWebhookService {
     event: Extract<NormalizedBillingEvent, { kind: 'pass_revoked' }>,
     eventRowId: string,
   ): Promise<WebhookProcessOutcome> {
-    const revoked = await revokePassByTransaction(this.db, event.providerTransactionId);
-    if (revoked.status === 'missing') {
-      this.logger.error(
-        `billing.webhook.pass_revoke_missing txn=${event.providerTransactionId} event=${event.providerEventId}`,
-      );
-      return { kind: 'unresolved', reason: 'unattributable' };
-    }
-    for (const workspaceId of revoked.workspaceIds) {
-      await this.recomputeWorkspaceTier(this.db, workspaceId);
-    }
-    await this.markProcessed(eventRowId);
-    return { kind: 'processed', effect: `pass_revoked:${event.reason}` };
+    return this.db.transaction(async (tx) => {
+      const owners = await tx
+        .select({ workspaceId: users.workspaceId })
+        .from(entitlementGrants)
+        .leftJoin(users, eq(users.email, entitlementGrants.email))
+        .where(
+          and(
+            eq(entitlementGrants.providerTransactionId, event.providerTransactionId),
+            eq(entitlementGrants.source, 'pass'),
+            eq(entitlementGrants.provider, 'paddle'),
+          ),
+        );
+      // Lock workspace before grant mutation, in the same order as purchase.
+      // A missing purchase remains unresolved for a later delivery/sweep.
+      if (owners.length === 0) return { kind: 'unresolved', reason: 'unattributable' } as const;
+      for (const workspaceId of [
+        ...new Set(owners.map((o) => o.workspaceId).filter((id): id is string => id !== null)),
+      ].sort())
+        await this.lockWorkspaceTier(tx, workspaceId);
+      const revoked = await revokePassByTransaction(tx as DrizzleDb, event.providerTransactionId);
+      if (revoked.status === 'missing') {
+        this.logger.error(
+          `billing.webhook.pass_revoke_missing txn=${event.providerTransactionId} event=${event.providerEventId}`,
+        );
+        return { kind: 'unresolved', reason: 'unattributable' };
+      }
+      for (const workspaceId of revoked.workspaceIds.sort()) {
+        await this.recomputeWorkspaceTier(tx, workspaceId);
+      }
+      await tx
+        .update(subscriptionEvents)
+        .set({ processedAt: new Date() })
+        .where(eq(subscriptionEvents.id, eventRowId));
+      return { kind: 'processed', effect: `pass_revoked:${event.reason}` } as const;
+    });
   }
 
   private async applyPayment(
@@ -1530,9 +1554,12 @@ export class BillingWebhookService {
       );
       return { kind: 'unresolved', reason: 'unattributable' };
     }
-    const granted = await grantPassFromTransaction(this.db, {
-      workspaceId: event.workspaceId,
-      providerTransactionId: event.providerTransactionId,
+    const granted = await this.db.transaction(async (tx) => {
+      await this.lockWorkspaceTier(tx, event.workspaceId!);
+      return grantPassFromTransaction(tx as DrizzleDb, {
+        workspaceId: event.workspaceId!,
+        providerTransactionId: event.providerTransactionId!,
+      });
     });
     if (granted.status === 'no_email') {
       this.logger.error(
@@ -1550,11 +1577,14 @@ export class BillingWebhookService {
         granted.userId,
       );
     }
-    await this.recomputeWorkspaceTier(this.db, event.workspaceId);
-    await this.db
-      .delete(pendingCheckouts)
-      .where(eq(pendingCheckouts.workspaceId, event.workspaceId));
-    await this.markProcessed(eventRowId);
+    await this.db.transaction(async (tx) => {
+      await this.recomputeWorkspaceTier(tx, event.workspaceId!);
+      await tx.delete(pendingCheckouts).where(eq(pendingCheckouts.workspaceId, event.workspaceId!));
+      await tx
+        .update(subscriptionEvents)
+        .set({ processedAt: new Date() })
+        .where(eq(subscriptionEvents.id, eventRowId));
+    });
     this.logger.log(
       `billing.webhook.pass_${granted.status} workspace=${event.workspaceId} txn=${event.providerTransactionId}`,
     );
@@ -1619,10 +1649,24 @@ export class BillingWebhookService {
   // (apps/api/src/worker.ts, sweepBillingReconciliation) mirrors this
   // logic in SQL — same statuses, same deadline predicate, same
   // max-rank rule, same grant floor. Change one, change both.
+  private async lockWorkspaceTier(
+    tx: Pick<DrizzleDb, 'select'>,
+    workspaceId: string,
+  ): Promise<void> {
+    await tx
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId))
+      .for('update');
+  }
+
   private async recomputeWorkspaceTier(
     tx: Pick<DrizzleDb, 'select' | 'update'>,
     workspaceId: string,
   ): Promise<void> {
+    // Every caller supplies an open transaction. Lock BEFORE reading all
+    // subscriptions/grants so concurrent writers cannot publish a stale tier.
+    await this.lockWorkspaceTier(tx, workspaceId);
     const granting = await tx
       .select({ tier: subscriptions.tier, foundingMember: subscriptions.foundingMember })
       .from(subscriptions)
