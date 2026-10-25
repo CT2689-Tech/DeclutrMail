@@ -35,6 +35,8 @@ const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')
  */
 export function RuleCard({
   rule,
+  libraryRow = false,
+  canEdit = true,
   canActivate,
   canChangeMode = true,
   pendingCount,
@@ -49,6 +51,8 @@ export function RuleCard({
   onRetryPreview,
 }: {
   rule: AutopilotRuleDto;
+  libraryRow?: boolean;
+  canEdit?: boolean;
   /**
    * D251 — whether this workspace's rules may act unattended
    * (`autopilot-active`, Pro). On Plus an `active` rule is skipped by the apply
@@ -103,11 +107,12 @@ export function RuleCard({
         display: 'flex',
         flexDirection: 'column',
         gap: 4,
-        padding: '16px 20px',
+        padding: libraryRow ? '20px 0' : '16px 20px',
+        borderBottom: libraryRow ? `1px solid ${color.line}` : undefined,
         fontFamily: font.sans,
       }}
     >
-      <style>{RULE_ROW_CSS}</style>
+      {!libraryRow && <style>{RULE_ROW_CSS}</style>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
         <div
           style={{
@@ -119,12 +124,24 @@ export function RuleCard({
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: text.lg, fontWeight: 500, color: color.fg }}>{name}</span>
+          <span
+            style={{
+              fontSize: libraryRow ? text.md : text.lg,
+              fontWeight: 500,
+              color: color.fg,
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {name}
+          </span>
+          {libraryRow && (
+            <span style={{ fontSize: text.xs, color: color.fgMuted }}>Built-in rule</span>
+          )}
           <ModeStatus rule={rule} canActivate={canActivate} />
         </div>
         <Switch
           checked={rule.enabled}
-          disabled={isSaving || !canChangeMode}
+          disabled={isSaving || !canEdit || !canChangeMode}
           ariaLabel={`${rule.enabled ? 'Disable' : 'Enable'} rule ${name}`}
           onChange={() => onToggleEnabled(!rule.enabled)}
         />
@@ -149,13 +166,17 @@ export function RuleCard({
         }}
       >
         <Button
-          tone="ghost"
+          tone={libraryRow ? 'default' : 'ghost'}
           size="sm"
           onClick={() => setDetailsOpen((open) => !open)}
-          ariaLabel={`${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`}
+          ariaLabel={
+            libraryRow
+              ? `${detailsOpen ? 'Close rule' : 'Edit rule'} ${name}`
+              : `${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`
+          }
           ariaExpanded={detailsOpen}
         >
-          Details
+          {libraryRow ? (detailsOpen ? 'Close rule' : 'Edit rule') : 'Details'}
           <span
             aria-hidden="true"
             style={{
@@ -171,7 +192,7 @@ export function RuleCard({
             tone="default"
             size="sm"
             onClick={onResume}
-            disabled={isSaving || !canChangeMode}
+            disabled={isSaving || !canEdit || !canChangeMode}
             ariaLabel={`Resume rule ${name}`}
           >
             {isSaving ? 'Resuming…' : 'Resume'}
@@ -224,7 +245,7 @@ export function RuleCard({
             <ThresholdSlider
               ruleName={name}
               committed={rule.confidenceThreshold}
-              disabled={isSaving}
+              disabled={isSaving || !canEdit}
               onCommit={onCommitThreshold}
             />
           )}
@@ -235,6 +256,7 @@ export function RuleCard({
               tone="ghost"
               size="sm"
               onClick={onTogglePreview}
+              disabled={!canEdit}
               ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
             >
               {previewOpen ? 'Hide preview' : 'Preview matches'}

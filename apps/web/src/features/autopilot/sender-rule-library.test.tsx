@@ -7,6 +7,7 @@ import type { AutopilotRuleDto } from '@/lib/api/autopilot';
 import { useUiStore } from '@declutrmail/shared';
 import { SenderRuleLibraryScope, senderRuleFailureCopy } from './sender-rule-library';
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT } from './fixtures';
+import { RuleCard } from './rule-card';
 
 const api = vi.hoisted(() => ({
   tier: 'pro' as 'free' | 'pro',
@@ -122,6 +123,24 @@ function setup(
         mailboxId="mailbox-a"
         presetRules={presetRules}
         presetsAvailable={presetsAvailable}
+        renderPresetRule={(preset) => (
+          <RuleCard
+            key={preset.id}
+            rule={preset}
+            libraryRow
+            canActivate
+            pendingCount={0}
+            pendingApproximate={false}
+            isSaving={false}
+            onToggleEnabled={() => {}}
+            onCommitThreshold={async () => true}
+            onResume={() => {}}
+            previewOpen={false}
+            preview={null}
+            onTogglePreview={() => {}}
+            onRetryPreview={() => {}}
+          />
+        )}
       />
     </QueryClientProvider>
   );
@@ -177,6 +196,40 @@ describe('sender rule library', () => {
     await waitFor(() => expect(cancel).toHaveFocus());
     fireEvent.click(cancel);
     await waitFor(() => expect(opener).toHaveFocus());
+  });
+
+  it('filters built-in and sender rules together and keeps an incomplete total unavailable', async () => {
+    const paused = {
+      ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+      id: 'paused-preset',
+      name: 'Paused built-in',
+      presetKey: null,
+      mode: 'paused' as const,
+    };
+    const off = {
+      ...AUTO_ARCHIVE_LOW_ENGAGEMENT,
+      id: 'off-preset',
+      name: 'Off built-in',
+      presetKey: null,
+      enabled: false,
+    };
+    const view = setup(true, [AUTO_ARCHIVE_LOW_ENGAGEMENT, paused, off]);
+    const library = await screen.findByRole('complementary', { name: 'Rule library' });
+    await within(library).findByRole('button', { name: /^Newsletter cleanup Archive/ });
+    expect(within(library).getByRole('list').children).toHaveLength(4);
+    fireEvent.click(within(library).getByRole('button', { name: 'Inactive' }));
+    expect(within(library).getByRole('list').children).toHaveLength(2);
+    expect(within(library).getByText('Paused built-in')).toBeVisible();
+    expect(within(library).getByText('Off built-in')).toBeVisible();
+    fireEvent.click(within(library).getByRole('button', { name: 'Ready' }));
+    expect(within(library).getByRole('list').children).toHaveLength(2);
+    expect(within(library).queryByText('Paused built-in')).not.toBeInTheDocument();
+    view.unmount();
+    setup(false, []);
+    const partialLibrary = await screen.findByRole('complementary', { name: 'Rule library' });
+    expect(
+      within(partialLibrary).getByRole('heading', { name: 'Your rules' }).parentElement,
+    ).toHaveTextContent('—');
   });
 
   it('registers approval-first help for the application shell', async () => {
@@ -507,7 +560,8 @@ describe('sender rule library', () => {
     );
     setup();
     await screen.findByRole('button', { name: /^Rule 0 Archive/ });
-    expect(screen.getAllByRole('button', { name: /^Rule \d+ Archive/ })).toHaveLength(6);
+    expect(screen.getAllByRole('button', { name: /^Rule \d+ Archive/ })).toHaveLength(5);
+    expect(screen.getByRole('list', { name: 'Autopilot rules' }).children).toHaveLength(6);
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     expect(screen.getByRole('button', { name: /^Rule 6 Archive/ })).toBeInTheDocument();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Search rules' }), {
