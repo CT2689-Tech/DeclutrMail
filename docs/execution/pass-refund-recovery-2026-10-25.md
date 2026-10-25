@@ -10,11 +10,13 @@ checkout-recovery PR #1131 has no dependency. Deployment and merge are authorize
 by the user after normal checks and sandbox verification; this record is not
 proof of either delivery state.
 
-**At this audit commit:** implementation and independent source review complete;
-real sandbox verification is pending approval of the prepared temporary key.
-No new provider key, purchase, refund or destination has been created for this
-rehearsal. Do not reuse the previous successful refund rehearsal as proof of
-missed-webhook recovery. Keep the PR draft until this missing evidence is obtained.
+**At this audit commit:** implementation, independent source review and a fresh
+real sandbox purchase/missed-refund rehearsal passed. The temporary key is revoked
+(exact owned transaction read now returns 403), both task Keychain items are removed,
+the destination is disabled and the customer archived. Disposable local services,
+database, browser session and invoice copies are cleaned up. Shared credentials
+remain unchanged. Merge, deployment and live verification are separate next gates;
+this record does not claim they have happened. No live charges were made.
 
 ## Before and after
 
@@ -35,7 +37,7 @@ access remain separate; payment history and invoice links retain the transaction
 
 | State / transition                                        | User or data outcome                                                | Evidence                                           |
 | --------------------------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------- |
-| Paid grant; approved event missed                         | Paid access until confirmed recovery                                | Real sandbox rehearsal pending                     |
+| Paid grant; approved event missed                         | Paid access until confirmed recovery                                | Fresh real sandbox purchase and withheld event     |
 | Explicit full approved refund                             | Exact grant revoked; remaining entitlements determine tier          | Adapter and real-projector integration regressions |
 | Pending, rejected or partial                              | Access retained                                                     | Reader and existing webhook regressions            |
 | Unreadable, mismatched, truncated or unavailable provider | No entitlement assertion or write                                   | Reader regressions; separate counters              |
@@ -68,9 +70,31 @@ This closes a reproduced race where its earlier snapshot overwrote Free with Plu
 - Independent flow and architecture/adversarial reviews identified and resolved
   atomicity, purchase fact-writer ordering, global sweep snapshot and circuit-breaker
   gaps. Final review evidence is recorded in the PR.
-- Sandbox fixture, webhook-only tunnel, one-purchase/full-refund limits, deliberate
-  approved-event 503 withholding and real-reconciler invocation are prepared outside
-  the repository. No real sandbox run is claimed at this commit.
+- Real sandbox rehearsal on source candidate `aace48a74808f3c0350d40ba1379560c6187b88c`:
+  one $19 test-card purchase activated one 30-day Pass through the signed provider
+  completion event and retry. Its immediate duplicate was deduplicated.
+- The pending refund retained Plus. The genuine approved event was signature-checked
+  and deliberately withheld with HTTP 503 at `2026-10-25T16:00:03.754Z`. The actual
+  reconciliation service read the exact transaction and adjustment, checked one
+  grant and recovered one, with zero unreadable/failed checks. It committed Free
+  and the revoked grant at `16:00:23.932Z`; a second sweep did no work.
+- The genuine late provider retry arrived at `16:00:24.441Z`, after recovery,
+  processed successfully and preserved the original revocation timestamp. No
+  synthetic or re-signed provider event was substituted for that retry.
+- Owner history retained the $19 transaction, displayed Refunded, and both actual
+  browser invoice downloads succeeded. Before/after PDF content and rendered image
+  hashes matched the original invoice. Status filtering and return navigation
+  passed. Foreign-account history was empty and document access returned 404,
+  including after the sandbox customer was archived.
+- Final post-recovery refresh and Home-to-Billing checks had zero browser errors.
+  An earlier `/quiet` RSC prefetch failed around the first download and fell back
+  to navigation; its cause was not diagnosed. No visible Billing failure occurred.
+  This observation is retained rather than claiming the entire run was error-free.
+- Provider trace records exactly one transaction creation and one full-refund
+  creation, all on `sandbox-api.paddle.com`. The task destination is disabled,
+  customer archived and approved refund retained; the task key is revoked with 403
+  readback. No live provider calls, shared credential changes or real mailbox writes.
+  Safe receipts remain outside the repository; raw PDFs and secrets are not committed.
 
 ## Limits and remaining work
 
@@ -83,7 +107,9 @@ existing provider key. No provider write is performed by recovery.
 
 Explicit full refund evidence is required; cumulative partial refund entitlement
 policy is unchanged. Faster guaranteed per-grant recovery would need its own
-scheduled/checkpointed design and is deferred. Real sandbox purchase, withheld
-approved webhook, recovery, history/PDF, late provider delivery and cleanup remain
-required before merge/deploy. Live verification will be read-only serving identity,
-health and authenticated Billing; no live charges are authorized.
+scheduled/checkpointed design and is deferred. The real sandbox purchase, withheld
+approved webhook, recovery, history/PDF, late provider delivery and cleanup passed.
+Normal final PR/queue checks, deployment and live verification remain. Live
+verification will be read-only serving identity, health and authenticated Billing;
+no live charges are authorized. Production worker permission availability must be
+confirmed through its deployed recovery counters, without exploratory live API reads.
