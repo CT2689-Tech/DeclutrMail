@@ -85,7 +85,7 @@ describe('HomeView', () => {
     'Your cleanup is in progress.',
     'Reconnect Gmail to continue.',
     '3 new senders need review.',
-  ])('prioritizes %s without unrelated sender previews or another cleanup action', (title) => {
+  ])('prioritizes %s without unrelated sender previews or a competing primary action', (title) => {
     render(
       <HomeView
         state={ready}
