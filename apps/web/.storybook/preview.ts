@@ -61,11 +61,12 @@ const preview: Preview = {
     (Story, context) =>
       createElement(ThemePreview, {
         theme: context.globals.theme === 'dark' ? 'dark' : 'light',
-        workspace: /^(Senders|Autopilot|Features\/(Activity|Brief|Followups|Later|Senders))\//.test(
-          context.title,
-        ),
+        workspace:
+          /^(Senders|Autopilot|Settings|Billing|Features\/(Activity|Brief|Followups|Later|Senders|Billing))\//.test(
+            context.title,
+          ),
         appTheme:
-          /^(Home|Senders|Autopilot|Features\/(Activity|Brief|Followups|Later|Senders))\//.test(
+          /^(Home|Senders|Autopilot|Settings|Billing|Features\/(Activity|Brief|Followups|Later|Senders|Billing))\//.test(
             context.title,
           ),
         children: createElement(Story),

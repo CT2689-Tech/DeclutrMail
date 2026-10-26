@@ -1,7 +1,7 @@
 .page {
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 24px;
 }
 
 .header {
@@ -21,7 +21,7 @@
   margin: 12px 0 0;
   max-width: 640px;
   color: var(--dm-fg-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
@@ -29,4 +29,16 @@
 .loading {
   display: grid;
   gap: 16px;
+}
+
+/* The current access panel is the visual anchor; financial warnings keep
+   their existing semantic colors and all controls retain their own styles. */
+.page :global(#plan) {
+  border-top: 3px solid var(--dm-primary) !important;
+}
+.page :global(#plan) > div:first-of-type > div:first-child > span:first-child {
+  font-weight: 600 !important;
+}
+.page :is(:global(#plan), :global(#payment), :global(#invoices)) {
+  border-radius: 12px !important;
 }

@@ -7,6 +7,7 @@ import type { CSSProperties, ReactNode, SelectHTMLAttributes } from 'react';
 import Link from 'next/link';
 import { Button, tokens } from '@declutrmail/shared';
 import { SwitchTrack } from './switch';
+import styles from './settings-list.module.css';
 
 const { color, font, text, motion, radius } = tokens;
 
@@ -135,17 +136,7 @@ export function SettingsGroup({
         {title}
       </GroupTitle>
       <style>{GROUP_CSS}</style>
-      <div
-        className="dm-settings-rows"
-        style={{
-          background: color.card,
-          border: `1px solid ${color.border}`,
-          borderRadius: radius.xl,
-          overflow: 'hidden',
-        }}
-      >
-        {children}
-      </div>
+      <div className={`dm-settings-rows ${styles.rows}`}>{children}</div>
       {footer != null && <div style={{ padding: `0 ${ROW_INSET}px` }}>{footer}</div>}
     </section>
   );
@@ -190,7 +181,7 @@ export function SettingsRow({
   return (
     <div className="dm-settings-row" style={{ ...rowStyle, ...style }}>
       <div style={{ minWidth: 0, flex: '1 1 200px', padding: '10px 0', overflowWrap: 'anywhere' }}>
-        <div style={{ fontSize: text.md, fontWeight: 500, color: color.fg }}>{label}</div>
+        <div style={{ fontSize: text.md, fontWeight: 600, color: color.fg }}>{label}</div>
         {detail != null && (
           <div style={{ fontSize: text.sm, color: color.fgMuted, marginTop: 2 }}>{detail}</div>
         )}
@@ -230,7 +221,7 @@ export function DrillRow({
       className="dm-settings-row dm-settings-drill"
       style={{ ...rowStyle, flexWrap: 'nowrap', textDecoration: 'none', color: color.fg }}
     >
-      <span style={{ fontSize: text.md, fontWeight: 500, minWidth: 0 }}>{label}</span>
+      <span style={{ fontSize: text.md, fontWeight: 600, minWidth: 0 }}>{label}</span>
       <span
         style={{
           display: 'inline-flex',

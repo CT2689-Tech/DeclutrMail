@@ -358,6 +358,8 @@ function AppChrome({ children }: { children: ReactNode }) {
                   'followups',
                   'snoozed',
                   'activity',
+                  'settings',
+                  'billing',
                 ].includes(active)
                   ? ''
                   : undefined
