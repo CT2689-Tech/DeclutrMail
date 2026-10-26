@@ -505,3 +505,10 @@ Extended the accepted app typography, compact spacing, panel boundaries and rest
 ### 2026-10-25 — Setup and preview visual consistency (Relates to D198, D210)
 
 Extended the accepted app typography and panel treatment to centered onboarding and scoped action previews. Kept setup choices and scan status simple; preserved each preview's account, scope, consequence, recovery and Cancel. Repaired the first-review header at 320px and its inline-preview story fixture. Synthetic desktop/phone/light/dark checks, Cancel/focus-return evidence, regression results, independent review and limits are recorded in `docs/execution/setup-preview-visual-2026-10-25.md`. No D status reclassified.
+
+### 2026-10-26 — Signed-out onboarding entry (Relates to D107, D108)
+
+The public Promise and Connect steps now probe the session without redirecting
+anonymous visitors to returning sign-in. Protected secondary-mailbox entry
+retains its redirect. Regression and synthetic browser evidence are recorded in
+`docs/execution/onboarding-signedout-2026-10-26.md`. No D status reclassified.
