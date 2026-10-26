@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import type postgres from 'postgres';
 
 import { BILLING_SEED } from '../helpers/seed-billing';
@@ -235,23 +235,6 @@ test('empty Senders and Triage Delete previews explain location or no current ma
   await page.goto('/triage');
   await expectScreenMounted(page);
   const navigation = page.getByRole('navigation', { name: 'Senders in this review' });
-  await navigation.getByRole('button', { name: emptySender.name, exact: true }).click();
-  const toolbar = page.getByRole('toolbar', { name: `Decide on ${emptySender.name}` });
-  await toolbar.getByText('More actions', { exact: true }).click();
-  await toolbar.getByRole('button', { name: 'Delete (D)', exact: true }).click();
-  await expect(
-    dialog.getByText('No current Inbox or archived email to delete.', { exact: true }),
-  ).toBeVisible();
-  await expect(dialog.getByText('Cancel to choose another action.', { exact: true })).toBeVisible();
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-  await toolbar.getByRole('button', { name: 'Unsubscribe (U)', exact: true }).click();
-  await dialog.getByRole('radio', { name: '+ Delete', exact: true }).click();
-  await expect(
-    dialog.getByText('No current Inbox or archived email to delete.', { exact: true }),
-  ).toBeVisible();
-  await dialog.getByRole('button', { name: 'Choose Unsubscribe only', exact: true }).click();
-  await expect(dialog.getByRole('radio', { name: 'Unsubscribe only', exact: true })).toBeChecked();
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await navigation.getByRole('button', { name: archivedSender.name, exact: true }).click();
   const archivedToolbar = page.getByRole('toolbar', { name: `Decide on ${archivedSender.name}` });
   for (const unsubscribe of [false, true]) {
@@ -278,3 +261,136 @@ test('empty Senders and Triage Delete previews explain location or no current ma
     await sql`SELECT count(*)::int AS n, count(*) FILTER (WHERE 'TRASH' = ANY(label_ids))::int AS trash FROM mail_messages WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key IN (${emptySender.key}, ${archivedSender.key})`;
   expect(labels).toMatchObject({ n: 1, trash: 0 });
 });
+
+/** Navigation records mailboxVisits; all other preferences and action-state rows stay stable. */
+async function emptyTriageActionState() {
+  const [state] = await sql`
+    SELECT
+      (SELECT count(*)::int FROM mail_messages WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${emptySender.key}) AS empty_messages,
+      (SELECT md5(COALESCE(jsonb_agg(to_jsonb(m) ORDER BY id), '[]'::jsonb)::text) FROM mail_messages m WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}) AS messages,
+      (SELECT md5(COALESCE(jsonb_agg(to_jsonb(j) ORDER BY id), '[]'::jsonb)::text) FROM action_jobs j WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}) AS jobs,
+      (SELECT md5(COALESCE(jsonb_agg(to_jsonb(e) ORDER BY id), '[]'::jsonb)::text) FROM outbox_events e) AS outbox,
+      (SELECT md5(COALESCE(jsonb_agg(to_jsonb(a) ORDER BY id), '[]'::jsonb)::text) FROM activity_log a WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}) AS activity,
+      (SELECT md5(COALESCE(jsonb_agg(to_jsonb(p) ORDER BY id), '[]'::jsonb)::text) FROM sender_policies p WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}) AS policies,
+      (SELECT md5(COALESCE(jsonb_agg(to_jsonb(d) ORDER BY id), '[]'::jsonb)::text) FROM triage_decisions d WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}) AS decisions,
+      (SELECT COALESCE(preferences, '{}'::jsonb) - 'mailboxVisits' FROM users WHERE id = ${BILLING_SEED.userId}) AS preferences
+  `;
+  expect(state).toBeDefined();
+  expect(state!.empty_messages).toBe(0);
+  return state;
+}
+
+async function expectGenuinelyEmpty(preview: Locator, confirmName: string) {
+  const impact = preview.getByRole('region', { name: 'What Delete will do' });
+  await expect(
+    impact.getByText('No current Inbox or archived email to delete.', { exact: true }),
+  ).toBeVisible();
+  await expect(preview.getByRole('button', { name: confirmName, exact: true })).toBeDisabled();
+}
+
+for (const surface of ['sheet', 'inline'] as const) {
+  test(`genuinely empty Triage ${surface} previews choose Unsubscribe only without submitting actions`, async ({
+    page,
+  }) => {
+    const { E2E_ENV } = await import('../helpers/env');
+    const [saved] = await sql`SELECT preferences FROM users WHERE id = ${BILLING_SEED.userId}`;
+    expect(saved).toBeDefined();
+    const preferences = (saved!.preferences ?? {}) as postgres.JSONValue;
+    const submissions: string[] = [];
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      // Bulk preview is a read-only POST. Capture every execution endpoint,
+      // including unsubscribe-intent, rather than only the plain Delete route.
+      if (
+        !['GET', 'HEAD'].includes(request.method()) &&
+        ((/^\/api\/actions(?:\/|$)/.test(path) && path !== '/api/actions/preview/bulk') ||
+          path === '/api/screener/decide')
+      )
+        submissions.push(`${request.method()} ${path}`);
+    });
+    try {
+      await sql`UPDATE users SET preferences = jsonb_set(COALESCE(preferences, '{}'::jsonb), '{actionSheetPrefs}', ${sql.json({ archive: false, unsubscribe: surface === 'inline', later: false })}::jsonb, true) WHERE id = ${BILLING_SEED.userId}`;
+      const before = await emptyTriageActionState();
+      await page.goto(
+        `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: BILLING_SEED.email })}`,
+      );
+      await page.goto('/triage');
+      await expectScreenMounted(page);
+      const consent = page.getByTestId('cookie-consent-banner');
+      await expect(consent).toBeVisible();
+      await consent.getByRole('button', { name: 'Essential only', exact: true }).click();
+      await expect(consent).toHaveCount(0);
+      const navigation = page.getByRole('navigation', { name: 'Senders in this review' });
+      await navigation.getByRole('button', { name: emptySender.name, exact: true }).click();
+      const toolbar = page.getByRole('toolbar', { name: `Decide on ${emptySender.name}` });
+      const dialog = page.getByRole('dialog').or(page.getByRole('alertdialog'));
+      // Plain Delete always keeps its full confirmation sheet.
+      if (surface === 'sheet') {
+        await toolbar.getByText('More actions', { exact: true }).click();
+        await toolbar.getByRole('button', { name: 'Delete (D)', exact: true }).click();
+        await expect(dialog.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+        await expect(
+          dialog.getByRole('checkbox', { name: 'Include archived email' }),
+        ).not.toBeChecked();
+        await expectGenuinelyEmpty(dialog, 'Delete');
+        await expect(
+          dialog.getByText('Cancel to choose another action.', { exact: true }),
+        ).toBeVisible();
+        await dialog.getByRole('checkbox', { name: 'Include archived email' }).check();
+        await dialog.getByRole('combobox', { name: 'Email age' }).selectOption('180');
+        await expectGenuinelyEmpty(dialog, 'Delete');
+        await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+      }
+      await toolbar.getByRole('button', { name: 'Unsubscribe (U)', exact: true }).click();
+      const preview =
+        surface === 'sheet'
+          ? dialog
+          : page.getByRole('region', {
+              name: `Preview · Unsubscribe ${emptySender.name}`,
+              exact: true,
+            });
+      if (surface === 'inline')
+        await expect(preview).toHaveAttribute('data-dm-preview-mode', 'inline');
+      else await expect(dialog).toBeVisible();
+      await preview.getByRole('radio', { name: '+ Delete', exact: true }).click();
+      const age = preview.getByRole('combobox', { name: 'Email age' });
+      const archived = preview.getByRole('checkbox', { name: 'Include archived email' });
+      await expect(age).toHaveValue('all');
+      await expect(archived).not.toBeChecked();
+      await expectGenuinelyEmpty(preview, 'Unsubscribe + Delete');
+      await archived.check();
+      await age.selectOption('180');
+      await expectGenuinelyEmpty(preview, 'Unsubscribe + Delete');
+      await preview
+        .getByRole('button', { name: 'Choose Unsubscribe only', exact: true })
+        .press('Enter');
+      const futureOnly = preview.getByRole('radio', { name: 'Unsubscribe only', exact: true });
+      await expect(futureOnly).toBeChecked();
+      await expect(futureOnly).toBeFocused();
+      await expect(preview.getByRole('button', { name: 'Unsubscribe', exact: true })).toBeEnabled();
+      await expect(age).toHaveCount(0);
+      await expect(archived).toHaveCount(0);
+      expect(submissions).toEqual([]);
+      expect(await emptyTriageActionState()).toEqual(before);
+      // Returning to Delete must discard the old hidden age/reach choices.
+      await preview.getByRole('radio', { name: '+ Delete', exact: true }).click();
+      await expect(age).toHaveValue('all');
+      await expect(archived).not.toBeChecked();
+      await expectGenuinelyEmpty(preview, 'Unsubscribe + Delete');
+      await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(preview).toHaveCount(0);
+      await page.reload();
+      await expectScreenMounted(page);
+      await expect(
+        navigation.getByRole('button', { name: emptySender.name, exact: true }),
+      ).toBeVisible();
+      expect(submissions).toEqual([]);
+      expect(await emptyTriageActionState()).toEqual(before);
+    } finally {
+      await sql`UPDATE users SET preferences = ${sql.json(preferences)}::jsonb WHERE id = ${BILLING_SEED.userId}`;
+      const [restored] = await sql`SELECT preferences FROM users WHERE id = ${BILLING_SEED.userId}`;
+      expect(restored?.preferences).toEqual(preferences);
+    }
+  });
+}
