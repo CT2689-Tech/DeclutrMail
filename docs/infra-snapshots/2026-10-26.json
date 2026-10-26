@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-26",
-  "snapshot_ts": "2026-10-26T18:00:13Z",
+  "snapshot_ts": "2026-10-26T18:09:39Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,13 +8,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-26T17:24:37.131374Z",
-            "name": "declutrmail-api-00996-deb"
+            "creationTimestamp": "2026-10-26T18:01:45.295322Z",
+            "name": "declutrmail-api-00999-qib"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:ababf8ba59b0f72170d8ea06c2ad82033d8b98784e82ebb8994dcc1020731506"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:4680ad6b9b31ea3b4024101c7d4bcccc868bd0c5ac1bfa6144fc5bd498ce1a3c"
               }
             ]
           },
@@ -205,7 +205,7 @@
           "status": {
             "conditions": [
               {
-                "status": "Unknown"
+                "status": "True"
               }
             ]
           }
@@ -359,7 +359,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00294-7fr"
+              "revisionName": "declutrmail-worker-00295-t2t"
             }
           ]
         }
