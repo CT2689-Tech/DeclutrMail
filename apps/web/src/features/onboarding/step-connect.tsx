@@ -15,6 +15,7 @@ import {
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 
 import { StepShell } from './step-shell';
+import styles from './onboarding-appearance.module.css';
 
 const { color, font, text, radius, shadow } = tokens;
 
@@ -61,6 +62,7 @@ export function StepConnect({
       }
     >
       <ol
+        className={styles.consent}
         style={{
           listStyle: 'none',
           padding: 0,

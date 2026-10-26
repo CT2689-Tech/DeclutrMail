@@ -501,3 +501,7 @@ Extended the approved Home typography, boundaries, spacing and count hierarchy t
 ### 2026-10-25 — Account visual consistency (Relates to D198, D210)
 
 Extended the accepted app typography, compact spacing, panel boundaries and restrained accents to Settings (including subpages) and Plan & billing. Preserved all account/payment data, controls, deep links and safety gates; active billing checkout files remain untouched. Production-build synthetic desktop/320px/dark smoke, preference restore, billing warning/recovery states, regression checks and independent review are recorded in `docs/execution/account-visual-consistency-2026-10-25.md`. No D status reclassified.
+
+### 2026-10-25 — Setup and preview visual consistency (Relates to D198, D210)
+
+Extended the accepted app typography and panel treatment to centered onboarding and scoped action previews. Kept setup choices and scan status simple; preserved each preview's account, scope, consequence, recovery and Cancel. Repaired the first-review header at 320px and its inline-preview story fixture. Synthetic desktop/phone/light/dark checks, Cancel/focus-return evidence, regression results, independent review and limits are recorded in `docs/execution/setup-preview-visual-2026-10-25.md`. No D status reclassified.

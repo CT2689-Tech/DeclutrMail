@@ -1,19 +1,20 @@
 'use client';
 
-import { editorialTitleStyle, EditorialKicker } from '@/features/editorial/page';
+import { editorialTitleStyle } from '@/features/editorial/page';
 
 import type { ReactNode } from 'react';
 import { OnboardingPhase, type OnboardingPhaseName } from './onboarding-phase';
 import { tokens } from '@declutrmail/shared';
+import styles from './onboarding-appearance.module.css';
 
-const { color, font, text } = tokens;
+const { color, font } = tokens;
 
 /**
  * Shared chrome for the onboarding steps that are NOT the sync gate
  * (D106). Mirrors the sync gate's centered single-column shell so the
  * five steps read as one flow: a title, at most one sentence, the
- * control. The gate keeps its own internal shell
- * (untouched — D109).
+ * control. The gate keeps its own state and shell, with the same
+ * presentation roles.
  */
 export function StepShell({
   title,
@@ -34,6 +35,7 @@ export function StepShell({
 }) {
   return (
     <main
+      className={styles.page}
       style={{
         minHeight: '100vh',
         display: 'flex',
@@ -41,7 +43,6 @@ export function StepShell({
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: '56px 20px',
         background: color.bg,
         fontFamily: font.sans,
         position: 'relative',
@@ -49,34 +50,17 @@ export function StepShell({
     >
       {corner && <div style={{ position: 'absolute', top: 20, right: 24 }}>{corner}</div>}
       <div
+        className={styles.panel}
         style={{
-          width: '100%',
           maxWidth: maxWidth + 48,
-          padding: 'clamp(24px, 4vw, 40px)',
-          background: color.card,
-          border: `1px solid ${color.border}`,
-          borderRadius: tokens.radius.lg,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
         }}
       >
         <OnboardingPhase phase={phase} />
-        <EditorialKicker>A clearer inbox starts here</EditorialKicker>
-        <h1 style={{ ...editorialTitleStyle, margin: '20px 0 14px' }}>{title}</h1>
-        {sub && (
-          <p
-            style={{
-              color: color.fgMuted,
-              fontSize: text.lg,
-              lineHeight: 1.45,
-              margin: '0 0 28px',
-              maxWidth: 460,
-            }}
-          >
-            {sub}
-          </p>
-        )}
+        <h1 style={{ ...editorialTitleStyle, margin: '0 0 12px' }}>{title}</h1>
+        {sub && <p className={styles.description}>{sub}</p>}
         {children}
       </div>
     </main>

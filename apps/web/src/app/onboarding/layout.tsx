@@ -21,12 +21,14 @@
 // stands.
 
 import type { ReactNode } from 'react';
+import workspaceAppearance from '@/features/theme/workspace-appearance.module.css';
 import { headers } from 'next/headers';
 
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { ServerOnboardingBoundary } from '@/features/onboarding/server-onboarding-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
 import '@/features/theme/app-light-theme.css';
+import '@/features/theme/action-preview-appearance.css';
 
 export default async function OnboardingLayout({ children }: { children: ReactNode }) {
   const requestHeaders = await headers();
@@ -36,7 +38,11 @@ export default async function OnboardingLayout({ children }: { children: ReactNo
     <>
       <ThemeScript nonce={nonce} />
       <span id="dm-app-theme" hidden />
-      <ServerOnboardingBoundary cookieHeader={cookieHeader}>{children}</ServerOnboardingBoundary>
+      <ServerOnboardingBoundary cookieHeader={cookieHeader}>
+        <div className={workspaceAppearance.content} data-workspace-appearance="">
+          {children}
+        </div>
+      </ServerOnboardingBoundary>
       {/* D147 consent ask — onboarding is a fresh visitor's first app
           surface, so the analytics opt-in must be answerable here too. */}
       <CookieConsentBanner />

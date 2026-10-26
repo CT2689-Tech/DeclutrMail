@@ -35,6 +35,7 @@ import { visitorPricingLocale } from '@/features/marketing/pricing/visitor-prici
 import { ServerAppBoundary } from '@/features/auth/server-app-boundary';
 import { ThemeScript } from '@/features/theme/theme-script';
 import '@/features/theme/app-light-theme.css';
+import '@/features/theme/action-preview-appearance.css';
 
 import { AppChromeLayout } from './app-chrome-layout';
 

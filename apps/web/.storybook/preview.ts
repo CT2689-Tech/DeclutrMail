@@ -7,6 +7,7 @@
 // a component bug rather than a missing stylesheet.
 import '@declutrmail/shared/tokens.css';
 import '../src/features/theme/app-light-theme.css';
+import '../src/features/theme/action-preview-appearance.css';
 import workspaceAppearance from '../src/features/theme/workspace-appearance.module.css';
 
 import type { Preview } from '@storybook/nextjs-vite';
@@ -62,13 +63,13 @@ const preview: Preview = {
       createElement(ThemePreview, {
         theme: context.globals.theme === 'dark' ? 'dark' : 'light',
         workspace:
-          /^(Senders|Autopilot|Settings|Billing|Features\/(Activity|Brief|Followups|Later|Senders|Billing))\//.test(
+          /^(Onboarding|Triage|Screener|Senders|Autopilot|Settings|Billing|Features\/(Activity|Brief|Followups|Later|Senders|Billing))\//.test(
             context.title,
           ),
         appTheme:
-          /^(Home|Senders|Autopilot|Settings|Billing|Features\/(Activity|Brief|Followups|Later|Senders|Billing))\//.test(
+          /^(Home|Onboarding|Triage|Screener|Senders|Autopilot|Settings|Billing|Features\/(Activity|Brief|Followups|Later|Senders|Billing))\//.test(
             context.title,
-          ),
+          ) || context.title === 'Primitives/PreviewSheet',
         children: createElement(Story),
       }),
   ],
