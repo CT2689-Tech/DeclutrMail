@@ -65,6 +65,10 @@ support the explanation. Loading/error/missing counts remain unknown, not zero.
 - Synthetic database and app copies are isolated, contain no Gmail credentials,
   and start no worker. A local native compiler cache prerequisite was resolved
   without changing the repository launcher or passing provider credentials.
+- Initial CI executed the new preview cases successfully, then caught a fixture
+  JSON restore defect that broke later setup. Corrected the edited restores to
+  native `sql.json`, added a cleanup readback assertion and rehearsed the exact
+  lifecycle against isolated PostgreSQL. See the linked mistake log.
 - Extended actual-server CI journeys exercise seven bulk/detail age recoveries,
   inline recovery, genuine-empty Triage and archived-only Senders/Triage variants,
   focus restoration, cancellation, no mutation POSTs and unchanged synthetic labels.

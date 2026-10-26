@@ -195,7 +195,7 @@ test('inline Triage Unsubscribe + Delete previews archived scope and cancels wit
       await sql`SELECT count(*)::int AS n FROM mail_messages WHERE mailbox_account_id = ${mailboxId} AND sender_key = ${BILLING_SEED.archiveSenderKey} AND 'INBOX' = ANY(label_ids)`;
     expect(remaining!.n).toBe(2);
   } finally {
-    await sql`UPDATE users SET preferences = ${JSON.stringify(before?.preferences ?? {})}::jsonb WHERE id = ${BILLING_SEED.userId}`;
+    await sql`UPDATE users SET preferences = ${sql.json((before?.preferences ?? {}) as postgres.JSONValue)}::jsonb WHERE id = ${BILLING_SEED.userId}`;
     await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${mailboxId} AND provider_message_id = 'e2e-triage-inline-archived'`;
   }
 });

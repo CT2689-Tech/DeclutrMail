@@ -8,7 +8,7 @@ import { expectScreenMounted } from '../helpers/screen-ready';
 
 test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 1280, height: 900 } });
 let sql: postgres.Sql;
-let previousPreferences: unknown = {};
+let previousPreferences: postgres.JSONValue | undefined;
 const emptySender = {
   id: 'e2000000-0000-4000-8000-000000000031',
   key: 'empty-preview@synthetic.test',
@@ -24,7 +24,7 @@ test.beforeAll(async () => {
   sql = dbConnect();
   await applyJourneySeed(sql);
   const [user] = await sql<
-    { preferences: unknown }[]
+    { preferences: postgres.JSONValue }[]
   >`SELECT preferences FROM users WHERE id = ${BILLING_SEED.userId}`;
   previousPreferences = user?.preferences ?? {};
   await sql`UPDATE users SET preferences = jsonb_set(COALESCE(preferences, '{}'::jsonb), '{actionSheetPrefs}', '{"archive":false,"unsubscribe":false,"later":false}'::jsonb, true) WHERE id = ${BILLING_SEED.userId}`;
@@ -51,7 +51,11 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!sql) return;
   try {
-    await sql`UPDATE users SET preferences = ${JSON.stringify(previousPreferences)}::jsonb WHERE id = ${BILLING_SEED.userId}`;
+    if (previousPreferences !== undefined) {
+      await sql`UPDATE users SET preferences = ${sql.json(previousPreferences)}::jsonb WHERE id = ${BILLING_SEED.userId}`;
+      const [restored] = await sql`SELECT preferences FROM users WHERE id = ${BILLING_SEED.userId}`;
+      expect(restored?.preferences).toEqual(previousPreferences);
+    }
     await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND provider_message_id = 'e2e-empty-preview-archived'`;
     for (const sender of [emptySender, archivedSender]) {
       await sql`DELETE FROM triage_decisions WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${sender.key}`;
