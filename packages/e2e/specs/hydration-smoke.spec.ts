@@ -77,10 +77,8 @@ test('account navigation preserves desktop grouping, tablet access and section l
   await expect(page.getByRole('heading', { name: 'Plan & billing', exact: true })).toBeVisible();
   await expect(billing).toHaveAttribute('aria-current', 'page');
   await expect(page.locator('.dm-main-scroll')).toHaveJSProperty('scrollTop', 0);
-  await page
-    .getByRole('navigation', { name: 'On this page' })
-    .getByRole('link', { name: 'Plans' })
-    .click();
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toHaveCount(0);
+  await page.locator('#change-plan').scrollIntoViewIfNeeded();
   await expect(page.locator('#change-plan')).toBeInViewport();
 
   await page.setViewportSize({ width: 900, height: 600 });
@@ -430,8 +428,9 @@ test('live Pro complimentary billing hydrates on annual across repeated loads', 
       await expect(page.getByTestId('complimentary-note')).toContainText(
         'Pro is complimentary on this account',
       );
-      const purchaseOptions = page.getByRole('button', { name: 'View purchase options' });
+      const purchaseOptions = page.locator('#change-plan summary');
       await expect(purchaseOptions).toBeVisible();
+      await expect(purchaseOptions).toHaveText('View purchase options');
       await purchaseOptions.click();
       await expect(page.getByRole('button', { name: /^Annual/, pressed: true })).toBeVisible();
       await expect(page.getByText(manifestPrice('plus', 'annual')).first()).toBeVisible();
