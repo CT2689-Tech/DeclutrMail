@@ -167,6 +167,24 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const data = invoices.data;
   if (!data) return null;
   const partial = data.unavailableProviders.length > 0;
+  // Compact only a complete, successfully read empty history. An unavailable,
+  // omitted or truncated result is still a recovery state, never "no invoices".
+  if (data.invoices.length === 0 && !partial && data.omittedRows === 0 && !data.truncated) {
+    return (
+      <section
+        id="invoices"
+        tabIndex={-1}
+        aria-label="Payment history"
+        data-testid="invoice-history"
+        style={{ borderTop: `1px solid ${color.border}`, paddingTop: 16, scrollMarginTop: 24 }}
+      >
+        <GroupTitle>Payment history</GroupTitle>
+        <p style={{ margin: '8px 0 0', color: color.fgMuted, fontSize: text.sm }}>
+          No invoices yet
+        </p>
+      </section>
+    );
+  }
   const filtered = data.invoices.filter((invoice) => {
     const date = invoice.issuedAt.slice(0, 10);
     return (
@@ -286,13 +304,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
             title="No invoices in this limited history"
             description="Request older invoices below to check beyond this list."
           />
-        ) : (
-          <EmptyState
-            headingLevel={3}
-            title="No invoices yet"
-            description="Invoices appear here after a purchase. Complimentary access doesn’t create a payment."
-          />
-        )
+        ) : null
       ) : (
         <>
           {/* QA-billing-20260901-07: with no column labels, "Due" on the

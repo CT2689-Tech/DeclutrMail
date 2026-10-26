@@ -1,0 +1,23 @@
+# Billing page simplification — 2026-10-26
+
+## Flow and scope
+
+The account holder opens Plan & billing to identify current access, check connected Gmail accounts, retrieve payment history, manage an active subscription, or consider another purchase. Entry points include the app navigation, pricing and feature gates with a plan or Pass intent, and section fragments. Plan status and checkout eligibility come from the existing subscription projection; invoices come from their separate provider read. This change only adjusts presentation. It does not alter prices, subscription state, payment operations, entitlement calculation, or provider access.
+
+The baseline was observed read-only in the signed-in Codex browser on a complimentary Pro account on October 25. Implementation and edge-state smoke use synthetic local stories. No purchase, cancellation, mailbox mutation, or live billing call was used as test evidence.
+
+## Findings and repairs
+
+| Impact | State and evidence                                                                                                                          | Repair and expected result                                                                                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| High   | Complimentary Pro showed six feature destinations and two purchase buttons directly under a statement that access was free.                 | Benefits are plain text and extra purchases sit behind a native, keyboard-operable disclosure. Explicit plan and Pass links open it automatically. Existing paid-plan management and recovery controls remain outside. |
+| Medium | A three-link section menu preceded a short complimentary page, and a second “Compare plans” link left the page beside an inline comparison. | Short pages omit the menu; active payment controls or more than five loaded invoices retain it. The inline comparison remains. The public pricing duplicate is removed.                                                |
+| Medium | A fully confirmed empty payment history occupied a full card, while incomplete provider results must never look like no purchases.          | Only a successful, complete empty result becomes a compact row. Loading, failed, partial, truncated, omitted, filtered, and nonempty histories retain their existing controls and recovery.                            |
+| Low    | The comparison repeated features included on every plan as near-identical rows.                                                             | Shared features are grouped once; the table emphasizes plan differences and account/cleanup limits.                                                                                                                    |
+| Low    | “No monthly limit” did not say what was unlimited.                                                                                          | The plan summary now names emails cleared; Pass duration and allowance copy remains separate.                                                                                                                          |
+
+## Verification and boundaries
+
+The billing unit suite passed 463 tests in 29 files and covers Free, Plus, Pro, Pass, complimentary, paid, past-due, canceled, paused, pending, billing-disabled, invoices and plan intents. A new full-screen hydration case covers streamed invoices with zero and six rows. Its negative control fails when a second invoice query observer is mounted above the invoice section; the cache-only count avoids changing the stream metadata. Typecheck, lint, bundle budget, production web build, and Storybook build passed. Twelve local browser stories were inspected, including complimentary access with history and a paid subscription beneath complimentary access. At 390px, the complimentary page had no horizontal overflow. Provider checkout and the actual signed invoice document are outside this presentation change and were not exercised.
+
+Further work would need a separate decision and provider contract: showing a confirmed upcoming renewal total, tax or discount breakdown. The displayed plan price is configured pricing, not a provider invoice quote.

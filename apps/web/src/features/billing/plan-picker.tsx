@@ -1,9 +1,6 @@
 'use client';
 
-import linkStyles from './billing-links.module.css';
-
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -711,21 +708,8 @@ export function PlanPicker({
       />
     ) : null;
 
-  return (
-    <section
-      id="change-plan"
-      tabIndex={-1}
-      aria-label="Plans"
-      data-testid="plan-picker"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 16,
-        scrollMarginTop: 24,
-        paddingTop: 24,
-        borderTop: `1px solid ${color.border}`,
-      }}
-    >
+  const options = (
+    <>
       <div
         style={{
           display: 'flex',
@@ -735,7 +719,9 @@ export function PlanPicker({
           flexWrap: 'wrap',
         }}
       >
-        <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Plans</h2>
+        {currentAccess?.kind !== 'complimentary' || !includedAccess ? (
+          <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Plans</h2>
+        ) : null}
         {pricingV2 ? null : (
           <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
         )}
@@ -941,13 +927,36 @@ export function PlanPicker({
           {comparisonOpen ? <BillingComparison pricingV2={pricingV2} /> : null}
         </div>
       </details>
-      <Link
-        href="/pricing"
-        className={`${linkStyles.link} dm-tap-target`}
-        style={{ alignSelf: 'flex-start', fontSize: text.sm }}
-      >
-        Compare plans
-      </Link>
+    </>
+  );
+
+  return (
+    <section
+      id="change-plan"
+      tabIndex={-1}
+      aria-label="Plans"
+      data-testid="plan-picker"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 16,
+        scrollMarginTop: 24,
+        paddingTop: 24,
+        borderTop: `1px solid ${color.border}`,
+      }}
+    >
+      {currentAccess?.kind === 'complimentary' && includedAccess ? (
+        <details open={initialIntent !== null ? true : undefined}>
+          <summary className="dm-disclosure">
+            <h2 style={{ ...tokens.typography.sectionTitle, display: 'inline', margin: 0 }}>
+              View purchase options
+            </h2>
+          </summary>
+          <div style={{ display: 'grid', gap: 16, marginTop: 16 }}>{options}</div>
+        </details>
+      ) : (
+        options
+      )}
     </section>
   );
 }

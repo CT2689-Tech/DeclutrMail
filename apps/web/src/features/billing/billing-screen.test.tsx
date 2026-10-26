@@ -314,9 +314,8 @@ describe('BillingScreen — designed states', () => {
     expect(screen.getByTestId('plan-option-pro')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
-    expect(
-      within(screen.getByTestId('plan-picker')).getByRole('link', { name: 'Compare plans' }),
-    ).toHaveAttribute('href', '/pricing');
+    expect(screen.queryByRole('link', { name: 'Compare plans' })).not.toBeInTheDocument();
+    expect(screen.getByText('Compare included features')).toBeInTheDocument();
     expect(screen.queryByText(/couldn’t load/i)).not.toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -3626,11 +3625,12 @@ describe('BillingScreen — paid subscriber', () => {
         name: `Emails cleared a month ${METER.free.limit.toLocaleString('en-US')} No monthly limit No monthly limit`,
       }),
     ).toBeInTheDocument();
+    expect(screen.getByText('Included on every plan:').parentElement).toHaveTextContent(
+      'Choices for each sender',
+    );
     expect(
-      within(table).getByRole('rowheader', {
-        name: 'Choices for each sender \u2014 Archive \u00b7 Unsubscribe \u00b7 Later \u00b7 Delete',
-      }),
-    ).toBeInTheDocument();
+      within(table).queryByRole('rowheader', { name: /Choices for each sender/ }),
+    ).not.toBeInTheDocument();
     disclosure.open = false;
     fireEvent(disclosure, new Event('toggle'));
     await waitFor(() =>
@@ -3658,10 +3658,8 @@ describe('BillingScreen — paid subscriber', () => {
     expect(current).toHaveTextContent('Plan price: $19/mo');
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
     expect(coverage).toHaveTextContent('1 of 5 connected Gmail accounts');
-    expect(within(coverage).getByRole('link', { name: 'Daily Brief' })).toHaveAttribute(
-      'href',
-      '/brief',
-    );
+    expect(within(coverage).getByText('Daily Brief')).toBeInTheDocument();
+    expect(within(coverage).getAllByRole('link')).toHaveLength(1);
     expect(
       screen
         .getByTestId('invoice-history')
@@ -5042,6 +5040,13 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).getByTestId('complimentary-note')).toHaveTextContent(
       'Pro is complimentary on this account',
     );
+    const summary = screen.getByText('View purchase options');
+    const options = summary.closest('details')!;
+    expect(options).not.toHaveAttribute('open');
+    expect(screen.queryByRole('navigation', { name: 'On this page' })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link')).toHaveLength(3);
+    fireEvent.click(summary);
+    expect(options).toHaveAttribute('open');
     expect(screen.getByRole('button', { name: 'Buy Plus separately' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Upgrade to Plus' })).not.toBeInTheDocument();
     const comparison = screen.getByTestId('plan-option-pro');
@@ -5057,6 +5062,27 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
     expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
   });
+
+  it.each([
+    { plan: 'plus', cycle: 'annual' },
+    { plan: 'plus', cycle: 'annual', offer: 'pass_onetime' },
+  ] as const)(
+    'opens complimentary purchase options for a direct $offer $plan intent without charging',
+    async (intent) => {
+      mockTier = 'pro';
+      mockPassEnabled = true;
+      stubSubscription(() =>
+        jsonOk({
+          data: { ...FREE_BODY, tier: 'pro', complimentary: { tier: 'pro', expiresAt: null } },
+        }),
+      );
+      renderScreen(intent, undefined, { pricingV2: true });
+      const summary = await screen.findByText('View purchase options');
+      expect(summary.closest('details')).toHaveAttribute('open');
+      expect(await screen.findByTestId('checkout-panel')).toBeInTheDocument();
+      expect(screen.getByTestId('current-plan-card')).toHaveTextContent('Complimentary');
+    },
+  );
 
   it('a DATED comp names its end date and what happens after', async () => {
     mockTier = 'plus';
@@ -5699,16 +5725,48 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     await screen.findByTestId('current-plan-card');
     expect(await screen.findByText('No invoices yet')).toBeInTheDocument();
     expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
-    const contents = screen.getByRole('navigation', { name: 'On this page' });
-    expect(screen.getAllByRole('link', { name: 'Compare plans' })).toHaveLength(2);
-    expect(within(contents).queryByRole('link', { name: 'Payment details' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'On this page' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Compare plans' })).not.toBeInTheDocument();
+    expect(screen.getByText('Compare included features')).toBeInTheDocument();
+  });
+
+  it('retains section shortcuts and downloads for a long historical invoice list without a subscription', async () => {
+    stubBillingReads(FREE_BODY);
+    const { client } = renderScreen();
+    await screen.findByTestId('current-plan-card');
+    act(() =>
+      client.setQueryData(billingKeys.invoices(), {
+        invoices: Array.from({ length: 6 }, (_, index) => ({
+          id: `txn_${index}`,
+          provider: 'paddle',
+          issuedAt: '2026-05-01T00:00:00.000Z',
+          amount: '1900',
+          currencyCode: 'USD',
+          status: 'paid',
+          hostedUrl: null,
+          documentAvailable: true,
+        })),
+        unavailableProviders: [],
+        truncated: false,
+        omittedRows: 0,
+      }),
+    );
+    const contents = await screen.findByRole('navigation', { name: 'On this page' });
     expect(within(contents).getByRole('link', { name: 'Payment history' })).toHaveAttribute(
       'href',
       '#invoices',
     );
-    expect(within(contents).getByRole('link', { name: 'Your plan' })).toHaveAttribute(
+    expect(within(contents).getByRole('link', { name: 'Plans' })).toHaveAttribute(
       'href',
-      '#plan',
+      '#change-plan',
+    );
+    expect(
+      within(contents).queryByRole('link', { name: 'Payment details' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(6);
+    act(() => client.setQueryData(billingKeys.invoices(), EMPTY_INVOICES));
+    await waitFor(() =>
+      expect(screen.queryByRole('navigation', { name: 'On this page' })).not.toBeInTheDocument(),
     );
   });
 
@@ -5736,7 +5794,7 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
       'Your plan',
       'Payment details',
       'Payment history',
-      'Compare plans',
+      'Plans',
     ]);
     const targets = shortcuts.map((link) => {
       const target = document.getElementById(link.getAttribute('href')!.slice(1));

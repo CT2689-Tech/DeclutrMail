@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const auth = vi.hoisted(() => ({
@@ -74,19 +74,23 @@ describe('PlanCoverage', () => {
     expect(coverage.textContent).not.toContain('Unlimited cleanup');
   });
 
-  it('uses canonical account, Needs first review and Daily Brief destinations', () => {
-    render(<PlanCoverage tier="pro" />);
-    expect(screen.getByRole('link', { name: 'Manage Gmail accounts' })).toHaveAttribute(
-      'href',
-      '/settings#mailboxes',
-    );
-    expect(screen.getByRole('link', { name: 'Needs first review' })).toHaveAttribute(
-      'href',
-      '/senders?view=first-review',
-    );
-    expect(screen.queryByRole('link', { name: 'Screener' })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Daily Brief' })).toHaveAttribute('href', '/brief');
-  });
+  it.each(['free', 'plus', 'pro'] as const)(
+    'shows %s benefits as text and keeps account management linked',
+    (tier) => {
+      render(<PlanCoverage tier={tier} />);
+      expect(screen.getByRole('link', { name: 'Manage Gmail accounts' })).toHaveAttribute(
+        'href',
+        '/settings#mailboxes',
+      );
+      expect(screen.getAllByRole('link')).toHaveLength(1);
+      const benefits = screen.getByRole('list', { name: 'Included features' });
+      expect(within(benefits).getByText('Sender cleanup')).toBeInTheDocument();
+      expect(within(benefits).queryByText('Daily Brief') !== null).toBe(tier === 'pro');
+      expect(within(benefits).queryByText('Autopilot') !== null).toBe(tier !== 'free');
+      if (tier !== 'free')
+        expect(screen.getByText('No monthly limit on emails cleared.')).toBeInTheDocument();
+    },
+  );
 
   it('uses the r19 Pass lines when the Pass is the plan', () => {
     auth.me.tier = 'plus';

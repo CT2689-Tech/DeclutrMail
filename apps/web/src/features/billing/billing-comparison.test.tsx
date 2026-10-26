@@ -36,6 +36,25 @@ describe('billing comparison rows', () => {
     expect(within(table).getAllByRole('rowheader', { name: 'Autopilot' })).toHaveLength(1);
   });
 
+  it.each([true, false])(
+    'groups universal features and keeps plan differences in the table (pricingV2=%s)',
+    (pricingV2) => {
+      render(<BillingComparison pricingV2={pricingV2} />);
+      const shared = screen.getByText('Included on every plan:').parentElement!;
+      const table = screen.getByRole('table', { name: 'Included features by plan' });
+      for (const row of billingComparisonRows(pricingV2)) {
+        if (row.values.every((value) => value === 'Included')) {
+          expect(shared).toHaveTextContent(row.label);
+          expect(
+            within(table).queryByRole('rowheader', { name: row.label }),
+          ).not.toBeInTheDocument();
+        } else {
+          expect(within(table).getByRole('rowheader', { name: row.label })).toBeInTheDocument();
+        }
+      }
+    },
+  );
+
   it('keeps meter emails-cleared values when launch pricing is off', () => {
     const rows = billingComparisonRows(false);
     const cleared = rows.find((row) => row.label === 'Emails cleared a month');

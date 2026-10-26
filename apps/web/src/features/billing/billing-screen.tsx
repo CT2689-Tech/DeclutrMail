@@ -9,7 +9,7 @@ import {
   EditorialContents,
 } from '@/features/editorial/page';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -27,6 +27,7 @@ import type {
   BillingProviderId,
   BillingReconcileOutcome,
   BillingSubscription,
+  BillingInvoiceList,
   CancelRequest,
 } from '@declutrmail/shared/contracts';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
@@ -247,6 +248,16 @@ export function BillingScreen({
   // the card kept asserting an active plan — price, renewal, a live
   // Cancel button — until some unrelated invalidate happened to fire.
   const [pauseConfirming, setPauseConfirming] = useState(false);
+  const queryClient = useQueryClient();
+  // Read the history count without mounting another query observer: an observer
+  // would replace the streaming metadata InvoiceHistory needs for hydration.
+  // The server snapshot also keeps the first hydration render identical.
+  const invoiceCount = useSyncExternalStore(
+    (onChange) => queryClient.getQueryCache().subscribe(onChange),
+    () =>
+      queryClient.getQueryData<BillingInvoiceList>(billingKeys.invoices())?.invoices.length ?? 0,
+    () => 0,
+  );
   const subscriptionQuery = useBillingSubscription({
     // Three waits, and the pending-payment one outranks: it is measured
     // in seconds and its lock hides the other notices anyway.
@@ -276,7 +287,6 @@ export function BillingScreen({
   const resumeCancellation = useResumeCancellation();
   const pause = usePauseSubscription();
   const reconcileCheckout = useReconcileCheckout();
-  const queryClient = useQueryClient();
   const [cancelOpen, setCancelOpen] = useState(false);
   const isPhone = useIsAtMost('xs');
   // A 503 is a designed state, and it is not in the dehydrated snapshot.
@@ -965,16 +975,18 @@ export function BillingScreen({
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
       <BillingPageHeader description={billingAccountScope(plan)} />
       <BillingSectionAnchor />
-      <EditorialContents
-        items={[
-          { href: '#plan', label: 'Your plan' },
-          ...(!billingDark && paymentMethodSub
-            ? [{ href: '#payment', label: 'Payment details' }]
-            : []),
-          ...(!billingDark ? [{ href: '#invoices', label: 'Payment history' }] : []),
-          { href: '#change-plan', label: 'Compare plans' },
-        ]}
-      />
+      {!billingDark && (paymentMethodSub !== null || invoiceCount > 5) ? (
+        <EditorialContents
+          items={[
+            { href: '#plan', label: 'Your plan' },
+            ...(!billingDark && paymentMethodSub
+              ? [{ href: '#payment', label: 'Payment details' }]
+              : []),
+            ...(!billingDark ? [{ href: '#invoices', label: 'Payment history' }] : []),
+            { href: '#change-plan', label: 'Plans' },
+          ]}
+        />
+      ) : null}
       <ScreenIntro
         id="billing"
         title="Plan & billing"
