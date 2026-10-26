@@ -60,6 +60,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { readMergedPrHistory } from './merged-pr-history.mjs';
 
 import {
   DECISIONS_END,
@@ -132,12 +133,9 @@ function readMergedPrs(): PrRef[] {
   let lastError: unknown;
   for (let attempt = 1; attempt <= GH_READ_ATTEMPTS; attempt += 1) {
     try {
-      const raw = execFileSync(
-        'gh',
-        ['pr', 'list', '--state', 'merged', '--limit', '1000', '--json', 'number,body,files'],
-        { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 },
+      return readMergedPrHistory((args: string[]) =>
+        execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
       );
-      return JSON.parse(raw) as PrRef[];
     } catch (error) {
       lastError = error;
       if (attempt < GH_READ_ATTEMPTS) {

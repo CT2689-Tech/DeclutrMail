@@ -55,8 +55,32 @@ unchanged.
 
 ## Ownership and limits
 
-This isolated session owns only `scripts/deploy-api-safely.mjs`, its tests and
-this incident record. It integrates the change and follows the normal queue.
+This isolated session owns the deployment helper, its tests, this record and
+the bounded queue repairs below. It integrates them through the normal queue.
 It has no dependency on open PRs and does not modify API/worker product code,
 billing, credentials, migrations, access policies or mailbox state. A recovered
 probe is not proof of the original low-level timeout cause; that remains unknown.
+
+## Required queue integration repairs
+
+The first queue candidate found two independent gate defects. Both are repaired
+with the existing checks and assertions retained:
+
+- The implementation-log generator limited merged history to the latest 1,000
+  PRs. The repository crossed that limit, omitting original shipping PR #5 and
+  falsely removing D11/D152 citations. It now uses complete GraphQL cursor
+  pagination, including file pagination for truthful docs-only classification.
+  Nested file page info is aliased so the CLI follows only the outer PR cursor.
+  Four tests cover more than 1,000 records, files across pages, incomplete and
+  duplicate records, provider errors and verified empty history. Independent
+  review passed. The actual full-history strict generator check passed all 250
+  rows; `IMPLEMENTATION-LOG.md` itself remains unchanged.
+- An unchanged onboarding paint comparison failed at 320px and 375px. Attached
+  images differed only by 34/41 circle-edge pixels, with a maximum channel delta
+  of 17. The renderer's specific rasterization cause remains unproven. The test
+  now flushes style/layout before collecting animations and requires two
+  consecutive byte-identical captures within six captures per state. Exact
+  equality across stylesheet-present/removed states is retained, with failure
+  attachments for both dark and public appearances. No mask, tolerance,
+  test retry or product style change is introduced. Typecheck, lint, formatting
+  and source review passed; hosted browser proof is required before merge.
