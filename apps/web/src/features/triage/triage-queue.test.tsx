@@ -11,13 +11,14 @@
 // Triage, the D245 review) and fail zero existing tests. This renders
 // the REAL `TriageQueue`, not a mock.
 
-import { beforeEach, describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
 import { type TriageDecisionRow } from './data';
 import { TRIAGE_QUEUE } from './fixtures';
-import { resetTriageStore } from './store';
-import { TriageQueue } from './triage-queue';
+import { resetTriageStore, useTriageStore } from './store';
+import { TriageQueue, inlinePreviewFor } from './triage-queue';
+import { InlinePreviewBlock } from './inline-preview';
 
 function rowById(id: string): TriageDecisionRow {
   const r = TRIAGE_QUEUE.find((row) => row.id === id);
@@ -79,4 +80,52 @@ describe('the list at rest advertises no keys that do nothing', () => {
     );
     expect(screen.queryByText(/decisions waiting/)).toBeNull();
   });
+});
+
+it('carries fresh all-mail totals into the real inline preview and resets the future-only choice without dispatch', () => {
+  const row = rowById('t-groupon');
+  const store = useTriageStore.getState();
+  store.openPending('Unsubscribe', row.id, 'inline', 2);
+  store.setPendingBacklogMode('delete');
+  store.setPendingReach('all_mail');
+  store.setPendingOlderThanDays(180);
+  const onConfirm = vi.fn();
+  const preview = inlinePreviewFor(row.id, useTriageStore.getState().pendingAction, {
+    inboxCount: 0,
+    quotaRemaining: null,
+    detail: {
+      inboxTotal: 0,
+      allMailTotal: 0,
+      ageControl: {
+        olderThanDays: 180,
+        options: [{ days: null }, { days: 180 }],
+        onChange: store.setPendingOlderThanDays,
+      },
+      reachControl: {
+        reach: 'all_mail',
+        inboxCount: 0,
+        allMailCount: 0,
+        onChange: store.setPendingReach,
+      },
+    },
+  });
+  expect(preview).not.toBeNull();
+  render(
+    <InlinePreviewBlock
+      row={row}
+      preview={preview!}
+      busy={false}
+      shortcutLive
+      onConfirm={onConfirm}
+    />,
+  );
+  expect(screen.getByText('No current Inbox or archived email to delete.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Choose Unsubscribe only' }));
+  expect(useTriageStore.getState().pendingAction).toMatchObject({
+    backlogMode: 'unsub_only',
+    reach: 'inbox_only',
+    olderThanDays: null,
+  });
+  expect(onConfirm).not.toHaveBeenCalled();
 });

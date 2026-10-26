@@ -474,10 +474,8 @@ describe('Unsubscribe uses the action preview contract', () => {
     expect(screen.queryByRole('button', { name: 'Unsubscribe only' })).toBeNull();
     expect(screen.getByRole('heading')).not.toHaveTextContent(/delete 0 emails/);
     expect(screen.queryByText(/0 emails you already have/)).toBeNull();
-    expect(
-      screen.getByText('To include email you’ve archived, turn on Include archived email.'),
-    ).toBeVisible();
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+    expect(screen.getByText('Archived email is outside this scope.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Include archived' }));
     expect(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     ).toBeEnabled();
@@ -488,7 +486,15 @@ describe('Unsubscribe uses the action preview contract', () => {
 
   it('never substitutes inbox counts when the selected widened preview disappears or refetches', () => {
     const props = { request, onCancel: vi.fn(), onConfirm: vi.fn() };
-    const { rerender } = render(<ConfirmActionModal {...props} compositePreview={widePreview} />);
+    const { rerender } = render(
+      <ConfirmActionModal
+        {...props}
+        compositePreview={{
+          ...preview,
+          allMail: { counts, recentMessages: preview.recentMessages },
+        }}
+      />,
+    );
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
       target: { value: 'all' },
@@ -881,4 +887,35 @@ describe('Unsubscribe uses the action preview contract', () => {
       });
     },
   );
+});
+
+it('explains a genuinely empty Delete backlog and makes the future-only choice available without sending', () => {
+  const zero = { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };
+  const onConfirm = vi.fn();
+  const props = { request, onCancel: vi.fn(), onConfirm };
+  const { rerender } = render(
+    <ConfirmActionModal
+      {...props}
+      compositePreview={{ ...preview, allMail: { counts, recentMessages: preview.recentMessages } }}
+    />,
+  );
+  fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+  rerender(
+    <ConfirmActionModal
+      {...props}
+      compositePreview={{
+        ...preview,
+        counts: zero,
+        allMail: { counts: zero, recentMessages: preview.recentMessages },
+      }}
+    />,
+  );
+  expect(screen.getByText('No current Inbox or archived email to delete.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
+  fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+  expect(onConfirm).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Choose Unsubscribe only' }));
+  expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
+  expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
+  expect(onConfirm).not.toHaveBeenCalled();
 });

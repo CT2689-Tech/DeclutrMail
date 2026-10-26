@@ -20,7 +20,7 @@ const files = [
   ['journey-recovery', 4],
   ['unsubscribe-backlog', 4],
   ['home-next-step', 1],
-  ['manual-delete-previews', 1],
+  ['manual-delete-previews', 2],
 ];
 function report() {
   return {

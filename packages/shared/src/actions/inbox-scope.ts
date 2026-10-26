@@ -150,7 +150,11 @@ export function inboxScopeNoticeCopy(
   verbLabel: string,
   // 'the unprotected senders': a bulk count that left Protected senders
   // out cannot speak for the whole selection.
-  subject: 'this sender' | 'these senders' | 'the unprotected senders' = 'this sender',
+  subject:
+    | 'this sender'
+    | 'these senders'
+    | 'the unprotected senders'
+    | 'the included senders' = 'this sender',
   options: {
     /**
      * ADR-0028 — set when the surface offers a reach control that lets

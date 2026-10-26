@@ -522,11 +522,18 @@ export function ConfirmActionModal({
       : null;
   // Who the bulk counts actually cover. Protected senders are left out of
   // the totals, so once any were excluded "these senders" overstates it.
+  const upstreamExcluded =
+    (request?.skipped?.protectedCount ?? 0) +
+      (request?.skipped?.peopleCount ?? 0) +
+      (request?.skipped?.emptyMailCount ?? 0) >
+    0;
   const countedSubject = !isBulk
     ? 'this sender'
-    : (bulkPreview?.data?.protectedCount ?? 0) > 0
-      ? 'the unprotected senders'
-      : 'these senders';
+    : upstreamExcluded
+      ? 'the included senders'
+      : (bulkPreview?.data?.protectedCount ?? 0) > 0
+        ? 'the unprotected senders'
+        : 'these senders';
   // Bulk totals EXCLUDE Protected senders, so a zero there only covers
   // the whole selection when nothing was excluded — otherwise "no email
   // from these senders" is a claim the preview never measured.
@@ -1534,6 +1541,17 @@ export function ConfirmActionModal({
               count={archivedUncounted ? null : liveCount}
               includesArchived={allMailScope}
               olderThanDays={olderThanDays}
+              emptyContext={{
+                inboxTotal: livePreviewReady ? inboxCounts?.all : null,
+                allMailTotal: livePreviewReady ? allMailCounts?.all : null,
+                allMailWindowCount: livePreviewReady
+                  ? pickBucketCount(allMailCounts, olderThanDays)
+                  : null,
+                excludedSenders: isBulk && protectedSkipped + peopleSkipped + emptyMailSkipped > 0,
+                noIncludedSenders: nothingActionableBulk,
+                onAnyAge: () => setOlderThanDays(null),
+                onIncludeArchived: reachAvailable ? () => setReach('all_mail') : undefined,
+              }}
               note={note}
             />
           ) : undefined

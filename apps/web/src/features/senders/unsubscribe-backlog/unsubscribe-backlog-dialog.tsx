@@ -46,7 +46,7 @@ import {
 } from '@/components/cleanup-preview';
 import { DEFAULT_DELETE_WINDOW_DAYS } from '@declutrmail/shared/actions';
 import type { ActionRequest } from '../data';
-import { ActionReachControl, DELETE_ARCHIVED_HINT } from '@/components/action-scope-controls';
+import { ActionReachControl } from '@/components/action-scope-controls';
 import {
   pickBucketCount,
   sumBucketCounts,
@@ -207,6 +207,13 @@ export function UnsubscribeBacklogDialog({
   const activeReach =
     mode === 'delete' && reachRequestKey === requestKey ? deleteReach : 'inbox_only';
   const cleanupCount = activeReach === 'all_mail' ? allMailCount : inboxCount;
+
+  const chooseMode = (next: Mode) => {
+    setMode(next);
+    setDeleteReach('inbox_only');
+    setOlderThanDays(next === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
+    setWindowRequestKey(requestKey);
+  };
 
   useEffect(() => {
     armed.current = false;
@@ -436,13 +443,7 @@ export function UnsubscribeBacklogDialog({
       ) : (
         WS5_COPY['f1.preview.backlog.loading']
       )
-    ) : mode === 'delete' &&
-      n === 0 &&
-      offersReach &&
-      (allMailCount ?? 0) > 0 &&
-      !includeArchived ? (
-      DELETE_ARCHIVED_HINT
-    ) : mode !== 'unsub_only' && n === 0 ? (
+    ) : mode === 'archive' && n === 0 ? (
       WS5_COPY['preview.zero.unsubHint']
     ) : null;
 
@@ -496,6 +497,30 @@ export function UnsubscribeBacklogDialog({
             count={cleanupCount}
             olderThanDays={activeWindow}
             includesArchived={includeArchived}
+            emptyContext={{
+              inboxTotal: allInboxCount,
+              allMailTotal: allReachCount,
+              allMailWindowCount: allMailCount,
+              excludedSenders:
+                !single &&
+                protectedSkipped +
+                  (request.skipped?.protectedCount ?? 0) +
+                  (request.skipped?.peopleCount ?? 0) +
+                  (request.skipped?.recordedUnsubscribeCount ?? 0) >
+                  0,
+              noIncludedSenders: nothingActionable,
+              onAnyAge: () => {
+                setOlderThanDays(null);
+                setWindowRequestKey(requestKey);
+              },
+              onIncludeArchived: offersReach
+                ? () => {
+                    setDeleteReach('all_mail');
+                    setReachRequestKey(requestKey);
+                  }
+                : undefined,
+              onUnsubscribeOnly: () => chooseMode('unsub_only'),
+            }}
             note={note}
           />
         }
@@ -550,12 +575,7 @@ export function UnsubscribeBacklogDialog({
           <div className="dm-unsub-choice">
             <UnsubscribeChoices
               value={mode}
-              onChange={(next) => {
-                setMode(next);
-                setDeleteReach('inbox_only');
-                setOlderThanDays(next === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
-                setWindowRequestKey(requestKey);
-              }}
+              onChange={chooseMode}
               archiveDisabled={allInboxCount === null || allInboxCount === 0}
               deleteDisabled={
                 allInboxCount === null || (allInboxCount === 0 && !(allReachCount ?? 0))
