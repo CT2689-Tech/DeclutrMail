@@ -15,6 +15,7 @@ import {
   inrNewPurchasePaused,
 } from '@declutrmail/shared/contracts';
 import type {
+  CheckoutSession,
   BillingCycle,
   BillingProviderId,
   BillingSubscription,
@@ -178,6 +179,8 @@ const STALE_BILLING_READ = new Set([
 ]);
 
 const PRE_CLAIM_REJECTIONS = new Set([
+  'PLAN_NOT_PURCHASABLE',
+  'PASS_INCLUDED_IN_PLUS',
   'CHECKOUT_DELETION_PENDING',
   'CHECKOUT_SETUP_REQUIRED',
   'SUBSCRIPTION_EXISTS',
@@ -214,6 +217,9 @@ export function PlanPicker({
   onRequestCancel,
   onPaymentCompleted,
   onCheckoutAttempt,
+  onCheckoutLoadFailed,
+  onCheckoutRejected,
+  onCheckoutSession,
   onCheckoutAbandoned,
   onCheckoutClosed,
   mayOpenCheckout,
@@ -287,8 +293,19 @@ export function PlanPicker({
    *  existed (SUBSCRIPTION_EXISTS, catalog gaps, billing dark). Nothing
    *  is at risk; the reservation releases and the inline alert owns the
    *  message. */
+  onCheckoutLoadFailed?: (
+    attemptId: string,
+    session: CheckoutSession,
+    target: PaidTier,
+    cycle: BillingCycle,
+  ) => void;
+  onCheckoutRejected?: (attemptId: string) => void;
+  onCheckoutSession?: (attemptId: string) => void;
   onCheckoutAbandoned: (attemptId: string) => void;
-  onCheckoutClosed: (attemptId: string) => void;
+  /** `cause: 'overlay_closed'` marks the customer closing the overlay in
+   *  this tab; a post-claim error surfaces the same lock without it,
+   *  because nothing there shows the customer saw an unpaid close. */
+  onCheckoutClosed: (attemptId: string, cause?: 'overlay_closed') => void;
   mayOpenCheckout?: (attemptId: string) => boolean;
   /** Lifecycle callbacks fence owner changes without discarding late valid payment events. */
   ownsCheckout?: () => boolean;
@@ -539,6 +556,7 @@ export function PlanPicker({
     void track('checkout_started', funnel);
     checkout.mutate(
       {
+        attemptId,
         tierId: target,
         cycle: passSelected ? 'annual' : cycle,
         provider: effectiveProvider,
@@ -549,6 +567,8 @@ export function PlanPicker({
       {
         onSuccess: (session) => {
           if (ownsCheckout && !ownsCheckout()) return;
+          if (session.provider === 'paddle' && session.attemptId)
+            onCheckoutSession?.(session.attemptId);
           // Server claim exists from this response; overlay is next.
           void track('checkout_session_created', funnel);
           void withCheckoutLoadDeadline(import('./checkout'))
@@ -562,7 +582,7 @@ export function PlanPicker({
                   onCompleted: () => {
                     if (ownsCheckout && !ownsCheckout()) return;
                     void track('checkout_overlay_completed', funnel);
-                    if (passSelected) {
+                    if (passSelected && !(session.provider === 'paddle' && session.attemptId)) {
                       try {
                         sessionStorage.setItem('dm.pass.checkout', '1');
                       } catch {
@@ -581,7 +601,7 @@ export function PlanPicker({
                     if (ownsCheckout && !ownsCheckout()) return;
                     void track('checkout_overlay_closed', funnel);
                     closePanel();
-                    onCheckoutClosed(attemptId);
+                    onCheckoutClosed(attemptId, 'overlay_closed');
                   },
                 },
                 () => mayOpenCheckout?.(attemptId) ?? true,
@@ -604,7 +624,9 @@ export function PlanPicker({
                     ? err.message
                     : new CheckoutLaunchError(true).message,
                 );
-                onCheckoutAbandoned(attemptId);
+                if (err instanceof CheckoutLaunchError && err.canRetry && onCheckoutLoadFailed)
+                  onCheckoutLoadFailed(attemptId, session, target, cycle);
+                else onCheckoutClosed(attemptId);
               },
             );
         },
@@ -628,7 +650,8 @@ export function PlanPicker({
           void track('checkout_failed', { ...funnel, code: code ?? 'unknown' });
           reconcileIfStale(code);
           if (code !== null && PRE_CLAIM_REJECTIONS.has(code)) {
-            onCheckoutAbandoned(attemptId);
+            if (onCheckoutRejected) onCheckoutRejected(attemptId);
+            else onCheckoutAbandoned(attemptId);
           } else {
             onCheckoutClosed(attemptId);
           }

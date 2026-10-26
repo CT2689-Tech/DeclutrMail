@@ -1,3 +1,8 @@
+import {
+  findCheckoutAttempt,
+  fulfillCheckoutAttempt,
+  recordCheckoutPayment,
+} from './checkout-attempts.js';
 import { publishSubscriptionNotices, subscriptionNoticeSnapshot } from './billing-notices.js';
 // apps/api/src/billing/billing-webhook.service.ts — applies normalized
 // billing webhook events to the database (D117, D118, D126).
@@ -50,6 +55,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
   entitlementGrants,
+  billingCheckoutAttempts,
   pendingCheckouts,
   billingCustomers,
   subscriptionEvents,
@@ -242,6 +248,8 @@ export function projectWebhookPayload(
     }
     case 'payment':
       projected.outcome = event.outcome;
+      if (event.checkoutAttemptId) projected.checkout_attempt_id = event.checkoutAttemptId;
+      if (event.workspaceId) projected.workspace_id = event.workspaceId;
       projected.provider_subscription_id = event.providerSubscriptionId;
       if (event.providerTransactionId)
         projected.provider_transaction_id = event.providerTransactionId;
@@ -369,6 +377,14 @@ export class BillingWebhookService {
       eventArrivalSeq = inserted[0]!.arrivalSeq;
     }
 
+    if (
+      provider === 'paddle' &&
+      event.kind === 'payment' &&
+      event.outcome === 'succeeded' &&
+      !(await recordCheckoutPayment(this.db, event))
+    )
+      return { kind: 'unresolved', reason: 'unattributable' };
+
     // Classify the exact charge before any refund entitlement write. Provider
     // reads/restoration stay outside transactions. Synthetic ordinary refund
     // settlement from reconciliation already has transaction-scoped facts.
@@ -431,18 +447,29 @@ export class BillingWebhookService {
 
     // 2. Apply the domain effect + stamp processed_at atomically.
     switch (event.kind) {
-      case 'subscription':
-        return this.applySubscription(provider, event, eventRowId, eventArrivalSeq);
+      case 'subscription': {
+        const result = await this.applySubscription(provider, event, eventRowId, eventArrivalSeq);
+        if (event.subscription.workspaceId) {
+          const attempt = await findCheckoutAttempt(this.db, event.subscription.workspaceId);
+          if (attempt?.providerSubscriptionId === event.subscription.providerSubscriptionId)
+            await fulfillCheckoutAttempt(this.db, event.subscription.workspaceId, attempt.id);
+        }
+        return result;
+      }
       case 'cancellation_scheduled':
         return this.applyScheduledCancellation(provider, event, eventRowId);
       case 'cancellation_revoked':
         return this.applyRevokedCancellation(provider, event, eventRowId);
       case 'refund_settled':
         return this.applyRefundSettlement(provider, event, eventRowId);
-      case 'payment':
+      case 'payment': {
         if (provider === 'paddle' && event.providerSubscriptionId)
           await this.upgradeRefunds.observeCompletedTransaction(event.providerSubscriptionId);
-        return this.applyPayment(provider, event, eventRowId);
+        const paymentResult = await this.applyPayment(provider, event, eventRowId);
+        if (event.workspaceId && event.checkoutAttemptId)
+          await fulfillCheckoutAttempt(this.db, event.workspaceId, event.checkoutAttemptId);
+        return paymentResult;
+      }
       case 'pass_revoked':
         return this.applyPassRevoked(event, eventRowId);
       case 'ignored':
@@ -480,6 +507,58 @@ export class BillingWebhookService {
     eventArrivalSeq: number,
   ): Promise<WebhookProcessOutcome> {
     const sub = event.subscription;
+    // A subscription echo is not a purchase identity. Only its exact paid transaction
+    // can admit a new modern subscription; known rows retain normal renewal behavior.
+    const [knownSubscription] = await this.db
+      .select({ workspaceId: subscriptions.workspaceId })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.provider, provider),
+          eq(subscriptions.providerSubscriptionId, sub.providerSubscriptionId),
+        ),
+      )
+      .limit(1);
+    const [binding] =
+      provider === 'paddle'
+        ? await this.db
+            .select()
+            .from(billingCheckoutAttempts)
+            .where(
+              and(
+                eq(billingCheckoutAttempts.providerSubscriptionId, sub.providerSubscriptionId),
+                isNotNull(billingCheckoutAttempts.paidAt),
+              ),
+            )
+            .limit(1)
+        : [];
+    let boundWorkspaceId: string | null = null;
+    let discoveredWorkspaceId: string | null = null;
+    if (!knownSubscription && provider === 'paddle') {
+      discoveredWorkspaceId = await this.resolveWorkspace(provider, sub);
+      const [history] = discoveredWorkspaceId
+        ? await this.db
+            .select({ id: billingCheckoutAttempts.id })
+            .from(billingCheckoutAttempts)
+            .where(eq(billingCheckoutAttempts.workspaceId, discoveredWorkspaceId))
+            .limit(1)
+        : [];
+      if (binding) {
+        if (
+          (sub.workspaceId && sub.workspaceId !== binding.workspaceId) ||
+          (sub.checkoutAttemptId && sub.checkoutAttemptId !== binding.id) ||
+          sub.providerPriceId !== binding.providerPriceId
+        )
+          return { kind: 'unresolved', reason: 'unattributable' };
+        boundWorkspaceId = binding.workspaceId;
+      } else if (
+        process.env.BILLING_CHECKOUT_ATTEMPTS_ENABLED === 'true' ||
+        sub.checkoutAttemptId ||
+        history
+      ) {
+        return { kind: 'unresolved', reason: 'unattributable' };
+      }
+    }
     const entry = this.catalog.resolveByPriceId(provider, sub.providerPriceId);
     if (!entry) {
       // Catalog drift — a price id we did not provision. Left
@@ -492,7 +571,8 @@ export class BillingWebhookService {
       return { kind: 'unresolved', reason: 'unknown_price' };
     }
 
-    const workspaceId = await this.resolveWorkspace(provider, sub);
+    const workspaceId =
+      boundWorkspaceId ?? discoveredWorkspaceId ?? (await this.resolveWorkspace(provider, sub));
     if (!workspaceId) {
       // Same: attribution can become possible later (a sibling event
       // seeds billing_customers), so never stamp this one terminal.

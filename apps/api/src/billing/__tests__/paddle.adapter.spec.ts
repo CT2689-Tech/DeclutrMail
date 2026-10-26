@@ -8,12 +8,14 @@ import {
 } from '@declutrmail/shared/entitlements';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { CheckoutHold } from '../billing-provider.interface.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
 import {
   paddleAdjustmentCreated,
   paddleAdjustmentUpdated,
   paddleSubscriptionActivated,
   paddleTransactionCompleted,
+  signedCustomData,
 } from './fixtures.js';
 
 /**
@@ -2404,5 +2406,141 @@ describe('PaddleAdapter.readPassRefund', () => {
     const { adapter, fetch } = setup();
     fetch.mockReset().mockResolvedValue(new Response('{}', { status }));
     await expect(adapter.readPassRefund(txn)).resolves.toEqual({ kind: 'unreadable' });
+  });
+});
+
+describe('PaddleAdapter.fetchCheckoutHold', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const TXN = 'txn_01abcdefghjkmnpqrstvwxyz12';
+  const OTHER_WORKSPACE = '99999999-2222-4333-8444-555555555555';
+
+  function transaction(over: Record<string, unknown> = {}) {
+    return {
+      id: TXN,
+      status: 'ready',
+      subscription_id: null,
+      custom_data: signedCustomData(WORKSPACE, SECRET),
+      payments: [],
+      ...over,
+    };
+  }
+  function answer(data: unknown, status = 200) {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data }), { status }));
+    vi.stubGlobal('fetch', fetchSpy);
+    return fetchSpy;
+  }
+  const adapter = () => makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+
+  it('reads exactly one transaction, and never writes', async () => {
+    const fetchSpy = answer(transaction());
+    expect(await adapter().fetchCheckoutHold(TXN, WORKSPACE)).toBe('unpaid');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit | undefined];
+    expect(url).toBe(`https://sandbox-api.paddle.com/transactions/${TXN}`);
+    expect(init?.method ?? 'GET').toBe('GET');
+  });
+
+  const IN_FLIGHT_STATES = [
+    'created',
+    'authorized',
+    'authorized_flagged',
+    'action_required',
+    'pending_no_action_required',
+  ];
+  const HOLD_CASES: Array<readonly [string, Record<string, unknown>, CheckoutHold]> = [
+    ['ready, no attempts', transaction(), 'unpaid'],
+    ['draft, no attempts', transaction({ status: 'draft' }), 'unpaid'],
+    [
+      'ready, only canceled/dropped attempts',
+      transaction({ payments: [{ status: 'canceled' }, { status: 'dropped' }] }),
+      'unpaid',
+    ],
+    ['canceled', transaction({ status: 'canceled' }), 'stopped'],
+    ['paid', transaction({ status: 'paid' }), 'paid'],
+    ['completed', transaction({ status: 'completed' }), 'paid'],
+    ['linked to a subscription', transaction({ subscription_id: 'sub_01x' }), 'paid'],
+    [
+      'ready but an attempt was captured',
+      transaction({ payments: [{ status: 'captured' }] }),
+      'paid',
+    ],
+    ...IN_FLIGHT_STATES.map(
+      (state) =>
+        [
+          `ready with a ${state} attempt`,
+          transaction({ payments: [{ status: state }] }),
+          'in_flight',
+        ] as const,
+    ),
+    [
+      'an in-flight attempt outranks a later unrecognised one',
+      transaction({ payments: [{ status: 'pending_no_action_required' }, { status: 'weird' }] }),
+      'in_flight',
+    ],
+  ];
+
+  it.each(HOLD_CASES)('%s → %s', async (_label, data, expected) => {
+    answer(data);
+    expect(await adapter().fetchCheckoutHold(TXN, WORKSPACE)).toBe(expected);
+  });
+
+  // The point of the whole read: nothing it cannot positively recognise
+  // may come back `unpaid`.
+  it.each([
+    ['no attempts list at all', transaction({ payments: undefined })],
+    ['attempts list is null', transaction({ payments: null })],
+    ['attempts is not a list', transaction({ payments: { status: 'captured' } })],
+    ['an unrecognised attempt state', transaction({ payments: [{ status: 'error' }] })],
+    ['an attempt with no state', transaction({ payments: [{}] })],
+    ['billed', transaction({ status: 'billed' })],
+    ['past_due', transaction({ status: 'past_due' })],
+    ['an unrecognised transaction status', transaction({ status: 'mystery' })],
+    ['no status', transaction({ status: undefined })],
+    ['another transaction id', transaction({ id: 'txn_01zzzzzzzzzzzzzzzzzzzzzzzz' })],
+    ['no attribution', transaction({ custom_data: null })],
+    ['an unsigned workspace', transaction({ custom_data: { workspace_id: WORKSPACE } })],
+    [
+      'a forged signature',
+      transaction({ custom_data: { workspace_id: WORKSPACE, sig: 'a'.repeat(64) } }),
+    ],
+    [
+      "another workspace's attribution",
+      transaction({ custom_data: signedCustomData(OTHER_WORKSPACE, SECRET) }),
+    ],
+  ])('%s → unknown, never unpaid', async (_label, data) => {
+    answer(data);
+    expect(await adapter().fetchCheckoutHold(TXN, WORKSPACE)).toBe('unknown');
+  });
+
+  it('a 404 is unknown, not unpaid', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 404 })));
+    expect(await adapter().fetchCheckoutHold(TXN, WORKSPACE)).toBe('unknown');
+  });
+
+  it('an unsigned deployment (no webhook secret) can verify nothing → unknown', async () => {
+    answer(transaction());
+    const noSecret = new PaddleAdapter({ PADDLE_API_KEY: 'pdl_test_key' } as NodeJS.ProcessEnv);
+    expect(await noSecret.fetchCheckoutHold(TXN, WORKSPACE)).toBe('unknown');
+  });
+
+  it('a malformed id is rejected before any request', async () => {
+    const fetchSpy = answer(transaction());
+    expect(await adapter().fetchCheckoutHold('sub_01abcdefghjkmnpqrstvwxyz12', WORKSPACE)).toBe(
+      'unknown',
+    );
+    expect(await adapter().fetchCheckoutHold('txn_short', WORKSPACE)).toBe('unknown');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('network failure and 5xx throw BILLING_PROVIDER_ERROR — the caller decides what that means', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    await expect(adapter().fetchCheckoutHold(TXN, WORKSPACE)).rejects.toMatchObject({
+      code: 'BILLING_PROVIDER_ERROR',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })));
+    await expect(adapter().fetchCheckoutHold(TXN, WORKSPACE)).rejects.toMatchObject({
+      code: 'BILLING_PROVIDER_ERROR',
+    });
   });
 });

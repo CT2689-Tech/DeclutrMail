@@ -60,9 +60,9 @@ function stubPaddle() {
 /** The eventCallback the launcher registered with Paddle.js. */
 function registeredEventCallback(
   initializePaddle: ReturnType<typeof vi.fn>,
-): (event: { name?: string }) => void {
+): (event: { name?: string; data?: { transaction_id?: string } }) => void {
   const options = initializePaddle.mock.calls[0]?.[0] as {
-    eventCallback?: (event: { name?: string }) => void;
+    eventCallback?: (event: { name?: string; data?: { transaction_id?: string } }) => void;
   };
   expect(options.eventCallback).toBeTypeOf('function');
   return options.eventCallback!;
@@ -176,11 +176,17 @@ describe('launchCheckout', () => {
     expect(onCompleted).not.toHaveBeenCalled();
     expect(onClosed).not.toHaveBeenCalled();
 
-    eventCallback({ name: 'checkout.completed' });
+    eventCallback({
+      name: 'checkout.completed',
+      data: { transaction_id: PADDLE_SESSION.transactionId! },
+    });
     expect(onCompleted).toHaveBeenCalledTimes(1);
     expect(onClosed).not.toHaveBeenCalled();
 
-    eventCallback({ name: 'checkout.closed' });
+    eventCallback({
+      name: 'checkout.closed',
+      data: { transaction_id: PADDLE_SESSION.transactionId! },
+    });
     expect(onClosed).toHaveBeenCalledTimes(1);
     expect(onCompleted).toHaveBeenCalledTimes(1);
   });
@@ -200,8 +206,14 @@ describe('launchCheckout', () => {
     expect(initializePaddle).toHaveBeenCalledTimes(1);
     const eventCallback = registeredEventCallback(initializePaddle);
 
-    eventCallback({ name: 'checkout.completed' });
-    eventCallback({ name: 'checkout.closed' });
+    eventCallback({
+      name: 'checkout.completed',
+      data: { transaction_id: PADDLE_SESSION.transactionId! },
+    });
+    eventCallback({
+      name: 'checkout.closed',
+      data: { transaction_id: PADDLE_SESSION.transactionId! },
+    });
     expect(first.onCompleted).not.toHaveBeenCalled();
     expect(first.onClosed).not.toHaveBeenCalled();
     expect(second.onCompleted).toHaveBeenCalledTimes(1);
@@ -215,7 +227,12 @@ describe('launchCheckout', () => {
     const eventCallback = registeredEventCallback(initializePaddle);
 
     // No callbacks registered — provider events must be a no-op, not a crash.
-    expect(() => eventCallback({ name: 'checkout.completed' })).not.toThrow();
+    expect(() =>
+      eventCallback({
+        name: 'checkout.completed',
+        data: { transaction_id: PADDLE_SESSION.transactionId! },
+      }),
+    ).not.toThrow();
     expect(open).toHaveBeenCalledTimes(1);
   });
 

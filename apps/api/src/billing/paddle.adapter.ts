@@ -32,6 +32,9 @@ import { checkoutDiscountId, selectPaddleCheckoutPrice } from '@declutrmail/shar
 import { AppException } from '../common/app-exception.js';
 import type {
   BillingProvider,
+  CheckoutHold,
+  CheckoutTransactionFacts,
+  CheckoutTransactionOwner,
   CreateCheckoutInput,
   FetchSubscriptionResult,
   NormalizedBillingEvent,
@@ -120,18 +123,54 @@ function attributionSignature(workspaceId: string, secret: string): string {
  * discarded (the event then falls back to the subscription /
  * billing_customers links, or is left unresolved for retry).
  */
+type CheckoutCustomData = {
+  workspace_id?: string;
+  sig?: string;
+  checkout_attempt_id?: string;
+  checkout_offer?: string;
+  checkout_binding_version?: string;
+};
+function checkoutSignature(
+  workspaceId: string,
+  attemptId: string,
+  offer: string,
+  secret: string,
+): string {
+  return createHmac('sha256', secret)
+    .update(`paddle:checkout:${workspaceId}:${attemptId}:${offer}`)
+    .digest('hex');
+}
 export function verifiedWorkspaceId(
-  customData: { workspace_id?: string; sig?: string } | null | undefined,
+  customData: CheckoutCustomData | null | undefined,
   secret: string | undefined,
 ): string | null {
   const workspaceId = customData?.workspace_id;
   const sig = customData?.sig;
   if (!workspaceId || !sig || !secret) return null;
-  const expected = attributionSignature(workspaceId, secret);
+  const expected =
+    customData?.checkout_binding_version === '1' && customData.checkout_attempt_id
+      ? checkoutSignature(
+          workspaceId,
+          customData.checkout_attempt_id,
+          customData.checkout_offer ?? 'subscription',
+          secret,
+        )
+      : attributionSignature(workspaceId, secret);
   const a = Buffer.from(sig, 'utf8');
   const b = Buffer.from(expected, 'utf8');
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
-  return workspaceId;
+  return a.length === b.length && timingSafeEqual(a, b) ? workspaceId : null;
+}
+function verifiedAttemptId(
+  customData: CheckoutCustomData | null | undefined,
+  secret: string | undefined,
+): string | null {
+  const id = customData?.checkout_attempt_id;
+  return customData?.checkout_binding_version === '1' &&
+    id &&
+    /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id) &&
+    verifiedWorkspaceId(customData, secret)
+    ? id
+    : null;
 }
 
 /** Paddle subscription entity fields this adapter reads (API v2). */
@@ -146,7 +185,7 @@ interface PaddleSubscription {
   discount?: { id?: string; ends_at?: string | null } | null;
   scheduled_change?: { action?: string; effective_at?: string } | null;
   paused_at?: string | null;
-  custom_data?: { workspace_id?: string; sig?: string } | null;
+  custom_data?: CheckoutCustomData | null;
   /** Read by the D249 reconciliation GETs (claim-age matching). */
   created_at?: string | null;
 }
@@ -160,7 +199,7 @@ interface PaddleSubscription {
 interface PaddleTransaction {
   subscription_id?: string | null;
   customer_id?: string | null;
-  custom_data?: { workspace_id?: string; sig?: string } | null;
+  custom_data?: CheckoutCustomData | null;
   // D119 billing-document fields. `billed_at` is null on a transaction
   // that has not been billed yet (draft/ready), hence the `created_at`
   // fallback; `details.totals.grand_total` is the tax-INCLUSIVE total
@@ -194,7 +233,23 @@ interface PaddleTransaction {
    *  `subscription_payment_method_change` verification artifact below —
    *  QA-billing-20260901-07. */
   origin?: string | null;
+  /** Payment attempts. Read only by `fetchCheckoutHold`, which treats a
+   *  missing list as "cannot see the attempts", never as "none". */
+  payments?: Array<{ status?: unknown } | null> | null;
 }
+
+/** Payment-attempt states Paddle documents as still moving (3DS, a bank
+ *  or wallet deciding, an authorization not yet captured). Source:
+ *  developer.paddle.com/webhooks/transactions/transaction-completed. */
+const PADDLE_ATTEMPT_IN_FLIGHT = new Set([
+  'created',
+  'authorized',
+  'authorized_flagged',
+  'action_required',
+  'pending_no_action_required',
+]);
+/** Attempt states that are over without a payment. */
+const PADDLE_ATTEMPT_ENDED = new Set(['canceled', 'dropped']);
 
 /** ADR-0046: fixture-only preparation; never returned by production checkout. */
 export interface SandboxCheckoutIdentity {
@@ -427,6 +482,9 @@ function toNormalizedSubscription(
     // Signed attribution only — an unsigned/forged blob resolves to
     // null and the event falls back to the server-owned links.
     workspaceId: verifiedWorkspaceId(sub.custom_data, webhookSecret),
+    ...(verifiedAttemptId(sub.custom_data, webhookSecret)
+      ? { checkoutAttemptId: verifiedAttemptId(sub.custom_data, webhookSecret)! }
+      : {}),
   };
 }
 
@@ -471,7 +529,21 @@ export class PaddleAdapter implements BillingProvider {
     const discountId = checkoutDiscountId(this.env, selected.priceId);
     const customData = {
       workspace_id: input.workspaceId,
-      sig: attributionSignature(input.workspaceId, webhookSecret),
+      sig: input.checkoutAttemptId
+        ? checkoutSignature(
+            input.workspaceId,
+            input.checkoutAttemptId,
+            input.checkoutOffer ?? 'subscription',
+            webhookSecret,
+          )
+        : attributionSignature(input.workspaceId, webhookSecret),
+      ...(input.checkoutAttemptId
+        ? {
+            checkout_binding_version: '1',
+            checkout_attempt_id: input.checkoutAttemptId,
+            checkout_offer: input.checkoutOffer ?? 'subscription',
+          }
+        : {}),
     };
     const environment = this.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox';
     const apiKey = this.env.PADDLE_API_KEY;
@@ -496,6 +568,7 @@ export class PaddleAdapter implements BillingProvider {
       transactionId: created.id,
       clientToken,
       environment,
+      ...(input.checkoutAttemptId ? { attemptId: input.checkoutAttemptId } : {}),
     };
   }
 
@@ -1654,6 +1727,192 @@ export class PaddleAdapter implements BillingProvider {
     }
   }
 
+  /** Recover an uncertain create without another POST. A capped/ambiguous scan proves nothing. */
+  async recoverCheckoutAttempt(
+    owner: CheckoutTransactionOwner & { createdAt: Date },
+  ): Promise<string | null> {
+    const query = new URLSearchParams({
+      'created_at[gte]': new Date(owner.createdAt.getTime() - 60_000).toISOString(),
+      per_page: '30',
+    });
+    let path = `/transactions?${query}`;
+    const matches = new Set<string>();
+    for (let page = 0; page < 5; page++) {
+      const body = (await this.authedGet(path, 'checkout_recovery')) as {
+        data?: PaddleTransaction[];
+        meta?: { pagination?: { has_more?: boolean; next?: string } };
+      } | null;
+      if (!Array.isArray(body?.data) || typeof body.meta?.pagination?.has_more !== 'boolean')
+        return null;
+      for (const transaction of body.data) {
+        if (
+          transaction &&
+          typeof transaction.id === 'string' &&
+          verifiedWorkspaceId(transaction.custom_data, this.env.PADDLE_WEBHOOK_SECRET) ===
+            owner.workspaceId &&
+          verifiedAttemptId(transaction.custom_data, this.env.PADDLE_WEBHOOK_SECRET) === owner.id
+        )
+          matches.add(transaction.id);
+      }
+      if (!body.meta.pagination.has_more) {
+        if (matches.size !== 1) return null;
+        const id = [...matches][0]!;
+        return (await this.readCheckoutAttempt(id, owner)) ? id : null;
+      }
+      if (typeof body.meta.pagination.next !== 'string') return null;
+      const next = new URL(body.meta.pagination.next, this.baseUrl);
+      if (next.origin !== this.baseUrl || next.pathname !== '/transactions') return null;
+      next.searchParams.set('created_at[gte]', query.get('created_at[gte]')!);
+      next.searchParams.set('per_page', '30');
+      path = next.pathname + next.search;
+    }
+    return null;
+  }
+
+  /** An exact transaction must match the signed attempt and the reserved product. */
+  async readCheckoutAttempt(
+    transactionId: string,
+    owner: CheckoutTransactionOwner,
+  ): Promise<CheckoutTransactionFacts | null> {
+    if (!/^txn_[a-z\d]{26}$/.test(transactionId)) return null;
+    const body = await this.authedGet(
+      `/transactions/${encodeURIComponent(transactionId)}`,
+      'checkout_attempt',
+    );
+    const t = (body as { data?: PaddleTransaction } | null)?.data;
+    if (
+      !t ||
+      t.id !== transactionId ||
+      verifiedWorkspaceId(t.custom_data, this.env.PADDLE_WEBHOOK_SECRET) !== owner.workspaceId ||
+      verifiedAttemptId(t.custom_data, this.env.PADDLE_WEBHOOK_SECRET) !== owner.id ||
+      t.custom_data?.checkout_offer !== (owner.offer ?? 'subscription') ||
+      t.currency_code !== owner.currencyCode ||
+      t.items?.length !== 1 ||
+      t.items[0]?.price?.id !== owner.providerPriceId ||
+      t.items[0]?.quantity !== 1
+    )
+      return null;
+    if (owner.offer === 'pass_onetime' && t.subscription_id != null) return null;
+    if (
+      owner.offer === null &&
+      t.status === 'completed' &&
+      (typeof t.subscription_id !== 'string' || !t.subscription_id.startsWith('sub_'))
+    )
+      return null;
+    const state =
+      t.status === 'completed'
+        ? 'completed'
+        : t.status === 'paid'
+          ? 'paid'
+          : t.status === 'canceled'
+            ? 'stopped'
+            : t.status === 'draft' || t.status === 'ready'
+              ? 'unpaid'
+              : 'in_flight';
+    // Payment attempts outrank unpaid/stopped snapshots. Unknown shapes never release a hold.
+    if (!Array.isArray(t.payments)) return null;
+    if (t.payments.some((a) => a?.status === 'captured') && state !== 'completed')
+      return {
+        state: 'paid',
+        transactionId,
+        subscriptionId: t.subscription_id ?? null,
+        customerId: t.customer_id ?? null,
+      };
+    if (
+      t.payments.some(
+        (a) =>
+          typeof a?.status !== 'string' ||
+          (!PADDLE_ATTEMPT_ENDED.has(a.status) &&
+            !PADDLE_ATTEMPT_IN_FLIGHT.has(a.status) &&
+            a.status !== 'captured'),
+      )
+    )
+      return null;
+    const moving = t.payments.some(
+      (a) => typeof a?.status === 'string' && PADDLE_ATTEMPT_IN_FLIGHT.has(a.status),
+    );
+    return {
+      state: moving && (state === 'unpaid' || state === 'stopped') ? 'in_flight' : state,
+      transactionId,
+      subscriptionId: t.subscription_id ?? null,
+      customerId: t.customer_id ?? null,
+    };
+  }
+
+  /** Provider write is explicitly gated; a fresh exact readback is required by the caller. */
+  async stopCheckoutAttempt(transactionId: string): Promise<void> {
+    if (
+      this.env.BILLING_CHECKOUT_CANCEL_ENABLED !== 'true' ||
+      !/^txn_[a-z\d]{26}$/.test(transactionId)
+    )
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    const response = await fetch(
+      `${this.baseUrl}/transactions/${encodeURIComponent(transactionId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${this.env.PADDLE_API_KEY}`,
+          'Content-Type': 'application/json',
+          'Paddle-Version': '1',
+        },
+        body: JSON.stringify({ status: 'canceled' }),
+        signal: billingProviderSignal(API_TIMEOUT_MS),
+      },
+    );
+    if (!response.ok) throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+  }
+
+  /**
+   * What Paddle's record of ONE checkout transaction says about whether
+   * it can still become a payment — `GET /transactions/{id}`, nothing
+   * else. Read-only by design: ADR-0046 leaves provider-side
+   * cancellation unapproved outside the sandbox, so this never edits or
+   * cancels, and `unpaid` therefore means "not paid as of this read",
+   * not "cannot be paid later".
+   *
+   * FAILS CLOSED. Only a shape this positively recognises is `unpaid`:
+   * status `draft`/`ready`, an attempts list that is present, and every
+   * attempt either canceled or dropped. A missing list, a status or an
+   * attempt state outside the documented sets, a different workspace's
+   * attribution, a mismatched id or a 404 are all `unknown` — which
+   * supports no claim at all. A thrown error is the caller's
+   * `provider_unavailable`.
+   *
+   * Sourced from Paddle's docs (not exercised against a live account
+   * from this repo): transaction statuses draft/ready/billed/paid/
+   * completed/canceled/past_due, and payment-attempt states created/
+   * authorized/authorized_flagged/captured/canceled/action_required/
+   * pending_no_action_required/dropped.
+   */
+  async fetchCheckoutHold(transactionId: string, workspaceId: string): Promise<CheckoutHold> {
+    if (!/^txn_[a-z\d]{26}$/.test(transactionId)) return 'unknown';
+    const body = await this.authedGet(
+      `/transactions/${encodeURIComponent(transactionId)}`,
+      `checkout_hold txn=${transactionId}`,
+    );
+    if (body === null) return 'unknown';
+    const t = (body as { data?: PaddleTransaction }).data;
+    if (!t || t.id !== transactionId || typeof t.status !== 'string') return 'unknown';
+    // The id came from OUR claim row, but a mismatch here would mean the
+    // read answered about someone else's checkout — never classify it.
+    if (verifiedWorkspaceId(t.custom_data, this.env.PADDLE_WEBHOOK_SECRET) !== workspaceId)
+      return 'unknown';
+    if (typeof t.subscription_id === 'string' || t.status === 'paid' || t.status === 'completed')
+      return 'paid';
+    if (t.status === 'canceled') return 'stopped';
+    if (t.status !== 'draft' && t.status !== 'ready') return 'unknown';
+    if (!Array.isArray(t.payments)) return 'unknown';
+    let sawUnrecognised = false;
+    for (const attempt of t.payments) {
+      const state = attempt?.status;
+      if (state === 'captured') return 'paid';
+      if (typeof state === 'string' && PADDLE_ATTEMPT_IN_FLIGHT.has(state)) return 'in_flight';
+      if (typeof state === 'string' && PADDLE_ATTEMPT_ENDED.has(state)) continue;
+      sawUnrecognised = true;
+    }
+    return sawUnrecognised ? 'unknown' : 'unpaid';
+  }
+
   /**
    * Paddle's own answer to "is there a settled reason this subscription
    * must not renew?" — the gate on the one outbound cancel we send
@@ -1960,8 +2219,12 @@ export class PaddleAdapter implements BillingProvider {
           providerSubscriptionId: subscriptionId,
           providerCustomerId: data?.customer_id ?? null,
           workspaceId: verifiedWorkspaceId(data?.custom_data, this.env.PADDLE_WEBHOOK_SECRET),
+          checkoutAttemptId: verifiedAttemptId(data?.custom_data, this.env.PADDLE_WEBHOOK_SECRET),
+          checkoutPriceIds: transactionPriceIds(data),
+          checkoutItemsValid: data?.items?.length === 1 && data.items[0]?.quantity === 1,
+          checkoutCurrencyCode: data?.currency_code ?? null,
           ...(subscriptionId
-            ? {}
+            ? { providerTransactionId: data?.id ?? null }
             : {
                 providerTransactionId: data?.id ?? null,
                 oneTimePriceIds: transactionPriceIds(data),

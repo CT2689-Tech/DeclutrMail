@@ -44,7 +44,7 @@ import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
-import { ApiError, apiDelete } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/client';
 import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
 
@@ -82,6 +82,7 @@ import { usePauseSubscription } from './api/use-pause-subscription';
 import { useResumeCancellation } from './api/use-resume-cancellation';
 import { useResumeSubscription } from './api/use-resume-subscription';
 import {
+  bindPendingCheckoutAttempt,
   clearPendingCheckout,
   pendingCheckoutKey,
   readPendingCheckout,
@@ -102,6 +103,10 @@ import { GroupTitle } from '@/features/settings/settings-list';
 const CancelModal = dynamic(() => import('./cancel-modal').then((m) => m.CancelModal), {
   ssr: false,
 });
+const CheckoutAttemptNotice = dynamic(
+  () => import('./checkout-attempt-notice').then((m) => m.CheckoutAttemptNotice),
+  { ssr: false },
+);
 const CheckoutRecovery = dynamic(
   () => import('./checkout-recovery').then((m) => m.CheckoutRecovery).catch(() => () => null),
   { ssr: false },
@@ -218,12 +223,14 @@ export function BillingScreen({
   const mayStartCheckout = useRef(false);
   mayStartCheckout.current = false;
   const mounted = useRef(true);
-  const releaseRequest = useRef<AbortController | null>(null);
+  // The checkout attempt whose overlay was closed IN THIS TAB without a
+  // completed event. In-memory only, on purpose: after a reload or a dead
+  // tab nothing says the customer saw the overlay close, so that lock
+  // keeps the manual release.
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      releaseRequest.current?.abort();
     };
   }, []);
   // The pending payment lock. Persisted per workspace (localStorage) so
@@ -236,8 +243,7 @@ export function BillingScreen({
   const pendingRef = useRef(pending);
   pendingRef.current = pending;
   const serverOwnedPending = useRef<PendingCheckout | null>(null);
-  const [releasingPending, setReleasingPending] = useState(false);
-  const [releaseError, setReleaseError] = useState<string | null>(null);
+  const completedAttempts = useRef(new Set<string>());
   const [heldCheckout, setHeldCheckout] = useState<HeldCheckout | null>(null);
   const [processingPhase, setProcessingPhase] = useState<ProcessingPhase>('fresh');
   // QA-billing-20260901-03: `pauseForThirtyDays` writes nothing locally
@@ -312,8 +318,6 @@ export function BillingScreen({
   // writes from OTHER tabs — localStorage fires `storage` there, so a
   // payment completed in tab A locks (and later unlocks) tab B live.
   useEffect(() => {
-    setReleasingPending(false);
-    setReleaseError(null);
     setPending(readPendingCheckout(workspaceId));
     const onStorage = (event: StorageEvent) => {
       if (event.key !== null && event.key !== pendingCheckoutKey(workspaceId)) return;
@@ -322,8 +326,6 @@ export function BillingScreen({
     window.addEventListener('storage', onStorage);
     return () => {
       window.removeEventListener('storage', onStorage);
-      releaseRequest.current?.abort();
-      releaseRequest.current = null;
     };
   }, [workspaceId]);
 
@@ -347,6 +349,100 @@ export function BillingScreen({
   // (banner + poll + unlock-on-paid-confirmation) then runs unchanged. The
   // local lock stays authoritative when present — it carries the
   // richer fromTier/kind context the server row doesn't.
+  const serverAttempt = data?.checkoutAttempt ?? null;
+  const activeServerAttempt =
+    serverAttempt && serverAttempt.state !== 'fulfilled' && serverAttempt.state !== 'stopped'
+      ? serverAttempt
+      : null;
+  useEffect(() => {
+    if (!serverAttempt || subscriptionQuery.isError || subscriptionQuery.isFetching) return;
+    const stored = readPendingCheckout(workspaceId);
+    const storedMatches =
+      stored?.serverAttemptId === serverAttempt.id || stored?.attemptId === serverAttempt.id;
+    const pendingMatches =
+      pending?.workspaceId === workspaceId && pending.serverAttemptId === serverAttempt.id;
+    const terminal = serverAttempt.state === 'fulfilled' || serverAttempt.state === 'stopped';
+    if (terminal) {
+      if (stored && !storedMatches) {
+        if (pendingMatches) setPending(stored);
+      } else if (storedMatches || pendingMatches) {
+        if (storedMatches) clearPendingCheckout(workspaceId);
+        setPending(null);
+      }
+      const key = `${workspaceId}:${serverAttempt.id}`;
+      if (serverAttempt.state === 'fulfilled' && !completedAttempts.current.has(key)) {
+        completedAttempts.current.add(key);
+        void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+        void queryClient.invalidateQueries();
+        if (storedMatches || pendingMatches)
+          toast(
+            serverAttempt.offer === 'pass_onetime'
+              ? 'Backlog Pass is ready.'
+              : `${TIER_MANIFEST[serverAttempt.tier].name} subscription is ready.`,
+            'success',
+          );
+        const destination = storedMatches
+          ? (stored?.returnTo ?? returnTo ?? initialIntent?.from)
+          : (returnTo ?? initialIntent?.from);
+        const matchesIntent =
+          !initialIntent ||
+          (initialIntent.plan === serverAttempt.tier &&
+            (!initialIntent.cycle || initialIntent.cycle === serverAttempt.cycle) &&
+            (initialIntent.offer ?? null) === serverAttempt.offer);
+        if (
+          destination &&
+          matchesIntent &&
+          (storedMatches || pendingMatches) &&
+          (!stored || storedMatches)
+        )
+          void import('./return-after-upgrade')
+            .then(({ returnAfterUpgrade }) => {
+              if (!mounted.current || currentOwner.current !== workspaceId) return;
+              const currentStored = readPendingCheckout(workspaceId);
+              if (
+                currentStored &&
+                currentStored.attemptId !== serverAttempt.id &&
+                currentStored.serverAttemptId !== serverAttempt.id
+              )
+                return;
+              returnAfterUpgrade(destination);
+            })
+            .catch(() => undefined);
+      }
+      return;
+    }
+    if (stored && !storedMatches) return;
+    if (pending?.serverAttemptId === serverAttempt.id) return;
+    const synthesized: PendingCheckout = {
+      workspaceId,
+      kind: 'checkout_intent',
+      fromTier: data?.tier ?? meTier,
+      fromCycle: null,
+      toTier: serverAttempt.tier,
+      toCycle: serverAttempt.cycle,
+      at: Date.parse(serverAttempt.createdAt),
+      attemptId: serverAttempt.id,
+      serverAttemptId: serverAttempt.id,
+      ...(serverAttempt.offer ? { offer: serverAttempt.offer } : {}),
+      ...(stored?.returnTo ? { returnTo: stored.returnTo } : {}),
+    };
+    setPending(synthesized);
+  }, [
+    serverAttempt,
+    pending,
+    workspaceId,
+    subscriptionQuery.isError,
+    subscriptionQuery.isFetching,
+    queryClient,
+    data?.tier,
+    meTier,
+    returnTo,
+    initialIntent?.from,
+    initialIntent?.plan,
+    initialIntent?.cycle,
+    initialIntent?.offer,
+  ]);
+
   const serverPending = data?.pendingCheckout ?? null;
   useEffect(() => {
     // Only a wait synthesized from this server claim follows its removal.
@@ -366,7 +462,8 @@ export function BillingScreen({
       return;
     }
     if (!serverPending || pending !== null || data === null) return;
-    if (Date.parse(serverPending.expiresAt) <= Date.now()) return;
+    if (!serverPending.legacyUnresolved && Date.parse(serverPending.expiresAt) <= Date.now())
+      return;
     // Hydrate and this effect both see `pending === null` on the first
     // paint, and this one is declared later, so it would replace the
     // stored lock. A Pass offer lives only on that record; dropping it
@@ -392,7 +489,8 @@ export function BillingScreen({
       // matching granting paid subscription can confirm completion.
       toTier: serverPending.tier,
       toCycle: serverPending.cycle,
-      at: Date.now(),
+      at: serverPending.createdAt ? Date.parse(serverPending.createdAt) : Date.now(),
+      ...(serverPending.offer ? { offer: serverPending.offer } : {}),
     };
     serverOwnedPending.current = synthesized;
     setPending(synthesized);
@@ -435,6 +533,7 @@ export function BillingScreen({
   useEffect(() => {
     if (
       pending === null ||
+      pending.serverAttemptId !== undefined ||
       data === null ||
       subscriptionQuery.isError ||
       subscriptionQuery.isFetching
@@ -547,58 +646,9 @@ export function BillingScreen({
   // never released on a timer (that would reopen the double-charge
   // window for exactly the user whose webhook is delayed).
   function onReleasePendingLock() {
-    releaseCheckoutClaim();
-  }
-
-  // Keep the wait until the server releases it. Clearing it earlier lets
-  // the cached positive claim synthesize a new local wait that outlives
-  // the server claim. Cancel old reads before updating that cached field.
-  function releaseCheckoutClaim(attemptId?: string) {
-    if (releaseRequest.current || !mounted.current || currentOwner.current !== workspaceId) return;
-    const stored = readPendingCheckout(workspaceId);
-    const originalPending = pendingRef.current;
-    if (attemptId ? stored?.attemptId !== attemptId : originalPending === null) return;
-    const storedSnapshot = JSON.stringify(stored);
-    const pendingSnapshot = JSON.stringify(originalPending);
-    const controller = new AbortController();
-    releaseRequest.current = controller;
-    setReleasingPending(true);
-    setReleaseError(null);
-    const stillOwns = () =>
-      mounted.current &&
-      currentOwner.current === workspaceId &&
-      !controller.signal.aborted &&
-      JSON.stringify(readPendingCheckout(workspaceId)) === storedSnapshot &&
-      (attemptId
-        ? pendingRef.current === null || pendingRef.current.attemptId === attemptId
-        : JSON.stringify(pendingRef.current) === pendingSnapshot);
-    void apiDelete<{ released: true }>('/api/billing/checkout/pending', {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (response.data?.released !== true) throw new Error('Checkout release unconfirmed');
-        if (!stillOwns()) return;
-        const refresh =
-          !attemptId ||
-          queryClient.isFetching({ queryKey: billingKeys.subscription(), exact: true }) > 0;
-        await queryClient.cancelQueries({ queryKey: billingKeys.subscription(), exact: true });
-        if (!stillOwns()) return;
-        queryClient.setQueryData<BillingSubscription>(billingKeys.subscription(), (previous) =>
-          previous ? { ...previous, pendingCheckout: null } : previous,
-        );
-        clearPendingCheckout(workspaceId);
-        setHeldCheckout(null);
-        setPending(null);
-        if (refresh) void queryClient.invalidateQueries({ queryKey: billingKeys.subscription() });
-      })
-      .catch(() => {
-        if (stillOwns()) setReleaseError('This hold couldn’t be released; try confirming again.');
-      })
-      .finally(() => {
-        if (releaseRequest.current !== controller) return;
-        releaseRequest.current = null;
-        if (mounted.current && currentOwner.current === workspaceId) setReleasingPending(false);
-      });
+    if (!pending || pending.kind === 'checkout' || pending.kind === 'checkout_intent') return;
+    clearPendingCheckout(workspaceId);
+    setPending(null);
   }
 
   if (view.kind === 'loading' || (view.kind === 'billing_dark' && !hydrated)) {
@@ -642,6 +692,11 @@ export function BillingScreen({
     // Their only exits are the tier flip or the user's two-step
     // assertion.
     const existing = readPendingCheckout(workspaceId);
+    if (existing?.serverAttemptId) {
+      setPending(existing);
+      void subscriptionQuery.refetch();
+      return;
+    }
     if (
       existing !== null &&
       (existing.attemptId !== undefined
@@ -709,6 +764,7 @@ export function BillingScreen({
         toCycle,
         attemptId,
         offer,
+        returnTo ?? initialIntent?.from,
       );
       return attemptId;
     });
@@ -833,7 +889,20 @@ export function BillingScreen({
         </p>
       ),
     });
-  if (pending !== null) {
+  if (activeServerAttempt) {
+    notices.push({
+      key: 'checkout-attempt',
+      node: (
+        <CheckoutAttemptNotice
+          attempt={activeServerAttempt}
+          ownerId={workspaceId}
+          onUpdated={() => {
+            void subscriptionQuery.refetch();
+          }}
+        />
+      ),
+    });
+  } else if (pending !== null) {
     notices.push({
       key: 'payment-processing',
       node: (
@@ -870,9 +939,10 @@ export function BillingScreen({
           <PaymentProcessingNotice
             phase={processingPhase}
             kind={pending.kind}
-            onRelease={onReleasePendingLock}
-            releasing={releasingPending}
-            releaseError={releaseError}
+            {...(pending.offer !== undefined ? { offer: pending.offer } : {})}
+            {...(pending.kind !== 'checkout' && pending.kind !== 'checkout_intent'
+              ? { onRelease: onReleasePendingLock }
+              : {})}
             onProviderCheck={
               // D249 — checkout-shaped waits run the pending-checkout
               // ladder; a change wait asks about the workspace's LIVE
@@ -881,7 +951,7 @@ export function BillingScreen({
               // upgrade "no payment found"). Resume waits stay un-checked.
               pending.kind === 'checkout' || pending.kind === 'checkout_intent'
                 ? async () => {
-                    const outcome = await reconcileCheckout.mutateAsync({
+                    const answer = await reconcileCheckout.mutateAsync({
                       // The local record as the hint — load-bearing once
                       // the server claim has TTL'd and been swept (the
                       // stale-lock case): the server can still search
@@ -890,19 +960,38 @@ export function BillingScreen({
                         ? { toTier: pending.toTier }
                         : {}),
                       ...(pending.toCycle ? { cycle: pending.toCycle } : {}),
+                      ...(pending.offer ? { offer: pending.offer } : {}),
                       startedAt: new Date(pending.at).toISOString(),
                     });
+                    // A Pass is answered only from its own transaction. An
+                    // API that predates the exact read answers from the
+                    // subscription search, which cannot see a one-time
+                    // payment, so nothing it says about a Pass is evidence;
+                    // and a Pass `none_found` that is not exact is not
+                    // evidence either. (A current API sends `exact`.)
+                    const outcome =
+                      pending.offer &&
+                      (answer.exact === undefined ||
+                        (answer.outcome === 'none_found' && answer.exact !== true))
+                        ? 'provider_unavailable'
+                        : answer.outcome;
                     if (outcome === 'granted' || outcome === 'already_recorded') {
                       // The projection (or an earlier webhook) already
                       // wrote the truth — pull it; the tier flip clears
                       // this notice through the normal detector.
                       void subscriptionQuery.refetch();
                     }
+                    // Two independent signals, both required: the
+                    // customer closed the overlay in THIS tab, and Paddle's
+                    // own record of THIS checkout's transaction is unpaid
+                    // or canceled. An empty search alone never releases
+                    // anything. The release is scoped to this attempt, so
+                    // a lock another attempt took meanwhile is untouched.
                     return outcome;
                   }
                 : pending.kind === 'change' || pending.kind === 'change_unconfirmed'
                   ? async () => {
-                      const outcome = await reconcileCheckout.mutateAsync({
+                      const { outcome } = await reconcileCheckout.mutateAsync({
                         kind: 'change',
                         // The awaited target — the server uses it to split
                         // "unchanged" into recorded-confirmation vs
@@ -1090,6 +1179,7 @@ export function BillingScreen({
           billingDark ||
           setupRequired ||
           pending !== null ||
+          activeServerAttempt !== null ||
           reviewPending ||
           plan.backing.state === 'past_due' ||
           plan.backing.state === 'cancel_scheduled' ||
@@ -1110,16 +1200,38 @@ export function BillingScreen({
           // "Payment received" lock+poll.
           startPending('checkout', target, cycle, attemptId, offer)
         }
+        onCheckoutRejected={releaseAttemptLock}
+        onCheckoutLoadFailed={(attemptId, session, target, cycle) => {
+          if (!mounted.current || currentOwner.current !== workspaceId) return;
+          const record = readPendingCheckout(workspaceId);
+          if (record?.attemptId !== attemptId) return;
+          if (session.provider === 'paddle' && session.attemptId) {
+            surfaceAttemptLock(attemptId);
+            void subscriptionQuery.refetch();
+            return;
+          }
+          setHeldCheckout({
+            workspaceId,
+            session,
+            target,
+            cycle,
+            attemptId,
+            expiresAt: record.at + 30 * 60_000,
+          });
+          surfaceAttemptLock(attemptId);
+        }}
+        onCheckoutSession={(attemptId) => {
+          const bound = bindPendingCheckoutAttempt(workspaceId, attemptId);
+          if (bound) setPending(bound);
+          void subscriptionQuery.refetch();
+        }}
         onCheckoutAttempt={(target, cycle, offer) =>
           attemptClaim('checkout_intent', target, cycle, offer)
         }
-        onCheckoutAbandoned={(attemptId) => {
-          if (!mounted.current || currentOwner.current !== workspaceId) return;
-          const record = readPendingCheckout(workspaceId);
-          if (record?.attemptId === attemptId) setPending(record);
-          releaseCheckoutClaim(attemptId);
+        onCheckoutAbandoned={surfaceAttemptLock}
+        onCheckoutClosed={(attemptId) => {
+          surfaceAttemptLock(attemptId);
         }}
-        onCheckoutClosed={surfaceAttemptLock}
         ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
         mayOpenCheckout={(attemptId) => {
           const record = readPendingCheckout(workspaceId);
@@ -1357,6 +1469,7 @@ function cancelErrorMessage(error: unknown): string {
 export function PaymentProcessingNotice({
   phase = 'fresh',
   kind = 'checkout',
+  offer,
   onRelease,
   releasing = false,
   releaseError = null,
@@ -1368,6 +1481,9 @@ export function PaymentProcessingNotice({
    *  only what actually happened (a plan change/resume made no new
    *  overlay payment). */
   kind?: PendingKind;
+  /** A Backlog Pass is a one-time purchase, not a plan upgrade — the
+   *  copy names what was actually bought. */
+  offer?: 'pass_onetime';
   /** User-asserted "no charge went through" release (unconfirmed only).
    *  Reached only through the two-step confirm below — a wrong release
    *  invites a second charge, so the risk is stated before the act
@@ -1443,12 +1559,38 @@ export function PaymentProcessingNotice({
             : 'Resume accepted';
   // What the wait is FOR, per kind — a first purchase is not a "plan
   // change" and the copy must not claim one (UI-truth rule).
+  const passName = fillStory(WS1_COPY['planName.pass']);
+  const isPass = offer === 'pass_onetime';
   const awaited =
     kind === 'change' || kind === 'change_unconfirmed'
       ? 'plan change'
       : kind === 'resume'
         ? 'resume'
-        : 'plan upgrade';
+        : isPass
+          ? passName
+          : 'plan upgrade';
+  // The heading already says what the provider did; the body adds only
+  // what it does not, then what happens next — each fact once, and no
+  // "in a minute" promise once the heading says it has not come through.
+  const known =
+    kind === 'checkout'
+      ? 'Payment received.'
+      : kind === 'checkout_intent'
+        ? 'We do not yet know whether a payment completed.'
+        : kind === 'resume'
+          ? 'No charge was started; your existing paid period continues.'
+          : kind === 'change'
+            ? 'Your new plan is not confirmed here yet.'
+            : null;
+  const next =
+    phase !== 'fresh'
+      ? 'you can wait here or return later.'
+      : kind === 'checkout_intent'
+        ? 'continue in the checkout window if it’s still open.'
+        : kind === 'checkout'
+          ? `your ${isPass ? passName : 'new plan'} will show here in a minute.`
+          : 'confirmation usually arrives within a minute.';
+  const body = [known, `Billing changes stay paused; ${next}`].filter(Boolean).join(' ');
   const recoveryButtonStyle = {
     maxWidth: '100%',
     minWidth: 0,
@@ -1481,7 +1623,7 @@ export function PaymentProcessingNotice({
           ? `${acted} — your ${awaited} hasn’t come through yet.`
           : phase === 'slow'
             ? 'Still confirming — this is taking longer than usual.'
-            : `${acted} — confirming your plan.`}
+            : `${acted} — confirming your ${isPass ? passName : 'plan'}.`}
       </h2>
       {releasing ? <p style={{ margin: 0 }}>Releasing hold…</p> : null}
       {releaseError ? (
@@ -1489,35 +1631,8 @@ export function PaymentProcessingNotice({
           {releaseError}
         </p>
       ) : null}
-      <dl style={{ display: 'grid', gap: 10, margin: 0 }}>
-        <div>
-          <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What we know</dt>
-          <dd style={{ margin: 0, color: color.fgSoft }}>
-            {kind === 'checkout'
-              ? 'Payment received. Your new plan will show here in a minute.'
-              : kind === 'checkout_intent'
-                ? 'Checkout started, but we do not yet know whether a payment completed.'
-                : kind === 'change_unconfirmed'
-                  ? 'We’re still confirming your plan change.'
-                  : kind === 'resume'
-                    ? 'The provider accepted your resume. No charge was started; your existing paid period continues.'
-                    : 'The provider accepted your plan change. Your new plan is not confirmed here yet.'}
-          </dd>
-        </div>
-        <div>
-          <dt style={{ fontSize: text.sm, fontWeight: 600 }}>What happens next</dt>
-          <dd style={{ margin: 0, color: color.fgSoft }}>
-            This page keeps checking automatically. Billing changes stay paused to avoid charging
-            you twice.
-            {phase === 'fresh'
-              ? kind === 'checkout_intent'
-                ? ' Use the checkout window to continue, or check payment status if it closed.'
-                : ' Confirmation usually arrives within a minute.'
-              : ' You can wait here or return later.'}
-          </dd>
-        </div>
-      </dl>
-      {phase !== 'fresh' ? (
+      <p style={{ margin: 0, color: color.fgSoft }}>{body}</p>
+      {phase !== 'fresh' || onRelease === undefined ? (
         <p style={{ margin: 0, fontSize: text.sm }}>
           Need help?{' '}
           <a className={linkStyles.link} href="mailto:support@declutrmail.com">

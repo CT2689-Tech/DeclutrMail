@@ -180,6 +180,55 @@ export const PaymentUnconfirmed: Story<typeof BillingScreen> = {
   ),
 };
 
+/** A Backlog Pass is a one-time purchase: named as one, and checked
+ *  against its own transaction (the server answers a Pass from that
+ *  transaction only, never from the subscription search), so the check
+ *  line reads like a plan's. */
+export const PassUnconfirmed: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
+      <PaymentProcessingNotice
+        phase="unconfirmed"
+        kind="checkout"
+        offer="pass_onetime"
+        onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
+      />
+    </div>
+  ),
+};
+
+/** The Pass checkout closed without a completed event: the check ran and
+ *  found nothing, so the re-check and the two-step release are offered.
+ *  (When the overlay was closed in this tab and the answer is exact, the
+ *  screen releases it by itself and this notice never lingers.) */
+export const PassCheckoutStarted: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
+      <PaymentProcessingNotice
+        kind="checkout_intent"
+        offer="pass_onetime"
+        onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
+      />
+    </div>
+  ),
+};
+
+/** A plan checkout the provider has no completed payment for: the
+ *  re-check and the two-step release are both offered. */
+export const CheckoutStartedNothingFound: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 200, padding: 12 }}>
+      <PaymentProcessingNotice
+        kind="checkout_intent"
+        onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
+      />
+    </div>
+  ),
+};
+
 export const CheckoutHoldReleasing: Story<typeof BillingScreen> = {
   render: () => (
     <div style={{ background: tokens.color.bg, padding: 12 }}>

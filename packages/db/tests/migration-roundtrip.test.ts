@@ -103,6 +103,7 @@ describe('migration round-trip', () => {
       'table:active_sessions',
       'table:activity_log',
       'table:automation_rules',
+      'table:billing_checkout_attempts',
       'table:billing_customers',
       'table:brand_domain_aliases',
       'table:brief_runs',

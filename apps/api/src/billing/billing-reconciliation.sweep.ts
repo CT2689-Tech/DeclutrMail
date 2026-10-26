@@ -33,9 +33,8 @@ import type { DrizzleDb } from '../db/db.module.js';
  *      and the shared pieces live in
  *      `common/entitlements/entitlement-grants.ts` so the ordering and
  *      the liveness predicate have exactly one definition).
- *   3. `pending_checkouts` rows expired > 7 days deleted — retention
- *      keeps `provider_ref` reachable for stale-lock reconciliation
- *      (D249); expiry itself re-arms checkout via the claim upsert.
+ *   3. Unresolved legacy checkout references remain retained; expiry does
+ *      not revoke the provider artifact or reopen checkout.
  *   4. Stale D120 scheduled changes (> 7 days) surfaced as WARNs — the
  *      `billing.plan_change_unconfirmed` class only a sweep can age
  *      out.
@@ -187,17 +186,8 @@ export async function runBillingReconciliationSweep(
     `);
   });
 
-  // D249 (Codex 2026-07-30): retain expired claims for 7 days instead
-  // of deleting at expiry. Checkout-reopening never depended on this
-  // deletion (the claim upsert reclaims any row past expires_at, and
-  // the FE ignores expired rows) — but the row's `provider_ref` is the
-  // ONLY exact link to a Razorpay artifact, and a browser's stale lock
-  // (which never auto-expires) reconciles through it. Deleting at
-  // expiry left stale Razorpay locks releasable without ever asking
-  // Razorpay about the still-payable subscription.
-  const cleared = await db.execute(sql`
-    DELETE FROM pending_checkouts WHERE expires_at < now() - interval '7 days'
-  `);
+  // Expiry is not revocation. Retain unresolved legacy slots and their exact references.
+  const cleared = { rowCount: 0 };
 
   const stale = await db.execute(sql`
     SELECT workspace_id, scheduled_change_state, scheduled_change_requested_at
@@ -226,7 +216,7 @@ export async function runBillingReconciliationSweep(
   return {
     dunningFlipped: flippedWorkspaceIds.length,
     workspacesRecomputed: affectedCount(recomputed),
-    pendingCheckoutsCleared: affectedCount(cleared),
+    pendingCheckoutsCleared: cleared.rowCount,
     staleScheduledChanges: staleRows.length,
     unattendedRulesDemoted: demotion.demotedRules,
     unattendedMatchesNeutralized: demotion.neutralizedMatches,

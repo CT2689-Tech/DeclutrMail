@@ -1,3 +1,5 @@
+import { returnAfterUpgrade } from './return-after-upgrade';
+vi.mock('./return-after-upgrade', () => ({ returnAfterUpgrade: vi.fn() }));
 import type * as CheckoutModule from './checkout';
 /**
  * Tests for `BillingScreen` (D117/D119/D120/D121).
@@ -467,6 +469,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({
+        attemptId: expect.any(String),
         tierId: 'pro',
         cycle: 'annual',
         provider: 'paddle',
@@ -524,6 +527,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() =>
       expect(checkoutBody).toEqual({
+        attemptId: expect.any(String),
         tierId: 'pro',
         cycle: 'annual',
         provider: 'paddle',
@@ -575,7 +579,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await waitFor(() =>
-      expect(checkoutBody).toEqual({ tierId: 'pro', cycle: 'monthly', provider: 'paddle' }),
+      expect(checkoutBody).toEqual({
+        attemptId: expect.any(String),
+        tierId: 'pro',
+        cycle: 'monthly',
+        provider: 'paddle',
+      }),
     );
   });
 
@@ -667,7 +676,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(launchCheckout).not.toHaveBeenCalled();
   });
 
-  it('a failed overlay open does not set the checkout lock and stays retryable', async () => {
+  it('a safe overlay load failure retains the reservation and offers the same checkout', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -694,7 +703,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
         respond: () => jsonOk({ data: { released: true } }),
       },
     ]);
-    vi.mocked(launchCheckout).mockRejectedValueOnce(new Error('script blocked'));
+    vi.mocked(launchCheckout).mockRejectedValueOnce(new CheckoutLaunchError(true));
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
@@ -702,14 +711,14 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     expect(
-      await screen.findByText('The secure checkout window could not be opened.'),
+      await screen.findByRole('button', { name: 'Retry checkout window' }),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
-    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
-    expect(screen.getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry checkout window' })).toBeEnabled();
   });
 
-  it('a failed overlay releases its cached server claim without leaving a synthesized wait', async () => {
+  it('a failed overlay retains its server claim and its local reservation', async () => {
     let started = false;
     const claim = {
       provider: 'paddle',
@@ -739,11 +748,13 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    await waitFor(() =>
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull(),
+    );
     expect(
       client.getQueryData<BillingSubscription>(billingKeys.subscription())?.pendingCheckout,
-    ).toBeNull();
-    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    ).toEqual(claim);
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
   });
 
   it('a failed checkout CREATE surfaces the held claim — no invisible-lock trap (Codex 2026-07-29)', async () => {
@@ -1169,7 +1180,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
           }),
       },
     ]);
-    const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => undefined);
+    vi.mocked(returnAfterUpgrade).mockClear();
     renderScreen(null, '/brief');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
@@ -1199,7 +1210,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Switch to Free' })).not.toBeInTheDocument();
 
-    expect(assign).not.toHaveBeenCalled();
+    expect(returnAfterUpgrade).not.toHaveBeenCalled();
 
     // "Webhook lands": the server now reports pro — the immediate
     // post-completion refetch picks it up and the pending state clears.
@@ -1212,8 +1223,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
     );
     expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
-    await waitFor(() => expect(assign).toHaveBeenCalledWith('/brief'));
-    assign.mockRestore();
+    await waitFor(() => expect(returnAfterUpgrade).toHaveBeenCalledWith('/brief'));
     // The lock lifts with the pending state — plan changes are
     // available again against the NEW tier.
     expect(screen.getByRole('button', { name: 'Switch to Free' })).toBeInTheDocument();
@@ -1463,13 +1473,13 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
     expect(screen.getByText('Free covers 1 Gmail account.')).toBeInTheDocument();
-    expect(within(notice).getByText('What we know')).toBeInTheDocument();
-    expect(within(notice).getByText('What happens next')).toBeInTheDocument();
+    expect(within(notice).queryByText('What we know')).not.toBeInTheDocument();
+    expect(within(notice).queryByText('What happens next')).not.toBeInTheDocument();
     expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
       'href',
       'mailto:support@declutrmail.com',
     );
-    expect(notice).toHaveTextContent('Billing changes stay paused to avoid charging you twice.');
+    expect(notice).toHaveTextContent('Billing changes stay paused');
     const currentAccess = screen.getByTestId('current-plan-card');
     expect(within(currentAccess).getByText('Free')).toBeInTheDocument();
     expect(currentAccess).toHaveTextContent(
@@ -1499,84 +1509,10 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     );
     expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(/reach/i);
 
-    // The explicit, user-asserted release — the only non-flip way out —
-    // is TWO-step: the first click states the double-charge risk and
-    // releases nothing yet.
-    fireEvent.click(
-      await within(notice).findByRole('button', {
-        name: 'Review checkout',
-      }),
-    );
-    const releaseConfirm = within(notice).getByTestId('release-confirm');
-    expect(releaseConfirm).toHaveTextContent(/charge you twice/i);
-    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(
+      within(notice).queryByRole('button', { name: 'Review checkout' }),
+    ).not.toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
-    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
-
-    // "Keep waiting" backs out without releasing anything.
-    fireEvent.click(within(releaseConfirm).getByRole('button', { name: 'Keep waiting' }));
-    expect(within(notice).queryByTestId('release-confirm')).not.toBeInTheDocument();
-    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
-
-    // Only the confirmed assertion releases the lock.
-    fireEvent.click(within(notice).getByRole('button', { name: 'Review checkout' }));
-    fireEvent.click(within(notice).getByRole('button', { name: 'Confirm no charge' }));
-    await waitFor(() =>
-      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
-    );
-    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
-    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
-  });
-
-  it('releases a cached server checkout claim without requiring a reload', async () => {
-    let released = false;
-    let deletes = 0;
-    let finishDelete!: () => void;
-    const releaseGate = new Promise<void>((resolve) => {
-      finishDelete = resolve;
-    });
-    const claim = {
-      provider: 'paddle' as const,
-      tier: 'plus' as const,
-      cycle: 'annual' as const,
-      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
-    };
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: { ...FREE_BODY, pendingCheckout: released ? null : claim } }),
-      },
-      {
-        method: 'DELETE',
-        path: '/api/billing/checkout/pending',
-        respond: async () => {
-          deletes += 1;
-          await releaseGate;
-          released = true;
-          return jsonOk({ data: { released: true } });
-        },
-      },
-    ]);
-    renderScreen();
-    fireEvent.click(await screen.findByRole('button', { name: 'Review checkout' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
-    await waitFor(() => expect(deletes).toBe(1));
-    const releasing = screen.getByRole('button', { name: 'Releasing…' });
-    expect(releasing).toHaveAttribute('aria-disabled', 'true');
-    expect(screen.getByRole('button', { name: 'Keep waiting' })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
-    fireEvent.click(releasing);
-    expect(deletes).toBe(1);
-    await act(async () => {
-      finishDelete();
-    });
-    await waitFor(() =>
-      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
-    );
-    expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeEnabled();
   });
 
   it.each([false, true])(
@@ -1619,157 +1555,6 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
         );
         expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeEnabled();
       }
-    },
-  );
-
-  it.each(['provider error', 'unconfirmed response'] as const)(
-    'retains the lock and visible retry after release: %s',
-    async (failure) => {
-      let failures = true;
-      const stored = writePendingCheckout(
-        'w',
-        'checkout_intent',
-        'free',
-        null,
-        'plus',
-        'annual',
-        'owned-attempt',
-      );
-      stubSubscription(() => jsonOk({ data: FREE_BODY }));
-      addFetchHandlers([
-        {
-          method: 'DELETE',
-          path: '/api/billing/checkout/pending',
-          respond: () =>
-            failures
-              ? failure === 'provider error'
-                ? jsonServerError()
-                : jsonOk({ data: {} })
-              : jsonOk({ data: { released: true } }),
-        },
-      ]);
-      renderScreen();
-      fireEvent.click(await screen.findByRole('button', { name: 'Review checkout' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
-      expect(await screen.findByRole('alert')).toHaveTextContent(/couldn’t be released/);
-      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toEqual(stored);
-      expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).not.toBeInTheDocument();
-      failures = false;
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
-      await waitFor(() =>
-        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
-      );
-    },
-  );
-
-  it('ignores a late pre-release subscription read after the server claim was released', async () => {
-    const claim = {
-      provider: 'paddle',
-      tier: 'plus',
-      cycle: 'annual',
-      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
-    };
-    let reads = 0;
-    let released = false;
-    let finishOldRead!: () => void;
-    const oldRead = new Promise<void>((resolve) => {
-      finishOldRead = resolve;
-    });
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: async () => {
-          reads += 1;
-          if (reads === 2) {
-            await oldRead;
-            return jsonOk({ data: { ...FREE_BODY, pendingCheckout: claim } });
-          }
-          return jsonOk({ data: { ...FREE_BODY, pendingCheckout: released ? null : claim } });
-        },
-      },
-      {
-        method: 'DELETE',
-        path: '/api/billing/checkout/pending',
-        respond: () => {
-          released = true;
-          return jsonOk({ data: { released: true } });
-        },
-      },
-    ]);
-    const { client } = renderScreen();
-    fireEvent.click(await screen.findByRole('button', { name: 'Review checkout' }));
-    void client.refetchQueries({ queryKey: billingKeys.subscription() });
-    await waitFor(() => expect(reads).toBe(2));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
-    await waitFor(() =>
-      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
-    );
-    await act(async () => {
-      finishOldRead();
-    });
-    expect(
-      client.getQueryData<BillingSubscription>(billingKeys.subscription())?.pendingCheckout,
-    ).toBeNull();
-    expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeEnabled();
-  });
-
-  it.each(['replacement', 'unmount', 'workspace switch'] as const)(
-    'does not clear a different owner after release: %s',
-    async (change) => {
-      writePendingCheckout('w', 'checkout_intent', 'free', null, 'plus', 'annual', 'original');
-      let finishDelete!: () => void;
-      const gate = new Promise<void>((resolve) => {
-        finishDelete = resolve;
-      });
-      installFetchStub([
-        {
-          method: 'GET',
-          path: '/api/billing/subscription',
-          respond: () => jsonOk({ data: FREE_BODY }),
-        },
-        {
-          method: 'DELETE',
-          path: '/api/billing/checkout/pending',
-          respond: async () => {
-            await gate;
-            return jsonOk({ data: { released: true } });
-          },
-        },
-      ]);
-      const result = renderScreen();
-      fireEvent.click(await screen.findByRole('button', { name: 'Review checkout' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Confirm no charge' }));
-      let expectedAttempt = 'original';
-      if (change === 'replacement') {
-        expectedAttempt = 'replacement';
-        act(() => {
-          writePendingCheckout(
-            'w',
-            'checkout_intent',
-            'free',
-            null,
-            'plus',
-            'annual',
-            expectedAttempt,
-          );
-          window.dispatchEvent(new StorageEvent('storage', { key: pendingCheckoutKey('w') }));
-        });
-      } else if (change === 'unmount') result.unmount();
-      else {
-        mockWorkspaceId = 'other';
-        result.rerender(
-          <QueryWrapper client={result.client}>
-            <BillingScreen />
-          </QueryWrapper>,
-        );
-      }
-      await act(async () => {
-        finishDelete();
-      });
-      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!).attemptId).toBe(
-        expectedAttempt,
-      );
     },
   );
 
@@ -1816,7 +1601,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ).toBeNull();
 
     resolveReconcile(jsonOk({ data: { outcome: 'none_found' } }));
-    await within(notice).findByRole('button', { name: 'Review checkout' });
+    await within(notice).findByRole('link', { name: 'Contact billing support' });
     expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
       'We checked with the payment provider — no completed payment found for this checkout.',
     );
@@ -1987,7 +1772,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       /found your payment/i,
     );
     // Nothing in flight anywhere → the way out is available.
-    expect(within(notice).getByRole('button', { name: 'Review checkout' })).toBeInTheDocument();
+    expect(
+      within(notice).getByRole('link', { name: 'Contact billing support' }),
+    ).toBeInTheDocument();
   });
 
   it('D249: a stuck plan change reconciles via kind=change and reports change wording', async () => {
@@ -2201,15 +1988,10 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       (JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!) as { kind: string }).kind,
     ).toBe('checkout_intent');
 
-    // Re-arming is the user's explicit two-step no-charge assertion —
-    // available immediately for a surfaced reservation.
-    fireEvent.click(within(notice).getByRole('button', { name: 'Review checkout' }));
-    fireEvent.click(within(notice).getByRole('button', { name: 'Confirm no charge' }));
-    await waitFor(() =>
-      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
-    );
-    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
-    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+    expect(
+      within(notice).queryByRole('button', { name: 'Confirm no charge' }),
+    ).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
   });
 
   it('a checkout confirm STANDS DOWN when a lock raced ahead of the storage event', async () => {
@@ -2281,6 +2063,274 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('BillingScreen — closing checkout without paying (exact transaction check)', () => {
+  type Answer = { outcome: string; exact?: boolean };
+  /** What the screen asked the server, so a test can say what happened. */
+  function stubCheckout(
+    reconcile: (n: number) => Answer | Response | Promise<Answer | Response>,
+    checkout: () => Response = paddleSessionOk,
+  ) {
+    const calls = {
+      reconcile: 0,
+      release: 0,
+      bodies: [] as Array<Record<string, unknown>>,
+    };
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      { method: 'POST', path: '/api/billing/checkout', respond: checkout },
+      {
+        method: 'POST',
+        path: '/api/billing/reconcile',
+        respond: async (req) => {
+          calls.reconcile += 1;
+          calls.bodies.push((await req.json()) as Record<string, unknown>);
+          const answer = await reconcile(calls.reconcile);
+          return answer instanceof Response ? answer : jsonOk({ data: answer });
+        },
+      },
+      {
+        method: 'DELETE',
+        path: '/api/billing/checkout/pending',
+        respond: () => {
+          calls.release += 1;
+          return jsonOk({ data: { released: true } });
+        },
+      },
+    ]);
+    return calls;
+  }
+  const exactNone: Answer = { outcome: 'none_found', exact: true };
+
+  async function openProCheckoutAndClose() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    act(() => capturedCheckoutEvents().onClosed?.());
+  }
+  async function openPassCheckoutAndClose() {
+    mockPassEnabled = true;
+    renderScreen(null, undefined, { pricingV2: true });
+    fireEvent.click(await screen.findByRole('button', { name: 'Get Backlog Pass' }));
+    const panel = await screen.findByTestId('checkout-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
+    act(() => capturedCheckoutEvents().onClosed?.());
+  }
+
+  describe('a plan checkout', () => {
+    it('an unpaid transaction does not automatically release a payable checkout', async () => {
+      const calls = stubCheckout(() => exactNone);
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+      // The SERVER claim goes too — otherwise CHECKOUT_IN_FLIGHT would
+      // refuse the retry this release exists to allow.
+      expect(calls.release).toBe(0);
+      expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(calls.bodies[0]).not.toHaveProperty('offer');
+    });
+
+    it.each([
+      ['an empty search that is not exact', { outcome: 'none_found', exact: false }],
+      ['an API that predates the field', { outcome: 'none_found' }],
+      ['payment in progress', { outcome: 'payment_in_progress', exact: false }],
+      ['an unresolved projection', { outcome: 'unresolved', exact: false }],
+      ['nothing pending', { outcome: 'no_pending', exact: false }],
+      ['a granted payment', { outcome: 'granted', exact: false }],
+      ['an unreachable provider', { outcome: 'provider_unavailable', exact: false }],
+    ])('overlay closed here + %s → the lock stays for the customer', async (_label, answer) => {
+      const calls = stubCheckout(() => answer);
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      await within(notice).findByTestId('provider-check');
+      expect(calls.release).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    });
+
+    it('a server error leaves the lock and the manual release', async () => {
+      const calls = stubCheckout(() => jsonServerError());
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      expect(
+        await within(notice).findByRole('link', { name: 'Contact billing support' }),
+      ).toBeVisible();
+      expect(calls.release).toBe(0);
+    });
+
+    it('exact evidence without the close in this tab (a reload) never releases', async () => {
+      // Same answer as the releasing test; the only difference is that
+      // nothing in this tab saw the overlay close.
+      writePendingCheckout(
+        'w',
+        'checkout_intent',
+        'free',
+        null,
+        'pro',
+        'annual',
+        'reloaded-attempt',
+      );
+      const calls = stubCheckout(() => exactNone);
+      renderScreen();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      await within(notice).findByRole('link', { name: 'Contact billing support' });
+      expect(calls.release).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    });
+
+    it('a post-claim failure surfaces the lock but is not a closed overlay', async () => {
+      const calls = stubCheckout(
+        () => exactNone,
+        () =>
+          new Response(
+            JSON.stringify({ error: { code: 'BILLING_PROVIDER_ERROR', message: 'unreachable' } }),
+            { status: 502, headers: { 'content-type': 'application/json' } },
+          ),
+      );
+      renderScreen();
+      fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Continue to checkout' }));
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      await within(notice).findByRole('link', { name: 'Contact billing support' });
+      expect(calls.release).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    });
+
+    it('a lock replaced while the check is in flight is not released by the old answer', async () => {
+      let answer: (r: Response) => void = () => undefined;
+      const calls = stubCheckout(
+        () => new Promise<Response>((resolve) => (answer = resolve)) as Promise<Response>,
+      );
+      renderScreen();
+      await openProCheckoutAndClose();
+      await waitFor(() => expect(calls.reconcile).toBe(1));
+
+      // Another attempt takes the slot while Paddle is still being asked.
+      window.localStorage.setItem(
+        pendingCheckoutKey('w'),
+        JSON.stringify({
+          workspaceId: 'w',
+          kind: 'checkout_intent',
+          fromTier: 'free',
+          fromCycle: null,
+          toTier: 'plus',
+          toCycle: 'monthly',
+          at: Date.now(),
+          attemptId: 'a-newer-attempt',
+        }),
+      );
+      await act(async () => answer(jsonOk({ data: exactNone })));
+
+      expect(calls.release).toBe(0);
+      expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
+        attemptId: 'a-newer-attempt',
+      });
+    });
+
+    it('“Check again” after payment in progress keeps the hold while Paddle says unpaid', async () => {
+      const calls = stubCheckout((n) =>
+        n === 1 ? { outcome: 'payment_in_progress', exact: false } : exactNone,
+      );
+      renderScreen();
+      await openProCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      fireEvent.click(await within(notice).findByRole('button', { name: 'Check again' }));
+      await waitFor(() => expect(calls.bodies).toHaveLength(2));
+      expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(calls.release).toBe(0);
+    });
+  });
+
+  describe('a Backlog Pass', () => {
+    it('is named as a Pass, asked about by offer, and held while its transaction is still payable', async () => {
+      const calls = stubCheckout(() => exactNone);
+      await openPassCheckoutAndClose();
+
+      await waitFor(() => expect(calls.bodies).toHaveLength(1));
+      expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+      expect(calls.bodies[0]).toMatchObject({ offer: 'pass_onetime' });
+      expect(calls.release).toBe(0);
+      expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    });
+
+    it('while the check is unresolved the notice reads as a Pass and offers nothing false', async () => {
+      stubCheckout(() => ({ outcome: 'payment_in_progress', exact: false }));
+      await openPassCheckoutAndClose();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      expect(notice).toHaveTextContent('Checkout started — confirming your Backlog Pass.');
+      expect(notice).not.toHaveTextContent(/plan upgrade|confirming your plan/);
+      await within(notice).findByTestId('provider-check');
+      expect(
+        within(notice).queryByRole('button', { name: 'Review checkout' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['an API that predates the exact read', { outcome: 'none_found' }],
+      ['a none_found that is not exact', { outcome: 'none_found', exact: false }],
+      ['a granted answer from the subscription search', { outcome: 'granted' }],
+    ])(
+      'against %s, nothing is claimed about a Pass and nothing is released',
+      async (_label, answer) => {
+        const calls = stubCheckout(() => answer);
+        await openPassCheckoutAndClose();
+
+        const notice = await screen.findByTestId('payment-processing-notice');
+        const check = await within(notice).findByTestId('provider-check');
+        expect(check).toHaveTextContent('couldn’t check with the payment provider automatically');
+        expect(check).not.toHaveTextContent('no completed payment found');
+        // The manual two-step stays the way out.
+        expect(
+          await within(notice).findByRole('link', { name: 'Contact billing support' }),
+        ).toBeVisible();
+        expect(calls.release).toBe(0);
+      },
+    );
+
+    it('an old unconfirmed Pass lock keeps its manual release even on exact evidence', async () => {
+      window.localStorage.setItem(
+        pendingCheckoutKey('w'),
+        JSON.stringify({
+          workspaceId: 'w',
+          kind: 'checkout',
+          fromTier: 'free',
+          fromCycle: null,
+          toTier: 'plus',
+          toCycle: 'annual',
+          offer: 'pass_onetime',
+          at: Date.now() - 16 * 60_000,
+        }),
+      );
+      const calls = stubCheckout(() => exactNone);
+      renderScreen();
+
+      const notice = await screen.findByTestId('payment-processing-notice');
+      expect(notice).toHaveTextContent(
+        'Checkout reported completion — your Backlog Pass hasn’t come through yet.',
+      );
+      // No "in a minute" promise under a heading that says it has not come through.
+      expect(notice).toHaveTextContent('Payment received. Billing changes stay paused;');
+      expect(notice).not.toHaveTextContent('in a minute');
+      expect(notice).not.toHaveTextContent('plan upgrade');
+      await within(notice).findByRole('link', { name: 'Contact billing support' });
+      expect(calls.release).toBe(0);
+    });
   });
 });
 
@@ -2423,16 +2473,16 @@ describe('BillingScreen — checkout funnel events', () => {
       },
       { method: 'POST', path: '/api/billing/checkout', respond: paddleSessionOk },
     ]);
-    vi.mocked(launchCheckout).mockRejectedValueOnce(new Error('script blocked'));
+    vi.mocked(launchCheckout).mockRejectedValueOnce(new CheckoutLaunchError(true));
     renderScreen();
 
     fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
     fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
 
     expect(
-      await screen.findByText('The secure checkout window could not be opened.'),
+      await screen.findByRole('button', { name: 'Retry checkout window' }),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
     expect(tracked('checkout_session_created')).toHaveLength(1);
     await waitFor(() => expect(tracked('checkout_overlay_blocked')).toHaveLength(1));
     expect(tracked('checkout_overlay_completed')).toHaveLength(0);
@@ -2622,6 +2672,7 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() =>
       expect(checkoutBody).toEqual({
+        attemptId: expect.any(String),
         tierId: 'plus',
         cycle: 'annual',
         provider: 'paddle',
@@ -2656,6 +2707,7 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() =>
       expect(checkoutBody).toEqual({
+        attemptId: expect.any(String),
         tierId: 'plus',
         cycle: 'annual',
         provider: 'paddle',
@@ -2695,6 +2747,7 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() =>
       expect(checkoutBody).toEqual({
+        attemptId: expect.any(String),
         tierId: 'plus',
         cycle: 'annual',
         provider: 'paddle',
@@ -2703,7 +2756,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(geoHeader).toBe('v1.IN.signed');
   });
 
-  it('India Pass checkout sends the Pass offer and a failed overlay does not lock', async () => {
+  it('India Pass checkout sends the Pass offer and a failed overlay retains the same reservation', async () => {
     mockPassEnabled = true;
     let checkoutBody: unknown = null;
     let geoHeader: string | null = null;
@@ -2728,7 +2781,7 @@ describe('BillingScreen — paid subscriber', () => {
         respond: () => jsonOk({ data: { released: true } }),
       },
     ]);
-    vi.mocked(launchCheckout).mockRejectedValueOnce(new Error('script blocked'));
+    vi.mocked(launchCheckout).mockRejectedValueOnce(new CheckoutLaunchError(true));
     renderScreen(null, undefined, {
       pricingV2: true,
       country: 'IN',
@@ -2742,6 +2795,7 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
     await waitFor(() =>
       expect(checkoutBody).toEqual({
+        attemptId: expect.any(String),
         tierId: 'plus',
         cycle: 'annual',
         provider: 'paddle',
@@ -2750,11 +2804,11 @@ describe('BillingScreen — paid subscriber', () => {
     );
     expect(geoHeader).toBe('v1.IN.signed');
     expect(
-      await screen.findByText('The secure checkout window could not be opened.'),
+      await screen.findByRole('button', { name: 'Retry checkout window' }),
     ).toBeInTheDocument();
-    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
-    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
-    expect(screen.getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry checkout window' })).toBeEnabled();
   });
 
   it('PRICING_V2 hides the founding member sales banner', async () => {
@@ -3937,7 +3991,9 @@ describe('BillingScreen — paid subscriber', () => {
     // by the paid→paid switch test above).
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Plan change unconfirmed — confirming your plan.');
-    expect(notice).toHaveTextContent('We’re still confirming your plan change.');
+    // Outcome-neutral: the provider's response was lost, so nothing is
+    // claimed as accepted or received.
+    expect(notice).not.toHaveTextContent(/accepted|received/i);
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
     expect(changeAttempts).toBe(1);
@@ -5364,7 +5420,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     renderScreen();
 
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(notice).toHaveTextContent('confirming your plan');
+    expect(notice).toHaveTextContent('confirming your Backlog Pass');
     // The unlock effect has a settled read here. Falling through to the
     // Plus matcher would already have cleared this lock.
     await act(async () => {
@@ -5435,7 +5491,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     );
 
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(notice).toHaveTextContent('Checkout started — confirming your plan.');
+    expect(notice).toHaveTextContent('Checkout started — confirming your Backlog Pass.');
     expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!)).toMatchObject({
       kind: 'checkout_intent',
       offer: 'pass_onetime',
@@ -5872,7 +5928,7 @@ describe('Billing setup and checkout loader recovery', () => {
     expect(launchCheckout).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
-  it('a failed overlay leaves Continue armed so a retry can create a new checkout', async () => {
+  it('a safe overlay load failure retries its same reserved checkout without another create', async () => {
     let posts = 0;
     const session = {
       provider: 'paddle',
@@ -5907,15 +5963,12 @@ describe('Billing setup and checkout loader recovery', () => {
     renderScreen({ plan: 'pro', cycle: 'monthly' });
     const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
-    expect(
-      await screen.findByText('The secure checkout window could not be opened.'),
-    ).toBeInTheDocument();
-    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const retry = await screen.findByRole('button', { name: 'Retry checkout window' });
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+    fireEvent.click(retry);
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(2));
-    expect(posts).toBe(2);
-    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
-    expect(screen.getByTestId('current-plan-card')).toHaveTextContent('Free');
+    expect(posts).toBe(1);
+    expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
   });
 });
 
@@ -6031,4 +6084,225 @@ it('does not create checkout after the originating owner changes during its Web 
     if (previous) Object.defineProperty(navigator, 'locks', previous);
     else Reflect.deleteProperty(navigator, 'locks');
   }
+});
+
+describe('BillingScreen — durable checkout identity', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const activeAttempt = {
+    id,
+    version: 1,
+    state: 'open' as const,
+    tier: 'plus' as const,
+    cycle: 'annual' as const,
+    offer: 'pass_onetime' as const,
+    createdAt: new Date().toISOString(),
+    canResume: true,
+    canCancel: false,
+  };
+  it('a fulfilled Pass clears its own browser hold while complimentary Pro remains the highest grant', async () => {
+    mockTier = 'pro';
+    writePendingCheckout('w', 'checkout_intent', 'pro', null, 'plus', 'annual', id, 'pass_onetime');
+    let fulfilled = false;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          ...FREE_BODY,
+          tier: 'pro',
+          complimentary: { tier: 'pro', source: 'comp', expiresAt: null },
+          checkoutAttempt: {
+            ...activeAttempt,
+            state: fulfilled ? 'fulfilled' : 'open',
+            canResume: !fulfilled,
+          },
+        },
+      }),
+    );
+    const { client } = renderScreen();
+    expect(await screen.findByTestId('checkout-attempt-notice')).toHaveTextContent('Backlog Pass');
+    fulfilled = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: billingKeys.subscription() });
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId('checkout-attempt-notice')).not.toBeInTheDocument(),
+    );
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    expect(screen.getByTestId('current-plan-card')).toHaveTextContent('Pro');
+    expect(screen.getByTestId('current-plan-card')).toHaveTextContent('Complimentary');
+  });
+  it('an earlier live Pass never confirms the current open purchase', async () => {
+    mockTier = 'plus';
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          ...FREE_BODY,
+          tier: 'plus',
+          complimentary: {
+            tier: 'plus',
+            source: 'pass',
+            expiresAt: new Date(Date.now() + 86400000).toISOString(),
+          },
+          checkoutAttempt: activeAttempt,
+        },
+      }),
+    );
+    renderScreen();
+    expect(await screen.findByTestId('checkout-attempt-notice')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Resume checkout' })).toBeInTheDocument();
+  });
+});
+
+it('an unresolved legacy checkout offers support instead of a no-charge assertion that cannot revoke it', async () => {
+  writePendingCheckout('w', 'checkout_intent', 'free', null, 'plus', 'annual', 'legacy');
+  stubSubscription(() => jsonOk({ data: FREE_BODY }));
+  renderScreen();
+  const notice = await screen.findByTestId('payment-processing-notice');
+  expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
+    'href',
+    'mailto:support@declutrmail.com',
+  );
+  expect(within(notice).queryByRole('button', { name: 'Review checkout' })).not.toBeInTheDocument();
+  expect(
+    within(notice).queryByRole('button', { name: 'Confirm no charge' }),
+  ).not.toBeInTheDocument();
+  expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+});
+
+it('a terminal server attempt never clears a newer browser reservation', async () => {
+  const oldId = '11111111-1111-4111-8111-111111111111';
+  const newId = '22222222-2222-4222-8222-222222222222';
+  let terminal = false;
+  const attempt = {
+    id: oldId,
+    version: 1,
+    state: 'open',
+    tier: 'plus',
+    cycle: 'annual',
+    offer: 'pass_onetime',
+    createdAt: new Date().toISOString(),
+    canResume: true,
+    canCancel: false,
+  };
+  stubSubscription(() =>
+    jsonOk({
+      data: {
+        ...FREE_BODY,
+        checkoutAttempt: { ...attempt, state: terminal ? 'fulfilled' : 'open' },
+      },
+    }),
+  );
+  const { client } = renderScreen();
+  await screen.findByTestId('checkout-attempt-notice');
+  act(() => {
+    writePendingCheckout(
+      'w',
+      'checkout_intent',
+      'free',
+      null,
+      'plus',
+      'annual',
+      newId,
+      'pass_onetime',
+    );
+    window.dispatchEvent(new StorageEvent('storage', { key: pendingCheckoutKey('w') }));
+  });
+  terminal = true;
+  await act(async () => {
+    await client.refetchQueries({ queryKey: billingKeys.subscription() });
+  });
+  expect(JSON.parse(window.localStorage.getItem(pendingCheckoutKey('w'))!).attemptId).toBe(newId);
+});
+
+it('a fulfilled attempt refreshes entitlement-dependent caches in a browser with no local lock', async () => {
+  const client = createTestQueryClient();
+  client.setQueryData(['feature-before-purchase'], { allowed: false });
+  stubSubscription(() =>
+    jsonOk({
+      data: {
+        ...PLUS_SUB,
+        checkoutAttempt: {
+          id: '11111111-1111-4111-8111-111111111111',
+          version: 2,
+          state: 'fulfilled',
+          tier: 'plus',
+          cycle: 'annual',
+          offer: null,
+          createdAt: new Date().toISOString(),
+          canResume: false,
+          canCancel: false,
+        },
+      },
+    }),
+  );
+  render(
+    <QueryWrapper client={client}>
+      <BillingScreen />
+    </QueryWrapper>,
+  );
+  await waitFor(() =>
+    expect(client.getQueryState(['feature-before-purchase'])?.isInvalidated).toBe(true),
+  );
+});
+
+it('a historical fulfilled Plus attempt cannot redirect a later Pro upgrade request', async () => {
+  vi.mocked(returnAfterUpgrade).mockClear();
+  mockTier = 'plus';
+  stubSubscription(() =>
+    jsonOk({
+      data: {
+        ...PLUS_SUB,
+        checkoutAttempt: {
+          id: '11111111-1111-4111-8111-111111111111',
+          version: 2,
+          state: 'fulfilled',
+          tier: 'plus',
+          cycle: 'annual',
+          offer: null,
+          createdAt: new Date().toISOString(),
+          canResume: false,
+          canCancel: false,
+        },
+      },
+    }),
+  );
+  renderScreen({ plan: 'pro', cycle: 'annual', from: '/automations' });
+  await screen.findByTestId('change-plan-panel');
+  expect(returnAfterUpgrade).not.toHaveBeenCalled();
+});
+
+it('an exact fulfilled purchase returns to its stored destination after reload', async () => {
+  vi.mocked(returnAfterUpgrade).mockClear();
+  const id = '11111111-1111-4111-8111-111111111111';
+  writePendingCheckout(
+    'w',
+    'checkout_intent',
+    'free',
+    null,
+    'plus',
+    'annual',
+    id,
+    undefined,
+    '/brief',
+  );
+  stubSubscription(() =>
+    jsonOk({
+      data: {
+        ...PLUS_SUB,
+        checkoutAttempt: {
+          id,
+          version: 2,
+          state: 'fulfilled',
+          tier: 'plus',
+          cycle: 'annual',
+          offer: null,
+          createdAt: new Date().toISOString(),
+          canResume: false,
+          canCancel: false,
+        },
+      },
+    }),
+  );
+  renderScreen();
+  await waitFor(() => expect(returnAfterUpgrade).toHaveBeenCalledWith('/brief'));
+  expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
 });

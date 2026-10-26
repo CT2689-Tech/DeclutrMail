@@ -17,22 +17,22 @@ import { workspaces, workspaceTier } from './workspaces';
  * cross-device truth, exposed as `pendingCheckout` on
  * `GET /api/billing/subscription`.
  *
- * One row per workspace (PK), refreshed on checkout re-open. Cleared
- * by the webhook grant (the tier flip supersedes it) or the
- * reconciler's expiry sweep. `expires_at` is a display/lock horizon,
- * not a payment fact — an expired row means "we no longer claim a
- * checkout is in flight", never "the payment failed".
+ * One unresolved legacy row per workspace, retained until its own purchase
+ * resolves. `expires_at` is historical metadata, never payment or revocation
+ * evidence. New guarded Paddle checkouts use billing_checkout_attempts.
  *
  * Metadata only — provider + tier + cycle + timestamps + the
- * provider-side subscription id when the server itself created it
+ * provider-side artifact id when the server itself created it
  * (`provider_ref`, D249). No payment details. The original "no provider
  * session ids" posture is amended, not violated: the reconciler
  * (billing-reconciliation.service.ts) is a legitimate consumer that
  * needs to ask the provider "what happened to THIS checkout" exactly,
- * and a subscription id is not a payment credential. Razorpay populates
- * it (its createCheckout mints the subscription server-side, before
- * payment); Paddle's overlay creates the transaction client-side, so it
- * stays NULL there and reconciliation falls back to customer search.
+ * and a provider id is not a payment credential. Both rails populate it,
+ * and it names a different artifact on each: Razorpay's createCheckout
+ * mints the SUBSCRIPTION server-side before payment, and Paddle's
+ * createCheckout creates the TRANSACTION (`txn_…`) server-side before
+ * the overlay opens. Rows written before the Paddle stash existed, and
+ * any stash that failed, stay NULL and reconcile through customer search.
  */
 export const pendingCheckouts = pgTable(
   'pending_checkouts',
@@ -53,7 +53,7 @@ export const pendingCheckouts = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
   },
   (table) => ({
-    /** Reconciler expiry sweep — `WHERE expires_at < now()`. */
+    /** Historical expiry lookup; unresolved rows are retained. */
     expiresIdx: index('pending_checkouts_expires_idx').on(table.expiresAt),
   }),
 );

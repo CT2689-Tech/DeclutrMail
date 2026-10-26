@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import {
+  billingCheckoutAttempts,
   billingCustomers,
   subscriptionEvents,
   subscriptions,
@@ -64,7 +65,12 @@ async function billingSnapshot(db: Reader, workspaceId: string) {
       ),
     )
     .orderBy(asc(subscriptionEvents.arrivalSeq));
-  return { rows, claims, attempts, customers, events };
+  const checkoutAttempts = await db
+    .select()
+    .from(billingCheckoutAttempts)
+    .where(eq(billingCheckoutAttempts.workspaceId, workspaceId))
+    .orderBy(asc(billingCheckoutAttempts.id));
+  return { rows, claims, attempts, customers, events, checkoutAttempts };
 }
 
 import { preserveWorkspaceFoundingRedemptions } from './founding-redemptions.js';
@@ -158,6 +164,7 @@ export class BillingDeletionGuard {
     for (const attempt of snapshot.attempts.filter(
       (row) => row.eventType === 'local.checkout_attempted',
     )) {
+      // Purchase identity is additional evidence, not proof that copied payment capabilities were revoked.
       const artifacts = snapshot.attempts.filter(
         (row) =>
           row.eventType === 'local.checkout_artifact' &&
@@ -203,6 +210,21 @@ export class BillingDeletionGuard {
       } else if (!hasArtifact) {
         throw new AppException({ code: 'DELETION_BILLING_UNVERIFIED' });
       }
+    }
+    // Durable attempts retain exact provider identity after the visible reservation ends.
+    for (const attempt of snapshot.checkoutAttempts) {
+      if (
+        !attempt.providerTransactionId ||
+        (attempt.state !== 'fulfilled' && attempt.state !== 'stopped')
+      )
+        throw new AppException({ code: 'DELETION_BILLING_UNVERIFIED' });
+      const facts = await this.paddle.readCheckoutAttempt(attempt.providerTransactionId, attempt);
+      if (
+        !facts ||
+        (attempt.state === 'stopped' ? facts.state !== 'stopped' : facts.state !== 'completed')
+      )
+        throw new AppException({ code: 'DELETION_BILLING_UNVERIFIED' });
+      if (facts.subscriptionId) refs.push({ provider: 'paddle', ref: facts.subscriptionId });
     }
     try {
       const unique = [
