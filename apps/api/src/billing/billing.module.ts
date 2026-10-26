@@ -30,6 +30,7 @@ import { BillingDeletionGuard } from './billing-deletion-guard.js';
 import { BillingController } from './billing.controller.js';
 import { PricingPublicController } from './pricing-public.controller.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
+import { CheckoutRecoveryScheduler } from './checkout-recovery.scheduler.js';
 import { BillingService } from './billing.service.js';
 import { BillingWebhookService } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
@@ -52,6 +53,7 @@ import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js
     BillingDeletionGuard,
     BillingWebhookService,
     BillingReconciliationService,
+    CheckoutRecoveryScheduler,
     BillingUpgradeRefundService,
     // Explicit factories: these classes take plain (non-injectable)
     // constructor args with defaults — Nest must not try to resolve them.

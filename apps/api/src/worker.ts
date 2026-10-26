@@ -2615,7 +2615,6 @@ async function bootstrap(): Promise<void> {
       // remains live against the provider (D249).
       const drift = await billingReconciliationService.reconcileLiveSubscriptions();
       const passRefunds = await billingReconciliationService.reconcilePassRefunds();
-      const checkoutRecovery = await billingReconciliationService.reconcileCheckoutAttempts();
       // The verdict counters (verdictsEnforced / verdictsUnenforced /
       // verdictsRefuted) left this line: refund + chargeback enforcement
       // now runs on BillingVerdictWorker's 10-minute tick (D253) and
@@ -2627,10 +2626,6 @@ async function bootstrap(): Promise<void> {
           level: 'info',
           kind: 'billing.reconcile.swept',
           ...result,
-          checkoutAttemptsChecked: checkoutRecovery.checked,
-          checkoutAttemptsRecovered: checkoutRecovery.recovered,
-          checkoutAttemptsUnavailable: checkoutRecovery.unavailable,
-          checkoutAttemptsCapped: checkoutRecovery.capped,
           subscriptionsChecked: drift.subscriptionsChecked,
           subscriptionsDrifted: drift.subscriptionsDrifted,
           subscriptionsUnchanged: drift.subscriptionsUnchanged,
