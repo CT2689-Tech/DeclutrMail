@@ -496,3 +496,8 @@ Founder-approved presentation pass after accepting the Action overview data. Sha
 ### 2026-10-25 — Workspace visual consistency (Relates to D198, D210)
 
 Extended the approved Home typography, boundaries, spacing and count hierarchy to Cleanup, Automations, Catch up and Activity. Retained feature-specific layouts and all data/action behavior; fixed 320px report, summary, metadata and button containment discovered in visual smoke. Home/account routes remain outside the scope. Desktop, phone, dark mode, preview/cancel, existing regression suites, build/budgets and independent review are recorded in `docs/execution/workspace-visual-consistency-2026-10-25.md`. No D status reclassified.
+
+
+### 2026-10-25 — Account visual consistency (Relates to D198, D210)
+
+Extended the accepted app typography, compact spacing, panel boundaries and restrained accents to Settings (including subpages) and Plan & billing. Preserved all account/payment data, controls, deep links and safety gates; active billing checkout files remain untouched. Production-build synthetic desktop/320px/dark smoke, preference restore, billing warning/recovery states, regression checks and independent review are recorded in `docs/execution/account-visual-consistency-2026-10-25.md`. No D status reclassified.

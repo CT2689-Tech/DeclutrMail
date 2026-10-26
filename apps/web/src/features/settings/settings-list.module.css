@@ -1,0 +1,7 @@
+.rows {
+  min-width: 0;
+  background: var(--dm-card);
+  border: 1px solid var(--dm-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
