@@ -103,3 +103,63 @@ describe('frozen preset preview recovery', () => {
     ).toBe(true);
   });
 });
+
+it('labels email units and explicitly marks a sender removed from the batch', async () => {
+  const sender = {
+    id: 'synthetic-id',
+    senderKey: 'a'.repeat(64),
+    name: 'Synthetic Sender',
+    email: 'sender@example.invalid',
+    protected: false,
+    messageCount: 1,
+  };
+  let reads = 0;
+  installFetchStub([
+    {
+      method: 'POST',
+      path: `/api/autopilot/sender-rules/${rule.id}/preview`,
+      respond: async (req) => {
+        if (++reads === 3) return new Response('{}', { status: 503 });
+        const { excludedSenderKeys } = await req.json();
+        const included = !excludedSenderKeys.includes(sender.senderKey);
+        return jsonOk({
+          data: {
+            previewId: 'synthetic-preview',
+            ruleId: rule.id,
+            version: 1,
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            action: 'delete',
+            reach: 'all_mail',
+            olderThanDays: null,
+            senders: included ? [sender] : [],
+            messageCount: included ? 1 : 0,
+            totalEligibleCount: included ? 1 : 0,
+            hasMore: false,
+            protectedSenderCount: 1,
+          },
+        });
+      },
+    },
+  ]);
+  render(
+    <QueryClientProvider client={createTestQueryClient()}>
+      <FrozenRulePreview
+        target={{ kind: 'preset', rule }}
+        mailboxId="mb"
+        available
+        onCancel={vi.fn()}
+        onApproved={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  const dialog = within(await screen.findByRole('dialog'));
+  expect(await dialog.findByRole('heading', { name: 'Delete 1 email?' })).toBeInTheDocument();
+  expect(dialog.getByText('1 email', { exact: true })).toBeInTheDocument();
+  expect(dialog.getByText('1 Protected sender excluded.')).toBeInTheDocument();
+  fireEvent.click(dialog.getByRole('checkbox'));
+  expect(await dialog.findByText('Excluded', { exact: true })).toBeInTheDocument();
+  expect(dialog.getByRole('button', { name: 'Delete' })).toBeDisabled();
+  fireEvent.click(dialog.getByRole('checkbox'));
+  expect(await dialog.findByText('Unavailable', { exact: true })).toBeInTheDocument();
+  expect(dialog.getByRole('button', { name: 'Delete' })).toBeDisabled();
+});

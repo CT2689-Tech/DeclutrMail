@@ -1816,7 +1816,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // The first-sweep dry-run rendered inside the sheet: the one number
     // up front, the activation report (no longer under its own heading)
     // in Details.
-    expect(within(dialog).getByText('senders actionable now')).toBeInTheDocument();
+    expect(within(dialog).getByText('senders eligible for Unsubscribe')).toBeInTheDocument();
     expect(within(dialog).getByText('10 unsubscribe requests')).toBeInTheDocument();
     expect(
       within(dialog).getByText('Stays where it is, including 74 inbox emails'),
@@ -1824,7 +1824,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // Said once per surface — in the note; the Details totals omit it.
     expect(within(dialog).getAllByText(/3 Protected senders are skipped/i)).toHaveLength(1);
     expect(within(dialog).getByText('34 matches')).toBeInTheDocument();
-    expect(within(dialog).getByText(/^100 actions, the rest wait/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Up to 100 actions per day/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Unsubscribe requests can’t be undone/i)).toBeInTheDocument();
 
     await userEvent.click(confirm);
@@ -2771,7 +2771,7 @@ describe('built-in Delete batches', () => {
       },
     ]);
     const view = renderRoute();
-    expect(await screen.findByText(/2 matching emails/)).toBeVisible();
+    expect(await screen.findByText(/2 emails eligible for Delete/)).toBeVisible();
     expect(screen.queryByText('Nothing needs review')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
     fireEvent.click(screen.getByRole('button', { name: 'With matches' }));

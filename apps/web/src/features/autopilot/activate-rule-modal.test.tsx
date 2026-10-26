@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { ActivateRuleModal } from './activate-rule-modal';
@@ -66,4 +66,79 @@ describe('ActivateRuleModal review-only presets', () => {
     expect(screen.getByRole('radio', { name: 'Act now' })).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Watch first' })).toBeInTheDocument();
   });
+});
+
+function previewProps(rule = AUTO_ARCHIVE_LOW_ENGAGEMENT) {
+  return {
+    rule: { ...rule, enabled: false },
+    intent: 'enable' as const,
+    canRunUnattended: true,
+    pendingCount: 0,
+    pendingApproximate: false,
+    undoWindowDays: 30,
+    isActivating: false,
+    error: null,
+    onRetryPreview: vi.fn(),
+    onCancel: vi.fn(),
+    onConfirm: vi.fn(),
+    onWatchFirst: vi.fn(),
+    preview: {
+      status: 'ready' as const,
+      result: {
+        ...RULE_PREVIEW_RESULT,
+        dailyActionCap: rule.actionKind === 'unsubscribe' ? 25 : 100,
+        wouldMatchCount: 1,
+        actionableSenderCount: 0,
+        actionableMessageCount: 0,
+        protectedWouldMatchCount: 0,
+        sample: [{ ...RULE_PREVIEW_RESULT.sample[0]!, inboxCount: 0 }],
+      },
+    },
+  };
+}
+
+it.each([
+  [AUTO_ARCHIVE_LOW_ENGAGEMENT, 'with Inbox email to Archive', 'no Inbox email to Archive'],
+  [SCREEN_NEW_SENDERS, 'with Inbox email to move to Later', 'no Inbox email to move to Later'],
+  [AUTO_UNSUBSCRIBE_NOISY, 'eligible for Unsubscribe', 'already unsubscribed'],
+  [
+    { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, actionKind: 'delete' as const },
+    'with email to Delete',
+    'no email in this rule’s scope to Delete',
+  ],
+])('explains zero eligibility alongside historical matches (%#)', (rule, label, reason) => {
+  render(<ActivateRuleModal {...previewProps(rule)} />);
+  const dialog = within(screen.getByRole('dialog'));
+  expect(dialog.getByText('0', { selector: 'strong' })).toBeInTheDocument();
+  expect(dialog.getByText(new RegExp(label))).toBeInTheDocument();
+  expect(dialog.getByText(new RegExp(`1 matching sender.*${reason}`))).toBeInTheDocument();
+  expect(dialog.queryByText(/ready for review|actionable now/i)).not.toBeInTheDocument();
+});
+
+it('describes watching and approval when Watch first is selected', () => {
+  render(<ActivateRuleModal {...previewProps(AUTO_UNSUBSCRIBE_NOISY)} />);
+  fireEvent.click(screen.getByRole('radio', { name: 'Watch first' }));
+  expect(screen.getByText(/You approve each one/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/No unsubscribe requests until you approve a suggestion/),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByText('Details', { exact: true }));
+  expect(screen.getByText('If approved')).toBeInTheDocument();
+  expect(screen.getByText(/Up to 25 actions per day/)).toBeInTheDocument();
+  expect(screen.queryByText(/rest wait for the next check/)).not.toBeInTheDocument();
+});
+
+it('describes frozen batches rather than suggestions for Delete', () => {
+  render(
+    <ActivateRuleModal
+      {...previewProps({ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, actionKind: 'delete' })}
+    />,
+  );
+  expect(screen.getByText(/Review matching email in a batch/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Preview and approve each batch before emails move to Trash/),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(/Matches become suggestions|approve a suggestion/),
+  ).not.toBeInTheDocument();
 });

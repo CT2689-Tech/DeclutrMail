@@ -5,11 +5,11 @@ import { AuthProvider } from '@/features/auth/auth-provider';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import { createSenderRuleStoryFixture } from './sender-rule-library.stories';
 import { FIXTURE_SENDERS } from './sender-rule-browser-data.fixture';
-import { NEWSLETTER_GRAVEYARD } from './fixtures';
+import { NEWSLETTER_GRAVEYARD, RULE_PREVIEW_RESULT } from './fixtures';
 import { FrozenRulePreview } from './frozen-rule-preview';
 import { DeleteRuleReview } from './delete-rule-review';
 
-type Scenario = 'ready' | 'loading' | 'error' | 'empty' | 'paused' | 'expired';
+type Scenario = 'ready' | 'single' | 'loading' | 'error' | 'empty' | 'paused' | 'expired';
 function DeleteBatches({ scenario, modal }: { scenario: Scenario; modal: boolean }) {
   const [fixture] = useState(() => createSenderRuleStoryFixture('empty'));
   const [installed, setInstalled] = useState(false);
@@ -29,7 +29,7 @@ function DeleteBatches({ scenario, modal }: { scenario: Scenario; modal: boolean
     const unavailable = () =>
       new Response(JSON.stringify({ error: { code: 'SERVICE_UNAVAILABLE' } }), { status: 503 });
     const pending = () => new Promise<Response>(() => {});
-    const count = scenario === 'empty' ? 0 : 2;
+    const count = scenario === 'empty' ? 0 : scenario === 'single' ? 1 : 2;
     installFetchStub([
       { method: 'GET', path: '/api/auth/me', respond: () => result(fixture.me) },
       { method: 'GET', path: '/api/autopilot/rules', respond: () => result([rule]) },
@@ -42,6 +42,8 @@ function DeleteBatches({ scenario, modal }: { scenario: Scenario; modal: boolean
             : scenario === 'error'
               ? unavailable()
               : result({
+                  ...RULE_PREVIEW_RESULT,
+                  wouldMatchCount: count,
                   actionableMessageCount: count,
                   actionableSenderCount: count,
                   reach: 'all_mail',
@@ -50,31 +52,32 @@ function DeleteBatches({ scenario, modal }: { scenario: Scenario; modal: boolean
       {
         method: 'POST',
         path: `/api/autopilot/sender-rules/${rule.id}/preview`,
-        respond: () =>
-          scenario === 'loading'
-            ? pending()
-            : scenario === 'error'
-              ? unavailable()
-              : result({
-                  previewId: 'story-frozen-delete',
-                  ruleId: rule.id,
-                  version: 1,
-                  checkedAt: new Date().toISOString(),
-                  expiresAt: new Date(
-                    Date.now() + (scenario === 'expired' ? -1000 : 300_000),
-                  ).toISOString(),
-                  action: 'delete',
-                  reach: 'all_mail',
-                  olderThanDays: null,
-                  messageCount: count,
-                  totalEligibleCount: count,
-                  hasMore: false,
-                  protectedSenderCount: 1,
-                  excludedSenderKeys: [],
-                  senders: count
-                    ? FIXTURE_SENDERS.slice(0, 2).map((sender) => ({ ...sender, messageCount: 1 }))
-                    : [],
-                }),
+        respond: async (req) => {
+          if (scenario === 'loading') return pending();
+          if (scenario === 'error') return unavailable();
+          const { excludedSenderKeys = [] } = await req.json();
+          const senders = FIXTURE_SENDERS.slice(0, count)
+            .filter((sender) => !excludedSenderKeys.includes(sender.senderKey))
+            .map((sender) => ({ ...sender, messageCount: 1 }));
+          return result({
+            previewId: 'story-frozen-delete',
+            ruleId: rule.id,
+            version: 1,
+            checkedAt: new Date().toISOString(),
+            expiresAt: new Date(
+              Date.now() + (scenario === 'expired' ? -1000 : 300_000),
+            ).toISOString(),
+            action: 'delete',
+            reach: 'all_mail',
+            olderThanDays: null,
+            messageCount: senders.length,
+            totalEligibleCount: senders.length,
+            hasMore: false,
+            protectedSenderCount: 1,
+            excludedSenderKeys,
+            senders,
+          });
+        },
       },
       {
         method: 'POST',
@@ -131,6 +134,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const FrozenPreview: Story = {};
+export const SingleEmail: Story = { args: { scenario: 'single' } };
 export const LoadingPreview: Story = { args: { scenario: 'loading' } };
 export const FailedPreview: Story = { args: { scenario: 'error' } };
 export const EmptyPreview: Story = { args: { scenario: 'empty' } };

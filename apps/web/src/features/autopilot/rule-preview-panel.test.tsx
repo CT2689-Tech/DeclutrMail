@@ -149,7 +149,7 @@ it('keeps the activation hero tied to action eligibility even when the rule has 
         result: { ...RULE_PREVIEW_RESULT, wouldMatchCount: 1, actionableSenderCount: 0 },
       }}
       onRetry={vi.fn()}
-      requiresApproval
+      actionKind="archive"
     />,
   );
   expect(screen.getByText('0', { selector: 'strong' })).toBeInTheDocument();
