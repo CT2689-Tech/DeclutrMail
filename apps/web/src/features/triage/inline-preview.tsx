@@ -1,5 +1,6 @@
 'use client';
 
+import type { DeleteEmptyContext } from '@/components/delete-empty-state';
 import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
 import type { ActionReach } from '@declutrmail/shared/contracts';
@@ -40,6 +41,7 @@ const { color, radius, space, text } = tokens;
  * row or the focus card.
  */
 export interface InlinePreview {
+  deleteEmptyContext?: DeleteEmptyContext | undefined;
   ageControl?: CleanupAgeControl | undefined;
   /** Authenticated caller supplies the Delete-only scope control without adding it to demo bundles. */
   reachControlSlot?: ReactNode | undefined;
@@ -331,6 +333,7 @@ export function InlinePreviewBlock({
             action={
               preview.verb === 'Delete' ? 'Delete' : preview.verb === 'Later' ? 'Later' : 'Archive'
             }
+            emptyContext={preview.deleteEmptyContext}
             count={countKnown}
             includesArchived={preview.verb === 'Delete' && preview.reach === 'all_mail'}
             olderThanDays={preview.ageControl?.olderThanDays ?? null}
@@ -349,6 +352,7 @@ export function InlinePreviewBlock({
           <UnsubscribeImpact
             mode={backlogMode}
             includesArchived={backlogMode === 'delete' && preview.reach === 'all_mail'}
+            emptyContext={preview.deleteEmptyContext}
             count={countKnown}
             olderThanDays={preview.ageControl?.olderThanDays ?? null}
             note={

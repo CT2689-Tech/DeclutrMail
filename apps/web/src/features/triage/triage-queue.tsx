@@ -59,6 +59,19 @@ export function inlinePreviewFor(
       : undefined;
   return {
     verb: pendingAction.verb,
+    deleteEmptyContext: {
+      inboxTotal: preview.detail?.inboxTotal,
+      allMailTotal: preview.detail?.allMailTotal,
+      allMailWindowCount: reachControl?.allMailCount,
+      onAnyAge: preview.detail?.ageControl
+        ? () => preview.detail?.ageControl?.onChange(null)
+        : undefined,
+      onIncludeArchived: reachControl ? () => reachControl.onChange('all_mail') : undefined,
+      onUnsubscribeOnly:
+        pendingAction.verb === 'Unsubscribe'
+          ? () => useTriageStore.getState().setPendingBacklogMode('unsub_only')
+          : undefined,
+    },
     reach: reachControl?.reach ?? 'inbox_only',
     reachControlSlot: reachControl ? (
       <ActionReachControl

@@ -1,6 +1,8 @@
 'use client';
 
-import { useId, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
+import { Button } from '@declutrmail/shared';
+import { deleteEmptyState, type DeleteEmptyContext } from './delete-empty-state';
 import { SheetSegmented } from '@declutrmail/shared';
 import { fillCopy, pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { useNow } from '@/lib/use-now';
@@ -56,12 +58,14 @@ export function UnsubscribeImpact({
   count,
   olderThanDays,
   includesArchived = false,
+  emptyContext,
   note,
 }: {
   mode: UnsubscribeCleanupMode;
   count: number | null;
   olderThanDays: number | null;
   includesArchived?: boolean;
+  emptyContext?: DeleteEmptyContext | undefined;
   note: string;
 }) {
   return mode === 'unsub_only' ? (
@@ -81,6 +85,7 @@ export function UnsubscribeImpact({
       count={count}
       olderThanDays={olderThanDays}
       includesArchived={includesArchived}
+      emptyContext={emptyContext}
       note={note}
     />
   );
@@ -149,19 +154,27 @@ export function CleanupImpact({
   count,
   includesArchived,
   olderThanDays,
+  emptyContext,
   note,
 }: {
   action: 'Archive' | 'Delete' | 'Later';
+  emptyContext?: DeleteEmptyContext | undefined;
   count: number | null;
   includesArchived: boolean;
   olderThanDays: number | null;
   note: string;
 }) {
+  const impactRef = useRef<HTMLDivElement>(null);
+  const empty =
+    action === 'Delete' && count === 0 && emptyContext
+      ? deleteEmptyState(emptyContext, includesArchived, olderThanDays)
+      : null;
   return (
     <>
       {count === null && <p className={styles.recovery}>{pendingImpact(action)}</p>}
       {count !== null && (
         <div
+          ref={impactRef}
           className={styles.impact}
           role="region"
           aria-label={impactAria(action)}
@@ -169,7 +182,9 @@ export function CleanupImpact({
           aria-atomic="true"
         >
           <p>
-            {count === 0 ? WS5_COPY['preview.impact.none'] : positiveCleanupLine(action, count)}
+            {count === 0
+              ? (empty?.title ?? WS5_COPY['preview.impact.none'])
+              : positiveCleanupLine(action, count)}
           </p>
           <span>
             {fillCopy(
@@ -179,9 +194,37 @@ export function CleanupImpact({
               { age: cleanupAgeLabel(olderThanDays) },
             )}
           </span>
+          {empty?.action ? (
+            <Button
+              tone="ghost"
+              onClick={() => {
+                const action = empty.action;
+                if (!action) return;
+                // The hint disappears after widening. Keep keyboard focus on the changed control.
+                const root = impactRef.current?.closest(
+                  '[role="alertdialog"], [role="dialog"], [data-dm-preview-mode]',
+                );
+                const selector =
+                  action.focus === 'age'
+                    ? 'select[aria-label="Email age"]'
+                    : action.focus === 'reach'
+                      ? '[role="checkbox"][aria-label="Include archived email"], input[aria-label="Include archived email"]'
+                      : '[role="radio"]';
+                const control = root?.querySelector<HTMLElement>(selector);
+                action.onClick();
+                control?.focus();
+              }}
+            >
+              {empty.action.label}
+            </Button>
+          ) : empty?.hint ? (
+            <span>{empty.hint}</span>
+          ) : null}
         </div>
       )}
-      {note !== '' && <p className={styles.recovery}>{note}</p>}
+      {note !== '' && !(action === 'Delete' && count === 0 && emptyContext) && (
+        <p className={styles.recovery}>{note}</p>
+      )}
     </>
   );
 }

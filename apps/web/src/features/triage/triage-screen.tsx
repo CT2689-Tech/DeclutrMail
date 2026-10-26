@@ -769,6 +769,7 @@ export function TriageScreen({
     });
     return {
       inboxTotal: unsubscribeInboxTotal,
+      allMailTotal: data.allMail?.counts.all ?? null,
       ageControl,
       ...(mailLocationLine === null ? {} : { mailLocationLine }),
       ...(sampleRows.length > 0 ? { matchSample: { rows: sampleRows, total: armedTotal } } : {}),

@@ -374,5 +374,18 @@
   "preview.selection.included": "{k} selected · {m} included",
   "preview.selection.checking": "{k} selected · Checking which ones are included…",
   "preview.selection.unavailable": "{k} selected · Couldn’t check which ones are included",
-  "preview.later.bulkReturn": "All of them share that one return."
+  "preview.later.bulkReturn": "All of them share that one return.",
+  "preview.empty.noSenders": "No senders included.",
+  "preview.empty.selection": "Cancel to change your selection.",
+  "preview.empty.mailbox": "No current Inbox or archived email to delete.",
+  "preview.empty.included": "No Inbox or archived email from included senders.",
+  "preview.empty.cancel": "Cancel to choose another action.",
+  "preview.empty.age": "The age filter excludes these emails.",
+  "preview.empty.anyAge": "Use Any age",
+  "preview.empty.archived": "Archived email is outside this scope.",
+  "preview.empty.includeArchived": "Include archived",
+  "preview.empty.filters": "The filters exclude these emails.",
+  "preview.empty.showAll": "Show all email",
+  "preview.empty.changeFilters": "Change the filters or cancel this preview.",
+  "preview.empty.unsubOnly": "Choose Unsubscribe only"
 }

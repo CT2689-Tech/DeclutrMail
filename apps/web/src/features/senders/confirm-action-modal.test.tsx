@@ -3241,3 +3241,88 @@ describe('Later selected age and return time', () => {
     expect(screen.getByRole('button', { name: 'Later' })).toBeDisabled();
   });
 });
+
+describe('Delete empty guidance uses fresh scope totals', () => {
+  it('resets an excluded age without dispatching, while keeping the selected reach', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        compositePreview={{
+          ...livePreviewWithAllMail,
+          allMail: {
+            ...livePreviewWithAllMail.allMail!,
+            counts: { ...allMailBuckets, olderThan180d: 0 },
+          },
+        }}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: '180' },
+    });
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(screen.getByText('The age filter excludes these emails.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Use Any age' }));
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(screen.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
+    expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+      '977 emails',
+    );
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+  it('offers cancel, not another age, for a verified empty sender', () => {
+    const zero = { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };
+    render(
+      <ConfirmActionModal
+        request={request('Delete')}
+        compositePreview={{
+          ...livePreviewWithAllMail,
+          counts: zero,
+          allMail: { ...livePreviewWithAllMail.allMail!, counts: zero },
+        }}
+        onCancel={vi.fn()}
+        onConfirm={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('No current Inbox or archived email to delete.')).toBeVisible();
+    expect(screen.getByText('Cancel to choose another action.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+  });
+});
+
+it('qualifies empty bulk mail when Protected senders were dropped before the live preview', () => {
+  const zero = { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };
+  const other = makeSender({ id: 'other', name: 'Other sample' });
+  render(
+    <ConfirmActionModal
+      request={{
+        verb: 'Delete',
+        senders: [sender, other],
+        skipped: { protectedCount: 1, peopleCount: 0 },
+      }}
+      bulkPreview={{
+        loading: false,
+        error: false,
+        data: {
+          totals: zero,
+          allMailTotals: zero,
+          protectedCount: 0,
+          senders: [sender, other].map((s) => ({
+            senderId: s.id,
+            name: s.name,
+            counts: zero,
+            allMailCounts: zero,
+            protected: false,
+          })),
+        },
+      }}
+      onCancel={vi.fn()}
+      onConfirm={vi.fn()}
+    />,
+  );
+  expect(screen.getByText('No Inbox or archived email from included senders.')).toBeVisible();
+  expect(screen.queryByText('No current Inbox or archived email to delete.')).toBeNull();
+});

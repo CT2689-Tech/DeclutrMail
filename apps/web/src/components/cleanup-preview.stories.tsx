@@ -68,3 +68,46 @@ export const Empty: Story = {
 export const MissingAgeBucket: Story = {
   args: { options: [{ days: null }, { days: 180, disabled: true }], children: null },
 };
+
+export const VerifiedNoCurrentMail: Story = {
+  args: {
+    children: (
+      <CleanupImpact
+        action="Delete"
+        count={0}
+        includesArchived={false}
+        olderThanDays={null}
+        emptyContext={{ inboxTotal: 0, allMailTotal: 0 }}
+        note=""
+      />
+    ),
+  },
+};
+export const AgeExcludesMail: Story = {
+  args: {
+    children: (
+      <CleanupImpact
+        action="Delete"
+        count={0}
+        includesArchived={false}
+        olderThanDays={180}
+        emptyContext={{ inboxTotal: 2, allMailTotal: 5, onAnyAge: () => undefined }}
+        note=""
+      />
+    ),
+  },
+};
+export const ArchivedOutsideScope: Story = {
+  args: {
+    children: (
+      <CleanupImpact
+        action="Delete"
+        count={0}
+        includesArchived={false}
+        olderThanDays={null}
+        emptyContext={{ inboxTotal: 0, allMailTotal: 5, onIncludeArchived: () => undefined }}
+        note=""
+      />
+    ),
+  },
+};

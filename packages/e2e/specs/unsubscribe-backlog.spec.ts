@@ -177,6 +177,12 @@ test('inline Triage Unsubscribe + Delete previews archived scope and cancels wit
     await expect(
       preview.getByRole('button', { name: 'Unsubscribe + Delete', exact: true }),
     ).toBeDisabled();
+    await expect(impact).toContainText('The age filter excludes these emails.');
+    await preview.getByRole('button', { name: 'Use Any age', exact: true }).click();
+    await expect(age).toHaveValue('all');
+    await expect(age).toBeFocused();
+    await expect(archived).toBeChecked();
+    await expect(impact).toContainText('3 emails will move to Gmail Trash.');
     await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
     await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).click();
     await preview.getByRole('radio', { name: '+ Delete', exact: true }).click();
@@ -189,7 +195,7 @@ test('inline Triage Unsubscribe + Delete previews archived scope and cancels wit
       await sql`SELECT count(*)::int AS n FROM mail_messages WHERE mailbox_account_id = ${mailboxId} AND sender_key = ${BILLING_SEED.archiveSenderKey} AND 'INBOX' = ANY(label_ids)`;
     expect(remaining!.n).toBe(2);
   } finally {
-    await sql`UPDATE users SET preferences = ${JSON.stringify(before?.preferences ?? {})}::jsonb WHERE id = ${BILLING_SEED.userId}`;
+    await sql`UPDATE users SET preferences = ${sql.json((before?.preferences ?? {}) as postgres.JSONValue)}::jsonb WHERE id = ${BILLING_SEED.userId}`;
     await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${mailboxId} AND provider_message_id = 'e2e-triage-inline-archived'`;
   }
 });

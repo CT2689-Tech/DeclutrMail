@@ -1224,8 +1224,8 @@ describe('ActionSheet Unsubscribe preview recovery', () => {
     expect(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     ).toBeDisabled();
-    expect(screen.getByText('Change Email age, or choose Unsubscribe only.')).toBeVisible();
-    expect(screen.queryByText(/Counting the inbox/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Choose Unsubscribe only' })).toBeVisible();
+    expect(screen.queryByText(/Counting the email/)).toBeNull();
     fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
     expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled();
   });
@@ -1257,4 +1257,56 @@ it('states inline Delete impact, recovery and future effect once outside Details
   expect(visible.textContent?.match(/Undo from Activity for 30 days\./g)).toHaveLength(1);
   expect(visible.textContent?.match(/84/g)).toHaveLength(1);
   expect(screen.getByRole('button', { name: 'Delete' })).toHaveTextContent(/^Delete$/);
+});
+
+describe('Triage empty Delete reasons', () => {
+  it('uses fresh unfiltered totals and changes the preview age only', () => {
+    const onAnyAge = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open
+        verb="Delete"
+        row={row}
+        inboxCount={0}
+        detail={{
+          inboxTotal: 2,
+          allMailTotal: 5,
+          ageControl: {
+            olderThanDays: 180,
+            options: [{ days: null }, { days: 180 }],
+            onChange: onAnyAge,
+          },
+        }}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.getByText('The age filter excludes these emails.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Use Any age' }));
+    expect(onAnyAge).toHaveBeenCalledWith(null);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+  it('distinguishes no current mail and lets Unsubscribe only be chosen without confirming', () => {
+    const onConfirm = vi.fn();
+    render(
+      <ActionSheet
+        open
+        verb="Unsubscribe"
+        row={row}
+        inboxCount={0}
+        detail={{ inboxTotal: 0, allMailTotal: 0 }}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    expect(screen.getByText('No current Inbox or archived email to delete.')).toBeVisible();
+    expect(screen.queryByText(/Counting the email/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Choose Unsubscribe only' }));
+    expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
 });
