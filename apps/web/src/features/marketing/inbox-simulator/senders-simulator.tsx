@@ -47,7 +47,7 @@ interface SampleSender {
 
 const AGES = [12, 45, 120, 240, 420] as const;
 const WINDOWS = [
-  { label: 'All inbox', days: null },
+  { label: 'Any age', days: null },
   { label: '30 days+', days: 30 },
   { label: '3 months+', days: 90 },
   { label: '6 months+', days: 180 },
@@ -929,8 +929,7 @@ export function SendersSimulator() {
                 >
                   {WINDOWS.map((window) => (
                     <option key={window.label} value={window.days ?? 'all'}>
-                      {window.days === null && reach === 'all_mail' ? 'All mail' : window.label} ·{' '}
-                      {fmt(totalCount(pendingSenders, activeReach, window.days))}
+                      {window.label} · {fmt(totalCount(pendingSenders, activeReach, window.days))}
                     </option>
                   ))}
                 </select>

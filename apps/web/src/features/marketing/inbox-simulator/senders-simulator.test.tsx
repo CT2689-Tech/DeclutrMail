@@ -160,6 +160,7 @@ describe('SendersSimulator', () => {
     expect(includeArchived).toHaveStyle({ minHeight: '48px' });
     const age = within(dialog).getByRole('combobox', { name: 'Email age to act on' });
     expect(age).toHaveValue('all');
+    expect(within(age).getByRole('option', { name: 'Any age · 111' })).toBeInTheDocument();
     expect(within(dialog).getByRole('heading')).toHaveTextContent('111 emails');
     fireEvent.change(age, { target: { value: '180' } });
     expect(within(dialog).getByRole('heading')).toHaveTextContent('45 emails');
@@ -173,6 +174,7 @@ describe('SendersSimulator', () => {
     );
     fireEvent.click(includeArchived);
     expect(includeArchived).toBeChecked();
+    expect(within(age).getByRole('option', { name: 'Any age · 273' })).toBeInTheDocument();
     expect(within(dialog).getByRole('heading')).toHaveTextContent('155 emails');
     expect(
       within(dialog)
