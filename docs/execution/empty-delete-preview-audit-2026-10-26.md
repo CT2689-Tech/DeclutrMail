@@ -1,7 +1,7 @@
 # Empty Delete preview audit — 2026-10-26
 
 Owner/integrator: Codex, `codex/empty-delete-preview-audit`, isolated worktree
-from `c4c031254`. No dependency on open PRs. Owned surfaces: shared cleanup
+from `c4c031254`. No dependency on open PRs. CI mirror recovery is owned by the same integration session. Owned surfaces: shared cleanup
 impact, Senders confirmations (single/bulk/detail), Triage sheet/inline and
 their fresh preview data wiring, regression tests and this audit.
 
@@ -34,7 +34,11 @@ even when no current mail existed. These are bounded copy/data-wiring gaps;
 matching, permissions, action dispatch, automation and Undo are unchanged.
 
 Onboarding, billing, saved rules, provider execution and real mailbox changes
-are excluded. No new data collection is needed: existing fresh preview counts
+are excluded. Needs first review already distinguishes fresh verified no-current-mail from an
+age-filtered zero and offers its explicit Keep review-only path; that policy is
+retained and its existing suites passed.
+
+No new data collection is needed: existing fresh preview counts
 support the explanation. Loading/error/missing counts remain unknown, not zero.
 
 ## Verification and integration
@@ -87,3 +91,19 @@ neutral wording, excluded bulk claims cover included senders, and original
 error/retry and confirm gates retain priority. Provider execution and Undo are
 out of scope. Live data may not contain every genuinely-empty transition; do not
 create it by changing a mailbox merely to generate evidence.
+
+## Required-check recovery
+
+All 46 actual-server journeys passed on the corrected fixture commit. An unrelated
+exact dark screenshot comparison failed at 320px; independent inspection found
+34 changed pixels only at two circular indicator edges, with identical text and
+layout. The same app/render code passed on the preceding commit. One diagnostic
+rerun then failed before any browser test, after three bounded Ubuntu dependency
+download timeouts. Initial evidence and rerun outcomes remain in the PR.
+
+A bounded installer fallback now changes only the known Azure Ubuntu origin to
+the official HTTPS archive after a failed attempt. The source list's metadata,
+signing configuration, attempt budget, privilege boundaries and coverage gates
+remain intact. Twelve helper tests passed; restoring the old installer failed the
+new ordering/fail-closed regressions. Desktop invocation is a guarded no-op.
+Fresh CI must execute all required browser checks before merge.

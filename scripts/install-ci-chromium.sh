@@ -12,9 +12,21 @@ status=1
 for attempt in 1 2 3; do
   started=$SECONDS
   if (( dependencies_ready == 0 )); then
+    # A slow Azure package mirror can consume every retry on the same fonts.
+    # Only after a failed attempt, switch the hosted x64 runner's known origin;
+    # APT sources, priorities, signing keys and the work budget stay intact.
+    if (( attempt == 2 )) && [[ "${GITHUB_ACTIONS:-}" == true && "${RUNNER_OS:-}" == Linux ]]; then
+      mirror_command=(env GITHUB_ACTIONS=true RUNNER_OS=Linux "$node_bin" "$deadline" 5000 15000 "$node_bin" "$repo_root/scripts/ci-ubuntu-mirrors.mjs")
+      if [[ "$(id -u)" != 0 ]]; then
+        mirror_command=(sudo -n "${mirror_command[@]}")
+      fi
+      "${mirror_command[@]}"
+    fi
     # The watchdog must own the same privileges as apt. Running Playwright as
     # root avoids its nested sudo, which the outer user cannot reliably stop.
-    dependency_command=("$node_bin" "$deadline" 240000 15000 "$node_bin" "$playwright_cli" install-deps chromium)
+    dependency_ms=$((240000 - (SECONDS - started) * 1000))
+    if (( dependency_ms <= 0 )); then exit 124; fi
+    dependency_command=("$node_bin" "$deadline" "$dependency_ms" 15000 "$node_bin" "$playwright_cli" install-deps chromium)
     if [[ "$(id -u)" != 0 ]]; then
       dependency_command=(sudo -n "${dependency_command[@]}")
     fi
