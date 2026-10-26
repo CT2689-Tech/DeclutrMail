@@ -55,6 +55,21 @@ beforeEach(() => {
 });
 
 describe('InvoiceHistory', () => {
+  it('compacts only a verified empty history and keeps its section target', async () => {
+    apiGet.mockResolvedValue({
+      data: { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 },
+    });
+    wrap(<InvoiceHistory />);
+    expect(await screen.findByText('No invoices yet')).toBeInTheDocument();
+    const section = screen.getByRole('region', { name: 'Payment history' });
+    expect(section).toHaveAttribute('id', 'invoices');
+    expect(section).toHaveAttribute('tabindex', '-1');
+    expect(
+      screen.queryByText('Payments and invoices from past subscriptions and one-time purchases.'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
   it('keeps a one-unit difference in large refund totals', async () => {
     apiGet.mockResolvedValue({
       data: {

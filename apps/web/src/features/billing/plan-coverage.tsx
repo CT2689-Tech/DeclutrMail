@@ -12,18 +12,17 @@ import {
   TIER_MANIFEST,
   type TierId,
 } from '@declutrmail/shared/entitlements';
-import { cleanupViewHref } from '@/features/cleanup/cleanup-view';
 import { useTier } from '@/features/auth/api/use-tier';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 
 const { color } = tokens;
 const tools = [
-  ['senders', '/senders', 'Senders'],
-  ['screener', cleanupViewHref('first-review'), 'Needs first review'],
-  ['autopilot', '/autopilot', 'Autopilot'],
-  ['quiet', '/quiet', 'Quiet hours'],
-  ['brief', '/brief', BRIEF_NAME],
-  ['followups', '/followups', 'Follow-ups'],
+  ['senders', 'Sender cleanup'],
+  ['screener', 'New-sender review'],
+  ['autopilot', 'Autopilot'],
+  ['quiet', 'Quiet hours'],
+  ['brief', BRIEF_NAME],
+  ['followups', 'Follow-ups'],
 ] as const;
 
 export function PlanCoverage({
@@ -64,21 +63,19 @@ export function PlanCoverage({
                 : WS1_COPY['pricing.pass.features'],
             ).map((line) => <div key={line}>{line}</div>)
           : plan.cleanupActionsPerMonth === null
-            ? WS2_COPY.liveFix.billing.limit.unlimited
+            ? `${WS2_COPY.liveFix.billing.limit.unlimited.replace(/\.$/, '')} on emails cleared.`
             : fillStory(WS2_COPY.liveFix.billing.limit.free)}
       </div>
-      <nav
-        aria-label="Included tools"
-        style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 16px' }}
+      <ul
+        aria-label="Included features"
+        style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 24px', margin: 0, paddingLeft: 20 }}
       >
         {tools
           .filter(([capability]) => plan.capabilities.includes(capability))
-          .map(([, href, label]) => (
-            <Link className={`${linkStyles.link} ${linkStyles.toolLink}`} key={href} href={href}>
-              {label}
-            </Link>
+          .map(([capability, label]) => (
+            <li key={capability}>{label}</li>
           ))}
-      </nav>
+      </ul>
     </section>
   );
 }

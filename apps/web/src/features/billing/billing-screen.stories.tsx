@@ -99,7 +99,12 @@ function makeClient(
     },
   );
   if (billing) {
-    client.setQueryData(billingKeys.subscription(), billing);
+    client.setQueryData(
+      billingKeys.subscription(),
+      Object.hasOwn(billing, 'checkoutSetupComplete')
+        ? billing
+        : { ...billing, checkoutSetupComplete: true },
+    );
   }
   return client;
 }
@@ -770,6 +775,7 @@ function ComplimentaryConfirmationFixture({
     me.user.workspaceId = 'storybook-complimentary-confirmation';
     const body: BillingSubscription = {
       ...PRO_SUB,
+      checkoutSetupComplete: true,
       complimentary: { tier: 'pro', expiresAt: null },
       subscription: {
         ...PRO_SUB.subscription!,
