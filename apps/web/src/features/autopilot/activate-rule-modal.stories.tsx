@@ -305,7 +305,7 @@ export const ArchiveWithoutInbox: StoryObj<typeof ActivateRuleModal> = {
   render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
 };
 
-export const AlreadyUnsubscribed: StoryObj<typeof ActivateRuleModal> = {
+export const UnsubscribeAlreadySelected: StoryObj<typeof ActivateRuleModal> = {
   args: {
     ...baseArgs,
     intent: 'enable',
@@ -321,6 +321,13 @@ export const AlreadyUnsubscribed: StoryObj<typeof ActivateRuleModal> = {
         actionableMessageCount: 0,
         protectedWouldMatchCount: 0,
         dailyActionCap: 25,
+        sample: [
+          {
+            ...RULE_PREVIEW_RESULT.sample[0]!,
+            reason: 'Engine verdict=Unsubscribe @0.95 above threshold 0.90',
+            ineligibleReason: 'unsubscribe_policy_recorded',
+          },
+        ],
         senderPage: {
           previewId: '11111111-1111-4111-8111-111111111111',
           expiresAt: new Date(Date.now() + 300_000).toISOString(),

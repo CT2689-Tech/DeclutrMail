@@ -781,7 +781,7 @@
     "autopilot": {
       "covered": "This rule handles them. They leave your suggestions.",
       "stay": "They stay in your suggestions. Approve or skip each one.",
-      "matchVerdict": "Matched: the suggestion was {verdict}, and this rule acts on those."
+      "matchVerdict": "Matched: this rule looks for {verdict} suggestions."
     },
     "reconnect": {
       "banner": "DeclutrMail lost access to {mailboxEmail}. Reconnect and allow Gmail access."

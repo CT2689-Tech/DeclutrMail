@@ -19,7 +19,7 @@ import {
 import { AUTOPILOT_PRESETS } from '@declutrmail/workers';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { decodeCursor } from '@declutrmail/shared/contracts';
+import { AutopilotRulePreviewResultSchema, decodeCursor } from '@declutrmail/shared/contracts';
 import { drizzle } from 'drizzle-orm/pglite';
 import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1592,13 +1592,13 @@ describe('AutopilotReadService', () => {
       expect(approved!.skippedProtectedCount).toBe(1);
     });
 
-    // Founder decision 2026-09-29 (a): an already-unsubscribed sender's
+    // Founder decision 2026-09-29 (a): a sender with an Unsubscribe policy's
     // suggestion is excluded from the list, the count and approve-all —
     // the same layer Protected sits at, for the same reason: approving
     // it would be a no-op the action worker silently drops
     // (`skippedAlreadyUnsubscribed`).
     // docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
-    it('counts, lists and approves the same set when a sender is already unsubscribed', async () => {
+    it('counts, lists and approves the same set when Unsubscribe is already selected', async () => {
       const { svc } = withQueue();
       const ruleId = await getRuleId(db, mailboxA, 'auto_unsubscribe_noisy');
       const doneKey = 'a'.repeat(64);
@@ -1614,7 +1614,7 @@ describe('AutopilotReadService', () => {
           senderKey: doneKey,
           modeAtMatch: 'observe',
           confidence: '0.92',
-          reason: 'already-unsubscribed',
+          reason: 'unsubscribe-policy-recorded',
         },
         {
           ruleId,
@@ -1942,6 +1942,56 @@ describe('AutopilotReadService', () => {
   });
 
   describe('previewRule (U14)', () => {
+    it('marks only historical Unsubscribe samples excluded by a recorded unsubscribe policy', async () => {
+      const doneKey = 'a'.repeat(64);
+      const eligibleKey = 'b'.repeat(64);
+      const protectedKey = 'c'.repeat(64);
+      await indexSenders(db, mailboxA, [doneKey, eligibleKey, protectedKey]);
+      await db.insert(triageDecisions).values(
+        [doneKey, eligibleKey, protectedKey].map((senderKey) => ({
+          mailboxAccountId: mailboxA,
+          senderKey,
+          verdict: 'unsubscribe' as const,
+          confidence: '0.95',
+          reasoning: 'test',
+          generatedBy: 'template' as const,
+          producedAt: new Date(),
+          expiresAt: new Date(Date.now() + 86_400_000),
+        })),
+      );
+      await db.insert(senderPolicies).values([
+        {
+          mailboxAccountId: mailboxA,
+          senderKey: doneKey,
+          policyType: 'unsubscribe',
+          unsubStatus: 'action_required',
+        },
+        {
+          mailboxAccountId: mailboxA,
+          senderKey: protectedKey,
+          isProtected: true,
+          protectionReason: 'user_defined',
+        },
+      ]);
+
+      const ruleId = await getRuleId(db, mailboxA, 'auto_unsubscribe_noisy');
+      const result = await service.previewRule(mailboxA, ruleId, true);
+      expect(result).toMatchObject({
+        wouldMatchCount: 2,
+        actionableSenderCount: 1,
+        protectedWouldMatchCount: 1,
+      });
+      expect(result!.sample.find((sender) => sender.senderKey === doneKey)).toMatchObject({
+        ineligibleReason: 'unsubscribe_policy_recorded',
+      });
+      expect(result!.sample.find((sender) => sender.senderKey === eligibleKey)).not.toHaveProperty(
+        'ineligibleReason',
+      );
+      expect(result!.sample.some((sender) => sender.senderKey === protectedKey)).toBe(false);
+      expect(result!.senderPage!.senders.map((sender) => sender.senderKey)).toEqual([eligibleKey]);
+      expect(() => AutopilotRulePreviewResultSchema.parse(result)).not.toThrow();
+    });
+
     it('pages through one complete actionable preview without repeating the rule evaluation', async () => {
       const keys = Array.from({ length: 55 }, (_, index) => index.toString(16).padStart(64, '0'));
       await indexSenders(db, mailboxA, keys);

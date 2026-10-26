@@ -20,6 +20,18 @@ const noInbox = {
   ],
 };
 
+const unsubscribeAlreadySelected = {
+  ...noInbox,
+  sample: [
+    {
+      ...noInbox.sample[0]!,
+      inboxCount: 3,
+      reason: 'Engine verdict=Unsubscribe @0.95 above threshold 0.90',
+      ineligibleReason: 'unsubscribe_policy_recorded' as const,
+    },
+  ],
+};
+
 const meta = {
   title: 'Autopilot/RulePreviewPanel',
   component: RulePreviewPanel,
@@ -45,8 +57,12 @@ export const MatchesWithoutInbox: Story = {};
 export const MixedMatches: Story = {
   args: { state: { status: 'ready', result: RULE_PREVIEW_RESULT } },
 };
-export const AlreadyUnsubscribed: Story = {
-  args: { actionKind: 'unsubscribe', state: { status: 'ready', result: noInbox } },
+export const UnsubscribeAlreadySelected: Story = {
+  args: {
+    ruleName: 'Synthetic Unsubscribe rule',
+    actionKind: 'unsubscribe',
+    state: { status: 'ready', result: unsubscribeAlreadySelected },
+  },
 };
 export const NoMatches: Story = {
   args: {

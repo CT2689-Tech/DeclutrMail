@@ -437,7 +437,7 @@ export class AutopilotReadService {
       // one set). Excludes the same two no-op states
       // `ruleMatchIsOfferableSuggestion` does, for the same reason: an
       // Unsubscribe rule's "Would have requested unsubscribe from N
-      // senders" must not count a sender that is already unsubscribed.
+      // senders" must not count a sender with an Unsubscribe policy already recorded.
       // Founder decision 2026-09-29 (a):
       // docs/log/founder-followups/2026-09-27-autopilot-already-unsubscribed-suggestions.md
       const recentUnprotected: SQL = sql`(${recent} and not ${ruleMatchSenderIsProtected()} and not ${ruleMatchUnsubscribeAlreadyDone()})`;
@@ -1705,6 +1705,9 @@ export class AutopilotReadService {
         senderEmail: identityBy.get(m.senderKey)?.email ?? null,
         inboxCount: m.inboxCount,
         reason: m.reason,
+        ...(rule.actionKind === 'unsubscribe' && m.isUnsubscribed
+          ? { ineligibleReason: 'unsubscribe_policy_recorded' as const }
+          : {}),
       })),
       ...(senderPage ? { senderPage: this.projectPreviewPage(senderPage, identityBy) } : {}),
       waitingApprovedCount,

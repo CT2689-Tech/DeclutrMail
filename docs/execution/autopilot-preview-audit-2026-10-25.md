@@ -39,7 +39,7 @@ real identities or mailbox screenshots are committed.
 
 No arithmetic or producer defect was found in the inspected preview contracts.
 Rule-card match counts exclude Protected senders; Archive/Later require Inbox
-mail; Unsubscribe excludes recorded unsubscribed senders; Delete follows reach.
+mail; Unsubscribe excludes senders with a recorded Unsubscribe policy; Delete follows reach.
 Sender-list rules additionally apply their configured age. Frozen previews bound
 the exact selected message IDs and report their own batch/eligible totals.
 
@@ -47,7 +47,7 @@ the exact selected message IDs and report their own batch/eligible totals.
 
 Read-only production inspection covered all five preset paths. Archive had a
 historical match but no eligible Inbox mail; Unsubscribe rules had both eligible
-and already-unsubscribed matches; Later had eligible, no-Inbox and Protected
+and matches with Unsubscribe already selected; Later had eligible, no-Inbox and Protected
 subsets; Delete had eligible mail. Opened a disabled rule's setup, selected
 Watch first, observed the acting lead, then cancelled. The rule stayed disabled.
 No real approvals, requests, rule changes, purchases or Gmail mutations were
@@ -66,7 +66,7 @@ public repository.
   in preview copy. Both were replaced with specific wording; the glossary gate
   and all 244 Autopilot tests pass after the correction.
 - Built-in browser on the compiled synthetic build: Archive 0 eligible / 1
-  historical sample; Unsubscribe 0 eligible / 1 already unsubscribed; mode switch
+  historical sample; Unsubscribe 0 eligible / 1 with Unsubscribe already selected; mode switch
   updates lead/note/If approved; empty eligible page; 25-action daily cap. At
   375px, no horizontal page overflow and keyboard Tab reaches the primary action.
   In the synthetic Delete batch, deselecting its one eligible email changed
@@ -81,9 +81,28 @@ public repository.
 ## Opportunities and boundaries
 
 Per-row eligibility reasons for historical Unsubscribe samples could further
-explain which individual senders are already unsubscribed. That needs an API row
-field; deferred enhancement. Aggregate counts and reasons are accurate without
+explain which individual senders have Unsubscribe already selected. That needs an API row
+field; it was deferred to the follow-up below. Aggregate counts and reasons are accurate without
 new data collection. Execution outcomes and Activity wording remain outside this
 preview-only audit. There is no pending product-policy decision or production
 test residue. Merge/release will use the user's standing authorization and normal
 required checks; this audit skill itself does not grant release authorization.
+
+## Follow-up: historical Unsubscribe sample rows (2026-10-26)
+
+The deferred row explanation is now implemented. An Unsubscribe sample shows
+“Unsubscribe already selected” beside a sender only when the same recorded
+sender-policy signal excludes that sender from the eligible count. This policy
+records the choice; it does not prove the provider completed an unsubscribe.
+The aggregate explanation now uses the same precise wording. Eligible rows carry no
+exclusion label; Protected senders remain outside the sample. The paged
+activation list still contains only eligible senders. The optional response
+field lets older preview responses render without an invented status. This
+uses existing policy metadata and adds no mailbox data collection or action.
+The API regression covers a policy still at `action_required`, an eligible
+sender, a Protected sender, and strict wire parsing. List and table tests bind
+the label to the correct row; they failed before the fix. The API suite (96),
+Autopilot UI suite (246), typecheck, lint, and Storybook build pass. The built-in
+browser shows the explanation at 375px without horizontal overflow. Independent
+review found and verified the status-neutral wording correction. No production
+mailbox action was performed for this follow-up.
