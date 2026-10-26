@@ -1,5 +1,6 @@
 'use client';
 
+import { useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Avatar, Button, Kbd, Pill, tokens, useIsAtMost } from '@declutrmail/shared';
@@ -106,6 +107,7 @@ export function ScreenerRow({
   onRetryPreview?: (() => void) | undefined;
 }) {
   const params = useSearchParams();
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const returnSearch = new URLSearchParams(params?.toString());
   returnSearch.set('view', 'first-review');
   const showSuggestion = row.inboxCount !== 0 || row.recommendation?.verdict !== 'later';
@@ -303,6 +305,7 @@ export function ScreenerRow({
           {/* K/A/U/L/D toolbar. */}
           <div
             role="toolbar"
+            ref={toolbarRef}
             className="dm-action-toolbar"
             aria-label={`Decide ${row.senderName}`}
             style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
@@ -435,6 +438,14 @@ export function ScreenerRow({
               onConfirm={onConfirm}
               onCancel={onCancel}
               onRetryPreview={onRetryPreview}
+              onChooseDecision={(verb) => {
+                onVerbClick(verb);
+                // The empty preview's button unmounts when the decision changes.
+                // Return focus to the persistent action that opened its preview.
+                toolbarRef.current
+                  ?.querySelector<HTMLButtonElement>(`[data-action="${verb}"] button`)
+                  ?.focus();
+              }}
             />
           )}
         </div>

@@ -582,6 +582,62 @@ describe('DecidePreview — reasoning age label (QA-archive-20260903-01)', () =>
 // emails" body — the identical gap QA-delete-20260829-08 already fixed on
 // Triage's own D226 preview.
 describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
+  it.each([
+    { inboxCount: 0 as const, allMailCount: 0, allMailTotal: 2 },
+    { inboxCount: 0 as const, allMailCount: null, allMailTotal: null },
+    { inboxCount: 'loading' as const, allMailCount: null, allMailTotal: 0 },
+    { inboxCount: 'unavailable' as const, allMailCount: null, allMailTotal: 0 },
+  ])(
+    'does not call a sender empty from an age-filtered zero or unavailable count: %j',
+    (counts) => {
+      render(
+        <DecidePreview
+          verb="delete"
+          row={row}
+          {...counts}
+          inboxTotal={0}
+          windowDays={180}
+          onChooseDecision={vi.fn()}
+          confirming={false}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />,
+      );
+      expect(
+        screen.queryByRole('heading', { name: `No current email from ${row.senderName}` }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Keep' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: `Delete for ${row.senderName}` })).toBeDisabled();
+    },
+  );
+
+  it.each(['one_click', 'mailto', 'none', null] as const)(
+    'only offers Unsubscribe for supported empty senders: %s',
+    (method) => {
+      const choose = vi.fn();
+      const confirm = vi.fn();
+      render(
+        <DecidePreview
+          verb="delete"
+          row={{ ...row, unsubscribeMethod: method }}
+          inboxCount={0}
+          inboxTotal={0}
+          allMailCount={0}
+          allMailTotal={0}
+          onChooseDecision={choose}
+          confirming={false}
+          onConfirm={confirm}
+          onCancel={vi.fn()}
+        />,
+      );
+      if (method === 'one_click' || method === 'mailto') {
+        fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
+        expect(choose).toHaveBeenCalledWith('unsubscribe');
+      } else expect(screen.queryByRole('button', { name: 'Unsubscribe' })).not.toBeInTheDocument();
+      expect(confirm).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['archive', 'later', 'delete'] as const)(
     'reads "Nothing to move" for a zero-match %s, not an active-move header',
     (verb) => {
@@ -670,7 +726,7 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
     expect(impact).toHaveTextContent('Inbox and archived email · Older than 180 days');
   });
 
-  it('still reads "Nothing to move" at all-mail reach when the true all-mail total is also zero', () => {
+  it('explains a verified empty sender even at all-mail reach', () => {
     render(
       <DecidePreview
         verb="delete"
@@ -687,9 +743,7 @@ describe('DecidePreview — zero-match header (QA-delete-20260903-01)', () => {
         onCancel={() => {}}
       />,
     );
-    expect(
-      screen.getByText(`Nothing to move from ${row.senderName} right now`),
-    ).toBeInTheDocument();
+    expect(screen.getByText(`No current email from ${row.senderName}`)).toBeInTheDocument();
   });
 
   it('leaves Keep and Unsubscribe headers untouched — neither ever claims a move', () => {

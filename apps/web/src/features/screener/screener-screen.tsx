@@ -827,8 +827,8 @@ export function ScreenerScreen({
       </div>
 
       <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6 }}>
-        Decide what happens to email from these senders. Until you do, their email keeps arriving as
-        usual.
+        These senders haven’t had a first review yet, even if their email is no longer in your inbox
+        or archive. Choose Keep to finish a review without moving email.
       </p>
       {presentation === 'standalone' && (
         <ScreenIntro

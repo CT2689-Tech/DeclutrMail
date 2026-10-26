@@ -62,6 +62,83 @@ beforeEach(() => {
 });
 
 describe('Needs first review in Senders', () => {
+  it.each(['Archive', 'Later', 'Delete'])(
+    'explains why an empty sender still needs review and offers Keep from %s without moving email',
+    async (verb) => {
+      const counts = {
+        all: 0,
+        olderThan30d: 0,
+        olderThan90d: 0,
+        olderThan180d: 0,
+        olderThan365d: 0,
+      };
+      const bodies: unknown[] = [];
+      const client = createTestQueryClient();
+      const invalidations = vi.spyOn(client, 'invalidateQueries');
+      installFetchStub([
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () => jsonOk({ data: { counts, allMail: { counts } } }),
+        },
+        {
+          method: 'POST',
+          path: '/api/screener/decide',
+          respond: async (req) => {
+            bodies.push(await req.json());
+            return jsonOk({
+              data: {
+                senderId: row.senderId,
+                verb: 'keep',
+                resolved: true,
+                execution: { kind: 'policy', activityLogId: 'empty-keep' },
+              },
+            });
+          },
+        },
+      ]);
+      render(
+        <QueryWrapper client={client}>
+          <ScreenerScreen
+            presentation="senders"
+            state={{ kind: 'ready', rows: [{ ...row, inboxCount: 0, isProtected: false }] }}
+          />
+        </QueryWrapper>,
+      );
+      fireEvent.click(
+        screen.getByRole('button', { name: `${row.senderName} — expand sender detail` }),
+      );
+      fireEvent.click(within(screen.getByRole('toolbar')).getByRole('button', { name: verb }));
+      await screen.findByText(
+        'There’s no inbox or archived email to move. This sender is still awaiting its first review.',
+      );
+      const preview = screen.getByRole('region', { name: `Preview · ${verb} ${row.senderName}` });
+      expect(
+        within(preview).queryByRole('button', { name: `${verb} for ${row.senderName}` }),
+      ).not.toBeInTheDocument();
+      const chooseKeep = within(preview).getByRole('button', { name: 'Keep' });
+      chooseKeep.focus();
+      fireEvent.click(chooseKeep);
+      expect(
+        within(screen.getByRole('toolbar')).getByRole('button', { name: 'Keep' }),
+      ).toHaveFocus();
+      expect(screen.getByRole('heading', { name: `Keep ${row.senderName}?` })).toBeInTheDocument();
+      expect(
+        screen.getByText('Keep marks this sender reviewed. Email stays where it is.'),
+      ).toBeInTheDocument();
+      expect(bodies).toHaveLength(0);
+      fireEvent.click(screen.getByRole('button', { name: `Keep for ${row.senderName}` }));
+      await waitFor(() => expect(bodies).toEqual([{ senderId: row.senderId, verb: 'keep' }]));
+      await waitFor(() =>
+        expect(invalidations).toHaveBeenCalledWith({ queryKey: ['screener', 'queue'] }),
+      );
+      expect(invalidations).toHaveBeenCalledWith({ queryKey: ['screener', 'count'] });
+      await waitFor(() =>
+        expect(screen.queryByRole('region', { name: /^Preview ·/ })).not.toBeInTheDocument(),
+      );
+    },
+  );
+
   it('keeps archived Delete discoverable when both age-filtered counts are zero and submits the selected scope', async () => {
     const counts = (all: number) => ({
       all,

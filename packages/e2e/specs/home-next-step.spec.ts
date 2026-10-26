@@ -85,6 +85,66 @@ test('pending first review remains visible alongside suggested cleanup', async (
   await expect(page.getByRole('heading', { level: 1, name: 'Senders', exact: true })).toBeVisible();
 });
 
+test('empty first review explains the pending decision and Keep completes it after confirmation', async ({
+  page,
+}) => {
+  await seedHomeRecommendation('pro', true);
+  const sql = dbConnect();
+  try {
+    // Current inbox/archive are empty; the historical received counter remains.
+    await sql`UPDATE mail_messages SET label_ids = ARRAY['TRASH'] WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    const decisions: unknown[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/screener/decide')
+        decisions.push(request.postDataJSON());
+    });
+    await page.goto(
+      `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: BILLING_SEED.email })}`,
+    );
+    await page.goto('/senders?view=first-review');
+    const sender = page.getByRole('button', {
+      name: `${BILLING_SEED.screenerSenderName} — expand sender detail`,
+      exact: true,
+    });
+    await sender.click();
+    await page
+      .getByRole('toolbar', { name: `Decide ${BILLING_SEED.screenerSenderName}` })
+      .getByRole('button', { name: 'Delete', exact: true })
+      .click();
+    const empty = page.getByRole('region', {
+      name: `Preview · Delete ${BILLING_SEED.screenerSenderName}`,
+    });
+    await expect(empty).toContainText('This sender is still awaiting its first review.');
+    await empty.getByRole('button', { name: 'Keep', exact: true }).click();
+    await expect(
+      page
+        .getByRole('toolbar', { name: `Decide ${BILLING_SEED.screenerSenderName}` })
+        .getByRole('button', { name: 'Keep', exact: true }),
+    ).toBeFocused();
+    const keep = page.getByRole('region', {
+      name: `Preview · Keep ${BILLING_SEED.screenerSenderName}`,
+    });
+    await expect(keep).toContainText('Keep marks this sender reviewed. Email stays where it is.');
+    expect(decisions).toEqual([]);
+    await keep.getByRole('button', { name: `Keep for ${BILLING_SEED.screenerSenderName}` }).click();
+    await expect(sender).toHaveCount(0);
+    expect(decisions).toEqual([{ senderId: BILLING_SEED.screenerSenderId, verb: 'keep' }]);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Senders', exact: true })).toBeVisible();
+    await expect(sender).toHaveCount(0);
+    const [review] =
+      await sql`SELECT decided_at FROM screener_quarantine WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    expect(review!.decided_at).not.toBeNull();
+    const messages =
+      await sql`SELECT label_ids FROM mail_messages WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    expect(messages.length).toBeGreaterThan(0);
+    for (const message of messages) expect(message.label_ids).toEqual(['TRASH']);
+  } finally {
+    await sql`UPDATE mail_messages SET label_ids = ARRAY['INBOX'] WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    await sql.end();
+  }
+});
+
 for (const tier of ['pro', 'free'] as const) {
   for (const width of [1280, 768, 375, 320]) {
     test(`Focus Home and account menu fit ${width}px on ${tier} without changing mail`, async ({
