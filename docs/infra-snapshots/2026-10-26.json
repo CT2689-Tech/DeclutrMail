@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-26",
-  "snapshot_ts": "2026-10-26T16:07:15Z",
+  "snapshot_ts": "2026-10-26T18:00:13Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,13 +8,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-26T07:45:54.857638Z",
-            "name": "declutrmail-api-00993-dig"
+            "creationTimestamp": "2026-10-26T17:24:37.131374Z",
+            "name": "declutrmail-api-00996-deb"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:f68943c52d812d66464112556458ccdcb1e00b1bb3ab545a296e8f58028bbe16"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:ababf8ba59b0f72170d8ea06c2ad82033d8b98784e82ebb8994dcc1020731506"
               }
             ]
           },
@@ -181,7 +181,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-api-00993-dig"
+              "revisionName": "declutrmail-api-00996-deb"
             }
           ]
         }
@@ -192,20 +192,20 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-26T07:44:25.643063Z",
-            "name": "declutrmail-worker-00293-p7t"
+            "creationTimestamp": "2026-10-26T17:59:59.139553Z",
+            "name": "declutrmail-worker-00295-t2t"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:f68943c52d812d66464112556458ccdcb1e00b1bb3ab545a296e8f58028bbe16"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:4680ad6b9b31ea3b4024101c7d4bcccc868bd0c5ac1bfa6144fc5bd498ce1a3c"
               }
             ]
           },
           "status": {
             "conditions": [
               {
-                "status": "True"
+                "status": "Unknown"
               }
             ]
           }
@@ -359,7 +359,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00293-p7t"
+              "revisionName": "declutrmail-worker-00294-7fr"
             }
           ]
         }
