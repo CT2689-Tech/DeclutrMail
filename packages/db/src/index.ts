@@ -212,3 +212,5 @@ export { webhookDedup } from './schema/webhook-dedup';
 export type { NewWebhookDedup, WebhookDedup } from './schema/webhook-dedup';
 export { workspaces, workspaceTier } from './schema/workspaces';
 export type { NewWorkspace, Workspace } from './schema/workspaces';
+
+export * from './schema/billing-checkout-attempts';

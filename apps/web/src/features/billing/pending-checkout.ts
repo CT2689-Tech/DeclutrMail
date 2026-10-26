@@ -39,6 +39,8 @@ export type PendingKind =
 
 export interface PendingCheckout {
   workspaceId: string;
+  serverAttemptId?: string;
+  returnTo?: string;
   /** What started the wait (overlay payment / plan change / resume). */
   kind: PendingKind;
   /** Tier at the moment of the action — the flip detector compares to it. */
@@ -126,6 +128,10 @@ export function readPendingCheckout(workspaceId: string): PendingCheckout | null
     typeof record.toTier !== 'string' ||
     !TIER_IDS.includes(record.toTier) ||
     (record.toCycle !== null && !CYCLES.includes(record.toCycle as string)) ||
+    (record.returnTo !== undefined && typeof record.returnTo !== 'string') ||
+    (record.serverAttemptId !== undefined &&
+      (typeof record.serverAttemptId !== 'string' ||
+        !/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(record.serverAttemptId))) ||
     (record.attemptId !== undefined && typeof record.attemptId !== 'string') ||
     (record.offer !== undefined && record.offer !== 'pass_onetime')
   ) {
@@ -154,6 +160,7 @@ export function writePendingCheckout(
   toCycle: BillingCycle | null,
   attemptId?: string,
   offer?: 'pass_onetime',
+  returnTo?: string,
 ): PendingCheckout {
   const record: PendingCheckout = {
     workspaceId,
@@ -165,6 +172,7 @@ export function writePendingCheckout(
     at: Date.now(),
     ...(attemptId !== undefined ? { attemptId } : {}),
     ...(offer === 'pass_onetime' ? { offer } : {}),
+    ...(returnTo ? { returnTo } : {}),
   };
   lastKnown.set(workspaceId, record);
   try {
@@ -215,4 +223,21 @@ export async function withMoneyActionMutex<T>(
     { ifAvailable: true },
     async (lock) => (lock === null ? { acquired: false } : { acquired: true, result: await fn() }),
   );
+}
+
+/** Bind the browser reservation to the identity returned by the server. */
+export function bindPendingCheckoutAttempt(
+  workspaceId: string,
+  attemptId: string,
+): PendingCheckout | null {
+  const record = readPendingCheckout(workspaceId);
+  if (!record || record.attemptId !== attemptId) return null;
+  const bound = { ...record, serverAttemptId: attemptId };
+  lastKnown.set(workspaceId, bound);
+  try {
+    window.localStorage.setItem(pendingCheckoutKey(workspaceId), JSON.stringify(bound));
+  } catch {
+    failedWrites.add(workspaceId);
+  }
+  return bound;
 }

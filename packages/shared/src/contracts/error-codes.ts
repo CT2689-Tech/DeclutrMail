@@ -278,7 +278,7 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      'A checkout for this account is already in progress — finish it there, or use "I didn\u2019t complete a payment" to release it.',
+      'A checkout for this account is unresolved. Resume it or check payment status in Plan & billing. Contact support@declutrmail.com if needed.',
   },
   /**
    * No subscription this route can act on. The message names no verb:

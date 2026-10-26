@@ -1,5 +1,5 @@
 import type * as CheckoutModule from './checkout';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 vi.mock('@/features/auth/auth-provider', () => {
   const auth = () => ({
@@ -81,20 +81,13 @@ it.each([true, false])(
     );
     const panel = await screen.findByTestId('checkout-panel');
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
-    if (released) {
-      expect(
-        await screen.findByText('The secure checkout window could not be opened.'),
-      ).toBeInTheDocument();
-      await waitFor(() =>
-        expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
-      );
-      expect(readPendingCheckout('chunk-fixture')).toBeNull();
-      expect(screen.getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
-    } else {
-      expect(await screen.findByText(/This hold couldn’t be released/)).toBeInTheDocument();
-      expect(readPendingCheckout('chunk-fixture')).not.toBeNull();
-      expect(await screen.findByRole('button', { name: 'Review checkout' })).toBeEnabled();
-    }
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent('Checkout started');
+    expect(readPendingCheckout('chunk-fixture')).not.toBeNull();
+    expect(
+      await screen.findByRole('link', { name: 'Contact billing support' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue to checkout' })).not.toBeInTheDocument();
     clearPendingCheckout('chunk-fixture');
   },
 );

@@ -38,3 +38,5 @@ export * from './users';
 export * from './waitlist';
 export * from './webhook-dedup';
 export * from './workspaces';
+
+export * from './billing-checkout-attempts';

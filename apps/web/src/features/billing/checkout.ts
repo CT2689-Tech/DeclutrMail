@@ -80,6 +80,7 @@ export function __setPaddleLoaderForTests(loader: () => Promise<PaddleModule>): 
   paddleInstance = null;
   paddleInitialization = null;
   activeEvents = {};
+  activeTransactionId = null;
 }
 
 /** The slice of Razorpay Checkout.js this module drives. */
@@ -204,6 +205,7 @@ async function openRazorpayOverlay(
 let paddleInstance: Paddle | null = null;
 let paddleInitialization: Promise<Paddle> | null = null;
 let activeEvents: CheckoutEvents = {};
+let activeTransactionId: string | null = null;
 
 /**
  * Page that already handles `checkout.completed`. The callback writes
@@ -252,6 +254,7 @@ async function openPaddleOverlay(
         environment: session.environment,
         token: session.clientToken,
         eventCallback: (event) => {
+          if (activeTransactionId && event.data?.transaction_id !== activeTransactionId) return;
           if (event.name === 'checkout.completed') activeEvents.onCompleted?.();
           if (event.name === 'checkout.closed') activeEvents.onClosed?.();
         },
@@ -266,6 +269,7 @@ async function openPaddleOverlay(
   }
   if (!mayOpen()) throw new CheckoutLaunchError(false);
   activeEvents = events;
+  activeTransactionId = session.transactionId;
   const settings = checkoutSuccessSettings();
   // Currency and discount are already on the transaction. Items would
   // let Paddle localize a price that carries an INR override.

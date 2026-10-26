@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { freshTestDb } from '@declutrmail/db/testing';
 import {
+  billingCheckoutAttempts,
   billingCustomers,
   pendingCheckouts,
   subscriptionEvents,
@@ -55,6 +56,24 @@ beforeEach(async () => {
   );
 });
 describe('provider-confirmed deletion safety', () => {
+  it('a stopped durable transaction cannot bypass the retained checkout capability review', async () => {
+    await attempt();
+    await db.insert(billingCheckoutAttempts).values({
+      id: '11111111-1111-4111-8111-111111111111',
+      workspaceId,
+      tier: 'plus',
+      cycle: 'annual',
+      providerPriceId: 'pri_plus',
+      currencyCode: 'USD',
+      providerTransactionId: 'txn_stopped',
+      state: 'stopped',
+      stoppedAt: new Date(),
+    });
+    await expect(guard.assertStopped(userId)).rejects.toMatchObject({
+      code: 'DELETION_BILLING_UNVERIFIED',
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
   it('allows a never-billed Free or complimentary workspace without provider calls', async () => {
     await db.update(workspaces).set({ tier: 'pro' }).where(eq(workspaces.id, workspaceId));
     await expect(guard.assertStopped(userId)).resolves.toBeUndefined();

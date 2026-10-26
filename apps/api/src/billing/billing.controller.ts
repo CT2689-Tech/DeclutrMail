@@ -27,6 +27,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  CheckoutAttemptCommandSchema,
   BillingReconcileRequestSchema,
   CancelRequestSchema,
   CheckoutRequestSchema,
@@ -97,20 +98,63 @@ export class BillingController {
     return ok(await this.billing.createCheckout(principal, parsed.data, trustedCountry));
   }
 
-  /**
-   * DELETE /api/billing/checkout/pending — the user-asserted release of
-   * the cross-device checkout claim ("I checked — no charge went
-   * through"). Mirrors the FE's local-lock release; also the recovery
-   * path out of CHECKOUT_IN_FLIGHT after an abandoned session.
-   */
+  @Get('checkout/:id')
+  @RateLimit('default')
+  async checkoutAttempt(@CurrentUser() principal: Principal, @Param('id') id: string) {
+    assertBillingEnabled();
+    return ok(await this.billing.getCheckoutAttempt(principal.workspaceId, id));
+  }
+
+  @Post('checkout/:id/resume')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 5, windowSec: 60 })
+  async resumeCheckout(
+    @CurrentUser() principal: Principal,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    assertBillingEnabled();
+    const parsed = CheckoutAttemptCommandSchema.safeParse(body);
+    if (!parsed.success) throw new AppException({ code: 'BAD_REQUEST' });
+    return ok(
+      await this.billing.resumeCheckoutAttempt(principal.workspaceId, id, parsed.data.version),
+    );
+  }
+
+  @Post('checkout/:id/cancel')
+  @UseGuards(CsrfGuard)
+  @RateLimit({ bucket: 'default', limit: 5, windowSec: 60 })
+  async cancelCheckout(
+    @CurrentUser() principal: Principal,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    assertBillingEnabled();
+    const parsed = CheckoutAttemptCommandSchema.safeParse(body);
+    if (!parsed.success) throw new AppException({ code: 'BAD_REQUEST' });
+    return ok(
+      await this.billing.cancelCheckoutAttempt(principal.workspaceId, id, parsed.data.version),
+    );
+  }
+
+  /** Compatibility acknowledgement for an exact terminal attempt; never deletes a workspace hold. */
   @Delete('checkout/pending')
   @UseGuards(CsrfGuard)
   @RateLimit({ bucket: 'default', limit: 10, windowSec: 60 })
   async releasePendingCheckout(
     @CurrentUser() principal: Principal,
+    @Body() body: unknown,
   ): Promise<Envelope<{ released: true }>> {
     assertBillingEnabled();
-    await this.billing.releasePendingCheckout(principal.workspaceId);
+    const parsed = BillingReconcileRequestSchema.extend({
+      version: CheckoutAttemptCommandSchema.shape.version,
+    }).safeParse(body);
+    if (!parsed.success || !parsed.data.attemptId) throw new AppException({ code: 'BAD_REQUEST' });
+    await this.billing.releasePendingCheckout(
+      principal.workspaceId,
+      parsed.data.attemptId,
+      parsed.data.version,
+    );
     return ok({ released: true } as const);
   }
 
@@ -230,22 +274,37 @@ export class BillingController {
         message: parsed.error.issues[0]?.message ?? 'Invalid reconcile request.',
       });
     }
-    const outcome =
-      parsed.data.kind === 'change'
-        ? // The hint is what the caller AWAITS — it splits "nothing new"
-          // into confirmed-recorded vs change-never-happened (see the
-          // service doc; a hintless check stays neutral).
-          await this.reconciliation.reconcileWorkspaceSubscriptions(principal.workspaceId, {
-            tier: parsed.data.toTier,
-            cycle: parsed.data.cycle,
-            startedAt: parsed.data.startedAt,
-          })
-        : await this.reconciliation.reconcilePendingCheckout(principal.workspaceId, {
-            tier: parsed.data.toTier,
-            cycle: parsed.data.cycle,
-            startedAt: parsed.data.startedAt,
-          });
-    return ok({ outcome });
+    if (parsed.data.attemptId)
+      return ok(
+        await this.reconciliation.reconcileDurableCheckout(
+          principal.workspaceId,
+          parsed.data.attemptId,
+        ),
+      );
+    if (parsed.data.kind === 'change') {
+      // The hint is what the caller AWAITS — it splits "nothing new"
+      // into confirmed-recorded vs change-never-happened (see the
+      // service doc; a hintless check stays neutral).
+      const outcome = await this.reconciliation.reconcileWorkspaceSubscriptions(
+        principal.workspaceId,
+        {
+          tier: parsed.data.toTier,
+          cycle: parsed.data.cycle,
+          startedAt: parsed.data.startedAt,
+        },
+      );
+      return ok({ outcome });
+    }
+    const { outcome, exact } = await this.reconciliation.reconcilePendingCheckoutDetailed(
+      principal.workspaceId,
+      {
+        tier: parsed.data.toTier,
+        cycle: parsed.data.cycle,
+        startedAt: parsed.data.startedAt,
+        offer: parsed.data.offer,
+      },
+    );
+    return ok({ outcome, exact });
   }
 
   /** POST /api/billing/cancel — D118 cancel at period end (no proration). */

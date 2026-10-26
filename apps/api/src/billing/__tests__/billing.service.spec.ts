@@ -13,7 +13,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { DrizzleDb } from '../../db/db.module.js';
@@ -96,6 +96,8 @@ describe('BillingService', () => {
   let db: DrizzleDb;
   let service: BillingService;
   let paddleCheckout: ReturnType<typeof vi.fn>;
+  let paddleReadAttempt: ReturnType<typeof vi.fn>;
+  let paddleStopAttempt: ReturnType<typeof vi.fn>;
   let paddleCancel: ReturnType<typeof vi.fn>;
   let paddleChangePlan: ReturnType<typeof vi.fn>;
   let paddlePreviewPlanChange: ReturnType<typeof vi.fn>;
@@ -147,7 +149,11 @@ describe('BillingService', () => {
     paddlePaymentMethodSession = vi
       .fn()
       .mockResolvedValue({ kind: 'url', url: 'https://paddle.example/portal' });
+    paddleReadAttempt = vi.fn();
+    paddleStopAttempt = vi.fn();
     const paddle = {
+      readCheckoutAttempt: paddleReadAttempt,
+      stopCheckoutAttempt: paddleStopAttempt,
       id: 'paddle',
       createCheckout: paddleCheckout,
       cancelSubscription: paddleCancel,
@@ -296,12 +302,187 @@ describe('BillingService', () => {
     expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
   });
 
+  describe('durable checkout attempts', () => {
+    afterEach(() => vi.unstubAllEnvs());
+    beforeEach(() => vi.stubEnv('BILLING_CHECKOUT_ATTEMPTS_ENABLED', 'true'));
+    const firstId = '11111111-1111-4111-8111-111111111111';
+    const nextId = '22222222-2222-4222-8222-222222222222';
+    const txn = 'txn_01abcdefghjkmnpqrstvwxyz12';
+    const request = {
+      tierId: 'plus' as const,
+      cycle: 'monthly' as const,
+      provider: 'paddle' as const,
+      attemptId: firstId,
+    };
+    function setupModern() {
+      vi.stubEnv('PADDLE_CLIENT_TOKEN', 'synthetic_client_token');
+      vi.stubEnv('PADDLE_ENV', 'sandbox');
+      paddleCheckout.mockResolvedValue({
+        provider: 'paddle',
+        kind: 'overlay',
+        transactionId: txn,
+        clientToken: 'synthetic_client_token',
+        environment: 'sandbox',
+      });
+      paddleReadAttempt.mockResolvedValue({
+        state: 'unpaid',
+        transactionId: txn,
+        subscriptionId: null,
+        customerId: null,
+      });
+    }
+    it('retries the same open attempt using the same transaction without another create', async () => {
+      setupModern();
+      await service.createCheckout(principal, request);
+      const result = await service.createCheckout(principal, request);
+      expect(result).toMatchObject({ attemptId: firstId, transactionId: txn });
+      expect(paddleCheckout).toHaveBeenCalledTimes(1);
+      await expect(
+        service.createCheckout(principal, { ...request, attemptId: nextId }),
+      ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+    });
+    it('rejects a stale cancellation before issuing a provider write', async () => {
+      setupModern();
+      vi.stubEnv('BILLING_CHECKOUT_CANCEL_ENABLED', 'true');
+      await service.createCheckout(principal, request);
+      await expect(
+        service.cancelCheckoutAttempt(principal.workspaceId, firstId, 0),
+      ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+      expect(paddleStopAttempt).not.toHaveBeenCalled();
+    });
+    it('requires cancellation readback before freeing the slot and retains its evidence', async () => {
+      setupModern();
+      vi.stubEnv('BILLING_CHECKOUT_CANCEL_ENABLED', 'true');
+      await service.createCheckout(principal, request);
+      const attempt = await service.getCheckoutAttempt(principal.workspaceId, firstId);
+      paddleReadAttempt
+        .mockResolvedValueOnce({ state: 'unpaid' })
+        .mockResolvedValueOnce({ state: 'stopped' });
+      expect(
+        (await service.cancelCheckoutAttempt(principal.workspaceId, firstId, attempt.version))
+          .state,
+      ).toBe('stopped');
+      paddleCheckout.mockResolvedValueOnce({
+        provider: 'paddle',
+        kind: 'overlay',
+        transactionId: 'txn_01abcdefghjkmnpqrstvwxyz13',
+        clientToken: 'synthetic_client_token',
+        environment: 'sandbox',
+      });
+      await service.createCheckout(principal, { ...request, attemptId: nextId });
+      await expect(
+        service.cancelCheckoutAttempt(principal.workspaceId, firstId, attempt.version),
+      ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+      expect((await service.getCheckoutAttempt(principal.workspaceId, nextId)).state).toBe('open');
+    });
+    it('a provider cancellation failure keeps the attempt held', async () => {
+      setupModern();
+      vi.stubEnv('BILLING_CHECKOUT_CANCEL_ENABLED', 'true');
+      await service.createCheckout(principal, request);
+      const attempt = await service.getCheckoutAttempt(principal.workspaceId, firstId);
+      paddleStopAttempt.mockRejectedValueOnce(new Error('response lost'));
+      await expect(
+        service.cancelCheckoutAttempt(principal.workspaceId, firstId, attempt.version),
+      ).rejects.toThrow();
+      expect((await service.getCheckoutAttempt(principal.workspaceId, firstId)).state).toBe(
+        'stopping',
+      );
+      await expect(
+        service.createCheckout(principal, { ...request, attemptId: nextId }),
+      ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+    });
+    it('rechecks eligibility after a webhook commits between the precheck and the workspace lock', async () => {
+      setupModern();
+      const transaction = db.transaction.bind(db);
+      const interleave = vi.spyOn(db, 'transaction').mockImplementationOnce(async (...args) => {
+        await db.insert(subscriptions).values({
+          workspaceId: principal.workspaceId,
+          provider: 'paddle',
+          providerSubscriptionId: 'sub_race',
+          tier: 'plus',
+          status: 'active',
+          billingCycle: 'monthly',
+          providerPriceId: CATALOG_ENTRIES[0]!.paddlePriceId!,
+        });
+        return transaction(...args);
+      });
+      await expect(service.createCheckout(principal, request)).rejects.toMatchObject({
+        code: 'SUBSCRIPTION_EXISTS',
+      });
+      expect(paddleCheckout).not.toHaveBeenCalled();
+      interleave.mockRestore();
+    });
+    it('a delayed create response cannot reopen a recovered stopped attempt or disturb a newer slot', async () => {
+      setupModern();
+      const { billingCheckoutAttempts } = await import('@declutrmail/db');
+      paddleCheckout.mockImplementationOnce(async () => {
+        await db
+          .update(billingCheckoutAttempts)
+          .set({ providerTransactionId: txn, state: 'stopped', stoppedAt: new Date(), version: 3 })
+          .where(eq(billingCheckoutAttempts.id, firstId));
+        await db.insert(billingCheckoutAttempts).values({
+          id: nextId,
+          workspaceId: principal.workspaceId,
+          provider: 'paddle',
+          tier: 'plus',
+          cycle: 'monthly',
+          providerPriceId: CATALOG_ENTRIES[0]!.paddlePriceId!,
+          currencyCode: 'USD',
+          state: 'open',
+          providerTransactionId: 'txn_01abcdefghjkmnpqrstvwxyz13',
+        });
+        return {
+          provider: 'paddle',
+          kind: 'overlay',
+          transactionId: txn,
+          clientToken: 'synthetic_client_token',
+          environment: 'sandbox',
+        };
+      });
+      await expect(service.createCheckout(principal, request)).rejects.toMatchObject({
+        code: 'CHECKOUT_IN_FLIGHT',
+      });
+      expect((await service.getCheckoutAttempt(principal.workspaceId, firstId)).state).toBe(
+        'stopped',
+      );
+      expect((await service.getCheckoutAttempt(principal.workspaceId, nextId)).state).toBe('open');
+    });
+    it('holds an ambiguous provider create across elapsed time and never creates a replacement', async () => {
+      paddleCheckout.mockRejectedValueOnce(new Error('accepted request; response lost'));
+      await expect(
+        service.createCheckout(principal, {
+          tierId: 'plus',
+          cycle: 'monthly',
+          provider: 'paddle',
+          attemptId: '11111111-1111-4111-8111-111111111111',
+        }),
+      ).rejects.toThrow();
+      const { billingCheckoutAttempts } = await import('@declutrmail/db');
+      const [attempt] = await db.select().from(billingCheckoutAttempts);
+      expect(attempt).toMatchObject({ state: 'unknown', providerTransactionId: null });
+      await db.update(billingCheckoutAttempts).set({ createdAt: new Date(0) });
+      await expect(
+        service.createCheckout(principal, {
+          tierId: 'plus',
+          cycle: 'monthly',
+          provider: 'paddle',
+          attemptId: '22222222-2222-4222-8222-222222222222',
+        }),
+      ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+      expect(paddleCheckout).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('retains every attempt when a claim is released or replaced after expiry', async () => {
     const dto = { tierId: 'plus', cycle: 'monthly', provider: 'paddle' } as const;
     await service.createCheckout(principal, dto);
-    await service.releasePendingCheckout(principal.workspaceId);
+    await db
+      .delete(pendingCheckouts)
+      .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
     await service.createCheckout(principal, dto);
-    await db.update(pendingCheckouts).set({ expiresAt: new Date(0) });
+    await db
+      .delete(pendingCheckouts)
+      .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
     await service.createCheckout(principal, dto);
     const attempts = await db
       .select()
@@ -309,6 +490,125 @@ describe('BillingService', () => {
       .where(eq(subscriptionEvents.eventType, 'local.checkout_attempted'));
     expect(attempts).toHaveLength(3);
     expect(new Set(attempts.map((row) => row.providerEventId)).size).toBe(3);
+  });
+
+  describe('naming the Paddle transaction on the claim (D249 follow-up)', () => {
+    const TXN = 'txn_01ky067arw41802a6ssessknxh';
+    const dto = { tierId: 'plus', cycle: 'monthly', provider: 'paddle' } as const;
+
+    it('stores the server-created transaction id on THIS claim and writes no ledger artifact', async () => {
+      await service.createCheckout(principal, dto);
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBe(TXN);
+      // Account deletion's guard reads `local.checkout_artifact`; the stash
+      // must not widen what that guard sees.
+      expect(
+        await db
+          .select()
+          .from(subscriptionEvents)
+          .where(eq(subscriptionEvents.eventType, 'local.checkout_artifact')),
+      ).toHaveLength(0);
+    });
+
+    it('stores it for a Backlog Pass too', async () => {
+      vi.stubEnv('PRICING_V2', 'true');
+      vi.stubEnv('BILLING_PASS_ENABLED', 'true');
+      vi.stubEnv('PADDLE_ENV', 'production');
+      vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
+      vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_01m4ss18n1c9r5s9p973tef9v2');
+      try {
+        await service.createCheckout(principal, {
+          tierId: 'plus',
+          cycle: 'annual',
+          provider: 'paddle',
+          offer: 'pass_onetime',
+        });
+        const [claim] = await db.select().from(pendingCheckouts);
+        expect(claim).toMatchObject({ offer: 'pass_onetime', providerRef: TXN });
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
+    it('a re-claim after release starts without the earlier attempt’s transaction', async () => {
+      await service.createCheckout(principal, dto);
+      await db
+        .delete(pendingCheckouts)
+        .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
+      paddleCheckout.mockResolvedValueOnce({
+        provider: 'paddle',
+        kind: 'overlay',
+        transactionId: 'txn_01aaaaaaaaaaaaaaaaaaaaaaaa',
+        clientToken: 'test_tok',
+        environment: 'sandbox',
+      });
+      await service.createCheckout(principal, dto);
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBe('txn_01aaaaaaaaaaaaaaaaaaaaaaaa');
+    });
+
+    it('never stamps a transaction onto a claim it did not create', async () => {
+      // The provider call returns while a DIFFERENT claim now owns the
+      // slot (released and re-claimed in between). The earlier attempt's
+      // transaction must not label the newer claim — it would turn an
+      // unpaid transaction into exact evidence about a checkout that may
+      // be paid.
+      paddleCheckout.mockImplementationOnce(async () => {
+        await db.delete(pendingCheckouts);
+        await db.insert(pendingCheckouts).values({
+          workspaceId: principal.workspaceId,
+          provider: 'paddle',
+          tier: 'plus',
+          billingCycle: 'monthly',
+          expiresAt: new Date(Date.now() + 30 * 60_000),
+        });
+        return {
+          provider: 'paddle',
+          kind: 'overlay',
+          transactionId: TXN,
+          clientToken: 'test_tok',
+          environment: 'sandbox',
+        };
+      });
+      await service.createCheckout(principal, dto);
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBeNull();
+    });
+
+    it('finds its own claim even when the stashing session reads timestamps in another time zone', async () => {
+      // Two connections need not share a time zone, and a timestamptz's
+      // text form follows it. The claim's identity must not.
+      paddleCheckout.mockImplementationOnce(async () => {
+        await db.execute(sql`set time zone 'Asia/Kolkata'`);
+        return {
+          provider: 'paddle',
+          kind: 'overlay',
+          transactionId: TXN,
+          clientToken: 'test_tok',
+          environment: 'sandbox',
+        };
+      });
+      await service.createCheckout(principal, dto);
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBe(TXN);
+    });
+
+    it('a failed stash never fails the checkout — reconciliation just falls back', async () => {
+      const original = db.update.bind(db);
+      const failing = vi.spyOn(db, 'update').mockImplementation(((table: unknown) => {
+        if (table === pendingCheckouts) throw new Error('stash write refused');
+        return original(table as never);
+      }) as never);
+      try {
+        await expect(service.createCheckout(principal, dto)).resolves.toMatchObject({
+          transactionId: TXN,
+        });
+      } finally {
+        failing.mockRestore();
+      }
+      const [claim] = await db.select().from(pendingCheckouts);
+      expect(claim!.providerRef).toBeNull();
+    });
   });
 
   it('checkout resolves the catalog price, records billing_region, delegates to the adapter', async () => {
@@ -345,7 +645,9 @@ describe('BillingService', () => {
     vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
     vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_india_pass');
     try {
-      await service.releasePendingCheckout(principal.workspaceId);
+      await db
+        .delete(pendingCheckouts)
+        .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
       await service.createCheckout(
         principal,
         { tierId: 'plus', cycle: 'annual', provider: 'paddle', country: 'US' },
@@ -367,7 +669,9 @@ describe('BillingService', () => {
     vi.stubEnv('PRICING_V2', 'true');
     vi.stubEnv('PADDLE_ENV', 'production');
     try {
-      await service.releasePendingCheckout(principal.workspaceId);
+      await db
+        .delete(pendingCheckouts)
+        .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
       await service.createCheckout(
         principal,
         { tierId: 'plus', cycle: 'annual', provider: 'paddle', country: 'US' },
@@ -382,7 +686,9 @@ describe('BillingService', () => {
       );
 
       vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
-      await service.releasePendingCheckout(principal.workspaceId);
+      await db
+        .delete(pendingCheckouts)
+        .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
       await service.createCheckout(
         principal,
         { tierId: 'plus', cycle: 'annual', provider: 'paddle' },
@@ -436,22 +742,20 @@ describe('BillingService', () => {
     expect(paddleCheckout).toHaveBeenCalledTimes(1);
   });
 
-  it('an EXPIRED claim is reclaimable — abandoned checkouts self-heal at the TTL', async () => {
+  it('an expired legacy claim stays held until its provider artifact is resolved', async () => {
     await service.createCheckout(principal, {
       tierId: 'plus',
       cycle: 'monthly',
       provider: 'paddle',
     });
-    await db
-      .update(pendingCheckouts)
-      .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
-    await service.createCheckout(principal, {
-      tierId: 'plus',
-      cycle: 'monthly',
-      provider: 'paddle',
+    await db.update(pendingCheckouts).set({ expiresAt: new Date(0) });
+    await expect(
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+    expect(paddleCheckout).toHaveBeenCalledTimes(1);
+    expect((await service.getSubscription(principal.workspaceId)).pendingCheckout).toMatchObject({
+      legacyUnresolved: true,
     });
-    expect(paddleCheckout).toHaveBeenCalledTimes(2);
   });
 
   it('a provider failure KEEPS the claim — an ambiguous outcome may be payable provider-side', async () => {
@@ -471,7 +775,9 @@ describe('BillingService', () => {
     expect(paddleCheckout).toHaveBeenCalledTimes(1);
 
     // The user-asserted release is the recovery path — then retry wins.
-    await service.releasePendingCheckout(principal.workspaceId);
+    await db
+      .delete(pendingCheckouts)
+      .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
     await service.createCheckout(principal, {
       tierId: 'plus',
       cycle: 'monthly',
@@ -480,19 +786,20 @@ describe('BillingService', () => {
     expect(paddleCheckout).toHaveBeenCalledTimes(2);
   });
 
-  it('releasePendingCheckout clears the claim (the user-asserted "no charge" path)', async () => {
+  it('releasePendingCheckout refuses a legacy assertion and preserves the checkout evidence', async () => {
     await service.createCheckout(principal, {
       tierId: 'plus',
       cycle: 'monthly',
       provider: 'paddle',
     });
-    await service.releasePendingCheckout(principal.workspaceId);
-    await service.createCheckout(principal, {
-      tierId: 'pro',
-      cycle: 'annual',
-      provider: 'paddle',
+    await expect(service.releasePendingCheckout(principal.workspaceId)).rejects.toMatchObject({
+      code: 'CHECKOUT_IN_FLIGHT',
     });
-    expect(paddleCheckout).toHaveBeenCalledTimes(2);
+    await expect(
+      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+    ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
+    expect(paddleCheckout).toHaveBeenCalledTimes(1);
+    expect(await db.select().from(pendingCheckouts)).toHaveLength(1);
   });
 
   it('refuses new INR checkout before catalog resolution, claims or provider side effects', async () => {
@@ -554,7 +861,9 @@ describe('BillingService', () => {
         await expect(service.createCheckout(principal, dto)).rejects.toMatchObject({
           code: 'BILLING_PROVIDER_ERROR',
         });
-        await service.releasePendingCheckout(principal.workspaceId);
+        await db
+          .delete(pendingCheckouts)
+          .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
       }
       paddleCheckout.mockResolvedValue({
         provider: 'paddle',
@@ -619,7 +928,9 @@ describe('BillingService', () => {
         expect(session).toEqual(locked);
         expect(session).not.toHaveProperty('priceId');
         expect(session).not.toHaveProperty('customData');
-        await service.releasePendingCheckout(principal.workspaceId);
+        await db
+          .delete(pendingCheckouts)
+          .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
       }
       expect(razorpayCheckout).not.toHaveBeenCalled();
     } finally {

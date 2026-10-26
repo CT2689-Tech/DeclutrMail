@@ -23,6 +23,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
+  billingCheckoutAttempts,
   accountDeletionRequests,
   billingCustomers,
   entitlementGrants,
@@ -49,6 +50,15 @@ import type {
   PlanChangeRequest,
 } from '@declutrmail/shared/contracts';
 
+import { selectPaddleCheckoutPrice } from '@declutrmail/shared/entitlements';
+import {
+  assertNoLegacyCheckout,
+  checkoutAttemptView,
+  checkoutCancellationEnabled,
+  durableCheckoutEnabled,
+  findCheckoutAttempt,
+  lockCheckoutWorkspace,
+} from './checkout-attempts.js';
 import { AppException } from '../common/app-exception.js';
 import { highestLiveGrantForWorkspace } from '../common/entitlements/entitlement-grants.js';
 import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
@@ -120,47 +130,12 @@ export class BillingService {
     return provider === 'paddle' ? this.paddle : this.razorpay;
   }
 
-  async createCheckout(
-    principal: { userId: string; workspaceId: string },
-    dto: CheckoutRequest,
-    trustedCountry: string | null = null,
-  ): Promise<CheckoutSession> {
-    if (isPricingV2() && (dto.tierId === 'pro' || dto.promo === 'foundingPro')) {
-      throw new AppException({
-        code: 'PLAN_NOT_PURCHASABLE',
-        message: proNotPurchasableMessage(),
-      });
-    }
-    if (isPricingV2() && dto.provider === 'razorpay' && !RAILS.razorpay.enabled) {
-      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
-    }
-    const pass = dto.offer === 'pass_onetime';
-    if (pass) {
-      if (!isBillingPassEnabled() || dto.provider !== 'paddle' || !this.catalog.passPaddlePriceId) {
-        throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
-      }
-    }
-    // Launch pricing sells Plus annual and the Pass. Monthly is not a
-    // new checkout, including when a client still sends cycle=monthly.
-    if (isPricingV2() && !pass && dto.cycle === 'monthly') {
-      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
-    }
-    // One subscription per workspace at a time — plan CHANGES are a
-    // provider-side update flow (D120), not a second checkout.
-    //
-    // A PAUSED blocker gets its own code. Both are refusals, but they need
-    // different next steps, and `SUBSCRIPTION_EXISTS` claims the account
-    // "already has an ACTIVE subscription" — false for a paused row, and
-    // exactly the assert-what-you-don't-know defect this codebase keeps
-    // hitting. It also left a real trap (sandbox smoke 2026-07-29): a paused
-    // Razorpay subscriber cannot resume (`RESUME_UNSUPPORTED` — the rail has
-    // no no-charge resume), cannot change plan (`PLAN_CHANGE_UNSUPPORTED`),
-    // and was told only that they already had an "active" subscription. The
-    // exit does exist — cancel, then subscribe again, which Razorpay's
-    // adapter fully supports — so the fix is to SAY so rather than to loosen
-    // the guard. Loosening it would let a second live subscription start
-    // while the provider could still resume the paused one.
-    const [existing] = await this.db
+  private async assertCheckoutEligible(
+    workspaceId: string,
+    pass: boolean,
+    executor: Pick<DrizzleDb, 'select'> = this.db,
+  ): Promise<void> {
+    const [existing] = await executor
       .select({
         id: subscriptions.id,
         status: subscriptions.status,
@@ -173,7 +148,7 @@ export class BillingService {
       .from(subscriptions)
       .where(
         and(
-          eq(subscriptions.workspaceId, principal.workspaceId),
+          eq(subscriptions.workspaceId, workspaceId),
           inArray(subscriptions.status, ['active', 'past_due', 'paused']),
         ),
       )
@@ -215,6 +190,49 @@ export class BillingService {
             : 'SUBSCRIPTION_EXISTS',
       });
     }
+  }
+
+  async createCheckout(
+    principal: { userId: string; workspaceId: string },
+    dto: CheckoutRequest,
+    trustedCountry: string | null = null,
+  ): Promise<CheckoutSession> {
+    if (isPricingV2() && (dto.tierId === 'pro' || dto.promo === 'foundingPro')) {
+      throw new AppException({
+        code: 'PLAN_NOT_PURCHASABLE',
+        message: proNotPurchasableMessage(),
+      });
+    }
+    if (isPricingV2() && dto.provider === 'razorpay' && !RAILS.razorpay.enabled) {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    const pass = dto.offer === 'pass_onetime';
+    if (pass) {
+      if (!isBillingPassEnabled() || dto.provider !== 'paddle' || !this.catalog.passPaddlePriceId) {
+        throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+      }
+    }
+    // Launch pricing sells Plus annual and the Pass. Monthly is not a
+    // new checkout, including when a client still sends cycle=monthly.
+    if (isPricingV2() && !pass && dto.cycle === 'monthly') {
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    }
+    // One subscription per workspace at a time — plan CHANGES are a
+    // provider-side update flow (D120), not a second checkout.
+    //
+    // A PAUSED blocker gets its own code. Both are refusals, but they need
+    // different next steps, and `SUBSCRIPTION_EXISTS` claims the account
+    // "already has an ACTIVE subscription" — false for a paused row, and
+    // exactly the assert-what-you-don't-know defect this codebase keeps
+    // hitting. It also left a real trap (sandbox smoke 2026-07-29): a paused
+    // Razorpay subscriber cannot resume (`RESUME_UNSUPPORTED` — the rail has
+    // no no-charge resume), cannot change plan (`PLAN_CHANGE_UNSUPPORTED`),
+    // and was told only that they already had an "active" subscription. The
+    // exit does exist — cancel, then subscribe again, which Razorpay's
+    // adapter fully supports — so the fix is to SAY so rather than to loosen
+    // the guard. Loosening it would let a second live subscription start
+    // while the provider could still resume the paused one.
+    await this.assertCheckoutEligible(principal.workspaceId, pass);
 
     // Razorpay stays closed for new purchases. Paddle's currency is
     // chosen in the adapter from `trustedCountry`, which is the verified
@@ -255,17 +273,13 @@ export class BillingService {
       throw new AppException({ code: 'UNAUTHORIZED' });
     }
 
-    // ATOMIC cross-device claim (Codex stop-review 2026-07-29). The
-    // SELECT-then-throw above closes the subscription-exists case but
-    // not the in-flight one: two devices opening checkout inside the
-    // read window both used to reach the provider, and both could
-    // complete — the 0051 index then made the second charge LOUD, not
-    // prevented. This upsert claims the workspace's single pending slot
-    // in one statement: it wins iff no row exists (INSERT) or the
-    // existing row is expired (the conditional DO UPDATE). Zero rows
-    // back = someone else's unexpired claim → refuse BEFORE any
-    // provider session exists. The claim precedes the provider call on
-    // purpose; a provider failure releases it below.
+    if (durableCheckoutEnabled() && dto.provider === 'paddle') {
+      return this.createDurableCheckout(principal, dto, priceId, user.email, trustedCountry);
+    }
+
+    // Legacy checkout retains one workspace slot before the provider call.
+    // Neither expiry nor a customer assertion proves that an external artifact
+    // stopped accepting payment, so an existing unresolved slot is never reclaimed.
     const attemptId = `local_checkout_${randomUUID()}`;
     const claimed = await this.db.transaction(async (tx) => {
       await tx
@@ -274,6 +288,9 @@ export class BillingService {
         .where(eq(workspaces.id, principal.workspaceId))
         .for('update');
       await this.assertNoDeletion(principal.workspaceId, tx);
+      await this.assertCheckoutEligible(principal.workspaceId, pass, tx);
+      if (await findCheckoutAttempt(tx, principal.workspaceId))
+        throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
       if (!(await this.checkoutSetupComplete(principal.workspaceId, principal.userId, tx))) {
         throw new AppException({ code: 'CHECKOUT_SETUP_REQUIRED' });
       }
@@ -305,9 +322,18 @@ export class BillingService {
             createdAt: new Date(),
             expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
           },
-          setWhere: sql`${pendingCheckouts.expiresAt} < now()`,
+          setWhere: sql`false`,
         })
-        .returning({ workspaceId: pendingCheckouts.workspaceId });
+        .returning({
+          workspaceId: pendingCheckouts.workspaceId,
+          // Epoch seconds as text, not a Date and not a timestamp's own text:
+          // the insert path stamps microseconds, which a JS Date would round
+          // to milliseconds, and a timestamptz's text form follows the
+          // session time zone, which two connections need not share. Epoch
+          // text is exact and zone-free. Identifies THIS claim for the
+          // stash below.
+          claimStamp: sql<string>`extract(epoch from ${pendingCheckouts.createdAt})::text`,
+        });
       if (claim.length > 0)
         await tx.insert(subscriptionEvents).values({
           provider: dto.provider,
@@ -366,13 +392,10 @@ export class BillingService {
       // PAYABLE from the provider's own emailed authorization link —
       // outside our FE entirely. Auto-releasing on that ambiguity
       // reopened checkout for attempt #2 while #1 could still be paid:
-      // the exact double-charge this claim exists to prevent. The two
-      // honest reopeners are the 30-minute TTL and the user's explicit
-      // "I checked — no charge" assertion (DELETE /billing/checkout/
-      // pending) — a human or a horizon, never an inference from an
-      // unknown outcome.
+      // the exact double-charge this claim exists to prevent. Keep the
+      // unresolved legacy claim until provider-backed recovery resolves it.
       this.logger.error(
-        `billing.checkout.create_failed workspace=${principal.workspaceId} provider=${dto.provider} claim_held=true — claim reopens via TTL or user release only`,
+        `billing.checkout.create_failed workspace=${principal.workspaceId} provider=${dto.provider} claim_held=true`,
       );
       throw err;
     }
@@ -408,6 +431,32 @@ export class BillingService {
       }
     }
 
+    // A Paddle checkout is a transaction the server has already created
+    // (`session.transactionId`). Naming it on the claim lets
+    // reconciliation ask Paddle about THIS checkout exactly instead of
+    // searching by email. Claim row only — no ledger event, so account
+    // deletion's artifact guard is unchanged. Written only onto the claim
+    // this call created, so a released-and-reclaimed slot can never carry
+    // an earlier attempt's transaction. Best-effort: a failed write only
+    // means reconciliation falls back to what it did before.
+    if (session.provider === 'paddle' && session.transactionId) {
+      try {
+        await this.db
+          .update(pendingCheckouts)
+          .set({ providerRef: session.transactionId })
+          .where(
+            and(
+              eq(pendingCheckouts.workspaceId, principal.workspaceId),
+              sql`extract(epoch from ${pendingCheckouts.createdAt})::text = ${claimed[0]!.claimStamp}`,
+            ),
+          );
+      } catch (err) {
+        this.logger.warn(
+          `billing.checkout.provider_ref_stash_failed workspace=${principal.workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     this.logger.log(
       `billing.checkout_created workspace=${principal.workspaceId} provider=${dto.provider} tier=${dto.tierId} cycle=${dto.cycle} founding=${founding}`,
     );
@@ -420,14 +469,280 @@ export class BillingService {
     return session;
   }
 
-  /**
-   * User-asserted release of the pending-checkout claim ("I checked —
-   * no charge went through"), mirroring the FE's local-lock release.
-   * Idempotent; also the recovery path when CHECKOUT_IN_FLIGHT blocks a
-   * retry after an abandoned session. If a payment DID complete
-   * despite the assertion, the webhook grant still lands — the claim
-   * gates checkout opening, never payment processing.
-   */
+  private async createDurableCheckout(
+    principal: { userId: string; workspaceId: string },
+    dto: CheckoutRequest,
+    priceId: string,
+    email: string,
+    trustedCountry: string | null,
+  ): Promise<CheckoutSession> {
+    const id = dto.attemptId ?? randomUUID();
+    const country =
+      trustedCountry === 'IN' && !indiaPaddlePricesConfigured() ? null : trustedCountry;
+    const checkoutCode: PaddleCheckoutCode =
+      dto.offer === 'pass_onetime'
+        ? 'pass_onetime'
+        : isPricingV2() && dto.tierId === 'plus' && dto.cycle === 'annual'
+          ? 'plus_annual'
+          : 'other';
+    const selected = selectPaddleCheckoutPrice(process.env, {
+      usdPriceId: priceId,
+      code: checkoutCode,
+      trustedCountry: country,
+    });
+    const reserved = await this.db.transaction(async (tx) => {
+      await lockCheckoutWorkspace(tx, principal.workspaceId);
+      await this.assertNoDeletion(principal.workspaceId, tx);
+      await this.assertCheckoutEligible(principal.workspaceId, dto.offer === 'pass_onetime', tx);
+      if (!(await this.checkoutSetupComplete(principal.workspaceId, principal.userId, tx)))
+        throw new AppException({ code: 'CHECKOUT_SETUP_REQUIRED' });
+      const same = await findCheckoutAttempt(tx, principal.workspaceId, id);
+      if (same) {
+        if (
+          same.providerPriceId !== selected.priceId ||
+          same.currencyCode !== selected.currency ||
+          same.offer !== (dto.offer ?? null) ||
+          same.state !== 'open'
+        )
+          throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+        return { row: same, created: false };
+      }
+      if (await findCheckoutAttempt(tx, principal.workspaceId))
+        throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+      await assertNoLegacyCheckout(tx, principal.workspaceId);
+      const [row] = await tx
+        .insert(billingCheckoutAttempts)
+        .values({
+          id,
+          workspaceId: principal.workspaceId,
+          tier: dto.tierId,
+          cycle: dto.cycle,
+          offer: dto.offer ?? null,
+          providerPriceId: selected.priceId,
+          currencyCode: selected.currency,
+        })
+        .returning();
+      await tx.insert(subscriptionEvents).values({
+        provider: 'paddle',
+        providerEventId: `local_checkout_${id}`,
+        eventType: 'local.checkout_attempted',
+        payload: { workspaceId: principal.workspaceId },
+        processedAt: new Date(),
+      });
+      await tx
+        .update(users)
+        .set({ billingRegion: 'international' })
+        .where(eq(users.id, principal.userId));
+      return { row: row!, created: true };
+    });
+    if (!reserved.created)
+      return this.resumeCheckoutAttempt(principal.workspaceId, id, reserved.row.version);
+    try {
+      const session = await this.paddle.createCheckout({
+        workspaceId: principal.workspaceId,
+        userEmail: email,
+        tierId: dto.tierId,
+        cycle: dto.cycle,
+        providerPriceId: priceId,
+        trustedCountry: country,
+        checkoutCode,
+        checkoutAttemptId: id,
+        ...(dto.offer ? { checkoutOffer: dto.offer } : {}),
+      });
+      if (
+        session.provider !== 'paddle' ||
+        !session.transactionId ||
+        session.priceId ||
+        session.customData
+      )
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      const boundState = await this.db.transaction(async (tx) => {
+        await lockCheckoutWorkspace(tx, principal.workspaceId);
+        const row = await findCheckoutAttempt(tx, principal.workspaceId, id);
+        if (
+          !row ||
+          (row.providerTransactionId && row.providerTransactionId !== session.transactionId)
+        )
+          throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+        const other = await tx
+          .select({ id: billingCheckoutAttempts.id })
+          .from(billingCheckoutAttempts)
+          .where(
+            and(
+              eq(billingCheckoutAttempts.workspaceId, principal.workspaceId),
+              sql`${billingCheckoutAttempts.id} <> ${id}::uuid`,
+              inArray(billingCheckoutAttempts.state, [
+                'creating',
+                'open',
+                'payment_in_progress',
+                'stopping',
+                'paid',
+                'unknown',
+              ]),
+            ),
+          )
+          .limit(1);
+        const nextState =
+          row.providerTransactionId ||
+          row.paidAt ||
+          (row.state !== 'creating' && row.state !== 'unknown')
+            ? row.state
+            : other.length
+              ? 'unknown'
+              : 'open';
+        await tx
+          .update(billingCheckoutAttempts)
+          .set({
+            providerTransactionId: session.transactionId,
+            state: nextState,
+            updatedAt: new Date(),
+            version: row.version + 1,
+          })
+          .where(
+            and(
+              eq(billingCheckoutAttempts.id, id),
+              eq(billingCheckoutAttempts.version, row.version),
+            ),
+          );
+        return nextState;
+      });
+      if (boundState !== 'open') throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+      return { ...session, attemptId: id };
+    } catch (error) {
+      await this.db
+        .update(billingCheckoutAttempts)
+        .set({
+          state: 'unknown',
+          updatedAt: new Date(),
+          version: sql`${billingCheckoutAttempts.version} + 1`,
+        })
+        .where(
+          and(eq(billingCheckoutAttempts.id, id), eq(billingCheckoutAttempts.state, 'creating')),
+        );
+      throw error;
+    }
+  }
+
+  async getCheckoutAttempt(workspaceId: string, id: string) {
+    if (!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id))
+      throw new AppException({ code: 'BAD_REQUEST' });
+    const row = await findCheckoutAttempt(this.db, workspaceId, id);
+    if (!row) throw new AppException({ code: 'NOT_FOUND' });
+    return checkoutAttemptView(row);
+  }
+
+  async resumeCheckoutAttempt(
+    workspaceId: string,
+    id: string,
+    version: number,
+  ): Promise<CheckoutSession> {
+    if (!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id))
+      throw new AppException({ code: 'BAD_REQUEST' });
+    const row = await findCheckoutAttempt(this.db, workspaceId, id);
+    if (!row) throw new AppException({ code: 'NOT_FOUND' });
+    if (row.version !== version || row.state !== 'open' || row.paidAt || !row.providerTransactionId)
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    const facts = await this.paddle.readCheckoutAttempt(row.providerTransactionId, row);
+    if (!facts || facts.state !== 'unpaid') throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    await this.db.transaction(async (tx) => {
+      await lockCheckoutWorkspace(tx, workspaceId);
+      await this.assertNoDeletion(workspaceId, tx);
+      await this.assertCheckoutEligible(workspaceId, row.offer === 'pass_onetime', tx);
+      const latest = await findCheckoutAttempt(tx, workspaceId, id);
+      const others = await tx
+        .select({ id: billingCheckoutAttempts.id })
+        .from(billingCheckoutAttempts)
+        .where(
+          and(
+            eq(billingCheckoutAttempts.workspaceId, workspaceId),
+            sql`${billingCheckoutAttempts.id} <> ${id}::uuid`,
+            inArray(billingCheckoutAttempts.state, [
+              'creating',
+              'open',
+              'payment_in_progress',
+              'stopping',
+              'paid',
+              'unknown',
+            ]),
+          ),
+        )
+        .limit(1);
+      if (
+        !latest ||
+        latest.version !== version ||
+        latest.paidAt ||
+        latest.state !== 'open' ||
+        others.length
+      )
+        throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    });
+    if (!process.env.PADDLE_CLIENT_TOKEN)
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    return {
+      provider: 'paddle',
+      kind: 'overlay',
+      attemptId: id,
+      transactionId: row.providerTransactionId,
+      clientToken: process.env.PADDLE_CLIENT_TOKEN,
+      environment: process.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox',
+    };
+  }
+
+  async cancelCheckoutAttempt(workspaceId: string, id: string, version: number) {
+    if (!checkoutCancellationEnabled()) throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    if (!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id))
+      throw new AppException({ code: 'BAD_REQUEST' });
+    const row = await findCheckoutAttempt(this.db, workspaceId, id);
+    if (!row) throw new AppException({ code: 'NOT_FOUND' });
+    if (
+      row.version !== version ||
+      row.paidAt ||
+      (row.state !== 'open' && row.state !== 'stopping') ||
+      !row.providerTransactionId
+    )
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    const facts = await this.paddle.readCheckoutAttempt(row.providerTransactionId, row);
+    if (!facts || facts.state !== 'unpaid') throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    const claimed = await this.db.transaction(async (tx) => {
+      await lockCheckoutWorkspace(tx, workspaceId);
+      return tx
+        .update(billingCheckoutAttempts)
+        .set({ state: 'stopping', version: version + 1, updatedAt: new Date() })
+        .where(
+          and(
+            eq(billingCheckoutAttempts.id, id),
+            eq(billingCheckoutAttempts.workspaceId, workspaceId),
+            eq(billingCheckoutAttempts.version, version),
+            inArray(billingCheckoutAttempts.state, ['open', 'stopping']),
+            sql`${billingCheckoutAttempts.paidAt} is null`,
+          ),
+        )
+        .returning();
+    });
+    if (!claimed.length) throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    await this.paddle.stopCheckoutAttempt(row.providerTransactionId);
+    const stopped = await this.paddle.readCheckoutAttempt(row.providerTransactionId, row);
+    if (!stopped || stopped.state !== 'stopped')
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    const [confirmed] = await this.db
+      .update(billingCheckoutAttempts)
+      .set({ state: 'stopped', stoppedAt: new Date(), updatedAt: new Date(), version: version + 2 })
+      .where(
+        and(
+          eq(billingCheckoutAttempts.id, id),
+          eq(billingCheckoutAttempts.version, version + 1),
+          sql`${billingCheckoutAttempts.paidAt} is null`,
+        ),
+      )
+      .returning();
+    if (!confirmed) {
+      const latest = await findCheckoutAttempt(this.db, workspaceId, id);
+      if (latest?.state === 'stopped' && !latest.paidAt) return checkoutAttemptView(latest);
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    }
+    return checkoutAttemptView(confirmed);
+  }
+
   private async assertNoDeletion(
     workspaceId: string,
     db: Pick<DrizzleDb, 'select'> = this.db,
@@ -446,8 +761,21 @@ export class BillingService {
     if (deletion) throw new AppException({ code: 'CHECKOUT_DELETION_PENDING' });
   }
 
-  async releasePendingCheckout(workspaceId: string): Promise<void> {
-    await this.db.delete(pendingCheckouts).where(eq(pendingCheckouts.workspaceId, workspaceId));
+  async releasePendingCheckout(
+    workspaceId: string,
+    attemptId?: string,
+    version?: number,
+  ): Promise<void> {
+    // A customer assertion or elapsed timeout cannot revoke a payable provider artifact.
+    if (!attemptId) throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    const attempt = await findCheckoutAttempt(this.db, workspaceId, attemptId);
+    if (
+      !attempt ||
+      attempt.version !== version ||
+      (attempt.state !== 'stopped' && attempt.state !== 'fulfilled')
+    )
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    // The retained attempt is the receipt; there is no workspace-wide DELETE.
   }
 
   async getSubscription(workspaceId: string): Promise<BillingSubscription> {
@@ -482,10 +810,8 @@ export class BillingService {
       .orderBy(desc(subscriptions.updatedAt));
     const sub = rows.find((r) => r.status === 'active' || r.status === 'past_due') ?? rows[0];
 
-    // 0051 cross-device pending checkout: serve only while unexpired
-    // AND no granting subscription exists — once the webhook grants,
-    // the row is deleted, but the guard here means a race can never
-    // show "payment in flight" beside an active plan.
+    // Legacy claims remain visible after their original display horizon.
+    // An unrelated complimentary grant does not prove purchase completion.
     const [pending] = await this.db
       .select()
       .from(pendingCheckouts)
@@ -493,15 +819,15 @@ export class BillingService {
       .limit(1);
     const hasGranting = rows.some((r) => r.status === 'active' || r.status === 'past_due');
     const pendingCheckout =
-      pending &&
-      !hasGranting &&
-      pending.expiresAt.getTime() > Date.now() &&
-      (pending.tier === 'plus' || pending.tier === 'pro')
+      pending && !hasGranting && (pending.tier === 'plus' || pending.tier === 'pro')
         ? {
             provider: pending.provider,
             tier: pending.tier,
             cycle: pending.billingCycle,
             expiresAt: pending.expiresAt.toISOString(),
+            legacyUnresolved: true,
+            ...(pending.offer === 'pass_onetime' ? { offer: pending.offer as 'pass_onetime' } : {}),
+            createdAt: pending.createdAt.toISOString(),
           }
         : null;
 
@@ -526,7 +852,17 @@ export class BillingService {
     const indiaPlusId =
       sub?.provider === 'paddle' ? indiaPaddlePriceId(process.env, 'plus_annual') : null;
     const chargedInIndia = indiaPlusId != null && sub?.providerPriceId === indiaPlusId;
+    const latestAttempt = await this.db
+      .select()
+      .from(billingCheckoutAttempts)
+      .where(eq(billingCheckoutAttempts.workspaceId, workspaceId))
+      .orderBy(desc(billingCheckoutAttempts.createdAt))
+      .limit(1)
+      .then(([row]) => row ?? null);
     return {
+      ...(durableCheckoutEnabled() || latestAttempt
+        ? { checkoutAttempt: latestAttempt ? checkoutAttemptView(latestAttempt) : null }
+        : {}),
       checkoutSetupComplete: await this.checkoutSetupComplete(workspaceId),
       ...(billingReviewPending ? { billingReviewPending: true } : {}),
       tier: ws.tier,

@@ -129,7 +129,7 @@ describe('runBillingReconciliationSweep', () => {
     expect(ws!.tier).toBe('pro');
   });
 
-  it('clears claims expired >7 days; RETAINS freshly-expired ones (stale-lock reconciliation)', async () => {
+  it('retains unresolved checkout references regardless of local expiry', async () => {
     // D249 (Codex 2026-07-30): a freshly-expired claim is no longer
     // deleted — its provider_ref is the only exact link a stale
     // browser lock has to a still-payable Razorpay artifact. Expiry
@@ -164,9 +164,9 @@ describe('runBillingReconciliationSweep', () => {
     ]);
 
     const result = await runBillingReconciliationSweep(db, autopilot);
-    expect(result.pendingCheckoutsCleared).toBe(1);
+    expect(result.pendingCheckoutsCleared).toBe(0);
     const remaining = await db.select().from(pendingCheckouts);
-    expect(remaining.map((r) => r.workspaceId).sort()).toEqual([wsFresh, wsLive].sort());
+    expect(remaining.map((r) => r.workspaceId).sort()).toEqual([wsOld, wsFresh, wsLive].sort());
     // The retained expired row still carries the reconciliation link.
     expect(remaining.find((r) => r.workspaceId === wsFresh)!.providerRef).toBe(
       'sub_stale_lock_link',
