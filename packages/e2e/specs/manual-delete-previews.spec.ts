@@ -8,6 +8,7 @@ import { expectScreenMounted } from '../helpers/screen-ready';
 
 test.use({ storageState: { cookies: [], origins: [] }, viewport: { width: 1280, height: 900 } });
 let sql: postgres.Sql;
+let previousPreferences: unknown = {};
 const emptySender = {
   id: 'e2000000-0000-4000-8000-000000000031',
   key: 'empty-preview@synthetic.test',
@@ -22,6 +23,12 @@ const archivedSender = {
 test.beforeAll(async () => {
   sql = dbConnect();
   await applyJourneySeed(sql);
+  const [user] = await sql<
+    { preferences: unknown }[]
+  >`SELECT preferences FROM users WHERE id = ${BILLING_SEED.userId}`;
+  previousPreferences = user?.preferences ?? {};
+  await sql`UPDATE users SET preferences = jsonb_set(COALESCE(preferences, '{}'::jsonb), '{actionSheetPrefs}', '{"archive":false,"unsubscribe":false,"later":false}'::jsonb, true) WHERE id = ${BILLING_SEED.userId}`;
+
   for (const sender of [emptySender, archivedSender]) {
     await sql`INSERT INTO senders (id, mailbox_account_id, sender_key, display_name, email, domain, gmail_category, total_received, first_seen_at, last_seen_at, unsubscribe_method, unsubscribe_url)
       VALUES (${sender.id}, ${BILLING_SEED.mailboxId}, ${sender.key}, ${sender.name}, ${sender.key}, 'synthetic.test', 'updates', 0, now(), now(), 'one_click', 'https://newsletter.synthetic.test/unsubscribe')
@@ -44,6 +51,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!sql) return;
   try {
+    await sql`UPDATE users SET preferences = ${JSON.stringify(previousPreferences)}::jsonb WHERE id = ${BILLING_SEED.userId}`;
     await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND provider_message_id = 'e2e-empty-preview-archived'`;
     for (const sender of [emptySender, archivedSender]) {
       await sql`DELETE FROM triage_decisions WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${sender.key}`;
