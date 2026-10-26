@@ -20,7 +20,7 @@ const files = [
   ['journey-recovery', 4],
   ['unsubscribe-backlog', 4],
   ['home-next-step', 1],
-  ['manual-delete-previews', 2],
+  ['manual-delete-previews', 4],
 ];
 function report() {
   return {
@@ -78,5 +78,14 @@ test('missing the manual Delete preview matrix cannot pass the journey gate', ()
   body.suites[0].specs = body.suites[0].specs.filter(
     (spec) => !spec.file.endsWith('/manual-delete-previews.spec.ts'),
   );
+  assert.notEqual(check(body), 0);
+});
+
+test('missing either genuinely empty Triage presentation cannot pass the journey gate', () => {
+  const body = report();
+  const index = body.suites[0].specs.findIndex((spec) =>
+    spec.file.endsWith('/manual-delete-previews.spec.ts'),
+  );
+  body.suites[0].specs.splice(index, 1);
   assert.notEqual(check(body), 0);
 });
