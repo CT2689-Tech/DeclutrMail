@@ -170,3 +170,17 @@ late payment races are impossible. The authenticated DeclutrMail app, background
 worker, subscription offer and production activation remain unverified. The
 overlapping PR heads #1131 and #1139 were rechecked on October 26 and remained
 open at the same commits recorded above; neither was edited, merged or deployed.
+
+## Current-main integration check — October 26, 2026
+
+Fetched main at `459f47c7`, seven commits after this branch's base, including
+#1155's billing-page simplification. A disposable combined tree (`9d962e91`)
+had no textual merge conflicts. On that tree, 490 billing UI tests passed, API
+and web typechecks passed, the Next.js production build completed, Storybook
+built, and all 49 route bundle budgets passed. Vitest printed two socket-reset
+diagnostics while reporting no failed billing test. In Codex's built-in browser,
+the combined complimentary-plan billing story rendered the paid-subscription
+notice, Pro Complimentary card and collapsed purchase-options section together.
+This was a local integration check; it did not update this branch, push a PR,
+deploy or verify production. The complete authenticated checkout journey on the
+combined tree remains a release gate.
