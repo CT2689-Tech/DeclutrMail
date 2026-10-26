@@ -95,3 +95,31 @@ table missing from the schema inventory test, and a support-address omission;
 these were fixed. One shared-suite retry hit its glossary scanner timeout under
 concurrent builds; rerunning with one worker passed. No product test assertions
 were weakened to permit uncertain payment release.
+
+## Continued sandbox access check — October 26, 2026
+
+The previously authorized read-only Paddle sandbox Keychain credential still works.
+A direct read of the exact October 24 synthetic Backlog Pass transaction returned
+HTTP 200: `completed`, API origin, one USD item, one `captured` payment and no
+subscription. An earlier known canceled checkout returned HTTP 200: `canceled`,
+web origin, one item and an empty payments list. These are historical provider
+records and confirm the response shapes used by the adapter; neither record
+contains the new versioned attempt binding. No provider write or new payment was
+performed.
+
+No Paddle provider tools are exposed in this chat. The working local credential
+has six read permissions and no writes; the configured GitHub Sandbox API-key
+secret was last updated July 20 and was recorded expired in the October 24 access
+audit. The current session has no sandbox write key. This prevents a real checkout,
+owned transaction cancellation/replay, signed webhook and refund rehearsal on the
+new code. The flags remain off. A temporary sandbox-only write key, stored in an
+approved credential store, is needed before that verification can finish. Never
+copy a key into chat, reports or repository files.
+
+The authenticated built-in browser also opened DeclutrMail's Paddle **Test mode**
+Authentication page. The historical rehearsal keys are revoked, the July shared
+key is expired, and the October 24 invoice key is read-only. An older active
+sandbox key with write permissions exists in the account, but its value is masked
+and is not available in this task's credential stores; it was not rotated,
+revealed or reused. The blank New API key form is open for a human credential
+handoff. No form values were entered and no key was created.
