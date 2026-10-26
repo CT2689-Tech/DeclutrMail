@@ -126,6 +126,8 @@ export const AutopilotPreviewSampleSchema = z
     inboxCount: z.number().int().nonnegative().optional(),
     /** Matcher's human-readable branch label ("Read rate 2%, last seen 120d ago"). */
     reason: z.string(),
+    /** Standing Unsubscribe policy excludes this historical match from a new rule request. */
+    ineligibleReason: z.literal('unsubscribe_policy_recorded').optional(),
   })
   .strict();
 export type AutopilotPreviewSample = z.infer<typeof AutopilotPreviewSampleSchema>;

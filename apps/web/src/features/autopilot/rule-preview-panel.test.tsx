@@ -16,6 +16,35 @@ const dormant = {
   reason: 'Read rate 0% across all 1586 messages, last seen 128d ago',
 };
 
+it.each(['list', 'table'] as const)(
+  'labels only the historical Unsubscribe row with a recorded exclusion in the %s preview',
+  (layout) => {
+    render(
+      <RulePreviewSample
+        ruleName="Synthetic Unsubscribe rule"
+        result={{
+          ...RULE_PREVIEW_RESULT,
+          sample: [
+            { ...dormant, ineligibleReason: 'unsubscribe_policy_recorded' },
+            { ...dormant, senderKey: 'eligible-sender', senderName: 'Eligible Newsletter' },
+          ],
+        }}
+        layout={layout}
+      />,
+    );
+    const rowTag = layout === 'list' ? 'li' : 'tr';
+    const excludedRow = screen.getByText('Synthetic Newsletter').closest(rowTag);
+    const eligibleRow = screen.getByText('Eligible Newsletter').closest(rowTag);
+    expect(excludedRow).not.toBeNull();
+    expect(eligibleRow).not.toBeNull();
+    expect(within(excludedRow!).getByText('Unsubscribe already selected')).toBeInTheDocument();
+    expect(
+      within(eligibleRow!).queryByText('Unsubscribe already selected'),
+    ).not.toBeInTheDocument();
+    expect(within(excludedRow!).queryByText(/acts on those/)).not.toBeInTheDocument();
+  },
+);
+
 it('keeps the lifetime evidence and full identity in structured sender columns', () => {
   render(
     <RulePreviewSample
@@ -124,7 +153,7 @@ it.each([
   ['archive', 'no Inbox email to Archive'],
   ['later', 'no Inbox email to move to Later'],
   ['delete', 'no email in this rule’s scope to Delete'],
-  ['unsubscribe', 'already unsubscribed'],
+  ['unsubscribe', 'already have Unsubscribe selected'],
 ] as const)(
   'explains the non-actionable subset for %s without treating protection as the cause',
   (actionKind, reason) => {
@@ -173,7 +202,7 @@ it('does not infer action ineligibility from an empty sample or unknown Inbox co
   );
   expect(screen.getByText(/1 sender is eligible for Unsubscribe/)).toBeInTheDocument();
   expect(screen.getByText(/No sample senders available/)).toBeInTheDocument();
-  expect(screen.queryByText(/no Inbox|already unsubscribed/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/no Inbox|Unsubscribe selected/)).not.toBeInTheDocument();
   view.rerender(
     <RulePreviewPanel
       ruleName="Synthetic Unsubscribe rule"

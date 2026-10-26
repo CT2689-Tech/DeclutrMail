@@ -216,7 +216,7 @@ export function RulePreviewExclusions({
   if (excluded <= 0) return null;
   const exclusion =
     actionKind === 'unsubscribe'
-      ? `${excluded === 1 ? 'is' : 'are'} already unsubscribed`
+      ? `${excluded === 1 ? 'already has' : 'already have'} Unsubscribe selected`
       : actionKind === 'delete'
         ? `${excluded === 1 ? 'has' : 'have'} no email in this rule’s scope to Delete`
         : `${excluded === 1 ? 'has' : 'have'} no Inbox email to ${actionKind === 'archive' ? 'Archive' : 'move to Later'}`;
@@ -307,6 +307,18 @@ export function RulePreviewSample({
                   {identity.source === 'name' && sender.senderEmail != null && (
                     <span className="dm-autopilot-sender-email">{sender.senderEmail}</span>
                   )}
+                  {sender.ineligibleReason === 'unsubscribe_policy_recorded' && (
+                    <span
+                      style={{
+                        display: 'block',
+                        fontSize: text.xs,
+                        fontWeight: 400,
+                        color: color.fgMuted,
+                      }}
+                    >
+                      Unsubscribe already selected
+                    </span>
+                  )}
                 </th>
                 {structured && evidence ? (
                   <>
@@ -385,6 +397,11 @@ export function RulePreviewSample({
                 {identity.source === 'name' && s.senderEmail != null && (
                   <span style={{ ...ellipsis, fontSize: text.xs, color: color.fgMuted }}>
                     {s.senderEmail}
+                  </span>
+                )}
+                {s.ineligibleReason === 'unsubscribe_policy_recorded' && (
+                  <span style={{ fontSize: text.xs, color: color.fgMuted }}>
+                    Unsubscribe already selected
                   </span>
                 )}
                 {s.inboxCount != null && (
