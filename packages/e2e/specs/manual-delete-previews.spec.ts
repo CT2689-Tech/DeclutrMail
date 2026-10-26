@@ -262,7 +262,7 @@ test('empty Senders and Triage Delete previews explain location or no current ma
   expect(labels).toMatchObject({ n: 1, trash: 0 });
 });
 
-/** No worker runs in this serial, isolated harness, so every action-state row is stable. */
+/** Navigation records mailboxVisits; all other preferences and action-state rows stay stable. */
 async function emptyTriageActionState() {
   const [state] = await sql`
     SELECT
@@ -273,7 +273,7 @@ async function emptyTriageActionState() {
       (SELECT md5(COALESCE(jsonb_agg(to_jsonb(a) ORDER BY id), '[]'::jsonb)::text) FROM activity_log a WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}) AS activity,
       (SELECT md5(COALESCE(jsonb_agg(to_jsonb(p) ORDER BY id), '[]'::jsonb)::text) FROM sender_policies p WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}) AS policies,
       (SELECT md5(COALESCE(jsonb_agg(to_jsonb(d) ORDER BY id), '[]'::jsonb)::text) FROM triage_decisions d WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}) AS decisions,
-      (SELECT preferences FROM users WHERE id = ${BILLING_SEED.userId}) AS preferences
+      (SELECT COALESCE(preferences, '{}'::jsonb) - 'mailboxVisits' FROM users WHERE id = ${BILLING_SEED.userId}) AS preferences
   `;
   expect(state).toBeDefined();
   expect(state!.empty_messages).toBe(0);
