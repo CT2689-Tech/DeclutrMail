@@ -85,7 +85,7 @@ const steps = [
   { kind: 'later_due' as const, senderCount: 3, senderIds: ['c'] },
 ];
 
-/** Details starts closed; expand it to inspect history and report facts. */
+/** Overview sections remain visible across desktop and phone widths. */
 export const Full: Story<typeof HomeView> = {
   args: {
     state: ready,
@@ -236,5 +236,30 @@ export const ReconnectWhileReady: Story<typeof HomeView> = {
       title: 'Reconnect Gmail to continue.',
       action: { label: 'Open Settings', href: '/settings#mailboxes' },
     },
+  },
+};
+
+/** Exercises wrapping without changing the source or meaning of any metric. */
+export const LongSenderNames: Story<typeof HomeView> = {
+  args: {
+    ...Full.args,
+    mailboxEmail: 'alex.with.a.long.account.name@synthetic.test',
+    nextSteps: [
+      {
+        kind: 'unsub_archive',
+        senderCount: 1,
+        emailCount: 2400,
+        senderIds: ['a'],
+        senders: [
+          {
+            id: 'a',
+            name: 'The exceptionally long weekly product and community newsletter',
+            domain: 'newsletter.synthetic.test',
+            inboxCount: 2400,
+            readRate: 0.02,
+          },
+        ],
+      },
+    ],
   },
 };

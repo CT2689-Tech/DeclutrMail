@@ -487,3 +487,7 @@ Relates to D159 and D160.
 ## Home Action overview — 2026-10-25
 
 Relates to D198, D200 and D210. The approved Home composition now exposes a bounded sender shortlist, capability-gated attention queues, windowed Activity results, complete automation states, and mailbox insights. A workspace-authorized snapshot read aggregates all scanned inbound metadata, independently of sender pagination. See `docs/execution/home-action-overview-2026-10-25.md` for scope, state coverage, independent review and local verification. This entry does not assert deployment or production provider execution.
+
+### 2026-10-25 — Home visual sharpening (Relates to D198, D210)
+
+Founder-approved presentation pass after accepting the Action overview data. Sharpened hierarchy, sender/count contrast, typography, phone CTA and result/snapshot surfaces without changing data or action behavior. Added long-name story and preview theme parity. Local tests, build/budgets and independent visual review recorded in `docs/execution/home-visual-sharpen-2026-10-25.md`. No D status reclassified.

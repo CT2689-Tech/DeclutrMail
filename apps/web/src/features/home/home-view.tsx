@@ -189,12 +189,14 @@ export function HomeView({
                       </p>
                     )}
                   <SenderRows step={primary} />
-                  {canPreview ? (
-                    <PreviewButton onClick={() => openPreview(primary)} />
-                  ) : (
-                    <PrimaryLink action={{ label: 'Review senders', href: '/senders' }} />
-                  )}
-                  <p className={styles.footnote}>Review the exact scope before confirming.</p>
+                  <div className={styles.previewActions}>
+                    {canPreview ? (
+                      <PreviewButton onClick={() => openPreview(primary)} />
+                    ) : (
+                      <PrimaryLink action={{ label: 'Review senders', href: '/senders' }} />
+                    )}
+                    <p className={styles.footnote}>Review the exact scope before confirming.</p>
+                  </div>
                   {report && report.fix.sendersCount > primary.senderCount && (
                     <Link href="/senders#inbox-report" className={styles.textLink}>
                       View {format(report.fix.sendersCount)} suggested senders

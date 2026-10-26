@@ -94,6 +94,18 @@ export function HomePreview({ state }: { state: HomePreviewState }) {
             report={state === 'full' || state === 'no-size' ? reportFixture : null}
             newSenders={{ status: 'ready', data: 12 }}
             later={{ status: 'ready', data: { due: 3, troubled: 0, nextAt: null } }}
+            mailboxEmail="alex@synthetic.test"
+            statusLine={
+              state === 'failed'
+                ? 'Scan needs attention'
+                : state === 'reconnect'
+                  ? 'Gmail needs reconnect'
+                  : state === 'queued'
+                    ? 'Scan queued'
+                    : state === 'syncing'
+                      ? 'Scan in progress'
+                      : 'Gmail connected · Last scanned 3m ago'
+            }
             tier="pro"
             mailboxId="mb-preview"
             previewReport={homePreviewReport(state)}
