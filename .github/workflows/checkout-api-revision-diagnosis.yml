@@ -45,3 +45,23 @@ jobs:
             --format='json(timestamp,severity,textPayload,jsonPayload.message)' \
             | jq '[.[] | {timestamp, severity, textPayload, message: .jsonPayload.message}]' \
             || echo 'System log read unavailable; revision conditions remain available above.'
+      - name: Read bounded redacted startup errors
+        run: |
+          set -euo pipefail
+          gcloud logging read \
+            "resource.type=cloud_run_revision AND resource.labels.service_name=declutrmail-api AND resource.labels.revision_name=$REVISION AND severity>=ERROR" \
+            --project="$PROJECT" --freshness=3h --limit=30 \
+            --format='json(timestamp,severity,textPayload,jsonPayload.kind,jsonPayload.message)' \
+            | jq '[.[] | {
+                timestamp,
+                severity,
+                kind: .jsonPayload.kind,
+                message: ((.jsonPayload.message // .textPayload // "")
+                  | tostring
+                  | gsub("postgres(ql)?://[^[:space:]]+"; "[redacted-dsn]")
+                  | gsub("Bearer[[:space:]]+[^[:space:]]+"; "Bearer [redacted]")
+                  | gsub("(?i)(api[_-]?key|token|secret|password)[=:][^[:space:],}]+"; "[redacted]")
+                  | gsub("pdl_[A-Za-z0-9_]+"; "[redacted]")
+                  | .[:600])
+              }]' \
+            || echo 'Application error log read unavailable.'
