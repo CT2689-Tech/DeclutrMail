@@ -95,6 +95,9 @@ const paint = (choice: Locator) =>
 const settlePaint = (page: Page) =>
   page.evaluate(async () => {
     await document.fonts.ready;
+    // Flush pending theme/style changes before collecting their animations.
+    getComputedStyle(document.body).getPropertyValue('background-color');
+    document.body.getBoundingClientRect();
     await Promise.all(
       document.getAnimations().map((animation) => animation.finished.catch(() => {})),
     );
@@ -102,6 +105,28 @@ const settlePaint = (page: Page) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
     );
   });
+
+const settledScreenshot = async (page: Page, name: string) => {
+  await settlePaint(page);
+  let previous = await page.screenshot({ animations: 'disabled' });
+  for (let attempt = 1; attempt < 6; attempt++) {
+    await settlePaint(page);
+    const current = await page.screenshot({ animations: 'disabled' });
+    if (current.equals(previous)) return current;
+    if (attempt === 5) {
+      await test.info().attach(`${name}-previous-paint`, {
+        body: previous,
+        contentType: 'image/png',
+      });
+      await test.info().attach(`${name}-latest-paint`, {
+        body: current,
+        contentType: 'image/png',
+      });
+    }
+    previous = current;
+  }
+  throw new Error(`${name} paint did not settle within six consecutive captures`);
+};
 
 for (const width of [320, 375, 1280]) {
   for (const screen of ['goals', 'presets']) {
@@ -157,14 +182,12 @@ for (const width of [320, 375, 1280]) {
       await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'));
       await expect.poll(() => paint(selected)).toMatchObject({ background: 'rgb(48, 42, 50)' });
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(30, 26, 33)');
-      // Computed RGB values can round to their target before a theme
-      // transition finishes. Wait for its paint before comparing exact PNGs;
-      // screenshot's temporary animation disabling can otherwise race repaint.
-      await settlePaint(page);
-      const darkWithStyles = await page.screenshot({ animations: 'disabled' });
+      // Computed colors and two animation frames do not guarantee settled
+      // rounded-edge rasterization. Require exact stability within each state,
+      // then preserve the exact comparison across stylesheet changes.
+      const darkWithStyles = await settledScreenshot(page, 'dark-with-app-styles');
       await page.evaluate(() => document.querySelector<HTMLStyleElement>('#app-styles')!.remove());
-      await settlePaint(page);
-      const darkWithoutStyles = await page.screenshot({ animations: 'disabled' });
+      const darkWithoutStyles = await settledScreenshot(page, 'dark-without-app-styles');
       if (!darkWithoutStyles.equals(darkWithStyles)) {
         await test.info().attach('dark-with-app-styles', {
           body: darkWithStyles,
@@ -189,13 +212,20 @@ for (const width of [320, 375, 1280]) {
       await page.evaluate(() => document.querySelector('#dm-app-theme')!.remove());
       await expect.poll(() => paint(selected)).toMatchObject({ background: 'rgb(255, 252, 248)' });
       await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(246, 242, 235)');
-      await settlePaint(page);
-      const publicWithStyles = await page.screenshot({ animations: 'disabled' });
+      const publicWithStyles = await settledScreenshot(page, 'public-with-app-styles');
       await page.evaluate(() => document.querySelector('#app-styles')!.remove());
-      await settlePaint(page);
-      expect((await page.screenshot({ animations: 'disabled' })).equals(publicWithStyles)).toBe(
-        true,
-      );
+      const publicWithoutStyles = await settledScreenshot(page, 'public-without-app-styles');
+      if (!publicWithoutStyles.equals(publicWithStyles)) {
+        await test.info().attach('public-with-app-styles', {
+          body: publicWithStyles,
+          contentType: 'image/png',
+        });
+        await test.info().attach('public-without-app-styles', {
+          body: publicWithoutStyles,
+          contentType: 'image/png',
+        });
+      }
+      expect(publicWithoutStyles.equals(publicWithStyles)).toBe(true);
       expect(errors).toEqual([]);
     });
   }
