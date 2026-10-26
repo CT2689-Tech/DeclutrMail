@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-26",
-  "snapshot_ts": "2026-10-26T00:00:32Z",
+  "snapshot_ts": "2026-10-26T12:08:39Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -8,13 +8,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-25T23:58:34.802193Z",
-            "name": "declutrmail-api-00979-jij"
+            "creationTimestamp": "2026-10-26T07:45:54.857638Z",
+            "name": "declutrmail-api-00993-dig"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:5fbe7e31d3e81df8ffdef147a32cc02f99cab87272768614848e1217f35991ec"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:f68943c52d812d66464112556458ccdcb1e00b1bb3ab545a296e8f58028bbe16"
               }
             ]
           },
@@ -181,7 +181,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-api-00979-jij"
+              "revisionName": "declutrmail-api-00993-dig"
             }
           ]
         }
@@ -192,13 +192,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-10-25T23:57:09.316244Z",
-            "name": "declutrmail-worker-00288-qr6"
+            "creationTimestamp": "2026-10-26T07:44:25.643063Z",
+            "name": "declutrmail-worker-00293-p7t"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:5fbe7e31d3e81df8ffdef147a32cc02f99cab87272768614848e1217f35991ec"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:f68943c52d812d66464112556458ccdcb1e00b1bb3ab545a296e8f58028bbe16"
               }
             ]
           },
@@ -359,7 +359,7 @@
           "traffic": [
             {
               "percent": 100,
-              "revisionName": "declutrmail-worker-00288-qr6"
+              "revisionName": "declutrmail-worker-00293-p7t"
             }
           ]
         }
