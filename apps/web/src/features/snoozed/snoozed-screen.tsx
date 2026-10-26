@@ -1,5 +1,7 @@
 'use client';
 
+import workspaceAppearance from '@/features/theme/workspace-appearance.module.css';
+
 import {
   editorialColumnStyle,
   editorialTitleStyle,
@@ -43,7 +45,7 @@ import {
   type WakeBucket,
 } from './snooze-times';
 
-const { color, font, radius, text } = tokens;
+const { color, font, text } = tokens;
 
 /** The D82 preset id recorded on `snooze_set` (D159). */
 type SnoozePresetEventId = EventPayloads['snooze_set']['preset'];
@@ -171,7 +173,7 @@ function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined 
         ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
-        gap: 32,
+        gap: 24,
       }}
     >
       <EditorialKicker>Catch up</EditorialKicker>
@@ -226,7 +228,11 @@ function SnoozedScreenContents({ initialNow }: { initialNow: number | undefined 
           <style>{flatRowCss('dm-later-row')}</style>
           {/* One parent keeps each sender's draft, focus, and mutation observer
               mounted when the account calendar moves it to another bucket. */}
-          <ul aria-label="Later senders" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+          <ul
+            aria-label="Later senders"
+            className={workspaceAppearance.panel}
+            style={{ listStyle: 'none', margin: 0 }}
+          >
             {WAKE_BUCKETS.filter((bucket) => grouped[bucket].length > 0).flatMap(
               (bucket, index) => [
                 <BucketHeading
@@ -290,18 +296,7 @@ function BucketHeading({
         }}
       >
         {WAKE_BUCKET_LABELS[bucket]}
-        <span
-          style={{
-            ...tokens.typography.rowCount,
-            color: color.fgSoft,
-            background: color.fill,
-            borderRadius: radius.pill,
-            padding: '2px 8px',
-            alignSelf: 'center',
-          }}
-        >
-          {count}
-        </span>
+        <span className={workspaceAppearance.countBadge}>{count}</span>
       </h2>
     </li>
   );
@@ -458,11 +453,12 @@ export function SnoozedRow({
           ) : null}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, whiteSpace: 'nowrap' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, whiteSpace: 'nowrap' }}>
           <Button
             tone="default"
             size="sm"
             disabled={waking || wake.isPending}
+            style={isMobile ? { flex: '1 1 140px', minHeight: 44 } : {}}
             onClick={() => setPanel(panel === 'snooze-menu' ? 'closed' : 'snooze-menu')}
           >
             Change return time
@@ -471,6 +467,7 @@ export function SnoozedRow({
             tone="default"
             size="sm"
             disabled={waking || wake.isPending}
+            style={isMobile ? { flex: '1 1 140px', minHeight: 44 } : {}}
             onClick={() => setPanel(panel === 'confirm-wake' ? 'closed' : 'confirm-wake')}
           >
             Bring back now

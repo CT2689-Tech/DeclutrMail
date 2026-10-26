@@ -3167,7 +3167,9 @@ function SendersScreenContent({
               </div>
             ) : null}
           </header>
-          <AiInlinePrompt />
+          <div className={workspaceStyles.wideNotice}>
+            <AiInlinePrompt />
+          </div>
           <div className={workspaceStyles.listColumn}>
             <section
               aria-label="Sender search and filters"

@@ -147,7 +147,7 @@ export function RuleCard({
           <span
             style={{
               fontSize: libraryRow ? text.md : text.lg,
-              fontWeight: 500,
+              fontWeight: 600,
               color: color.fg,
               overflowWrap: 'anywhere',
             }}

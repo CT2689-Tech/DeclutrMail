@@ -6,12 +6,24 @@
 // with unresolved variables — visually broken in a way that looks like
 // a component bug rather than a missing stylesheet.
 import '@declutrmail/shared/tokens.css';
+import '../src/features/theme/app-light-theme.css';
+import workspaceAppearance from '../src/features/theme/workspace-appearance.module.css';
 
 import type { Preview } from '@storybook/nextjs-vite';
 import { createElement, useEffect, type ReactNode } from 'react';
 
 // Theme the document so overlays/portals use the same tokens as each story.
-function ThemePreview({ theme, children }: { theme: string; children: ReactNode }) {
+function ThemePreview({
+  theme,
+  workspace,
+  appTheme,
+  children,
+}: {
+  theme: string;
+  workspace: boolean;
+  appTheme: boolean;
+  children: ReactNode;
+}) {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
@@ -25,7 +37,15 @@ function ThemePreview({ theme, children }: { theme: string; children: ReactNode 
         fontFamily: 'var(--dm-font-sans)',
       },
     },
-    children,
+    appTheme ? createElement('span', { id: 'dm-app-theme', hidden: true }) : null,
+    createElement(
+      'div',
+      {
+        className: workspaceAppearance.content,
+        'data-workspace-appearance': workspace ? '' : undefined,
+      },
+      children,
+    ),
   );
 }
 
@@ -41,6 +61,13 @@ const preview: Preview = {
     (Story, context) =>
       createElement(ThemePreview, {
         theme: context.globals.theme === 'dark' ? 'dark' : 'light',
+        workspace: /^(Senders|Autopilot|Features\/(Activity|Brief|Followups|Later|Senders))\//.test(
+          context.title,
+        ),
+        appTheme:
+          /^(Home|Senders|Autopilot|Features\/(Activity|Brief|Followups|Later|Senders))\//.test(
+            context.title,
+          ),
         children: createElement(Story),
       }),
   ],

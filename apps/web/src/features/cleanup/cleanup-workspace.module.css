@@ -12,7 +12,8 @@
   min-height: 44px;
   border-bottom: 2px solid transparent;
   color: var(--dm-fg-muted);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
   text-decoration: none;
 }
 .views a:hover {
@@ -23,6 +24,11 @@
   color: var(--dm-fg);
 }
 .views span {
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--dm-primary-soft);
+  color: var(--dm-fg);
+  border-radius: 8px;
+  padding: 4px 8px;
   font-variant-numeric: tabular-nums;
 }
