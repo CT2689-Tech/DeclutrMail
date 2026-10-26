@@ -135,6 +135,119 @@ test('smoke requires real dependencies and canonical unauthenticated error, not 
     /readyz/,
   );
 });
+test('smoke retries a timed-out read with a fresh deadline and bounded delay', async () => {
+  const calls = [],
+    delays = [],
+    logs = [];
+  const replies = [
+    [200, { status: 'ok' }],
+    [200, { status: 'ok', checks: { database: 'ok', redis: 'ok' } }],
+    [401, { error: { code: 'UNAUTHORIZED' } }],
+  ];
+  await smokeApi(
+    'https://candidate.run.app',
+    async (url, options) => {
+      calls.push({ path: url.pathname, signal: options.signal });
+      assert.equal(options.method, 'GET');
+      if (calls.length === 1) throw new DOMException('private diagnostic', 'TimeoutError');
+      const [status, body] = replies.shift();
+      return { status, json: async () => body };
+    },
+    { sleep: async (ms) => delays.push(ms), log: (message) => logs.push(message) },
+  );
+  assert.deepEqual(
+    calls.map((c) => c.path),
+    ['/api/healthz', '/api/healthz', '/api/readyz', '/api/auth/me'],
+  );
+  assert.notEqual(calls[0].signal, calls[1].signal);
+  assert.deepEqual(delays, [1000]);
+  assert.match(logs.join('\n'), /healthz.*1\/3/);
+  assert.doesNotMatch(logs.join('\n'), /private diagnostic/);
+});
+test('persistent timeout stops after three GETs and identifies the endpoint', async () => {
+  let calls = 0;
+  const delays = [];
+  await assert.rejects(
+    smokeApi(
+      'https://candidate.run.app',
+      async () => {
+        calls++;
+        throw new DOMException('private diagnostic', 'TimeoutError');
+      },
+      { sleep: async (ms) => delays.push(ms), log() {} },
+    ),
+    /timed out at \/api\/healthz after 3 attempts/,
+  );
+  assert.equal(calls, 3);
+  assert.deepEqual(delays, [1000, 1000]);
+});
+test('a timeout while reading the body gets the same bounded recovery', async () => {
+  let calls = 0;
+  await smokeApi(
+    'https://candidate.run.app',
+    async () => {
+      calls++;
+      return {
+        status: calls < 4 ? 200 : 401,
+        json: async () => {
+          if (calls === 1) throw new DOMException('private diagnostic', 'TimeoutError');
+          if (calls === 2) return { status: 'ok' };
+          if (calls === 3) return { status: 'ok', checks: { database: 'ok', redis: 'ok' } };
+          return { error: { code: 'UNAUTHORIZED' } };
+        },
+      };
+    },
+    { sleep: async () => {}, log() {} },
+  );
+  assert.equal(calls, 4);
+});
+test('unhealthy, malformed and unexpected transport failures fail immediately without retry', async () => {
+  for (const kind of ['unhealthy', 'malformed', 'network', 'null']) {
+    let calls = 0;
+    const delays = [];
+    await assert.rejects(
+      smokeApi(
+        'https://candidate.run.app',
+        async () => {
+          calls++;
+          if (kind === 'network') throw new TypeError('private diagnostic');
+          return {
+            status: kind === 'unhealthy' ? 503 : 200,
+            json: async () => {
+              if (kind === 'unhealthy') assert.fail('Bad HTTP status must fail before body read');
+              if (kind === 'malformed') throw new SyntaxError('private diagnostic');
+              return null;
+            },
+          };
+        },
+        { sleep: async (ms) => delays.push(ms), log() {} },
+      ),
+      (error) => {
+        assert.match(error.message, /\/api\/healthz/);
+        assert.doesNotMatch(error.message, /private diagnostic/);
+        return true;
+      },
+    );
+    assert.equal(calls, 1);
+    assert.deepEqual(delays, []);
+  }
+});
+test('post-promotion persistent probe timeout still restores traffic before tag cleanup', async () => {
+  const h = harness();
+  h.options.smoke = async (url) => {
+    if (url.includes('candidate')) return;
+    await smokeApi(
+      url,
+      async () => {
+        throw new DOMException('deadline', 'TimeoutError');
+      },
+      { sleep: async () => {}, log() {} },
+    );
+  };
+  await assert.rejects(deployApi(h.options), /timed out at \/api\/healthz after 3 attempts/);
+  assert.ok(h.calls.some((c) => c.includes(`--to-revisions=${old}=100`)));
+  assert.ok(h.calls.at(-1).includes('--remove-tags=verify-test'));
+});
 test('workflow gates worker boot through HTTP, preserves production OAuth identity, and uses API helper', () => {
   const workflow = readFileSync(
     new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),

@@ -97,7 +97,11 @@ function deploymentDriver(args) {
   return databaseDriver(values[0].slice('API_DB_DRIVER='.length));
 }
 
-export async function smokeApi(url, request = fetch) {
+export async function smokeApi(
+  url,
+  request = fetch,
+  { sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), log = console.log } = {},
+) {
   const checks = [
     ['/api/healthz', 200, (body) => body.status === 'ok'],
     [
@@ -109,18 +113,32 @@ export async function smokeApi(url, request = fetch) {
     ['/api/auth/me', 401, (body) => body.error?.code === 'UNAUTHORIZED'],
   ];
   for (const [path, status, validate] of checks) {
-    const response = await request(new URL(path, url), {
-      redirect: 'error',
-      signal: AbortSignal.timeout(10000),
-    });
-    let body;
-    try {
-      body = await response.json();
-    } catch {
-      throw new Error(`API smoke returned non-JSON at ${path}`);
+    // Only deadline failures of these read-only probes are retried. A response
+    // with unhealthy dependencies, wrong auth behavior or bad JSON fails closed.
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const signal = AbortSignal.timeout(10000);
+      let response, body;
+      try {
+        response = await request(new URL(path, url), { method: 'GET', redirect: 'error', signal });
+        if (response.status === status) body = await response.json();
+      } catch (error) {
+        if (signal.aborted || error?.name === 'TimeoutError') {
+          if (attempt === 3)
+            throw new Error(`API smoke timed out at ${path} after 3 attempts (10s each)`);
+          log(`API smoke timeout at ${path} (attempt ${attempt}/3); retrying read-only check`);
+          await sleep(1000);
+          continue;
+        }
+        throw new Error(
+          response
+            ? `API smoke returned non-JSON at ${path}`
+            : `API smoke request failed at ${path}`,
+        );
+      }
+      if (response.status !== status || !body || !validate(body))
+        throw new Error(`API smoke failed at ${path} (HTTP ${response.status})`);
+      break;
     }
-    if (response.status !== status || !validate(body))
-      throw new Error(`API smoke failed at ${path} (HTTP ${response.status})`);
   }
 }
 
@@ -170,6 +188,7 @@ export async function deployApi({
     }
     if ((await revisionDriver(candidate.revisionName, scope, run)) !== driver)
       throw new Error('Staged API driver differs from deployment manifest');
+    log(`Checking candidate API smoke for ${candidate.revisionName}`);
     await smoke(candidate.url);
     if (trafficAssignment(await describe()) !== rollback)
       throw new Error('Serving traffic changed during smoke; refusing promotion');
@@ -179,6 +198,7 @@ export async function deployApi({
     const promoted = await describe();
     if (trafficAssignment(promoted) !== `${candidate.revisionName}=100`)
       throw new Error('Candidate promotion was not confirmed');
+    log(`Checking promoted API smoke for ${candidate.revisionName}`);
     await smoke(promoted.status.url);
     log(`Verified and promoted ${candidate.revisionName}`);
   } catch (error) {
