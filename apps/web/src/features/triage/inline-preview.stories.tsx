@@ -15,6 +15,10 @@
 // Keep is absent: it moves no email and never opens a preview (D40).
 
 import { tokens } from '@declutrmail/shared';
+import { useState } from 'react';
+import type { ActionReach } from '@declutrmail/shared/contracts';
+import { ActionReachControl } from '@/components/action-scope-controls';
+import type { UnsubscribeCleanupMode } from '@/components/cleanup-preview';
 import { type TriageDecisionRow } from './data';
 import { TRIAGE_QUEUE } from './fixtures';
 import { InlinePreviewBlock, type InlinePreview } from './inline-preview';
@@ -102,4 +106,57 @@ export const NothingToActOn: Story = {
 
 export const Protected: Story = {
   render: () => <Preview rowId="t-sarah" preview={{ verb: 'Archive' }} />,
+};
+
+function ArchivedDeletePreview({
+  inbox = 12,
+  allMail = 20,
+}: {
+  inbox?: number;
+  allMail?: number | null;
+}) {
+  const [reach, setReach] = useState<ActionReach>('inbox_only');
+  const [age, setAge] = useState<number | null>(null);
+  const [mode, setMode] = useState<UnsubscribeCleanupMode>('delete');
+  const inboxCount = age === null ? inbox : 0;
+  const allMailCount = allMail === null ? null : age === null ? allMail : 0;
+  return (
+    <Preview
+      rowId="t-linkedin"
+      preview={{
+        verb: 'Unsubscribe',
+        backlogMode: mode,
+        reach,
+        onBacklogMode: (next) => {
+          setMode(next);
+          setReach('inbox_only');
+          setAge(null);
+        },
+        inboxCount:
+          mode === 'delete' && reach === 'all_mail' ? (allMailCount ?? 'unavailable') : inboxCount,
+        ageControl: {
+          olderThanDays: age,
+          options: [null, 30, 90, 180, 365].map((days) => ({ days })),
+          onChange: setAge,
+        },
+        reachControlSlot:
+          mode === 'delete' ? (
+            <ActionReachControl
+              value={reach}
+              inboxCount={inboxCount}
+              allMailCount={allMailCount}
+              onChange={setReach}
+            />
+          ) : undefined,
+      }}
+    />
+  );
+}
+
+export const UnsubscribeAndDeleteArchived: Story = { render: () => <ArchivedDeletePreview /> };
+export const ArchivedOnlyDelete: Story = {
+  render: () => <ArchivedDeletePreview inbox={0} allMail={2} />,
+};
+export const ArchivedCountUnavailable: Story = {
+  render: () => <ArchivedDeletePreview allMail={null} />,
 };

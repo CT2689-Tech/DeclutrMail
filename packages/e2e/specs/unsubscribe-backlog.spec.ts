@@ -125,6 +125,75 @@ test.afterAll(async () => {
   await api.dispose();
 });
 
+test('inline Triage Unsubscribe + Delete previews archived scope and cancels without writes', async ({
+  page,
+}) => {
+  const [before] = await sql`SELECT preferences FROM users WHERE id = ${BILLING_SEED.userId}`;
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      /\/api\/(actions(?:\/|$)|screener\/decide)/.test(new URL(request.url()).pathname)
+    )
+      writes.push(request.url());
+  });
+  try {
+    await sql`UPDATE users SET preferences = jsonb_set(COALESCE(preferences, '{}'::jsonb), '{actionSheetPrefs}', '{"archive":false,"unsubscribe":true,"later":false}'::jsonb, true) WHERE id = ${BILLING_SEED.userId}`;
+    await sql`INSERT INTO mail_messages (mailbox_account_id, provider_message_id, provider_thread_id, sender_key, internal_date, is_unread, label_ids)
+      VALUES (${mailboxId}, 'e2e-triage-inline-archived', 'e2e-triage-inline-archived-thread', ${BILLING_SEED.archiveSenderKey}, now(), false, ARRAY['Label_synthetic'])
+      ON CONFLICT (mailbox_account_id, provider_message_id) DO NOTHING`;
+    await page.goto('/triage');
+    await expectScreenMounted(page);
+    const consent = page.getByTestId('cookie-consent-banner');
+    await expect(consent).toBeVisible();
+    await consent.getByRole('button', { name: 'Essential only', exact: true }).click();
+    await expect(consent).toHaveCount(0);
+    await page
+      .getByRole('navigation', { name: 'Senders in this review' })
+      .getByRole('button', { name: BILLING_SEED.archiveSenderName, exact: true })
+      .click();
+    const toolbar = page.getByRole('toolbar', {
+      name: `Decide on ${BILLING_SEED.archiveSenderName}`,
+    });
+    if (!(await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).isVisible()))
+      await toolbar.getByText('More actions', { exact: true }).click();
+    await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).click();
+    const preview = page.getByRole('region', {
+      name: `Preview · Unsubscribe ${BILLING_SEED.archiveSenderName}`,
+    });
+    await expect(preview).toHaveAttribute('data-dm-preview-mode', 'inline');
+    await preview.getByRole('radio', { name: '+ Delete', exact: true }).click();
+    const archived = preview.getByRole('checkbox', { name: 'Include archived email' });
+    const age = preview.getByRole('combobox', { name: 'Email age' });
+    const impact = preview.getByRole('region', { name: 'What Delete will do' });
+    await expect(age).toHaveValue('all');
+    await expect(archived).not.toBeChecked();
+    await expect(impact).toContainText('2 emails will move to Gmail Trash.');
+    await archived.check();
+    await expect(impact).toContainText('3 emails will move to Gmail Trash.');
+    await expect(impact).toContainText('Inbox and archived email · Any age');
+    await age.selectOption('180');
+    await expect(archived).toBeChecked();
+    await expect(
+      preview.getByRole('button', { name: 'Unsubscribe + Delete', exact: true }),
+    ).toBeDisabled();
+    await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).click();
+    await preview.getByRole('radio', { name: '+ Delete', exact: true }).click();
+    await expect(age).toHaveValue('all');
+    await expect(archived).not.toBeChecked();
+    await expect(impact).toContainText('2 emails will move to Gmail Trash.');
+    await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(writes).toEqual([]);
+    const [remaining] =
+      await sql`SELECT count(*)::int AS n FROM mail_messages WHERE mailbox_account_id = ${mailboxId} AND sender_key = ${BILLING_SEED.archiveSenderKey} AND 'INBOX' = ANY(label_ids)`;
+    expect(remaining!.n).toBe(2);
+  } finally {
+    await sql`UPDATE users SET preferences = ${JSON.stringify(before?.preferences ?? {})}::jsonb WHERE id = ${BILLING_SEED.userId}`;
+    await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${mailboxId} AND provider_message_id = 'e2e-triage-inline-archived'`;
+  }
+});
+
 test('Triage and Senders confirm unsubscribe with archive and delete', async ({ page }) => {
   test.setTimeout(180_000);
   const senderName = BILLING_SEED.archiveSenderName;

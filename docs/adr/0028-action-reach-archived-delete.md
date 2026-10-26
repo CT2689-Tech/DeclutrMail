@@ -294,3 +294,15 @@ confirmation, protected exclusions and Undo are unchanged. Users can still selec
 an older-only filter, which must govern both the displayed count and the request.
 Cancel/reopen restores Any age and Inbox only. Saved automation rules retain their
 chosen age filters; this amendment changes no automation, API or worker defaults.
+
+## Amendment 2026-10-25 — inline Unsubscribe + Delete scope parity
+
+Triage's remembered-preference preview must offer Include archived email for
+Unsubscribe + Delete just like its full sheet and Senders. Presentation does not
+change action scope: the choice starts off, follows the selected age, uses the
+selected scope for count/Details/Gmail verification and travels with both button
+and keyboard confirmation. Missing or stale all-mail counts never fall back to
+inbox counts. Changing cleanup mode or reopening resets reach to Inbox only.
+Archive, Unsubscribe only and onboarding remain inbox-scoped. The control is
+assembled by the authenticated caller and passed as a node so public demo imports
+do not acquire authenticated preview code.
