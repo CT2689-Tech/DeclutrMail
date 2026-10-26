@@ -62,6 +62,9 @@ public repository.
 - Workspace package typechecks pass; web rechecked after the final test changes.
   Full lint has no errors (six existing unused-directive warnings); changed-file
   lint and formatting pass. Production Storybook build passes.
+- The first merge-queue run caught two new uses of a discouraged generic term
+  in preview copy. Both were replaced with specific wording; the glossary gate
+  and all 244 Autopilot tests pass after the correction.
 - Built-in browser on the compiled synthetic build: Archive 0 eligible / 1
   historical sample; Unsubscribe 0 eligible / 1 already unsubscribed; mode switch
   updates lead/note/If approved; empty eligible page; 25-action daily cap. At

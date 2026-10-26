@@ -245,7 +245,7 @@ export function RulePreviewSample({
     return (
       <span style={{ fontSize: text.sm, color: color.fgMuted }}>
         {page
-          ? 'No senders are eligible for this action right now.'
+          ? 'No senders are eligible right now.'
           : result.wouldMatchCount > 0
             ? 'No sample senders available.'
             : 'Nothing matches right now.'}

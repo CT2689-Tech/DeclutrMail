@@ -118,7 +118,7 @@ it.each([
 it('describes watching and approval when Watch first is selected', () => {
   render(<ActivateRuleModal {...previewProps(AUTO_UNSUBSCRIBE_NOISY)} />);
   fireEvent.click(screen.getByRole('radio', { name: 'Watch first' }));
-  expect(screen.getByText(/You approve each action/)).toBeInTheDocument();
+  expect(screen.getByText(/You approve each one/)).toBeInTheDocument();
   expect(
     screen.getByText(/No unsubscribe requests until you approve a suggestion/),
   ).toBeInTheDocument();

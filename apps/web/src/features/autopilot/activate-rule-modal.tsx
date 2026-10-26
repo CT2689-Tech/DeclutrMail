@@ -187,7 +187,7 @@ function ActivateRuleSheet({
         rule.actionKind === 'delete'
           ? 'Review matching email in a batch before approving Delete.'
           : needsApproval
-            ? 'Matches become suggestions. You approve each action.'
+            ? 'Matches become suggestions. You approve each one.'
             : matchEffectCopy(presentation)
       }
       note={`${
