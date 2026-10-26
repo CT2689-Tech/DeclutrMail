@@ -38,3 +38,7 @@ Validation:
 - Independent final behavior review: 277 tests passed across five files; no actionable source or visual findings. Existing handlers, queries, gates and confirmations retained.
 - Production web build and all 49 route bundle budgets passed. Repository typecheck and lint passed (six existing unused-disable warnings). Storybook production build passed. Whitespace checks passed.
 - Required PR checks, merge-group checks, deployment and production verification remain separate release evidence and are not asserted by these local results.
+
+### Queue correction
+
+The first merge-group run found the copy glossary scanner interpreting the internal CSS padding token as user-facing text. Renamed that token consistently to `--dm-content-padding`; no scanner rule or baseline was relaxed and no value/behavior changed. Independent review found no naming collision or missed reference. All 955 shared tests then passed locally; production build and bundle checks were repeated before the corrected candidate was pushed.

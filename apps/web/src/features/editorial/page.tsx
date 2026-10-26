@@ -4,7 +4,7 @@ import styles from './page.module.css';
 
 /** Shared app-page rhythm. Presentation only: feature containers keep their reads and actions. */
 export const editorialColumnStyle: CSSProperties = {
-  padding: 'var(--dm-workspace-padding, 28px clamp(16px, 3vw, 40px) 40px)',
+  padding: 'var(--dm-content-padding, 28px clamp(16px, 3vw, 40px) 40px)',
   width: '100%',
   minWidth: 0,
   boxSizing: 'border-box',
