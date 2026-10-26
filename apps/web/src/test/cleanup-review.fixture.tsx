@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HomeFixDialog } from '../features/home/home-fix-dialog';
 import { DecidePreview } from '../features/screener/decide-preview';
-import { SCREENER_QUEUE } from '../features/screener/data';
+import { SCREENER_QUEUE, type ScreenerDecideVerb } from '../features/screener/data';
 import { makeSender } from '../features/senders/testing/make-sender';
 import { UnsubscribeBacklogDialog } from '../features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { ActionSheet } from '../features/triage/action-sheet';
@@ -54,6 +54,7 @@ const preview: CompositeActionPreviewResult = {
 function Fixture() {
   const surface = new URLSearchParams(location.search).get('surface') ?? 'senders';
   const [open, setOpen] = useState(false);
+  const [screenerVerb, setScreenerVerb] = useState<ScreenerDecideVerb>('delete');
   const [accepted, setAccepted] = useState('');
   const [days, setDays] = useState<number | null>(null);
   const [reach, setReach] = useState<'inbox_only' | 'all_mail'>('inbox_only');
@@ -75,6 +76,7 @@ function Fixture() {
         type="button"
         onClick={() => {
           setAccepted('');
+          setScreenerVerb('delete');
           setDays(surface === 'screener' ? 180 : null);
           setReach('inbox_only');
           setOpen(true);
@@ -136,7 +138,7 @@ function Fixture() {
       )}
       {open && surface === 'screener' && (
         <DecidePreview
-          verb="delete"
+          verb={screenerVerb}
           row={{ ...SCREENER_QUEUE[0]!, senderName: sender.name, brandMark: false }}
           inboxCount={inboxCount}
           inboxTotal={inboxBuckets.all}
@@ -148,7 +150,16 @@ function Fixture() {
           onReachChange={setReach}
           confirming={false}
           onCancel={cancel}
-          onConfirm={() => accept({ olderThanDays: days, reach })}
+          onChooseDecision={(verb) => {
+            setScreenerVerb(verb);
+            setDays(null);
+            setReach('inbox_only');
+          }}
+          onConfirm={() =>
+            accept(
+              screenerVerb === 'delete' ? { olderThanDays: days, reach } : { verb: screenerVerb },
+            )
+          }
         />
       )}
       {surface === 'screener' && <button type="button">Next row</button>}

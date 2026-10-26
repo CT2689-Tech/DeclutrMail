@@ -303,7 +303,7 @@ describe('ScreenerRow — expanded body (D73) + preview (D226)', () => {
       />,
     );
     expect(html).toContain('Email is unchanged');
-    expect(html).toContain('No email moves.');
+    expect(html).toContain('Keep marks this sender reviewed. Email stays where it is.');
     assertNoScreenVerb(html);
   });
 

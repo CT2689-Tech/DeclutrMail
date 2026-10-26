@@ -101,6 +101,33 @@ export const DeleteDefault: Story = {};
 export const DeleteLoading: Story = { args: { inboxCount: 'loading' } };
 export const DeleteUnavailable: Story = { args: { inboxCount: 'unavailable' } };
 export const DeleteEmptyAge: Story = { args: { inboxCount: 0 } };
+function EmptySenderReview() {
+  const [verb, setVerb] = useState<ComponentProps<typeof DecidePreview>['verb']>('delete');
+  const [result, setResult] = useState('');
+  return (
+    <div style={{ maxWidth: 680, margin: '24px auto', padding: 16 }}>
+      <p>Fictional sender · no current inbox or archived email. No Gmail changes.</p>
+      {result ? (
+        <p role="status">{result}</p>
+      ) : (
+        <DecidePreview
+          verb={verb}
+          row={sampleRow}
+          inboxCount={0}
+          inboxTotal={0}
+          allMailCount={0}
+          allMailTotal={0}
+          confirming={false}
+          mailboxEmail="sample@example.com"
+          onChooseDecision={setVerb}
+          onConfirm={() => setResult(`Sample confirmation: ${verb}`)}
+          onCancel={() => setResult('Review cancelled')}
+        />
+      )}
+    </div>
+  );
+}
+export const NoCurrentEmail: Story = { render: () => <EmptySenderReview /> };
 export const DeleteProtected: Story = {
   args: { row: { ...sampleRow, isProtected: true, protectionReason: 'user_defined' } },
 };

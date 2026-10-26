@@ -27,6 +27,7 @@ import { LaterReturnControl, useFutureReturnTime } from '@/components/later-retu
 import type { ActionReach } from '@/lib/api/actions';
 
 import {
+  canScreenerUnsubscribe,
   needsProtectedOverride,
   screenerProtectionClause,
   type ScreenerDecideVerb,
@@ -80,6 +81,7 @@ export function DecidePreview({
   onConfirm,
   onCancel,
   onRetryPreview,
+  onChooseDecision,
 }: {
   verb: ScreenerDecideVerb;
   row: ScreenerQueueRow;
@@ -126,6 +128,8 @@ export function DecidePreview({
   onConfirm: () => void;
   onCancel: () => void;
   onRetryPreview?: (() => void) | undefined;
+  /** Opens the existing decision preview; never confirms or mutates directly. */
+  onChooseDecision?: ((verb: ScreenerDecideVerb) => void) | undefined;
 }) {
   useActionPreviewAnalytics(row.senderId, verb, typeof inboxCount === 'number');
   const name = row.senderName;
@@ -143,6 +147,10 @@ export function DecidePreview({
   // Later/Delete needs to say so in the header, the same "Nothing to move"
   // branch `action-preview-presentation.tsx` already has for Triage.
   const moves = verb === 'archive' || verb === 'later' || verb === 'delete';
+  // A zero age bucket is not proof of an empty sender. Require fresh,
+  // unwindowed counts at both scopes before offering the review-only path.
+  const noCurrentMail =
+    moves && inboxCount === 0 && allMailCount === 0 && inboxTotal === 0 && allMailTotal === 0;
   // QA-archive-20260903-01: the frozen rationale below needs the same
   // "Last checked" age label Triage's identical D226 preview already
   // shows — this dialog is the one screen a destructive verb cannot
@@ -199,22 +207,25 @@ export function DecidePreview({
             ? 'Inbox and archived email both move to Gmail Trash.'
             : 'They move to Gmail Trash.'
           : null;
-  const headline = zero
-    ? `Nothing to move from ${name} right now`
-    : verb === 'keep'
-      ? `Keep ${name}?`
-      : verb === 'unsubscribe'
-        ? WS5_COPY['preview.title.unsubThisSender']
-        : isCleanupAction
-          ? cleanupActionTitle(
-              verb === 'later' ? 'Later' : verb === 'delete' ? 'Delete' : 'Archive',
-              name,
-            )
-          : verb === 'later'
-            ? `Move ${liveCount === null ? 'email' : emailsLabel(liveCount)} to Later?`
-            : `${VERB_LABEL[verb]} ${liveCount === null ? 'email' : emailsLabel(liveCount)}?`;
-  const explanation =
-    zero || verb === 'archive' || verb === 'later'
+  const headline = noCurrentMail
+    ? `No current email from ${name}`
+    : zero
+      ? `Nothing to move from ${name} right now`
+      : verb === 'keep'
+        ? `Keep ${name}?`
+        : verb === 'unsubscribe'
+          ? WS5_COPY['preview.title.unsubThisSender']
+          : isCleanupAction
+            ? cleanupActionTitle(
+                verb === 'later' ? 'Later' : verb === 'delete' ? 'Delete' : 'Archive',
+                name,
+              )
+            : verb === 'later'
+              ? `Move ${liveCount === null ? 'email' : emailsLabel(liveCount)} to Later?`
+              : `${VERB_LABEL[verb]} ${liveCount === null ? 'email' : emailsLabel(liveCount)}?`;
+  const explanation = noCurrentMail
+    ? 'There’s no inbox or archived email to move. This sender is still awaiting its first review.'
+    : zero || verb === 'archive' || verb === 'later'
       ? null
       : verb === 'unsubscribe'
         ? primary.unsubscribeChannel.kind === 'not-applicable' ||
@@ -222,19 +233,21 @@ export function DecidePreview({
           ? primary.futureMail.summary
           : primary.unsubscribeChannel.summary
         : verb === 'keep'
-          ? WS5_COPY['preview.zero.noMove']
+          ? 'Keep marks this sender reviewed. Email stays where it is.'
           : verb === 'delete'
             ? primary.futureMail.summary
             : `From ${name}. ${destination ?? ''}`;
 
   // ── One muted line: how to undo it ──────────────────────────────────
   // Keep records an app-only decision when there is no email to move.
-  const note = zero
-    ? 'Choose Keep to record a decision without moving email.'
-    : [
-        primary.activityUndo.summary,
-        ...(primary.bulkReturnNotice === null ? [] : [primary.bulkReturnNotice]),
-      ].join(' ');
+  const note = noCurrentMail
+    ? 'Choose Keep to finish this review without moving email.'
+    : zero
+      ? 'Choose Keep to record a decision without moving email.'
+      : [
+          primary.activityUndo.summary,
+          ...(primary.bulkReturnNotice === null ? [] : [primary.bulkReturnNotice]),
+        ].join(' ');
 
   const auth = useOptionalAuth();
   const activeMailboxEmail = mailboxEmail ?? (auth ? getActiveMailboxEmail(auth.me) : null);
@@ -394,7 +407,7 @@ export function DecidePreview({
         </div>
       )}
 
-      {scopeCopy && (
+      {scopeCopy && !noCurrentMail && (
         <p role="status" style={mutedLine}>
           {scopeCopy}
         </p>
@@ -479,18 +492,41 @@ export function DecidePreview({
         <Button size="md" tone="ghost" onClick={onCancel} disabled={confirming}>
           Cancel
         </Button>
-        <Button
-          size="md"
-          tone={verb === 'delete' ? 'danger' : verb === 'unsubscribe' ? 'warn' : 'primary'}
-          onClick={onConfirm}
-          disabled={confirmDisabled}
-          // Stable across the in-flight transition — a button that
-          // renames itself mid-action loses its accessible identity — and
-          // it contains the visible label (WCAG 2.5.3).
-          ariaLabel={`${restingLabel} for ${name}`}
-        >
-          {confirmLabel}
-        </Button>
+        {noCurrentMail && onChooseDecision ? (
+          <>
+            {canScreenerUnsubscribe(row) && (
+              <Button
+                size="md"
+                tone="ghost"
+                onClick={() => onChooseDecision('unsubscribe')}
+                disabled={confirming}
+              >
+                Unsubscribe
+              </Button>
+            )}
+            <Button
+              size="md"
+              tone="primary"
+              onClick={() => onChooseDecision('keep')}
+              disabled={confirming}
+            >
+              Keep
+            </Button>
+          </>
+        ) : (
+          <Button
+            size="md"
+            tone={verb === 'delete' ? 'danger' : verb === 'unsubscribe' ? 'warn' : 'primary'}
+            onClick={onConfirm}
+            disabled={confirmDisabled}
+            // Stable across the in-flight transition — a button that
+            // renames itself mid-action loses its accessible identity — and
+            // it contains the visible label (WCAG 2.5.3).
+            ariaLabel={`${restingLabel} for ${name}`}
+          >
+            {confirmLabel}
+          </Button>
+        )}
       </div>
     </div>
   );

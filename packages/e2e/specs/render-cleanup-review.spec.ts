@@ -204,6 +204,17 @@ for (const viewport of [
         if (scenario === 'empty') await archived.check();
         else await expect(archived).toBeDisabled();
         await preview.getByRole('combobox', { name: 'Email age' }).selectOption('all');
+        if (scenario === 'empty') {
+          await expect(preview).toContainText('This sender is still awaiting its first review.');
+          await expect(preview.getByRole('button', { name: /^Delete for/ })).toHaveCount(0);
+          await preview.getByRole('button', { name: 'Keep', exact: true }).click();
+          const keep = page.getByRole('region', { name: /^Preview · Keep / });
+          await expect(keep).toContainText('Keep marks this sender reviewed.');
+          await expect(page.getByTestId('accepted')).toBeEmpty();
+          await keep.getByRole('button', { name: /^Keep for/ }).click();
+          await expect(page.getByTestId('accepted')).toHaveText(JSON.stringify({ verb: 'keep' }));
+          return;
+        }
         await expect(preview.getByRole('button', { name: /^Delete for/ })).toBeDisabled();
         await expect(page.getByTestId('accepted')).toBeEmpty();
       });
