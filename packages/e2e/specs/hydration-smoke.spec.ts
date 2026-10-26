@@ -428,7 +428,9 @@ test('live Pro complimentary billing hydrates on annual across repeated loads', 
       await expect(page.getByTestId('complimentary-note')).toContainText(
         'Pro is complimentary on this account',
       );
-      const purchaseOptions = page.locator('#change-plan summary');
+      const purchaseOptions = page
+        .locator('#change-plan summary')
+        .filter({ hasText: 'View purchase options' });
       await expect(purchaseOptions).toBeVisible();
       await expect(purchaseOptions).toHaveText('View purchase options');
       await purchaseOptions.click();
