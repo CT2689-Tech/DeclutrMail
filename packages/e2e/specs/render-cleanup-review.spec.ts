@@ -119,13 +119,14 @@ for (const viewport of [
           await opener.click();
           await dialog.getByRole('radio', { name: '+ Delete', exact: true }).click();
           const age = dialog.getByRole('combobox', { name: 'Email age', exact: true });
-          await expect(age).toHaveValue('180');
+          await expect(age).toHaveValue('all');
           await expect(age.getByRole('option', { name: 'Any age', exact: true })).toHaveAttribute(
             'value',
             'all',
           );
           const archived = dialog.getByRole('checkbox', { name: 'Include archived email' });
           await expect(archived).not.toBeChecked();
+          if (days !== null) await age.selectOption(String(days));
           if (days === null) {
             await age.selectOption('all');
             await archived.check();
@@ -171,6 +172,7 @@ for (const viewport of [
       await expect(archived).toBeEnabled();
       await expect(archived).not.toBeChecked();
       await expect(confirm).toBeDisabled();
+      await preview.getByRole('combobox', { name: 'Email age' }).selectOption('180');
       await archived.check();
       await expect(archived).toBeChecked();
       await expect(confirm).toBeDisabled();
@@ -186,7 +188,7 @@ for (const viewport of [
       await expect(page.getByTestId('accepted')).toBeEmpty();
       await opener.click();
       await expect(archived).not.toBeChecked();
-      await expect(preview.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+      await expect(preview.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
       await archived.check();
       await preview.getByRole('combobox', { name: 'Email age' }).selectOption('all');
       await confirm.click();

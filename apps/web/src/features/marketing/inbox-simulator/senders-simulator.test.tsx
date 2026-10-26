@@ -158,7 +158,11 @@ describe('SendersSimulator', () => {
     });
     expect(includeArchived).not.toBeChecked();
     expect(includeArchived).toHaveStyle({ minHeight: '48px' });
-    expect(within(dialog).getByRole('heading')).toHaveTextContent('45 emails'); // Default 6-month window.
+    const age = within(dialog).getByRole('combobox', { name: 'Email age to act on' });
+    expect(age).toHaveValue('all');
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('111 emails');
+    fireEvent.change(age, { target: { value: '180' } });
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('45 emails');
     fireEvent.click(within(dialog).getByText('Details'));
     const includes = () =>
       within(dialog)

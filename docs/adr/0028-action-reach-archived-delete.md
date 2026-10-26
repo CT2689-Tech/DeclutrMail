@@ -282,3 +282,15 @@ queued or executing. Pause still revokes admission. Delete reuses the existing
 durable original-placement snapshot and normal Undo restoration. This supersedes
 the earlier statement that Autopilot has no per-run preview or Delete capability;
 it does not authorize unattended archived-mail cleanup.
+
+## Amendment 2026-10-25 — manual Delete starts at Any age
+
+The founder found a sender showing two inbox emails whose Delete preview opened
+with zero matches because its implicit 180-day age filter excluded both. The
+approved default is now **Any age across all manual Delete previews**, including
+Unsubscribe + Delete and the interactive demo. Inbox only remains the default
+reach; including archived email remains an explicit choice. Mandatory previews,
+confirmation, protected exclusions and Undo are unchanged. Users can still select
+an older-only filter, which must govern both the displayed count and the request.
+Cancel/reopen restores Any age and Inbox only. Saved automation rules retain their
+chosen age filters; this amendment changes no automation, API or worker defaults.

@@ -51,8 +51,8 @@ function DeleteStory(args: ComponentProps<typeof ConfirmActionModal>) {
   return (
     <div style={{ padding: 24 }}>
       <p>
-        Fictional mailbox · no Gmail changes. Delete starts at Inbox only · Older than 180 days. Any
-        age remains available.
+        Fictional mailbox · no Gmail changes. Delete starts at Inbox only · Any age. Older-only
+        filters remain available.
       </p>
       <Button onClick={() => setOpen(true)}>Review Delete</Button>
       {result && <p role="status">{result}</p>}
