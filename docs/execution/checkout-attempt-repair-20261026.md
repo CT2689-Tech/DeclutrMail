@@ -48,18 +48,21 @@ frontend and schema reviews drove fixes before final checks. Synthetic Storybook
 screens are checked in the built-in browser. Final command results are recorded
 below after completion.
 
-No real Paddle sandbox purchase/replay/refund rehearsal was performed: a sandbox
-provider connector is unavailable in this session. Neither live credentials nor
-provider dashboards were used. `BILLING_CHECKOUT_ATTEMPTS_ENABLED` and
-`BILLING_CHECKOUT_CANCEL_ENABLED` remain absent/off; no deployment manifest or
-secret was changed. Do not activate either flag based only on fixture tests.
+The October 26 real Paddle sandbox rehearsal below exercised an exact unpaid
+transaction, a canceled replay, a Backlog Pass test-card purchase, signed webhook
+projection and full refund. It used a synthetic checkout page and disposable
+database, not the authenticated app route or a deployed release. No live provider
+credential or service was used. `BILLING_CHECKOUT_ATTEMPTS_ENABLED` and
+`BILLING_CHECKOUT_CANCEL_ENABLED` remain absent/off in runtime; no deployment
+manifest or production secret was changed.
 
-## Eventual release sequence (not performed)
+## Remaining release sequence (not performed)
 
 1. Reconcile current PR heads and obtain review of this combined candidate.
-2. Rehearse exact transaction creation, resume, cancel and saved-payload replay,
-   webhook recovery, refund and cleanup in Paddle sandbox. Preserve failure
-   evidence. Verify copied capabilities cannot be used to evade stopped state.
+2. Rehearse the authenticated app/API path and background recovery on a disposable
+   sandbox workspace, including the subscription checkout and race cases. The
+   provider adapter, Pass checkout/refund and canceled replay were exercised below;
+   they do not certify the full app route or subscription path.
 3. Apply additive migration 0098 before API/worker readers. Keep flags off while
    rolling out code. Legacy evidence remains retained.
 4. Enable creation and cancellation separately only after readiness approval and
@@ -89,6 +92,9 @@ secret was changed. Do not activate either flag based only on fixture tests.
 - Independent backend, schema and frontend reviews completed. Fixes included
   stopped-state races, exact subscription admission, renewal metadata, RLS,
   rollback locking, delayed create responses and browser identity isolation.
+- After the real-provider recovery correction, the API billing suite passed again:
+  816 passed, four skipped integration cases, across 27 passing test files; API
+  typecheck, changed-file lint, formatting and whitespace checks passed.
 
 The initial broad runs found an obsolete cancellation-state expectation, the new
 table missing from the schema inventory test, and a support-address omission;
@@ -123,3 +129,44 @@ sandbox key with write permissions exists in the account, but its value is maske
 and is not available in this task's credential stores; it was not rotated,
 revealed or reused. The blank New API key form is open for a human credential
 handoff. No form values were entered and no key was created.
+
+## Real Paddle sandbox rehearsal — October 26, 2026
+
+The preceding access paragraph is the state **before** the user created a new
+seven-day sandbox key. The key was stored in macOS Keychain for this test; no key
+value was added to the repository, report or CI secrets. The existing sandbox
+client token and a temporary notification destination were used only in Test
+mode. The new key read all five active products, 11 active prices and 21 existing
+notification destinations before any provider write. The temporary destination
+was disabled and independently read back inactive at the end.
+
+A first owned, unpaid Backlog Pass transaction exposed a real bug in the new
+recovery scan: `created_at[gte]` was silently ignored by Paddle, causing the
+bounded scan to return uncertain in a populated account. The adapter now uses
+Paddle's `created_at[GTE]` spelling on the initial and subsequent pages. A
+regression test checks the parameter. The next real transaction passed exact
+read, wrong-owner rejection, exact recovery and canceled readback; all owned
+unpaid artifacts were confirmed canceled.
+
+The built-in browser opened the same Paddle Billing v2 overlay with its stored
+transaction ID. The user completed a Test Mode Backlog Pass purchase using
+Paddle's public test card: $19.00 catalog price plus $1.69 virtual tax. Paddle
+returned `completed` with a captured test payment. The temporary destination
+received cryptographically valid, timely `transaction.completed`,
+`adjustment.created` and `adjustment.updated` events for that exact transaction.
+The app adapter mapped the real completed event to the signed workspace and
+attempt. In a disposable PostgreSQL 17 database migrated through 0098, the
+canonical webhook projector marked the attempt fulfilled, inserted exactly one
+Pass grant, rejected a duplicate event as already processed, ignored the pending
+refund and revoked that grant on the approved full-refund event. Independent
+provider readback confirmed the full adjustment was approved and the destination
+inactive. The disposable database and tunnel were stopped; raw event bodies were
+removed after the sanitized checks.
+
+Paddle.js also refused to reopen the separately canceled transaction from its
+saved ID (`checkout.error` and a non-payable error page). This is sandbox evidence
+for that exact canceled artifact. It does not prove all copied capabilities or
+late payment races are impossible. The authenticated DeclutrMail app, background
+worker, subscription offer and production activation remain unverified. The
+overlapping PR heads #1131 and #1139 were rechecked on October 26 and remained
+open at the same commits recorded above; neither was edited, merged or deployed.

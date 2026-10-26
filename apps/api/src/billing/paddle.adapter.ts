@@ -1732,7 +1732,7 @@ export class PaddleAdapter implements BillingProvider {
     owner: CheckoutTransactionOwner & { createdAt: Date },
   ): Promise<string | null> {
     const query = new URLSearchParams({
-      'created_at[gte]': new Date(owner.createdAt.getTime() - 60_000).toISOString(),
+      'created_at[GTE]': new Date(owner.createdAt.getTime() - 60_000).toISOString(),
       per_page: '30',
     });
     let path = `/transactions?${query}`;
@@ -1762,7 +1762,7 @@ export class PaddleAdapter implements BillingProvider {
       if (typeof body.meta.pagination.next !== 'string') return null;
       const next = new URL(body.meta.pagination.next, this.baseUrl);
       if (next.origin !== this.baseUrl || next.pathname !== '/transactions') return null;
-      next.searchParams.set('created_at[gte]', query.get('created_at[gte]')!);
+      next.searchParams.set('created_at[GTE]', query.get('created_at[GTE]')!);
       next.searchParams.set('per_page', '30');
       path = next.pathname + next.search;
     }

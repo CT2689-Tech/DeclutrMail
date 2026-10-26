@@ -178,6 +178,23 @@ describe('exact Paddle checkout attempt boundary', () => {
     expect(request).toHaveBeenCalledTimes(5);
     expect(request.mock.calls.every((call) => !call[1] || call[1].method !== 'POST')).toBe(true);
   });
+  it('uses Paddle’s uppercase date operator when recovering an exact attempt', async () => {
+    const request = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      return new Response(
+        JSON.stringify(
+          url.pathname === '/transactions'
+            ? { data: [transaction()], meta: { pagination: { has_more: false } } }
+            : { data: transaction() },
+        ),
+      );
+    });
+    vi.stubGlobal('fetch', request);
+    expect(await adapter().recoverCheckoutAttempt(owner)).toBe(TXN);
+    const query = new URL(String(request.mock.calls[0]![0])).searchParams;
+    expect(query.has('created_at[GTE]')).toBe(true);
+    expect(query.has('created_at[gte]')).toBe(false);
+  });
   it('cancellation stays disabled without its explicit activation flag', async () => {
     const request = vi.fn();
     vi.stubGlobal('fetch', request);
