@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-10-26",
-  "snapshot_ts": "2026-10-26T20:07:11Z",
+  "snapshot_ts": "2026-10-26T20:41:19Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
