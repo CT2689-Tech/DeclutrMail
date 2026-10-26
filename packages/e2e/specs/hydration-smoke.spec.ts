@@ -79,7 +79,7 @@ test('account navigation preserves desktop grouping, tablet access and section l
   await expect(page.locator('.dm-main-scroll')).toHaveJSProperty('scrollTop', 0);
   await page
     .getByRole('navigation', { name: 'On this page' })
-    .getByRole('link', { name: 'Compare plans' })
+    .getByRole('link', { name: 'Plans' })
     .click();
   await expect(page.locator('#change-plan')).toBeInViewport();
 
@@ -137,13 +137,12 @@ test('phone account drawer reaches billing and keeps contextual help inside the 
   await page.keyboard.press('Escape');
   await expect(popover).toBeHidden();
   await expect(help).toBeFocused();
-  const tools = page.getByRole('navigation', { name: 'Included tools' }).getByRole('link');
-  await expect(tools.first()).toBeVisible();
-  for (const link of await tools.all()) {
-    const bounds = await link.boundingBox();
-    expect(bounds!.height).toBeGreaterThanOrEqual(44);
-  }
-  await page.getByRole('link', { name: 'Manage Gmail accounts' }).click();
+  const features = page.getByRole('list', { name: 'Included features' });
+  await expect(features.getByText('Sender cleanup')).toBeVisible();
+  const accounts = page.getByRole('link', { name: 'Manage Gmail accounts' });
+  const accountBounds = await accounts.boundingBox();
+  expect(accountBounds!.height).toBeGreaterThanOrEqual(44);
+  await accounts.click();
   await expect(page.locator('#mailboxes')).toBeFocused();
 });
 
@@ -431,6 +430,9 @@ test('live Pro complimentary billing hydrates on annual across repeated loads', 
       await expect(page.getByTestId('complimentary-note')).toContainText(
         'Pro is complimentary on this account',
       );
+      const purchaseOptions = page.getByRole('button', { name: 'View purchase options' });
+      await expect(purchaseOptions).toBeVisible();
+      await purchaseOptions.click();
       await expect(page.getByRole('button', { name: /^Annual/, pressed: true })).toBeVisible();
       await expect(page.getByText(manifestPrice('plus', 'annual')).first()).toBeVisible();
       const pro = page.getByTestId('plan-option-pro');
