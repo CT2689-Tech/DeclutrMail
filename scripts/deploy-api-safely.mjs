@@ -124,7 +124,9 @@ export async function smokeApi(
       } catch (error) {
         if (signal.aborted || error?.name === 'TimeoutError') {
           if (attempt === 3)
-            throw new Error(`API smoke timed out at ${path} after 3 attempts (10s each)`);
+            throw new Error(`API smoke timed out at ${path} after 3 attempts (10s each)`, {
+              cause: error,
+            });
           log(`API smoke timeout at ${path} (attempt ${attempt}/3); retrying read-only check`);
           await sleep(1000);
           continue;
@@ -133,6 +135,7 @@ export async function smokeApi(
           response
             ? `API smoke returned non-JSON at ${path}`
             : `API smoke request failed at ${path}`,
+          { cause: error },
         );
       }
       if (response.status !== status || !body || !validate(body))

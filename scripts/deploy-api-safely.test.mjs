@@ -225,6 +225,8 @@ test('unhealthy, malformed and unexpected transport failures fail immediately wi
       (error) => {
         assert.match(error.message, /\/api\/healthz/);
         assert.doesNotMatch(error.message, /private diagnostic/);
+        if (kind === 'malformed' || kind === 'network')
+          assert.equal(error.cause.message, 'private diagnostic');
         return true;
       },
     );
