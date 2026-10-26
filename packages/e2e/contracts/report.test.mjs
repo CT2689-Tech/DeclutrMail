@@ -20,6 +20,7 @@ const files = [
   ['journey-recovery', 4],
   ['unsubscribe-backlog', 4],
   ['home-next-step', 1],
+  ['manual-delete-previews', 1],
 ];
 function report() {
   return {
@@ -69,5 +70,13 @@ test('skipped journey cannot make a green report', () => {
 test('flaky retry cannot hide a failed journey', () => {
   const body = report();
   body.suites[0].specs[0].tests[0].status = 'flaky';
+  assert.notEqual(check(body), 0);
+});
+
+test('missing the manual Delete preview matrix cannot pass the journey gate', () => {
+  const body = report();
+  body.suites[0].specs = body.suites[0].specs.filter(
+    (spec) => !spec.file.endsWith('/manual-delete-previews.spec.ts'),
+  );
   assert.notEqual(check(body), 0);
 });

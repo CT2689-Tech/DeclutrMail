@@ -6144,78 +6144,122 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(confirmBtn).toBeDisabled();
   });
 
-  it('carries the chosen "Inbox + archived" reach into a BULK Delete enqueue (ADR-0028)', async () => {
-    // The chip advertises the all-mail total, so confirming it promises
-    // archived mail moves too. The reach must reach the wire or the
-    // worker resolves inbox-only and the preview is a lie.
-    const b = (n: number) => ({
-      all: n,
-      olderThan30d: n,
-      olderThan90d: n,
-      olderThan180d: n,
-      olderThan365d: n,
-    });
-    const posted: Array<{ primary?: { type?: string; reach?: string } }> = [];
-    installFetchStub([
-      TWO_SENDER_LIST,
-      {
-        method: 'POST',
-        path: '/api/actions/preview/bulk',
-        respond: () =>
-          jsonOk({
-            data: {
-              senders: [
-                {
-                  senderId: 'a',
-                  name: 'Sender A',
-                  counts: b(2),
-                  allMailCounts: b(40),
-                  protected: false,
-                },
-                {
-                  senderId: 'b',
-                  name: 'Sender B',
-                  counts: b(3),
-                  allMailCounts: b(60),
-                  protected: false,
-                },
-              ],
-              totals: b(5),
-              allMailTotals: b(100),
-              protectedCount: 0,
-            },
-          }),
-      },
-      {
-        method: 'POST',
-        path: '/api/actions',
-        respond: async (req) => {
-          posted.push((await req.json()) as (typeof posted)[number]);
-          return jsonOk({
-            data: {
-              batchId: 'batch-r',
-              status: 'queued',
-              senderCount: 2,
-              requestedTotal: 100,
-              wakeAt: null,
-              skipped: [],
-            },
-          });
+  it.each(['Delete', 'Unsubscribe'] as const)(
+    'carries Any age and archived reach into a BULK %s request',
+    async (verb) => {
+      // The chip advertises the all-mail total, so confirming it promises
+      // archived mail moves too. The reach must reach the wire or the
+      // worker resolves inbox-only and the preview is a lie.
+      const b = (n: number) => ({
+        all: n,
+        olderThan30d: 0,
+        olderThan90d: 0,
+        olderThan180d: 0,
+        olderThan365d: 0,
+      });
+      const posted: Array<{ primary?: { type?: string; reach?: string } }> = [];
+      installFetchStub([
+        TWO_SENDER_LIST,
+        {
+          method: 'POST',
+          path: '/api/actions/preview/bulk',
+          respond: () =>
+            jsonOk({
+              data: {
+                senders: [
+                  {
+                    senderId: 'a',
+                    name: 'Sender A',
+                    counts: b(2),
+                    allMailCounts: b(40),
+                    protected: false,
+                  },
+                  {
+                    senderId: 'b',
+                    name: 'Sender B',
+                    counts: b(3),
+                    allMailCounts: b(60),
+                    protected: false,
+                  },
+                ],
+                totals: b(5),
+                allMailTotals: b(100),
+                protectedCount: 0,
+              },
+            }),
         },
-      },
-    ]);
+        {
+          method: 'POST',
+          path: verb === 'Delete' ? '/api/actions' : '/api/actions/unsubscribe-backlog',
+          respond: async (req) => {
+            posted.push((await req.json()) as (typeof posted)[number]);
+            if (verb === 'Unsubscribe')
+              return jsonOk({
+                data: {
+                  mode: 'delete',
+                  backlog: { actionId: 'batch-r', requestedCount: 100, verb: 'delete' },
+                  senders: [backlogSender('a', 'requested'), backlogSender('b', 'requested')],
+                },
+              });
+            return jsonOk({
+              data: {
+                batchId: 'batch-r',
+                status: 'queued',
+                senderCount: 2,
+                requestedTotal: 100,
+                wakeAt: null,
+                skipped: [],
+              },
+            });
+          },
+        },
+      ]);
 
-    renderScreen();
-    await selectBothAndPress('d');
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.click(
-      await within(dialog).findByRole('checkbox', { name: 'Include archived email' }),
-    );
-    fireEvent.click(within(dialog).getByRole('button', { name: /delete/i }));
+      renderScreen();
+      await selectBothAndPress(verb === 'Delete' ? 'd' : 'u');
+      const dialog = await screen.findByRole('dialog');
+      if (verb === 'Unsubscribe') {
+        const deleteChoice = await within(dialog).findByRole('radio', { name: '+ Delete' });
+        await waitFor(() => expect(deleteChoice).toBeEnabled());
+        fireEvent.click(deleteChoice);
+      }
+      const confirmName = verb === 'Delete' ? 'Delete' : 'Unsubscribe + Delete';
+      const archived = await within(dialog).findByRole('checkbox', {
+        name: 'Include archived email',
+      });
+      const age = within(dialog).getByRole('combobox', { name: 'Email age' });
+      expect(age).toHaveValue('all');
+      expect(archived).not.toBeChecked();
+      expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+        '5 emails',
+      );
+      expect(posted).toHaveLength(0);
+      fireEvent.click(archived);
+      expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+        '100 emails',
+      );
+      fireEvent.change(age, { target: { value: '180' } });
+      expect(archived).toBeChecked();
+      expect(within(dialog).getByRole('button', { name: confirmName })).toBeDisabled();
+      fireEvent.change(age, { target: { value: 'all' } });
+      fireEvent.click(within(dialog).getByRole('button', { name: confirmName }));
 
-    await waitFor(() => expect(posted).toHaveLength(1));
-    expect(posted[0]!.primary).toMatchObject({ type: 'delete', reach: 'all_mail' });
-  });
+      await waitFor(() => expect(posted).toHaveLength(1));
+      if (verb === 'Unsubscribe') {
+        expect(posted[0]).toMatchObject({
+          mode: 'delete',
+          senderIds: ['a', 'b'],
+          olderThanDays: null,
+          reach: 'all_mail',
+        });
+      } else
+        expect(posted[0]!.primary).toMatchObject({
+          type: 'delete',
+          olderThanDays: null,
+          reach: 'all_mail',
+        });
+    },
+  );
 
   it('offers Delete on the selection bar with the registry shortcut advertised', async () => {
     installFetchStub([TWO_SENDER_LIST, BULK_PREVIEW_OK]);
