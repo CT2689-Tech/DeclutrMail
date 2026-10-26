@@ -5,6 +5,7 @@ import { BILLING_SEED } from '../helpers/seed-billing';
 import { dbConnect } from '../helpers/db';
 import { E2E_ENV } from '../helpers/env';
 import { applyJourneySeed } from '../helpers/seed-journeys';
+import { expectScreenMounted } from '../helpers/screen-ready';
 
 test.use({ storageState: { cookies: [], origins: [] } });
 
@@ -102,6 +103,7 @@ test('empty first review explains the pending decision and Keep completes it aft
       `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: BILLING_SEED.email })}`,
     );
     await page.goto('/senders?view=first-review');
+    await expectScreenMounted(page);
     const sender = page.getByRole('button', {
       name: `${BILLING_SEED.screenerSenderName} — expand sender detail`,
       exact: true,
@@ -127,11 +129,21 @@ test('empty first review explains the pending decision and Keep completes it aft
     await expect(keep).toContainText('Keep marks this sender reviewed. Email stays where it is.');
     expect(decisions).toEqual([]);
     await keep.getByRole('button', { name: `Keep for ${BILLING_SEED.screenerSenderName}` }).click();
-    await expect(sender).toHaveCount(0);
+    await expect(
+      page
+        .getByRole('list', { name: 'Senders waiting for your decision' })
+        .getByText(BILLING_SEED.screenerSenderName, { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText('No senders awaiting review', { exact: true })).toBeVisible();
     expect(decisions).toEqual([{ senderId: BILLING_SEED.screenerSenderId, verb: 'keep' }]);
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Senders', exact: true })).toBeVisible();
-    await expect(sender).toHaveCount(0);
+    await expect(
+      page
+        .getByRole('list', { name: 'Senders waiting for your decision' })
+        .getByText(BILLING_SEED.screenerSenderName, { exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByText('No senders awaiting review', { exact: true })).toBeVisible();
     const [review] =
       await sql`SELECT decided_at FROM screener_quarantine WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
     expect(review!.decided_at).not.toBeNull();
