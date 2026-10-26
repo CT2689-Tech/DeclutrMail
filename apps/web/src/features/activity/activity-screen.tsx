@@ -985,13 +985,12 @@ function hasAnyCount(stats: ActivityStatsWire | null | undefined): boolean {
 }
 
 /**
- * A raised surface — `shadow.card` is a soft drop in light and carries a
- * hairline ring in dark, so one token holds both themes.
+ * A clear panel boundary in both themes, matching the Home overview.
  */
 const panelStyle: CSSProperties = {
   background: color.card,
-  borderRadius: radius.lg,
-  boxShadow: shadow.card,
+  borderRadius: 12,
+  border: `1px solid ${color.border}`,
 };
 
 /**

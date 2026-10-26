@@ -1,0 +1,90 @@
+/* A presentation scope, not another scroll or layout owner. */
+.content {
+  display: contents;
+}
+.content[data-workspace-appearance] {
+  --dm-font-display: var(--dm-font-sans);
+  --dm-type-page-title: clamp(28px, 3vw, 34px);
+  --dm-type-section-title: 24px;
+  --dm-type-stat: 28px;
+  --dm-workspace-stat-weight: 600;
+  --dm-content-padding: 24px clamp(16px, 3vw, 36px) 40px;
+  color: var(--dm-fg);
+  font-family: var(--dm-font-sans);
+}
+.content[data-workspace-appearance] h1 {
+  font-size: var(--dm-type-page-title) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.content[data-workspace-appearance] :is(h2, h3) {
+  /* Legacy editorial headings specify weight inline. Match Home in both themes. */
+  font-weight: 600 !important;
+  text-wrap: balance;
+}
+.content[data-workspace-appearance] :is([data-summary-count], [data-row-result] > span) {
+  font-weight: 600 !important;
+  font-variant-numeric: tabular-nums;
+}
+.panel {
+  min-width: 0;
+  background: var(--dm-card);
+  border: 1px solid var(--dm-border);
+  border-radius: 12px;
+  padding: 22px 24px;
+}
+.countBadge {
+  font-family: var(--dm-font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--dm-fg);
+  background: var(--dm-primary-soft);
+  border-radius: 8px;
+  padding: 4px 8px;
+  align-self: center;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 680px) {
+  .content[data-workspace-appearance] {
+    --dm-content-padding: 20px 16px 32px;
+  }
+  .panel {
+    padding: 20px 16px;
+  }
+}
+
+.overviewLink {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+  padding: 18px 20px;
+  border: 1px solid var(--dm-border);
+  border-radius: 12px;
+  background: var(--dm-card);
+  color: var(--dm-fg);
+  text-decoration: none;
+}
+.overviewLink:hover {
+  border-color: var(--dm-primary);
+}
+.overviewLink:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 4px;
+}
+.overviewLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dm-fg-soft);
+}
+.overviewMetric {
+  font-family: var(--dm-font-sans);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}

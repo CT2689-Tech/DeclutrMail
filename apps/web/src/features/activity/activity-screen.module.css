@@ -17,3 +17,13 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+.summary > div:first-child {
+  border-top: 3px solid var(--dm-primary) !important;
+}
+
+@media (max-width: 680px) {
+  .summaryTiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

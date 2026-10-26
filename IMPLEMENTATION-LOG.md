@@ -491,3 +491,8 @@ Relates to D198, D200 and D210. The approved Home composition now exposes a boun
 ### 2026-10-25 — Home visual sharpening (Relates to D198, D210)
 
 Founder-approved presentation pass after accepting the Action overview data. Sharpened hierarchy, sender/count contrast, typography, phone CTA and result/snapshot surfaces without changing data or action behavior. Added long-name story and preview theme parity. Local tests, build/budgets and independent visual review recorded in `docs/execution/home-visual-sharpen-2026-10-25.md`. No D status reclassified.
+
+
+### 2026-10-25 — Workspace visual consistency (Relates to D198, D210)
+
+Extended the approved Home typography, boundaries, spacing and count hierarchy to Cleanup, Automations, Catch up and Activity. Retained feature-specific layouts and all data/action behavior; fixed 320px report, summary, metadata and button containment discovered in visual smoke. Home/account routes remain outside the scope. Desktop, phone, dark mode, preview/cancel, existing regression suites, build/budgets and independent review are recorded in `docs/execution/workspace-visual-consistency-2026-10-25.md`. No D status reclassified.

@@ -1,5 +1,7 @@
 'use client';
 
+import workspaceAppearance from '@/features/theme/workspace-appearance.module.css';
+
 import {
   editorialColumnStyle,
   editorialTitleStyle,
@@ -580,30 +582,9 @@ function BriefOverview({
       }}
     >
       {sections.map((section) => (
-        <a
-          key={section.href}
-          href={section.href}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            padding: '20px',
-            border: `1px solid ${color.line}`,
-            borderRadius: tokens.radius.md,
-            background: color.card,
-            color: color.fg,
-            textDecoration: 'none',
-          }}
-        >
-          <span
-            style={{
-              ...tokens.typography.kicker,
-              color: color.fgMuted,
-            }}
-          >
-            {section.label}
-          </span>
-          <strong style={tokens.typography.stat}>{section.count}</strong>
+        <a key={section.href} href={section.href} className={workspaceAppearance.overviewLink}>
+          <span className={workspaceAppearance.overviewLabel}>{section.label}</span>
+          <strong className={workspaceAppearance.overviewMetric}>{section.count}</strong>
           <span style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.45 }}>
             {section.detail} →
           </span>
@@ -694,6 +675,7 @@ function ReplyFyiSection({
 }) {
   return (
     <section
+      className={workspaceAppearance.panel}
       id={label === 'Review' ? 'brief-reply' : 'brief-fyi'}
       aria-label={`${label} (${rows.length})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8, scrollMarginTop: 24 }}
@@ -781,6 +763,7 @@ function NoiseSection({
 
   return (
     <section
+      className={workspaceAppearance.panel}
       id="brief-noise"
       // Carries the same "yesterday" anchor the visible subline does — a
       // screen reader must not get the un-anchored number this whole
@@ -1031,18 +1014,7 @@ function SectionHeading({
       }}
     >
       {label}
-      <span
-        style={{
-          ...tokens.typography.rowCount,
-          color: color.fgSoft,
-          background: color.fill,
-          padding: '2px 8px',
-          borderRadius: tokens.radius.pill,
-          alignSelf: 'center',
-        }}
-      >
-        {countLabel}
-      </span>
+      <span className={workspaceAppearance.countBadge}>{countLabel}</span>
       {subline && (
         <span
           style={{

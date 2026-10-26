@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
+import workspaceAppearance from '@/features/theme/workspace-appearance.module.css';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -345,7 +346,25 @@ function AppChrome({ children }: { children: ReactNode }) {
               </div>
             }
           >
-            {children}
+            <div
+              className={workspaceAppearance.content}
+              data-workspace-appearance={
+                [
+                  'senders',
+                  'triage',
+                  'screener',
+                  'autopilot',
+                  'brief',
+                  'followups',
+                  'snoozed',
+                  'activity',
+                ].includes(active)
+                  ? ''
+                  : undefined
+              }
+            >
+              {children}
+            </div>
           </AppShell>
         </div>
       </div>
