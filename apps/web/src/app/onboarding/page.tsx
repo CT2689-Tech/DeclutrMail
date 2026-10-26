@@ -31,10 +31,10 @@ import { StepProtectionReview } from '@/features/onboarding/step-protection-revi
 import { StepFirstSenderReview, StepPresetPick } from '@/features/onboarding/step-preset-pick';
 import { StepPromise } from '@/features/onboarding/step-promise';
 import { useCarriedOAuthResult } from '@/features/onboarding/use-carried-oauth-result';
+import { useOnboardingSessionProbe } from '@/features/onboarding/api/use-session-probe';
 import { AuthProvider, useAuth } from '@/features/auth/auth-provider';
 import { useAnalyticsIdentity } from '@/features/auth/analytics-identity-bridge';
 import { HeardFromPrompt } from '@/features/auth/heard-from-prompt';
-import { useMe } from '@/features/auth/api/use-me';
 
 import { OnboardingAccountLinks } from '@/features/onboarding/onboarding-account-links';
 import { useSetActiveMailbox } from '@/features/mailboxes/api/use-set-active-mailbox';
@@ -56,7 +56,7 @@ const { color, font, text } = tokens;
  * AUTH BOUNDARY (D134 split, restructured here): steps 1+2 render
  * PRE-AUTH — a fresh visitor sees the promise before any Google
  * consent (the old behavior force-bounced them straight to OAuth).
- * The page probes the session with `useMe()` directly; only once a
+ * The page probes the session without a terminal-401 redirect; only once a
  * session exists does it mount `AuthProvider` for steps 3+ (where the
  * provider's 401→OAuth bounce is the CORRECT behavior for an expired
  * session). The route's `layout.tsx` is a passthrough.
@@ -82,7 +82,11 @@ const { color, font, text } = tokens;
 export default function OnboardingPage() {
   // Outside the Suspense boundary, so both regions are on screen before a
   // carried OAuth result fills one (D108; see useCarriedOAuthResult).
-  const carried = useCarriedOAuthResult(useMe().data !== undefined);
+  const session = useOnboardingSessionProbe();
+  const signedIn =
+    session.data !== undefined &&
+    !(session.error instanceof ApiError && session.error.status === 401);
+  const carried = useCarriedOAuthResult(signedIn);
   return (
     <>
       <div
@@ -104,7 +108,7 @@ export default function OnboardingPage() {
         {carried?.liveRole === 'alert' ? carried.message : ''}
       </div>
       <Suspense fallback={null}>
-        <OnboardingFlow />
+        <OnboardingFlow session={session} />
         <ToastHost />
       </Suspense>
     </>
@@ -123,7 +127,7 @@ const screenReaderOnlyStyle = {
   border: 0,
 } as const;
 
-function OnboardingFlow() {
+function OnboardingFlow({ session }: { session: ReturnType<typeof useOnboardingSessionProbe> }) {
   const params = useSearchParams();
   const secondaryMailboxId = params.get('mailbox');
   // Exact closed flag, honored only alongside the secondary-mailbox
@@ -147,25 +151,36 @@ function OnboardingFlow() {
       </AuthProvider>
     );
   }
-  return <FreshFlow returnTo={returnTo} resumeScan={params.get('resumeScan') === '1'} />;
+  return (
+    <FreshFlow
+      returnTo={returnTo}
+      resumeScan={params.get('resumeScan') === '1'}
+      session={session}
+    />
+  );
 }
 
 /* ── Fresh-flow: pre-auth boundary ─────────────────────────────────── */
 
-function FreshFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeScan: boolean }) {
-  // Soft session probe — same query key AuthProvider uses, so when a
-  // session exists the provider below resolves from cache instantly.
-  const me = useMe();
+function FreshFlow({
+  returnTo,
+  resumeScan,
+  session: me,
+}: {
+  returnTo: string | null;
+  resumeScan: boolean;
+  session: ReturnType<typeof useOnboardingSessionProbe>;
+}) {
   const [preAuthStep, setPreAuthStep] = useState<'promise' | 'connect'>('promise');
 
   const unauthed = me.error instanceof ApiError && me.error.status === 401;
+  // The promise is public and safe to render before the first session read
+  // settles. A signed-in visitor with a server-seeded identity bypasses it;
+  // an anonymous visitor never has to wait on a session spinner to start.
+  const publicEntry = unauthed || (me.isPending && !me.data);
   useStepFunnel(unauthed ? (preAuthStep === 'promise' ? 'promise' : 'connect_gmail') : null);
 
-  if (me.isLoading) {
-    return <FlowSkeleton label="Checking your session…" />;
-  }
-
-  if (unauthed) {
+  if (publicEntry) {
     return preAuthStep === 'promise' ? (
       <StepPromise onConnect={() => setPreAuthStep('connect')} />
     ) : (
@@ -182,15 +197,11 @@ function FreshFlow({ returnTo, resumeScan }: { returnTo: string | null; resumeSc
   // transport/implementation detail on a user's screen (D7), and it is
   // exactly how `Missing queryFn: '["auth","me"]'` became UI.
   if (!me.data) {
-    // `isLoading` above misses the gap BETWEEN retries (pending, not
-    // fetching) — without this the skeleton would flip to the failure
-    // surface during each backoff wait.
-    if (me.isPending) return <FlowSkeleton label="Checking your session…" />;
     return (
       <FlowError
         title="We couldn’t load your account."
         accountControls={false}
-        // True: useMe keeps polling while the read is in error.
+        // True: the public session probe keeps polling while the read is in error.
         detail="We’re retrying automatically."
         onRetry={() => void me.refetch()}
       />
