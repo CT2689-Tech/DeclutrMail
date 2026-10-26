@@ -288,6 +288,35 @@ test('workflow gates worker boot through HTTP, preserves production OAuth identi
   assert.match(vercel, /secrets\.BILLING_GEO_HMAC_SECRET/);
 });
 
+test('API full-replacement env preserves required webhook, release, gate, and billing settings', () => {
+  const workflow = readFileSync(
+    new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
+    'utf8',
+  );
+  const apiStep = workflow.slice(
+    workflow.indexOf('- name: Deploy declutrmail-api'),
+    workflow.indexOf('- name: Verify billing notice API producers'),
+  );
+  const base = /^\s+API_ENV_BASE="([^"]+)" \\$/m.exec(apiStep)?.[1];
+  assert.ok(base, 'API deployment must define its full-replacement env base');
+  const entries = base.split(',').map((assignment) => assignment.split(/=(.*)/s).slice(0, 2));
+  const env = new Map(entries);
+  assert.equal(env.size, entries.length, 'duplicate env names must not shadow required values');
+  for (const [name, value] of Object.entries({
+    PUBSUB_WEBHOOK_ENABLED: 'true',
+    PUBSUB_PUSH_AUDIENCE: 'https://api.declutrmail.com',
+    PUBSUB_PUSH_SA_EMAIL: '$PUBSUB_OIDC_SERVICE_ACCOUNT',
+    SENTRY_RELEASE: '$GITHUB_SHA',
+    BETA_GATE_ENABLED: 'false',
+    BILLING_ENABLED: 'true',
+    PADDLE_ENV: 'production',
+    BILLING_CHECKOUT_ATTEMPTS_ENABLED: 'true',
+    BILLING_CHECKOUT_CANCEL_ENABLED: 'true',
+  })) {
+    assert.equal(env.get(name), value, `${name} must survive --set-env-vars`);
+  }
+});
+
 test('missing candidate identity fails closed without promotion', async () => {
   const h = harness();
   const run = h.options.run;
