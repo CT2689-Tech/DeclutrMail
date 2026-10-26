@@ -104,6 +104,10 @@ test('empty first review explains the pending decision and Keep completes it aft
     );
     await page.goto('/senders?view=first-review');
     await expectScreenMounted(page);
+    const consent = page.getByTestId('cookie-consent-banner');
+    await expect(consent).toBeVisible();
+    await consent.getByRole('button', { name: 'Essential only', exact: true }).click();
+    await expect(consent).toHaveCount(0);
     const sender = page.getByRole('button', {
       name: `${BILLING_SEED.screenerSenderName} — expand sender detail`,
       exact: true,
