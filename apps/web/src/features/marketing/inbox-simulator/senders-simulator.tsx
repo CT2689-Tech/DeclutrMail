@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, PreviewSheet, SheetFactList, ToastHost, toast } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
-import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { WS2_COPY, WS3_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { ActionReachControl } from '@/components/action-scope-controls';
@@ -351,7 +351,7 @@ export function SendersSimulator() {
         : 'none',
     );
     setReach('inbox_only');
-    setOlderThanDays(verb === 'Delete' ? 180 : null);
+    setOlderThanDays(verb === 'Delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
     setWakeAt(verb === 'Later' ? localDateTime(defaultLaterWakeAtIso()) : '');
   };
 

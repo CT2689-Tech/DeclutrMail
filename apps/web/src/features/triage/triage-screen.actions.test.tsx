@@ -135,7 +135,7 @@ async function confirmOpenSheet(
 ) {
   const dialog = await screen.findByRole('dialog');
   if (waitForPreview) {
-    await waitFor(() => expect(liveCount(verb === 'Delete' ? '5' : '47')).toBeDefined());
+    await waitFor(() => expect(liveCount('47')).toBeDefined());
   }
   const confirm = within(dialog).getByRole('button', { name: new RegExp(`^${verb}`, 'i') });
   await waitFor(() => expect(confirm).not.toBeDisabled());
@@ -809,7 +809,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await waitFor(() => expect(enqueues).toHaveLength(1));
     expect(enqueues[0]).toMatchObject({
       selector: { type: 'sender', senderId: GROUPON.senderId },
-      primary: { type: 'delete', olderThanDays: 180 },
+      primary: { type: 'delete', olderThanDays: null },
     });
   });
 
@@ -900,19 +900,13 @@ describe('TriageScreen — D226 mutation wiring', () => {
       });
       // Safe default: inbox only, and the copy says so.
       expect(archived).not.toBeChecked();
-      expect(
-        within(dialog).getByText(/^Inbox only \(older than 180 days\)\. We check again/),
-      ).toBeDefined();
+      expect(within(dialog).getByText(/^Inbox only\. We check again/)).toBeDefined();
 
       fireEvent.click(archived);
       expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
-        '300 emails will move to Gmail Trash.',
+        '412 emails will move to Gmail Trash.',
       );
-      expect(
-        within(dialog).getByText(
-          /^Inbox and archived email \(older than 180 days\)\. We check again/,
-        ),
-      ).toBeDefined();
+      expect(within(dialog).getByText(/^Inbox and archived email\. We check again/)).toBeDefined();
       expect(
         within(dialog).getByRole('heading', { name: `Delete emails from ${GROUPON.senderName}?` }),
       ).toBeDefined();
@@ -933,15 +927,15 @@ describe('TriageScreen — D226 mutation wiring', () => {
       fireEvent.keyDown(window, { key: 'd' });
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
-          '5 emails will move to Gmail Trash.',
+          '47 emails will move to Gmail Trash.',
         ),
       );
       expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked();
-      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
       await confirmOpenSheet('Delete', false);
       await waitFor(() => expect(enqueues).toHaveLength(1));
       expect(enqueues[0]!.primary).not.toHaveProperty('reach');
-      expect(enqueues[0]!.primary).toMatchObject({ type: 'delete', olderThanDays: 180 });
+      expect(enqueues[0]!.primary).toMatchObject({ type: 'delete', olderThanDays: null });
     });
 
     it('keeps Inbox only selected on an empty inbox and points at the archived chip', async () => {
@@ -1023,7 +1017,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
       await waitFor(() =>
         expect(
           within(dialog).getByRole('region', { name: 'What Delete will do' }),
-        ).toHaveTextContent('5 emails will move to Gmail Trash.'),
+        ).toHaveTextContent('47 emails will move to Gmail Trash.'),
       );
       expect(reachRow()).toBeNull();
     });
@@ -1429,7 +1423,7 @@ describe('TriageScreen — D226 mutation wiring', () => {
     await waitFor(() =>
       expect(unsubscribeBody).toMatchObject({
         mode: 'delete',
-        olderThanDays: 180,
+        olderThanDays: null,
         senderIds: [LINKEDIN.senderId],
       }),
     );
@@ -2429,7 +2423,7 @@ describe('TriageScreen — inline pending preview clears on Escape (D226, D34)',
       within(again).getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),
     );
     await waitFor(() => expect(bodies).toHaveLength(2));
-    expect(bodies[1]).toMatchObject({ mode: 'delete', olderThanDays: 180 });
+    expect(bodies[1]).toMatchObject({ mode: 'delete', olderThanDays: null });
   });
 
   it('Escape clears the inline pending action, keeps the row expanded, fires no mutation', async () => {
@@ -4194,7 +4188,8 @@ describe('Delete Email age — selected counts and requests', () => {
       expandRow(GROUPON.senderName);
       fireEvent.keyDown(window, { key: 'd' });
       const age = await screen.findByRole('combobox', { name: 'Email age' });
-      expect(age).toHaveValue('180');
+      expect(age).toHaveValue('all');
+      fireEvent.change(age, { target: { value: '180' } });
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
           '5 emails will move',
@@ -4224,6 +4219,9 @@ describe('Delete Email age — selected counts and requests', () => {
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'd' });
     const archived = await screen.findByRole('checkbox', { name: 'Include archived email' });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: '180' },
+    });
     fireEvent.click(archived);
     expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '12 emails will move',
@@ -4264,7 +4262,8 @@ describe('Delete Email age — selected counts and requests', () => {
       // inline renderer without introducing a new skip-sheet preference.
       act(() => useTriageStore.getState().openPending('Delete', GROUPON.id, 'inline'));
       const age = await screen.findByRole('combobox', { name: 'Email age' });
-      expect(age).toHaveValue('180');
+      expect(age).toHaveValue('all');
+      fireEvent.change(age, { target: { value: '180' } });
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
           '5 emails will move',
@@ -4282,7 +4281,7 @@ describe('Delete Email age — selected counts and requests', () => {
     },
   );
 
-  it('keeps a zero age editable and restores 180 days and Inbox only on a new preview', async () => {
+  it('keeps a zero age editable and restores Any age and Inbox only on a new preview', async () => {
     renderScreen(createTestQueryClient());
     expandRow(GROUPON.senderName);
     fireEvent.keyDown(window, { key: 'd' });
@@ -4298,7 +4297,7 @@ describe('Delete Email age — selected counts and requests', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     fireEvent.keyDown(window, { key: 'd' });
-    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(await screen.findByRole('combobox', { name: 'Email age' })).toHaveValue('all');
     await waitFor(() =>
       expect(screen.getByRole('checkbox', { name: 'Include archived email' })).not.toBeChecked(),
     );
@@ -4522,7 +4521,8 @@ describe('Unsubscribe cleanup age requests', () => {
         '47 emails',
       );
       fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-      expect(age).toHaveValue('180');
+      expect(age).toHaveValue('all');
+      fireEvent.change(age, { target: { value: '180' } });
       expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
         '5 emails',
       );
@@ -4549,6 +4549,7 @@ describe('Unsubscribe cleanup age requests', () => {
   it('keeps archived scope when choosing Any age and submits that exact cleanup', async () => {
     const age = await open();
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
+    fireEvent.change(age, { target: { value: '180' } });
     fireEvent.click(screen.getByRole('checkbox', { name: 'Include archived email' }));
     expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
       '9 emails',
@@ -4569,7 +4570,7 @@ describe('Unsubscribe cleanup age requests', () => {
       '12 emails',
     );
     fireEvent.click(screen.getByRole('radio', { name: '+ Delete' }));
-    expect(age).toHaveValue('180');
+    expect(age).toHaveValue('all');
     fireEvent.click(screen.getByRole('radio', { name: '+ Archive' }));
     expect(age).toHaveValue('all');
     fireEvent.change(age, { target: { value: '90' } });

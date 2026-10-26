@@ -36,7 +36,7 @@ function CleanupStory(args: ComponentProps<typeof DecidePreview>) {
       <p>
         Fictional mailbox · no Gmail changes. Screener{' '}
         {isDelete
-          ? 'Delete keeps its 180-day default'
+          ? 'Delete starts at Any age'
           : args.verb === 'later'
             ? 'Later starts at Any age, with a return in 7 days'
             : 'Archive keeps Inbox only · Any age'}

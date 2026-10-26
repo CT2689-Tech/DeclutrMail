@@ -1,3 +1,4 @@
+import { DEFAULT_DELETE_WINDOW_DAYS } from '@declutrmail/shared/actions';
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HomeFixDialog } from '../features/home/home-fix-dialog';
@@ -77,7 +78,7 @@ function Fixture() {
         onClick={() => {
           setAccepted('');
           setScreenerVerb('delete');
-          setDays(surface === 'screener' ? 180 : null);
+          setDays(surface === 'screener' ? DEFAULT_DELETE_WINDOW_DAYS : null);
           setReach('inbox_only');
           setOpen(true);
         }}
@@ -111,7 +112,9 @@ function Fixture() {
           onReachChange={setReach}
           onCancel={cancel}
           onConfirm={accept}
-          onBacklogModeChange={(mode) => setDays(mode === 'delete' ? 180 : null)}
+          onBacklogModeChange={(mode) =>
+            setDays(mode === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null)
+          }
           detail={{
             inboxTotal: 12,
             ageControl: {

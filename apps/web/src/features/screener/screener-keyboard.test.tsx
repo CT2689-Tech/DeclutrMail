@@ -60,11 +60,6 @@ function livePreviewHandler(all: number, allMailTotal?: number, olderThan180d = 
             all,
             olderThan30d: all,
             olderThan90d: all,
-            // QA-delete-20260829-01 (2026-08-30) — Delete now reads THIS
-            // bucket by default, not `all`. Matching it to `all` keeps
-            // these fixtures realistic (a sender whose mail is all older
-            // than 6 months); a fixture that left this at 0 would now
-            // silently test Delete's empty-window edge case instead.
             olderThan180d,
             olderThan365d: all,
           },
@@ -402,25 +397,26 @@ describe('Screener Delete reach (ADR-0028) — chips, Enter, and the wire', () =
     fireEvent.keyDown(window, { key: 'd' });
     await screen.findByRole('checkbox', { name: 'Include archived email' });
 
-    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
     fireEvent.keyDown(window, { key: 'Enter' });
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(Object.keys(bodies[0]!)).not.toContain('reach');
-    expect(bodies[0]).toMatchObject({ verb: 'delete', olderThanDays: 180 });
+    expect(bodies[0]).toMatchObject({ verb: 'delete' });
+    expect(bodies[0]).not.toHaveProperty('olderThanDays');
   });
 
-  it('widens a zero-match Delete to any age and sends the matching unwindowed scope', async () => {
+  it('opens recent inbox email at Any age and sends the matching unwindowed scope', async () => {
     const bodies: Record<string, unknown>[] = [];
     installDecideStub({ allMailTotal: 2, olderThan180d: 0, bodies });
     renderReady();
     expandFirstRow();
     fireEvent.keyDown(window, { key: 'd' });
     await screen.findByRole('combobox', { name: 'Email age' });
-    expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeDisabled();
-
-    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
-      target: { value: 'all' },
-    });
+    expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+    expect(
+      await screen.findByRole('checkbox', { name: 'Include archived email' }),
+    ).not.toBeChecked();
+    expect(bodies).toHaveLength(0);
     expect(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: /^Delete( [\d,]+ emails?)? for/ }));
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -610,7 +606,10 @@ describe('Screener Delete selected age and archived count stay together', () => 
       expandFirstRow();
       fireEvent.keyDown(window, { key: 'd' });
       const archived = await screen.findByRole('checkbox', { name: 'Include archived email' });
-      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('180');
+      expect(screen.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+      fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+        target: { value: '180' },
+      });
       await waitFor(() =>
         expect(screen.getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
           '5 emails will move',

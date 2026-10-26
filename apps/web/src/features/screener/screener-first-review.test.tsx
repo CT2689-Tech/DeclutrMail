@@ -188,6 +188,9 @@ describe('Needs first review in Senders', () => {
     expect(archived).not.toBeChecked();
     expect(archived).toBeEnabled();
     expect(confirm).toBeDisabled();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Email age' }), {
+      target: { value: '180' },
+    });
     fireEvent.click(archived);
     expect(archived).toBeChecked();
     expect(confirm).toBeDisabled();

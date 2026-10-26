@@ -5479,7 +5479,8 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
       expect(within(dialog).queryByText(/We check again right before anything moves/)).toBeNull();
       fireEvent.click(await within(dialog).findByRole('radio', { name: radioName }));
       const age = within(dialog).getByRole('combobox', { name: 'Email age' });
-      expect(age).toHaveValue(mode === 'delete' ? '180' : 'all');
+      expect(age).toHaveValue('all');
+      if (mode === 'delete') fireEvent.change(age, { target: { value: '180' } });
       if (mode === 'archive') fireEvent.change(age, { target: { value: '90' } });
       expect(
         within(dialog).getByRole('region', {
@@ -7213,7 +7214,8 @@ describe('Senders Unsubscribe selected-age network request', () => {
       await waitFor(() => expect(deletion).toBeEnabled());
       fireEvent.click(deletion);
       const age = within(dialog).getByRole('combobox', { name: 'Email age' });
-      expect(age).toHaveValue('180');
+      expect(age).toHaveValue('all');
+      fireEvent.change(age, { target: { value: '180' } });
       expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
         '3 emails',
       );

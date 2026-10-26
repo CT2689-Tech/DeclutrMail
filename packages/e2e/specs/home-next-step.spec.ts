@@ -35,10 +35,13 @@ test.afterEach(async () => {
   const sql = dbConnect();
   try {
     await sql`DELETE FROM inbox_report_cache WHERE mailbox_account_id = ${BILLING_SEED.mailboxId}`;
-    await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND provider_message_id = 'e2e-home-focus-unread'`;
+    await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND provider_message_id IN ('e2e-home-focus-unread', 'e2e-manual-delete-recent')`;
     await sql`UPDATE senders SET unsubscribe_method = NULL, unsubscribe_url = NULL WHERE id = ${BILLING_SEED.archiveSenderId}`;
     await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
     await sql`UPDATE screener_quarantine SET decided_at = NULL WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    await sql`INSERT INTO sender_policies (mailbox_account_id, sender_key, is_protected, protection_reason, protection_set_at)
+      VALUES (${BILLING_SEED.mailboxId}, ${BILLING_SEED.screenerSenderKey}, true, 'starred', now())
+      ON CONFLICT (mailbox_account_id, sender_key) DO UPDATE SET is_protected = true, protection_reason = 'starred', protection_set_at = now()`;
   } finally {
     await sql.end();
   }
@@ -84,6 +87,70 @@ test('pending first review remains visible alongside suggested cleanup', async (
   await review.click();
   await expect(page).toHaveURL(/\/senders\?view=first-review$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Senders', exact: true })).toBeVisible();
+});
+
+test('first-review Delete opens recent inbox email at Any age and resets after cancel', async ({
+  page,
+}) => {
+  await seedHomeRecommendation('pro', true);
+  const sql = dbConnect();
+  try {
+    await sql`DELETE FROM sender_policies WHERE mailbox_account_id = ${BILLING_SEED.mailboxId} AND sender_key = ${BILLING_SEED.screenerSenderKey}`;
+    await sql`INSERT INTO mail_messages (mailbox_account_id, provider_message_id, provider_thread_id, sender_key, internal_date, is_unread, label_ids)
+      VALUES (${BILLING_SEED.mailboxId}, 'e2e-manual-delete-recent', 'e2e-manual-delete-recent-thread', ${BILLING_SEED.screenerSenderKey}, now(), false, ARRAY['INBOX'])
+      ON CONFLICT (mailbox_account_id, provider_message_id) DO NOTHING`;
+  } finally {
+    await sql.end();
+  }
+  const decisions: unknown[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/screener/decide')
+      decisions.push(request.postDataJSON());
+  });
+  await page.goto(
+    `${E2E_ENV.apiUrl}/api/auth/dev/login?${new URLSearchParams({ email: BILLING_SEED.email })}`,
+  );
+  await page.goto(`${E2E_ENV.webUrl}/senders?view=first-review`);
+  await expectScreenMounted(page);
+  const consent = page.getByTestId('cookie-consent-banner');
+  await expect(consent).toBeVisible();
+  await consent.getByRole('button', { name: 'Essential only', exact: true }).click();
+  await expect(consent).toHaveCount(0);
+  await page
+    .getByRole('button', { name: `${BILLING_SEED.screenerSenderName} — expand sender detail` })
+    .click();
+  const openDelete = page
+    .getByRole('toolbar', { name: `Decide ${BILLING_SEED.screenerSenderName}` })
+    .getByRole('button', { name: 'Delete', exact: true });
+  await openDelete.click();
+  const preview = page.getByRole('region', {
+    name: `Preview · Delete ${BILLING_SEED.screenerSenderName}`,
+  });
+  const age = preview.getByRole('combobox', { name: 'Email age' });
+  const archived = preview.getByRole('checkbox', { name: 'Include archived email' });
+  await expect(age).toHaveValue('all');
+  await expect(archived).not.toBeChecked();
+  await expect(preview.getByRole('region', { name: 'What Delete will do' })).toContainText(
+    '2 emails will move to Gmail Trash.',
+  );
+  await age.selectOption('180');
+  await expect(
+    preview.getByRole('button', {
+      name: `Delete for ${BILLING_SEED.screenerSenderName}`,
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(preview).toContainText('No emails match these choices.');
+  await archived.check();
+  await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await openDelete.click();
+  await expect(age).toHaveValue('all');
+  await expect(archived).not.toBeChecked();
+  await expect(preview.getByRole('region', { name: 'What Delete will do' })).toContainText(
+    '2 emails will move to Gmail Trash.',
+  );
+  await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+  expect(decisions).toEqual([]);
 });
 
 test('empty first review explains the pending decision and Keep completes it after confirmation', async ({

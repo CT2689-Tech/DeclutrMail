@@ -235,7 +235,7 @@ export function ScreenerScreen({
     wakeAt: string | null;
     /** ADR-0028 — Delete's reach. Reset to the safe default per verb click. */
     reach: ActionReach;
-    /** Delete defaults to the safe six-month window, then follows the user's choice. */
+    /** Manual Delete starts at Any age, then follows the user's choice. */
     windowDays: number | null;
   } | null>(null);
 
@@ -388,8 +388,8 @@ export function ScreenerScreen({
       reason: 'composite_preview',
     });
   }, [compositePreview.isError, compositePreview.error, previewSenderId]);
-  // Delete starts at the same safer six-month window as Senders. The
-  // reader can widen it here when newer mail would otherwise count zero.
+  // Manual Delete starts at Any age, consistently with Senders. Explicit
+  // older-only choices select their matching preview bucket.
   const isPendingDelete = pending?.verb === 'delete';
   const hasAgeWindow = isPendingDelete || pending?.verb === 'archive' || pending?.verb === 'later';
   // isFetching keeps a reopened preview in 'loading' while cached data

@@ -96,8 +96,8 @@ export function DecidePreview({
   inboxTotal?: number | null;
   /**
    * QA-delete-20260829-01 — the day-window currently applied to
-   * `inboxCount`, if any. Archive starts at Any age; Delete retains
-   * `DEFAULT_DELETE_WINDOW_DAYS`. Other verbs pass null.
+   * `inboxCount`, if any. Manual previews start at Any age (null);
+   * callers keep an explicit older-only selection until cancel/confirm.
    */
   windowDays?: number | null;
   onWindowChange?: ((days: number | null) => void) | undefined;
