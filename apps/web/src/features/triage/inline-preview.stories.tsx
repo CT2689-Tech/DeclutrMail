@@ -66,10 +66,17 @@ function Preview({
     Partial<Pick<InlinePreview, 'archiveHistoric' | 'inboxCount'>>;
 }) {
   return (
-    <div style={{ background: color.bg, padding: 24, width: 560 }}>
+    <div
+      style={{
+        background: color.bg,
+        padding: 24,
+        width: 'min(560px, calc(100vw - 32px))',
+        boxSizing: 'border-box',
+      }}
+    >
       <InlinePreviewBlock
         row={row(rowId)}
-        preview={{ archiveHistoric: false, inboxCount: 47, ...preview }}
+        preview={{ archiveHistoric: false, inboxCount: 47, onCancel: () => undefined, ...preview }}
         busy={false}
         shortcutLive
         onConfirm={() => undefined}

@@ -26,6 +26,8 @@ const markup = execFileSync(
 );
 const css = [
   '../../shared/src/styles/tokens.css',
+  '../../../apps/web/src/features/theme/app-light-theme.css',
+  '../../../apps/web/src/features/theme/action-preview-appearance.css',
   '../../../apps/web/src/features/autopilot/autopilot-dialog.css',
 ]
   .map((path) => readFileSync(new URL(path, import.meta.url), 'utf8'))
@@ -44,7 +46,7 @@ for (const viewport of [
     const server = createServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(
-        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body>${markup}</body></html>`,
+        `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body><span id="dm-app-theme" hidden></span>${markup}</body></html>`,
       );
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
