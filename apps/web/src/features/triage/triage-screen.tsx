@@ -610,9 +610,9 @@ export function TriageScreen({
     (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe') &&
     (previewSettled || deleteReach === 'all_mail');
   const activeReach: ActionReach =
-    pendingAction?.surface === 'sheet' &&
     journey === 'daily' &&
-    (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe')
+    (pendingAction?.verb === 'Delete' ||
+      (pendingAction?.verb === 'Unsubscribe' && pendingAction.backlogMode === 'delete'))
       ? deleteReach
       : 'inbox_only';
   const hasAgeControl =
@@ -1450,6 +1450,10 @@ export function TriageScreen({
             archiveHistoric: backlogMode === 'archive',
             ...(backlogMode ? { backlogMode } : {}),
             rememberPreference: true,
+            ...((verb === 'Delete' || (verb === 'Unsubscribe' && backlogMode === 'delete')) &&
+            activeReach === 'all_mail'
+              ? { reach: activeReach }
+              : {}),
             wakeAt: pendingAction.wakeAt,
             ...(verb === 'Archive' ||
             verb === 'Delete' ||
@@ -1468,6 +1472,7 @@ export function TriageScreen({
       pendingAction,
       previewAge,
       inlineBacklogMode,
+      activeReach,
       previewInboxCount,
       inlinePreviewBlocked,
       dispatchAction,

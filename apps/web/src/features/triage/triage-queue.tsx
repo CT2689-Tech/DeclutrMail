@@ -1,6 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
+import { ActionReachControl } from '@/components/action-scope-controls';
 import type { ReactNode } from 'react';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { MailboxActionContext } from '@/features/auth/mailbox-action-context';
@@ -51,8 +52,22 @@ export function inlinePreviewFor(
         pendingAction.openingBacklogMode ??
         ((openingInbox ?? 0) > 0 ? 'archive' : 'unsub_only'))
       : 'unsub_only';
+  const reachControl =
+    pendingAction.verb === 'Delete' ||
+    (pendingAction.verb === 'Unsubscribe' && backlogMode === 'delete')
+      ? preview.detail?.reachControl
+      : undefined;
   return {
     verb: pendingAction.verb,
+    reach: reachControl?.reach ?? 'inbox_only',
+    reachControlSlot: reachControl ? (
+      <ActionReachControl
+        value={reachControl.reach}
+        inboxCount={reachControl.inboxCount}
+        allMailCount={reachControl.allMailCount}
+        onChange={reachControl.onChange}
+      />
+    ) : undefined,
     ageControl:
       pendingAction.verb === 'Archive' ||
       pendingAction.verb === 'Delete' ||
