@@ -57,7 +57,13 @@ export function RulePreviewPanel({
         fontFamily: font.sans,
       }}
     >
-      <RulePreviewHero state={state} onRetry={onRetry} align="start" count="matches" />
+      <RulePreviewHero
+        state={state}
+        onRetry={onRetry}
+        align="start"
+        count="matches"
+        actionKind={actionKind}
+      />
       {state.status === 'ready' && (
         <>
           <RulePreviewTotals result={state.result} actionKind={actionKind} />
@@ -82,13 +88,13 @@ export function RulePreviewHero({
   state,
   onRetry,
   align = 'center',
-  requiresApproval = false,
+  actionKind,
   count = 'actionable',
 }: {
   state: RulePreviewState;
   onRetry: () => void;
   align?: Align;
-  requiresApproval?: boolean;
+  actionKind: AutopilotRuleDto['actionKind'];
   count?: 'matches' | 'actionable';
 }) {
   const justify = align === 'center' ? 'center' : 'flex-start';
@@ -123,6 +129,12 @@ export function RulePreviewHero({
   }
 
   const n = count === 'matches' ? state.result.wouldMatchCount : state.result.actionableSenderCount;
+  const eligibleLabel = {
+    archive: 'with Inbox email to Archive',
+    later: 'with Inbox email to move to Later',
+    delete: 'with email to Delete',
+    unsubscribe: 'eligible for Unsubscribe',
+  }[actionKind];
   return (
     <div
       style={{
@@ -150,7 +162,7 @@ export function RulePreviewHero({
           ? n === 1
             ? 'sender matches this rule'
             : 'senders match this rule'
-          : `sender${n === 1 ? '' : 's'} ${requiresApproval ? 'ready for review' : 'actionable now'}`}
+          : `sender${n === 1 ? '' : 's'} ${eligibleLabel}`}
       </span>
     </div>
   );
@@ -165,19 +177,12 @@ export function RulePreviewTotals({
   actionKind: AutopilotRuleDto['actionKind'];
 }) {
   const eligible = result.actionableSenderCount;
-  const excluded = result.wouldMatchCount - eligible;
   const verb = {
     archive: 'Archive',
     later: 'move to Later',
     delete: 'Delete',
     unsubscribe: 'Unsubscribe',
   }[actionKind];
-  const exclusion =
-    actionKind === 'unsubscribe'
-      ? `${excluded === 1 ? 'is' : 'are'} already unsubscribed`
-      : actionKind === 'delete'
-        ? `${excluded === 1 ? 'has' : 'have'} no email in this rule’s scope to Delete`
-        : `${excluded === 1 ? 'has' : 'have'} no Inbox email to ${verb}`;
   return (
     <div style={{ fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
       <div>
@@ -188,17 +193,36 @@ export function RulePreviewTotals({
           ? `${eligible === 1 ? 'is' : 'are'} eligible for Unsubscribe.`
           : `${eligible === 1 ? 'has' : 'have'} email to ${verb}.`}
       </div>
-      {excluded > 0 && (
-        <div>
-          {excluded.toLocaleString('en-US')} matching sender{excluded === 1 ? '' : 's'} {exclusion}.
-        </div>
-      )}
+      <RulePreviewExclusions result={result} actionKind={actionKind} />
       {result.protectedWouldMatchCount > 0 && (
         <div>
           {result.protectedWouldMatchCount.toLocaleString('en-US')} matching Protected sender
           {result.protectedWouldMatchCount === 1 ? '' : 's'} excluded from these counts.
         </div>
       )}
+    </div>
+  );
+}
+
+/** The action-ineligible subset of historical matches, shared by cards and activation. */
+export function RulePreviewExclusions({
+  result,
+  actionKind,
+}: {
+  result: AutopilotRulePreviewResultDto;
+  actionKind: AutopilotRuleDto['actionKind'];
+}) {
+  const excluded = result.wouldMatchCount - result.actionableSenderCount;
+  if (excluded <= 0) return null;
+  const exclusion =
+    actionKind === 'unsubscribe'
+      ? `${excluded === 1 ? 'is' : 'are'} already unsubscribed`
+      : actionKind === 'delete'
+        ? `${excluded === 1 ? 'has' : 'have'} no email in this rule’s scope to Delete`
+        : `${excluded === 1 ? 'has' : 'have'} no Inbox email to ${actionKind === 'archive' ? 'Archive' : 'move to Later'}`;
+  return (
+    <div style={{ fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
+      {excluded.toLocaleString('en-US')} matching sender{excluded === 1 ? '' : 's'} {exclusion}.
     </div>
   );
 }
@@ -221,7 +245,7 @@ export function RulePreviewSample({
     return (
       <span style={{ fontSize: text.sm, color: color.fgMuted }}>
         {page
-          ? 'No senders are ready for action right now.'
+          ? 'No senders are eligible for this action right now.'
           : result.wouldMatchCount > 0
             ? 'No sample senders available.'
             : 'Nothing matches right now.'}
@@ -238,10 +262,10 @@ export function RulePreviewSample({
     return (
       <section
         className="dm-autopilot-sample"
-        aria-label={`${page ? 'Actionable senders' : 'Sample matches'} for rule ${ruleName}`}
+        aria-label={`${page ? 'Eligible senders' : 'Sample matches'} for rule ${ruleName}`}
       >
         <div className={`dm-autopilot-sample-heading${page ? ' dm-autopilot-paged-heading' : ''}`}>
-          <h3>{page ? 'Senders ready for action' : 'Matching senders'}</h3>
+          <h3>{page ? 'Eligible senders' : 'Matching senders'}</h3>
           <span aria-live={page ? 'polite' : undefined}>
             {page
               ? `${((page.page - 1) * page.pageSize + 1).toLocaleString('en-US')}–${Math.min(page.page * page.pageSize, page.total).toLocaleString('en-US')} of ${page.total.toLocaleString('en-US')}`

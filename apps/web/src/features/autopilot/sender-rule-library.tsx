@@ -463,9 +463,12 @@ export function SenderRuleLibraryScope({
                                 ? 'Paused'
                                 : 'Approval first'
                               : 'Retired'}{' '}
-                            · {num(rule.matchingMessageCount)} matching emails from{' '}
+                            · {num(rule.matchingMessageCount)} matching email
+                            {rule.matchingMessageCount === 1 ? '' : 's'} from{' '}
                             {num(rule.matchingSenderCount)}{' '}
-                            {rule.matchingSenderCount === 1 ? 'sender' : 'senders'}
+                            {rule.matchingSenderCount === 1
+                              ? 'eligible sender'
+                              : 'eligible senders'}
                           </small>
                         </span>
                       </button>
@@ -637,10 +640,15 @@ export function SenderRuleLibraryScope({
                     </p>
                     <div className={styles.section}>
                       <div className={styles.top}>
-                        <h3>{num(selected.matchingMessageCount)} matching emails</h3>
+                        <h3>
+                          {num(selected.matchingMessageCount)} matching email
+                          {selected.matchingMessageCount === 1 ? '' : 's'}
+                        </h3>
                         <span className={styles.count}>
                           {num(selected.matchingSenderCount)}{' '}
-                          {selected.matchingSenderCount === 1 ? 'sender' : 'senders'}
+                          {selected.matchingSenderCount === 1
+                            ? 'eligible sender'
+                            : 'eligible senders'}
                         </span>
                       </div>
                       {selected.senders.map((sender) => (
@@ -784,10 +792,10 @@ export function SenderRuleLibraryScope({
                   </Button>
                 </div>
                 <p className={styles.muted}>
-                  {num(rule.matchingMessageCount)} matching emails from{' '}
-                  {num(rule.matchingSenderCount)}{' '}
-                  {rule.matchingSenderCount === 1 ? 'sender' : 'senders'}. Preview checks the
-                  current batch.
+                  {num(rule.matchingMessageCount)} matching email
+                  {rule.matchingMessageCount === 1 ? '' : 's'} from {num(rule.matchingSenderCount)}{' '}
+                  {rule.matchingSenderCount === 1 ? 'eligible sender' : 'eligible senders'}. Preview
+                  checks the current batch.
                 </p>
               </section>
             ))}

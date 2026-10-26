@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@declutrmail/shared';
 import { postRulePreview, type AutopilotRuleDto } from '@/lib/api/autopilot';
+import { RulePreviewExclusions } from './rule-preview-panel';
 import { presetDisplayName } from './preset-labels';
 import styles from './review-queue.module.css';
 
@@ -50,12 +51,16 @@ export function DeleteRuleReview({
           </Button>
         </div>
       ) : (
-        <p>
-          {preview.data?.actionableMessageCount.toLocaleString('en-US') ?? '—'} matching emails ·{' '}
-          {preview.data?.actionableSenderCount.toLocaleString('en-US') ?? '—'} sender
-          {preview.data?.actionableSenderCount === 1 ? '' : 's'}. Preview before moving anything to
-          Trash.
-        </p>
+        <div>
+          <p>
+            {preview.data?.actionableMessageCount.toLocaleString('en-US') ?? '—'} email
+            {preview.data?.actionableMessageCount === 1 ? '' : 's'} eligible for Delete ·{' '}
+            {preview.data?.actionableSenderCount.toLocaleString('en-US') ?? '—'} sender
+            {preview.data?.actionableSenderCount === 1 ? '' : 's'}. Preview before moving anything
+            to Trash.
+          </p>
+          {preview.data && <RulePreviewExclusions result={preview.data} actionKind="delete" />}
+        </div>
       )}
     </section>
   );

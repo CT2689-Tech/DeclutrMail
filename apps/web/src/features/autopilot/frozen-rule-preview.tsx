@@ -212,7 +212,7 @@ export function FrozenRulePreview({
     <ConfirmModalFrame
       title={
         preview.data && !checking && !preview.isError
-          ? `${verb(action)} ${num(preview.data.messageCount)} emails?`
+          ? `${verb(action)} ${num(preview.data.messageCount)} email${preview.data.messageCount === 1 ? '' : 's'}?`
           : 'Check this batch'
       }
       subtitle={
@@ -278,9 +278,12 @@ export function FrozenRulePreview({
               finishes for the next batch.
             </p>
           )}
-          {preview.data.messageCount === 0 && <p>No matching email in this batch.</p>}
+          {preview.data.messageCount === 0 && <p>No eligible email in this batch.</p>}
           {preview.data.protectedSenderCount > 0 && (
-            <p>{num(preview.data.protectedSenderCount)} Protected senders excluded.</p>
+            <p>
+              {num(preview.data.protectedSenderCount)} Protected sender
+              {preview.data.protectedSenderCount === 1 ? '' : 's'} excluded.
+            </p>
           )}
         </>
       ) : null}
@@ -321,7 +324,15 @@ export function FrozenRulePreview({
               <em>Protected</em>
             ) : (
               <span className={styles.count}>
-                {checking ? 'Checking…' : match ? num(match.messageCount) : '—'}
+                {checking
+                  ? 'Checking…'
+                  : preview.isError || refreshError
+                    ? 'Unavailable'
+                    : excluded.includes(sender.senderKey)
+                      ? 'Excluded'
+                      : match
+                        ? `${num(match.messageCount)} email${match.messageCount === 1 ? '' : 's'}`
+                        : 'Not in this batch'}
               </span>
             )}
           </label>

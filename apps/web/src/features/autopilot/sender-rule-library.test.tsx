@@ -634,3 +634,13 @@ it.each([
   expect(senderRuleFailureCopy([code])).toBeTruthy();
   expect(senderRuleFailureCopy(['UNKNOWN'])).toBeNull();
 });
+
+it('labels the eligible subset separately from all configured senders and pluralizes one email', async () => {
+  api.list.mockResolvedValue([{ ...rule, matchingMessageCount: 1, matchingSenderCount: 1 }]);
+  setup();
+  await loaded();
+  expect(screen.getByRole('heading', { name: '1 matching email' })).toBeInTheDocument();
+  expect(screen.getAllByText(/1 eligible sender/).length).toBeGreaterThan(0);
+  expect(screen.getByText('Family', { exact: true })).toBeInTheDocument();
+  expect(screen.getByText('Protected', { exact: true })).toBeInTheDocument();
+});

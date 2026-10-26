@@ -6,7 +6,7 @@ import { buildActionPresentation, defaultLaterWakeAtIso } from '@declutrmail/sha
 import type { AutopilotRuleDto, AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
 import { ConfirmModalFrame, ruleEffectFacts } from './confirm-modal-frame';
 import { isReviewOnlyPreset, presetDisplayName } from './preset-labels';
-import { RulePreviewHero, RulePreviewSample } from './rule-preview-panel';
+import { RulePreviewExclusions, RulePreviewHero, RulePreviewSample } from './rule-preview-panel';
 import { RulePreviewSenders, type LoadPreviewPage } from './rule-preview-senders';
 import type { RulePreviewState } from './types';
 
@@ -149,8 +149,15 @@ function ActivateRuleSheet({
   // this rule's pending Observe suggestions only on the transition into
   // `active`.
   const commitsActive = !reviewOnly && (!enabling || enablingToAct) && !watching;
+  const needsApproval = !commitsActive;
   const presentation = rulePresentation(rule);
   const protectedCount = preview.status === 'ready' ? preview.result.protectedWouldMatchCount : 0;
+  const approvalNote =
+    rule.actionKind === 'delete'
+      ? 'Preview and approve each batch before emails move to Trash.'
+      : rule.actionKind === 'unsubscribe'
+        ? 'No unsubscribe requests until you approve a suggestion.'
+        : 'No mail moves until you approve a suggestion.';
   const senderPage = preview.status === 'ready' ? preview.result.senderPage : undefined;
   const [expiredPreviewId, setExpiredPreviewId] = useState<string | null>(null);
   const [blockedPreviewId, setBlockedPreviewId] = useState<string | null>(null);
@@ -177,9 +184,11 @@ function ActivateRuleSheet({
         enabling ? `Turn on ${name}?` : reviewOnly ? `Watch ${name}?` : `Switch ${name} to Active?`
       }
       subtitle={
-        reviewOnly
-          ? 'Matches become suggestions. You decide which email to act on.'
-          : matchEffectCopy(presentation)
+        rule.actionKind === 'delete'
+          ? 'Review matching email in a batch before approving Delete.'
+          : needsApproval
+            ? 'Matches become suggestions. You approve each action.'
+            : matchEffectCopy(presentation)
       }
       note={`${
         protectedCount > 0
@@ -187,7 +196,7 @@ function ActivateRuleSheet({
               protectedCount === 1 ? ' is' : 's are'
             } skipped.`
           : 'Protected senders are skipped.'
-      } ${reviewOnly ? 'No mail moves until you approve a suggestion.' : undoNote(rule, undoWindowDays)}`}
+      } ${needsApproval ? approvalNote : undoNote(rule, undoWindowDays)}`}
       confirmLabel={
         watching ? 'Watch first' : enabling ? 'Turn on' : reviewOnly ? 'Watch' : 'Switch to Active'
       }
@@ -219,7 +228,7 @@ function ActivateRuleSheet({
       // the commit the user has selected and can see on the button.
       onConfirm={watching && onWatchFirst != null ? onWatchFirst : onConfirm}
       facts={[
-        ...(preview.status === 'ready' ? activationFacts(rule, preview.result, reviewOnly) : []),
+        ...(preview.status === 'ready' ? activationFacts(rule, preview.result, needsApproval) : []),
         ...(reviewOnly || rule.actionKind === 'unsubscribe'
           ? []
           : ruleEffectFacts(presentation.primary)),
@@ -279,9 +288,12 @@ function ActivateRuleSheet({
           <RulePreviewHero
             state={preview}
             onRetry={onRetryPreview}
-            requiresApproval={reviewOnly}
+            actionKind={rule.actionKind}
             align="start"
           />
+          {preview.status === 'ready' && (
+            <RulePreviewExclusions result={preview.result} actionKind={rule.actionKind} />
+          )}
         </div>
         {offersChoice ? (
           <fieldset className="dm-autopilot-modes">
@@ -366,12 +378,12 @@ const plural = (count: number, word: string, suffix = 's') =>
 function activationFacts(
   rule: AutopilotRuleDto,
   result: AutopilotRulePreviewResultDto,
-  reviewOnly = false,
+  needsApproval = false,
 ): SheetFactItem[] {
   if (rule.actionKind === 'delete')
     return [
       {
-        label: 'Matching now',
+        label: 'Eligible now',
         value: `${plural(result.actionableSenderCount, 'sender')} · ${plural(result.actionableMessageCount, 'email')}`,
       },
       { label: 'Include', value: result.reach === 'all_mail' ? 'Inbox + archived' : 'Inbox only' },
@@ -394,7 +406,7 @@ function activationFacts(
     },
     {
       // "Actionable" = the rule has something to do for that sender now.
-      label: reviewOnly ? 'If approved' : 'Actionable now',
+      label: needsApproval ? 'If approved' : 'Eligible now',
       value:
         rule.actionKind === 'unsubscribe'
           ? plural(result.actionableSenderCount, 'unsubscribe request')
@@ -414,7 +426,7 @@ function activationFacts(
     weekly,
     {
       label: 'Daily cap',
-      value: `${plural(result.dailyActionCap, 'action')}, the rest wait for the next check`,
+      value: `Up to ${plural(result.dailyActionCap, 'action')} per day`,
     },
     // Approved earlier (while this rule was Active), never run because
     // the rule was off or paused — the first sweep after this commit

@@ -282,3 +282,55 @@ export const Activating: StoryObj<typeof ActivateRuleModal> = {
   args: { ...baseArgs, isActivating: true },
   render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
 };
+
+/** Historical matching is distinct from current action eligibility. */
+export const ArchiveWithoutInbox: StoryObj<typeof ActivateRuleModal> = {
+  args: {
+    ...baseArgs,
+    intent: 'enable',
+    pendingCount: 0,
+    rule: { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, enabled: false },
+    preview: {
+      status: 'ready',
+      result: {
+        ...RULE_PREVIEW_RESULT,
+        wouldMatchCount: 1,
+        actionableSenderCount: 0,
+        actionableMessageCount: 0,
+        protectedWouldMatchCount: 0,
+        sample: [{ ...RULE_PREVIEW_RESULT.sample[0]!, inboxCount: 0 }],
+      },
+    },
+  },
+  render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
+};
+
+export const AlreadyUnsubscribed: StoryObj<typeof ActivateRuleModal> = {
+  args: {
+    ...baseArgs,
+    intent: 'enable',
+    pendingCount: 0,
+    rule: { ...NEWSLETTER_GRAVEYARD, enabled: false },
+    onWatchFirst: noop,
+    preview: {
+      status: 'ready',
+      result: {
+        ...RULE_PREVIEW_RESULT,
+        wouldMatchCount: 1,
+        actionableSenderCount: 0,
+        actionableMessageCount: 0,
+        protectedWouldMatchCount: 0,
+        dailyActionCap: 25,
+        senderPage: {
+          previewId: '11111111-1111-4111-8111-111111111111',
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+          page: 1,
+          pageSize: 25,
+          total: 0,
+          senders: [],
+        },
+      },
+    },
+  },
+  render: (args: ModalArgs) => frame(<ActivateRuleModal {...args} />),
+};
