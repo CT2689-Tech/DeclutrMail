@@ -324,7 +324,7 @@ export function RuleCard({
           ruleName={name}
           state={preview}
           onRetry={onRetryPreview}
-          requiresApproval={isReviewOnlyPreset(rule.presetKey, rule.actionKind)}
+          actionKind={rule.actionKind}
         />
       )}
     </li>

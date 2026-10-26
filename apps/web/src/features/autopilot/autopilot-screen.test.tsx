@@ -1553,11 +1553,11 @@ describe('AutopilotScreen — rules management (D101)', () => {
     const panel = await screen.findByRole('region', {
       name: /current match preview for rule review low-engagement senders for archive/i,
     });
-    // The would-match count, out of the senders checked…
-    expect(within(panel).getByText(/12 of 148 senders checked match/i)).toBeInTheDocument();
-    // …and the one number a person can review now.
-    expect(within(panel).getByText('10')).toBeInTheDocument();
-    expect(within(panel).getByText('senders ready for review')).toBeInTheDocument();
+    expect(within(panel).getByText('12', { selector: 'strong' })).toBeInTheDocument();
+    expect(within(panel).getByText(/senders match this rule/)).toBeInTheDocument();
+    expect(within(panel).getByText(/148 senders checked/)).toBeInTheDocument();
+    expect(within(panel).getByText(/10 senders have email to Archive/)).toBeInTheDocument();
+    expect(within(panel).getByText(/2 matching senders have no Inbox email/)).toBeInTheDocument();
   });
 });
 
