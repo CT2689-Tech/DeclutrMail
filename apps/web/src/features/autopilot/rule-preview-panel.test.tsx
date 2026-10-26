@@ -1,7 +1,12 @@
 import { render, screen, within } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { RULE_PREVIEW_RESULT } from './fixtures';
-import { RulePreviewSample } from './rule-preview-panel';
+import {
+  RulePreviewHero,
+  RulePreviewPanel,
+  RulePreviewSample,
+  RulePreviewTotals,
+} from './rule-preview-panel';
 
 const dormant = {
   senderKey: 'synthetic-sender',
@@ -83,4 +88,152 @@ it('distinguishes a confirmed empty inbox from an unavailable inbox count', () =
   expect(table.getByRole('cell', { name: /^In inbox 0$/ })).toBeInTheDocument();
   expect(table.getByRole('cell', { name: 'Inbox count unavailable' })).toBeInTheDocument();
   expect(table.getByTitle('Inbox count unavailable')).toHaveTextContent('—');
+});
+
+it('explains a historical Archive match with no Inbox email instead of implying a review queue', () => {
+  render(
+    <RulePreviewPanel
+      ruleName="Synthetic Archive rule"
+      actionKind="archive"
+      state={{
+        status: 'ready',
+        result: {
+          ...RULE_PREVIEW_RESULT,
+          wouldMatchCount: 1,
+          actionableSenderCount: 0,
+          actionableMessageCount: 0,
+          evaluatedSenders: 7704,
+          protectedWouldMatchCount: 0,
+          sample: [{ ...dormant, inboxCount: 0 }],
+        },
+      }}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(screen.getByText('1', { selector: 'strong' })).toBeInTheDocument();
+  expect(screen.getByText(/sender matches this rule/)).toBeInTheDocument();
+  expect(screen.getByText(/7,704 senders checked/)).toBeInTheDocument();
+  expect(screen.getByText(/0 senders have email to Archive/)).toBeInTheDocument();
+  expect(screen.getByText(/1 matching sender has no Inbox email to Archive/)).toBeInTheDocument();
+  expect(screen.getByText(/0 Inbox emails/)).toBeInTheDocument();
+  expect(screen.queryByText(/ready for review|0 Protected/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Preview only/)).toBeInTheDocument();
+});
+
+it.each([
+  ['archive', 'no Inbox email to Archive'],
+  ['later', 'no Inbox email to move to Later'],
+  ['delete', 'no email in this rule’s scope to Delete'],
+  ['unsubscribe', 'already unsubscribed'],
+] as const)(
+  'explains the non-actionable subset for %s without treating protection as the cause',
+  (actionKind, reason) => {
+    render(
+      <RulePreviewTotals
+        actionKind={actionKind}
+        result={{ ...RULE_PREVIEW_RESULT, wouldMatchCount: 12, actionableSenderCount: 10 }}
+      />,
+    );
+    expect(screen.getByText(new RegExp(`2 matching senders.*${reason}`))).toBeInTheDocument();
+    expect(
+      screen.getByText(/3 matching Protected senders excluded from these counts/),
+    ).toBeInTheDocument();
+  },
+);
+
+it('keeps the activation hero tied to action eligibility even when the rule has historical matches', () => {
+  render(
+    <RulePreviewHero
+      state={{
+        status: 'ready',
+        result: { ...RULE_PREVIEW_RESULT, wouldMatchCount: 1, actionableSenderCount: 0 },
+      }}
+      onRetry={vi.fn()}
+      requiresApproval
+    />,
+  );
+  expect(screen.getByText('0', { selector: 'strong' })).toBeInTheDocument();
+});
+
+it('does not infer action ineligibility from an empty sample or unknown Inbox count', () => {
+  const result = {
+    ...RULE_PREVIEW_RESULT,
+    wouldMatchCount: 1,
+    actionableSenderCount: 1,
+    protectedWouldMatchCount: 0,
+    sample: [],
+  };
+  const view = render(
+    <RulePreviewPanel
+      ruleName="Synthetic Unsubscribe rule"
+      actionKind="unsubscribe"
+      state={{ status: 'ready', result }}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(screen.getByText(/1 sender is eligible for Unsubscribe/)).toBeInTheDocument();
+  expect(screen.getByText(/No sample senders available/)).toBeInTheDocument();
+  expect(screen.queryByText(/no Inbox|already unsubscribed/)).not.toBeInTheDocument();
+  view.rerender(
+    <RulePreviewPanel
+      ruleName="Synthetic Unsubscribe rule"
+      actionKind="unsubscribe"
+      state={{
+        status: 'ready',
+        result: { ...result, sample: [{ ...dormant, inboxCount: undefined }] },
+      }}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(screen.queryByText(/Inbox emails/)).not.toBeInTheDocument();
+  expect(screen.getByText(/1 sender is eligible for Unsubscribe/)).toBeInTheDocument();
+});
+
+it('shows a true zero-match state without an exclusion explanation', () => {
+  render(
+    <RulePreviewPanel
+      ruleName="Synthetic rule"
+      actionKind="archive"
+      state={{
+        status: 'ready',
+        result: {
+          ...RULE_PREVIEW_RESULT,
+          wouldMatchCount: 0,
+          actionableSenderCount: 0,
+          protectedWouldMatchCount: 0,
+          sample: [],
+        },
+      }}
+      onRetry={vi.fn()}
+    />,
+  );
+  expect(screen.getByText('0', { selector: 'strong' })).toBeInTheDocument();
+  expect(screen.getByText(/Nothing matches right now/)).toBeInTheDocument();
+  expect(screen.queryByText(/matching senders have no Inbox/)).not.toBeInTheDocument();
+});
+
+it('keeps loading and retry states free of stale preview counts', () => {
+  const retry = vi.fn();
+  const view = render(
+    <RulePreviewPanel
+      ruleName="Synthetic rule"
+      actionKind="archive"
+      state={{ status: 'loading' }}
+      onRetry={retry}
+    />,
+  );
+  expect(screen.getByRole('status')).toHaveTextContent(/Checking current sender data/);
+  expect(screen.queryByText(/senders checked/)).not.toBeInTheDocument();
+  view.rerender(
+    <RulePreviewPanel
+      ruleName="Synthetic rule"
+      actionKind="archive"
+      state={{ status: 'error', message: 'Preview unavailable.' }}
+      onRetry={retry}
+    />,
+  );
+  expect(screen.getByRole('alert')).toHaveTextContent('Preview unavailable.');
+  screen.getByRole('button', { name: 'Try again' }).click();
+  expect(retry).toHaveBeenCalledOnce();
+  expect(screen.queryByText(/senders checked/)).not.toBeInTheDocument();
 });

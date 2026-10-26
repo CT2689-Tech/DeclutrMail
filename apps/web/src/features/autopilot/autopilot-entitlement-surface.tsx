@@ -43,6 +43,7 @@ export function AutopilotObservePreview() {
   const rules = useAutopilotRules();
   const preview = useRulePreview();
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
+  const previewRule = rules.data?.find((rule) => rule.id === previewRuleId);
   // D251 — this preview renders to workspaces WITHOUT `autopilot`,
   // i.e. Free only. The cheapest plan that unlocks the screen they are
   // looking at is therefore the review capability's granting tier (Plus),
@@ -192,13 +193,11 @@ export function AutopilotObservePreview() {
             ))}
           </ul>
         )}
-        {previewRuleId != null && rules.data != null && (
+        {previewRuleId != null && previewRule != null && (
           <div style={{ marginTop: 12 }}>
             <RulePreviewPanel
-              ruleName={presetDisplayName(
-                rules.data.find((rule) => rule.id === previewRuleId)?.presetKey ?? null,
-                rules.data.find((rule) => rule.id === previewRuleId)?.name ?? 'Preset rule',
-              )}
+              ruleName={presetDisplayName(previewRule.presetKey, previewRule.name)}
+              actionKind={previewRule.actionKind}
               state={previewState(preview, previewRuleId)}
               onRetry={() => preview.mutate(previewRuleId)}
             />

@@ -2,7 +2,7 @@
 
 import { Button, tokens } from '@declutrmail/shared';
 import type { ReactNode } from 'react';
-import type { AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
+import type { AutopilotRuleDto, AutopilotRulePreviewResultDto } from '@/lib/api/autopilot';
 import type { RulePreviewState } from './types';
 import { resolveSenderIdentity } from './sender-label';
 import { MatchReasonCopy } from './match-reason-copy';
@@ -39,12 +39,12 @@ export function RulePreviewPanel({
   ruleName,
   state,
   onRetry,
-  requiresApproval = false,
+  actionKind,
 }: {
   ruleName: string;
   state: RulePreviewState;
   onRetry: () => void;
-  requiresApproval?: boolean;
+  actionKind: AutopilotRuleDto['actionKind'];
 }) {
   return (
     <div
@@ -57,20 +57,15 @@ export function RulePreviewPanel({
         fontFamily: font.sans,
       }}
     >
-      <RulePreviewHero
-        state={state}
-        onRetry={onRetry}
-        align="start"
-        requiresApproval={requiresApproval}
-      />
+      <RulePreviewHero state={state} onRetry={onRetry} align="start" count="matches" />
       {state.status === 'ready' && (
         <>
-          <RulePreviewTotals result={state.result} />
+          <RulePreviewTotals result={state.result} actionKind={actionKind} />
           <RulePreviewSample ruleName={ruleName} result={state.result} />
           {/* Pressing "Preview matches" must never read as having done
               something to the mail. */}
           <span style={{ fontSize: text.xs, color: color.fgMuted }}>
-            This preview changes nothing.
+            Preview only. No emails will change.
           </span>
         </>
       )}
@@ -79,8 +74,8 @@ export function RulePreviewPanel({
 }
 
 /**
- * The ONE number the user acts on: senders the rule would act on right
- * now (`actionableSenderCount`). Also owns the loading and failed states,
+ * Rule cards lead with all matches, matching their historical sample.
+ * Activation keeps the eligible action count. Also owns loading and failed states,
  * so a surface that gates a commit on the preview has one place to look.
  */
 export function RulePreviewHero({
@@ -88,11 +83,13 @@ export function RulePreviewHero({
   onRetry,
   align = 'center',
   requiresApproval = false,
+  count = 'actionable',
 }: {
   state: RulePreviewState;
   onRetry: () => void;
   align?: Align;
   requiresApproval?: boolean;
+  count?: 'matches' | 'actionable';
 }) {
   const justify = align === 'center' ? 'center' : 'flex-start';
 
@@ -125,7 +122,7 @@ export function RulePreviewHero({
     );
   }
 
-  const n = state.result.actionableSenderCount;
+  const n = count === 'matches' ? state.result.wouldMatchCount : state.result.actionableSenderCount;
   return (
     <div
       style={{
@@ -149,21 +146,60 @@ export function RulePreviewHero({
         {n.toLocaleString('en-US')}
       </strong>
       <span style={{ fontSize: text.md, color: color.fgMuted }}>
-        sender{n === 1 ? '' : 's'} {requiresApproval ? 'ready for review' : 'actionable now'}
+        {count === 'matches'
+          ? n === 1
+            ? 'sender matches this rule'
+            : 'senders match this rule'
+          : `sender${n === 1 ? '' : 's'} ${requiresApproval ? 'ready for review' : 'actionable now'}`}
       </span>
     </div>
   );
 }
 
-/** The other two counts from the same dry-run, in one line. */
-export function RulePreviewTotals({ result }: { result: AutopilotRulePreviewResultDto }) {
+/** Match counts exclude Protected senders; action eligibility is a separate subset. */
+export function RulePreviewTotals({
+  result,
+  actionKind,
+}: {
+  result: AutopilotRulePreviewResultDto;
+  actionKind: AutopilotRuleDto['actionKind'];
+}) {
+  const eligible = result.actionableSenderCount;
+  const excluded = result.wouldMatchCount - eligible;
+  const verb = {
+    archive: 'Archive',
+    later: 'move to Later',
+    delete: 'Delete',
+    unsubscribe: 'Unsubscribe',
+  }[actionKind];
+  const exclusion =
+    actionKind === 'unsubscribe'
+      ? `${excluded === 1 ? 'is' : 'are'} already unsubscribed`
+      : actionKind === 'delete'
+        ? `${excluded === 1 ? 'has' : 'have'} no email in this rule’s scope to Delete`
+        : `${excluded === 1 ? 'has' : 'have'} no Inbox email to ${verb}`;
   return (
-    <span style={{ fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
-      {result.wouldMatchCount.toLocaleString('en-US')} of{' '}
-      {result.evaluatedSenders.toLocaleString('en-US')} senders checked match.{' '}
-      {result.protectedWouldMatchCount.toLocaleString('en-US')} Protected sender
-      {result.protectedWouldMatchCount === 1 ? ' is' : 's are'} skipped.
-    </span>
+    <div style={{ fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
+      <div>
+        {result.evaluatedSenders.toLocaleString('en-US')} sender
+        {result.evaluatedSenders === 1 ? '' : 's'} checked. {eligible.toLocaleString('en-US')}{' '}
+        sender{eligible === 1 ? '' : 's'}{' '}
+        {actionKind === 'unsubscribe'
+          ? `${eligible === 1 ? 'is' : 'are'} eligible for Unsubscribe.`
+          : `${eligible === 1 ? 'has' : 'have'} email to ${verb}.`}
+      </div>
+      {excluded > 0 && (
+        <div>
+          {excluded.toLocaleString('en-US')} matching sender{excluded === 1 ? '' : 's'} {exclusion}.
+        </div>
+      )}
+      {result.protectedWouldMatchCount > 0 && (
+        <div>
+          {result.protectedWouldMatchCount.toLocaleString('en-US')} matching Protected sender
+          {result.protectedWouldMatchCount === 1 ? '' : 's'} excluded from these counts.
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -187,7 +223,7 @@ export function RulePreviewSample({
         {page
           ? 'No senders are ready for action right now.'
           : result.wouldMatchCount > 0
-            ? 'Matching senders have no Inbox mail to act on right now.'
+            ? 'No sample senders available.'
             : 'Nothing matches right now.'}
       </span>
     );
@@ -325,6 +361,12 @@ export function RulePreviewSample({
                 {identity.source === 'name' && s.senderEmail != null && (
                   <span style={{ ...ellipsis, fontSize: text.xs, color: color.fgMuted }}>
                     {s.senderEmail}
+                  </span>
+                )}
+                {s.inboxCount != null && (
+                  <span style={{ fontSize: text.xs, color: color.fgMuted }}>
+                    {s.inboxCount.toLocaleString('en-US')} Inbox email
+                    {s.inboxCount === 1 ? '' : 's'}
                   </span>
                 )}
               </span>
