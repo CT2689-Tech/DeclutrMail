@@ -15,6 +15,8 @@ import { GoogleOAuthController } from './google-oauth.controller.js';
 import { GoogleOAuthService } from './google-oauth.service.js';
 import { JwtGuard } from './jwt.guard.js';
 import { JwtService } from './jwt.service.js';
+import { NativeAuthController } from './native-auth.controller.js';
+import { NativeAuthService } from './native-auth.service.js';
 import { SESSIONS_REDIS, SessionsService } from './sessions.service.js';
 
 const bootLogger = new Logger('AuthModule');
@@ -72,10 +74,11 @@ const sessionsRedisProvider: Provider = {
   // DevAuthController is always registered but its handler 404s unless
   // the dev-login is explicitly enabled in a non-prod env (see the
   // triple gate in dev-auth.controller.ts + the boot refuse in main.ts).
-  controllers: [AuthController, GoogleOAuthController, DevAuthController],
+  controllers: [AuthController, GoogleOAuthController, NativeAuthController, DevAuthController],
   providers: [
     GoogleOAuthService,
     AuthSignupOrchestrator,
+    NativeAuthService,
     SessionsService,
     JwtService,
     CsrfService,

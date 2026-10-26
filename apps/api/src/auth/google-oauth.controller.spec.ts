@@ -12,6 +12,7 @@ import { AppException } from '../common/app-exception.js';
 import type { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import type { SecurityEventsService } from '../security-events/security-events.service.js';
 import type { AuthSignupOrchestrator } from './auth-signup.orchestrator.js';
+import type { NativeAuthService } from './native-auth.service.js';
 import { BetaGateDeniedError } from './beta-gate.js';
 import { GmailScopeNotGrantedError, type GoogleOAuthService } from './google-oauth.service.js';
 import { GoogleOAuthController, parseAppReturnTo } from './google-oauth.controller.js';
@@ -19,6 +20,9 @@ import { JwtService } from './jwt.service.js';
 import { stateCookieName } from './oauth-browser.js';
 import { LoginStartExitFilter, OAuthCallbackExitFilter } from './oauth-exit.filter.js';
 import type { SessionPrincipal, SessionsService } from './sessions.service.js';
+
+/** Controller specs that never reach a native path need no ticket service. */
+const noNative = {} as unknown as NativeAuthService;
 
 const RECONNECT_MAILBOX_ID = '11111111-1111-4111-8111-111111111111';
 const REACTIVATE_MAILBOX_ID = '12121212-1212-4121-8121-121212121212';
@@ -193,6 +197,7 @@ describe('GoogleOAuthController.start — an existing session is not replaced', 
       makeMailboxAccounts() as unknown as MailboxAccountsService,
       jwt,
       sessions,
+      noNative,
     );
   }
 
@@ -335,6 +340,7 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       makeMailboxAccounts() as unknown as MailboxAccountsService,
       jwt,
       makeSessions().service,
+      noNative,
     );
 
     await controller.start(
@@ -377,6 +383,7 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       makeMailboxAccounts() as unknown as MailboxAccountsService,
       jwt,
       makeSessions().service,
+      noNative,
     );
 
     await controller.start(signedOutRequest(), res as unknown as Response, returnTo);
@@ -396,6 +403,7 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       makeMailboxAccounts() as unknown as MailboxAccountsService,
       jwt,
       makeSessions().service,
+      noNative,
     );
 
     await controller.start(
@@ -426,6 +434,7 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
       makeMailboxAccounts() as unknown as MailboxAccountsService,
       jwt,
       makeSessions().service,
+      noNative,
     );
 
     const keep = { cookie: vi.fn(), redirect: vi.fn() };
@@ -474,6 +483,7 @@ describe('GoogleOAuthController.start — directory campaign handoff', () => {
         makeMailboxAccounts() as unknown as MailboxAccountsService,
         jwt,
         makeSessions().service,
+        noNative,
       );
       await controller.start(
         {
@@ -519,6 +529,7 @@ describe('GoogleOAuthController.connectMailboxStart — targeted mailbox recover
       mailboxes as unknown as MailboxAccountsService,
       jwt,
       makeSessions().service,
+      noNative,
     );
   });
 
@@ -707,6 +718,7 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
       mailboxes as unknown as MailboxAccountsService,
       jwt,
       sessions.service,
+      noNative,
     );
   });
 
@@ -1301,6 +1313,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
       makeMailboxAccounts() as unknown as MailboxAccountsService,
       jwt,
       sessions.service,
+      noNative,
     );
   });
 
@@ -2241,6 +2254,7 @@ describe('GoogleOAuthController.callback — Gmail not granted', () => {
       mailboxes as unknown as MailboxAccountsService,
       jwt,
       makeSessions().service,
+      noNative,
     );
   });
 
@@ -2377,6 +2391,7 @@ describe('GoogleOAuthController.callback — declining on Google’s screen', ()
       makeMailboxAccounts() as unknown as MailboxAccountsService,
       jwt,
       sessions.service,
+      noNative,
     );
   });
 
@@ -2521,6 +2536,7 @@ describe('GoogleOAuthController — returning identity sign-in', () => {
       makeMailboxAccounts() as unknown as MailboxAccountsService,
       jwt,
       makeSessions().service,
+      noNative,
     );
   });
   function callback(returnTo = '/settings', overrides: Record<string, unknown> = {}) {

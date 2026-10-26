@@ -161,6 +161,36 @@ test('phone shell keeps the last content above a flush tab bar', async ({ page }
   saveShot('mobile-nav-390', await page.screenshot());
 });
 
+// A native shell draws the WebView under the status bar / camera cutout and
+// the (app) group's viewport-fit=cover hands that inset to the page. Relative
+// on purpose: the shell must move down by exactly the inset, and return to
+// where it was when there is none (every ordinary browser).
+test('phone shell starts below a device status bar and is unchanged without one', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(origin);
+  const cdp = await page.context().newCDPSession(page);
+  const setTopInset = (top: number) =>
+    cdp.send('Emulation.setSafeAreaInsetsOverride', {
+      insets: { top, bottom: 0, left: 0, right: 0 },
+    });
+  const hamburgerTop = async () => {
+    const box = await page.locator('.dm-topbar-hamburger').boundingBox();
+    expect(box).not.toBeNull();
+    return box!.y;
+  };
+
+  await setTopInset(0);
+  const flush = await hamburgerTop();
+
+  await setTopInset(47);
+  expect(await hamburgerTop()).toBe(flush + 47);
+
+  await setTopInset(0);
+  expect(await hamburgerTop()).toBe(flush);
+});
+
 test('desktop keeps the sidebar and the original link metrics', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(origin);

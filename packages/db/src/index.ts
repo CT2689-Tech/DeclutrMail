@@ -125,6 +125,8 @@ export { mailboxAccounts, mailboxProvider, mailboxStatus } from './schema/mailbo
 export type { MailboxAccount, NewMailboxAccount } from './schema/mailbox-accounts';
 export { mailboxLabels } from './schema/mailbox-labels';
 export type { MailboxLabel, NewMailboxLabel } from './schema/mailbox-labels';
+export { nativeAuthTickets } from './schema/native-auth-tickets';
+export type { NativeAuthTicket, NewNativeAuthTicket } from './schema/native-auth-tickets';
 export {
   mailboxDataDeletionRequests,
   mailboxDataDeletionStatus,

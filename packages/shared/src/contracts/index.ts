@@ -367,6 +367,29 @@ export { BETA_DENIED_PATH, BETA_DENIED_REASON, BETA_DENIED_REASON_PARAM } from '
 export { GMAIL_ACCESS_MISSING_RESULT, parseSignInResult, SIGN_IN_RESULTS } from './oauth-return';
 export type { SignInResult } from './oauth-return';
 
+// Native sign-in handoff between the system browser and the app shell
+// (ADR-0049). The API builds the return link; the shell reads it.
+export {
+  buildNativeReturnUrl,
+  isNativeSafePath,
+  NATIVE_APP_SCHEME,
+  NATIVE_CODE_PATTERN,
+  NATIVE_HANDOFF_TTL_MS,
+  NATIVE_START_TICKET_TTL_MS,
+  nativeConnectTicketRequestSchema,
+  nativeExchangeRequestSchema,
+  parseNativeReturnUrl,
+  PKCE_CHALLENGE_PATTERN,
+  PKCE_VERIFIER_PATTERN,
+} from './native-auth';
+export type {
+  NativeConnectTicketRequest,
+  NativeConnectTicketResponse,
+  NativeExchangeRequest,
+  NativeExchangeResponse,
+  NativeReturn,
+} from './native-auth';
+
 // U27 — Activity feed rule attribution (D57): `rule` ref on
 // `GET /api/activity` rows, resolved from `activity_log.rule_id`.
 export { ActivityRuleRefSchema } from './activity';

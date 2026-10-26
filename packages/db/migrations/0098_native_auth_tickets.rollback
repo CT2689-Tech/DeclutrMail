@@ -1,0 +1,3 @@
+-- Rollback for 0098_native_auth_tickets.sql
+
+DROP TABLE "native_auth_tickets";

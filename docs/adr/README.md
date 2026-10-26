@@ -34,6 +34,12 @@ Status values: Proposed | Accepted | Superseded by ADR-NNNN.
 
 | [0046](./0046-sandbox-revocable-checkout-preparation.md) | Accepted for sandbox preparation only | Provider-revocable checkout preparation | D117, D118, D249 |
 
+| [0047](./0047-capacitor-shell-mobile-prototype.md) | Accepted | Capacitor remote-URL shell, the basis of the native app | D164, D173, D246 |
+
+| [0048](./0048-one-swipe-grammar.md) | Accepted | One swipe grammar for every phone surface | D37, D54, D226, D227 |
+
+| [0049](./0049-native-sign-in-handoff.md) | Proposed (founder review: auth surface) | System-browser sign-in handoff for the native app | D4, D155, D173, D205, D229 |
+
 ## Authoring an ADR
 
 1. Copy `0000-template.md` to `NNNN-kebab-title.md` using the next

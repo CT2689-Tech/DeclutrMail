@@ -330,6 +330,11 @@ pre {
    keyboard instead of being trapped behind the old 100vh box. */
 .dm-app-viewport {
   height: 100vh;
+  /* The (app) route group sets viewport-fit=cover, so a native shell that
+     draws the WebView under the status bar or camera cutout hands that
+     inset to the page. It is 0 wherever the browser already insets for
+     its own chrome. */
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 @supports (height: 100dvh) {
