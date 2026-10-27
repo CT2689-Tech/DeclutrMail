@@ -10,10 +10,9 @@
 > rebuild the table from the plan.
 
 Source of truth for the status of each D-decision in the plan. See
-CLAUDE.md §8 for the lifecycle and how this auto-updates from PRs.
+CLAUDE.md §8.1 for the lifecycle and how this auto-updates from PRs.
 
-**Plan source:** `~/.claude/plans/i-want-you-to-smooth-kahn.md` (repo
-mirror to be created at `docs/execution/Implementation-Plan.md`).
+**Plan source:** `docs/execution/Implementation-Plan.md`.
 
 ## Status legend
 
