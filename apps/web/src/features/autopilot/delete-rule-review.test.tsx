@@ -33,9 +33,9 @@ it('distinguishes historical Delete matches from emails eligible in its scope', 
       <DeleteRuleReview rule={rule} mailboxId="mb" onPreview={vi.fn()} />
     </QueryClientProvider>,
   );
-  expect(await screen.findByText(/0 emails eligible for Delete/)).toBeInTheDocument();
+  expect(await screen.findByText(/0 emails available to Delete/)).toBeInTheDocument();
   expect(
-    screen.getByText(/1 matching sender has no email in this rule’s scope to Delete/),
+    screen.getByText(/1 matching sender has no email that this rule can Delete/),
   ).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Preview batch' })).toBeDisabled();
 });

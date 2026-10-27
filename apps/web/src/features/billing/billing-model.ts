@@ -572,9 +572,9 @@ export function complimentaryNote(view: BillingPlanView): string | null {
   const name = TIER_MANIFEST[comp.tier].name;
   const until = formatBillingDate(comp.expiresAt);
   if (until === null) {
-    return `${name} is complimentary on this account, granted by DeclutrMail. There’s nothing to pay for it.`;
+    return `${name} is included at no cost, from DeclutrMail.`;
   }
-  return `${name} is complimentary on this account through ${until}, granted by DeclutrMail. After that your plan reverts to your paid subscription, or to ${TIER_MANIFEST.free.name} if you have none.`;
+  return `${name} is included at no cost through ${until}, from DeclutrMail. After that, you return to your paid plan, or to ${TIER_MANIFEST.free.name} if you have none.`;
 }
 
 /**
@@ -620,8 +620,8 @@ export function backingStatusNote(
       return {
         tone: 'warn',
         text: end
-          ? `Cancellation scheduled — access from this subscription continues until ${end}. A separate complimentary grant may still apply.`
-          : 'Cancellation scheduled — access from this subscription continues until the end of the current period. A separate complimentary grant may still apply.',
+          ? `Cancellation scheduled — access from this subscription continues until ${end}. Any plan included at no cost may still apply.`
+          : 'Cancellation scheduled — access from this subscription continues until the end of the current period. Any plan included at no cost may still apply.',
       };
     }
   }
@@ -631,7 +631,7 @@ export function backingStatusNote(
   ) {
     const deadline = formatBillingDate(backing.sub.entitlementEndsAt ?? null);
     const deadlineNote = deadline
-      ? ` Access from this subscription ends by ${deadline} unless payment is resolved; a separate complimentary grant may still apply.`
+      ? ` Access from this subscription ends by ${deadline} unless payment is resolved; any plan included at no cost may still apply.`
       : '';
     // Names the affordance that is now ON THIS SCREEN. The previous
     // wording — "update your payment method with the provider" — sent

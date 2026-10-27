@@ -65,7 +65,7 @@ it('shows every one of 23 actionable senders instead of a ten-sender sample', as
   const dialog = within(screen.getByRole('dialog'));
   expect(dialog.getByText('1–23 of 23')).toBeInTheDocument();
   expect(dialog.getByText('Sender 23', { exact: true })).toBeInTheDocument();
-  expect(dialog.getByText('Eligible senders')).toBeInTheDocument();
+  expect(dialog.getByText('Senders included')).toBeInTheDocument();
   expect(dialog.queryByText(/Sample of/)).not.toBeInTheDocument();
   expect(dialog.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument();
 });

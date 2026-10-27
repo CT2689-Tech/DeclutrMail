@@ -73,7 +73,7 @@ export function homeSyncLine(
   needsReconnect: boolean,
   now: number | null,
 ): string {
-  if (needsReconnect || syncStatusNeedsReconnect(sync)) return 'Gmail needs reconnect';
+  if (needsReconnect || syncStatusNeedsReconnect(sync)) return 'Reconnect Gmail';
   if (error) return 'Gmail status unavailable';
   if (!sync) return 'Checking Gmail status…';
   if (sync.readiness_status === 'failed') return 'Scan needs attention';

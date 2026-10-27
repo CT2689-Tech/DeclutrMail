@@ -383,7 +383,7 @@ function activationFacts(
   if (rule.actionKind === 'delete')
     return [
       {
-        label: 'Eligible now',
+        label: 'Included now',
         value: `${plural(result.actionableSenderCount, 'sender')} · ${plural(result.actionableMessageCount, 'email')}`,
       },
       { label: 'Include', value: result.reach === 'all_mail' ? 'Inbox + archived' : 'Inbox only' },
@@ -406,7 +406,7 @@ function activationFacts(
     },
     {
       // "Actionable" = the rule has something to do for that sender now.
-      label: needsApproval ? 'If approved' : 'Eligible now',
+      label: needsApproval ? 'If approved' : 'Included now',
       value:
         rule.actionKind === 'unsubscribe'
           ? plural(result.actionableSenderCount, 'unsubscribe request')

@@ -23,7 +23,7 @@ describe('QuotaChip', () => {
   it('shows the remaining allowance and turns amber at 80%', () => {
     const { container } = render(<QuotaChip summary={METERED} />);
     expect(screen.getByTestId('quota-chip')).toHaveTextContent(
-      '640 of 1,000 free emails left · resets Nov 9',
+      '640 emails left to clear · resets Nov 9',
     );
     expect(container.textContent).toContain('resets Nov 9 · See plans');
     expect(screen.getByRole('link', { name: 'See plans' })).toHaveClass('dm-tap-target');

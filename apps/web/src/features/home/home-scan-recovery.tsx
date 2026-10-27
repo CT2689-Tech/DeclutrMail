@@ -86,8 +86,8 @@ export function HomeScanRecoveryView({
   if (!data)
     return error ? (
       <ErrorState
-        title="We couldn’t load scan recovery"
-        description="Try again to check this inbox’s retry status."
+        title="We couldn’t check your scan"
+        description="Try again to see when the scan can continue."
         onRetry={refresh}
       />
     ) : (
@@ -118,7 +118,7 @@ export function HomeScanRecoveryView({
           ? 'Reconnect Gmail to continue with your saved progress.'
           : waiting && retryingLabel
             ? retryingLabel
-            : 'Your progress is saved. An automatic retry is scheduled.'}
+            : 'Your progress is saved. We’ll try the scan again automatically.'}
       </p>
       <div className={styles.scanActions}>
         <Button

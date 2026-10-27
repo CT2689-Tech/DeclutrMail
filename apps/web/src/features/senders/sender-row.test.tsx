@@ -176,7 +176,7 @@ describe('<SenderRow /> — what the row says', () => {
 
   it('does not imply a legacy one-click request is still being delivered', () => {
     renderRow({ policyType: 'unsubscribe', unsubscribeMethod: 'one_click', unsubStatus: null });
-    expect(screen.getByText('Outcome unknown').parentElement).toHaveAttribute(
+    expect(screen.getByText('Request not confirmed').parentElement).toHaveAttribute(
       'title',
       'We can’t confirm whether this earlier request went through.',
     );

@@ -16,7 +16,7 @@ describe('Home deck sentences', () => {
         { timeZone: 'UTC' },
       ),
     ).toEqual({
-      text: '640 of 1,000 free emails left · resets Nov 1',
+      text: '640 emails left to clear · resets Nov 1',
       aria: '640 of 1,000 free emails left this month. Resets Nov 1.',
     });
     expect(meterPreviewSentence(1, 640)).toBe('This clears 1 email. You have 640 free this month.');

@@ -133,7 +133,7 @@ export function RulePreviewHero({
     archive: 'with Inbox email to Archive',
     later: 'with Inbox email to move to Later',
     delete: 'with email to Delete',
-    unsubscribe: 'eligible for Unsubscribe',
+    unsubscribe: 'available for Unsubscribe',
   }[actionKind];
   return (
     <div
@@ -190,7 +190,7 @@ export function RulePreviewTotals({
         {result.evaluatedSenders === 1 ? '' : 's'} checked. {eligible.toLocaleString('en-US')}{' '}
         sender{eligible === 1 ? '' : 's'}{' '}
         {actionKind === 'unsubscribe'
-          ? `${eligible === 1 ? 'is' : 'are'} eligible for Unsubscribe.`
+          ? `${eligible === 1 ? 'is' : 'are'} available for Unsubscribe.`
           : `${eligible === 1 ? 'has' : 'have'} email to ${verb}.`}
       </div>
       <RulePreviewExclusions result={result} actionKind={actionKind} />
@@ -218,7 +218,7 @@ export function RulePreviewExclusions({
     actionKind === 'unsubscribe'
       ? `${excluded === 1 ? 'already has' : 'already have'} Unsubscribe selected`
       : actionKind === 'delete'
-        ? `${excluded === 1 ? 'has' : 'have'} no email in this rule’s scope to Delete`
+        ? `${excluded === 1 ? 'has' : 'have'} no email that this rule can Delete`
         : `${excluded === 1 ? 'has' : 'have'} no Inbox email to ${actionKind === 'archive' ? 'Archive' : 'move to Later'}`;
   return (
     <div style={{ fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}>
@@ -245,7 +245,7 @@ export function RulePreviewSample({
     return (
       <span style={{ fontSize: text.sm, color: color.fgMuted }}>
         {page
-          ? 'No senders are eligible right now.'
+          ? 'No senders can be included right now.'
           : result.wouldMatchCount > 0
             ? 'No sample senders available.'
             : 'Nothing matches right now.'}
@@ -262,10 +262,10 @@ export function RulePreviewSample({
     return (
       <section
         className="dm-autopilot-sample"
-        aria-label={`${page ? 'Eligible senders' : 'Sample matches'} for rule ${ruleName}`}
+        aria-label={`${page ? 'Senders included' : 'Sample matches'} for rule ${ruleName}`}
       >
         <div className={`dm-autopilot-sample-heading${page ? ' dm-autopilot-paged-heading' : ''}`}>
-          <h3>{page ? 'Eligible senders' : 'Matching senders'}</h3>
+          <h3>{page ? 'Senders included' : 'Matching senders'}</h3>
           <span aria-live={page ? 'polite' : undefined}>
             {page
               ? `${((page.page - 1) * page.pageSize + 1).toLocaleString('en-US')}–${Math.min(page.page * page.pageSize, page.total).toLocaleString('en-US')} of ${page.total.toLocaleString('en-US')}`
@@ -276,10 +276,10 @@ export function RulePreviewSample({
         <table className="dm-autopilot-sender-table">
           {structured && (
             <caption className="dm-autopilot-sample-note">
-              Matching uses synced email history, including inbox and archived mail. “In inbox”
-              counts only mail currently in your inbox. Read rate is the rule’s matching diagnostic;
-              it may exclude mail marked read by other tools and does not prove whether you read an
-              email.
+              Rules check scanned email history, including Inbox and archived email. “In inbox”
+              counts only emails in your Inbox now. “Marked read” is based on Gmail’s read status;
+              it may leave out emails marked read by other tools. It doesn’t show whether you
+              actually read an email.
             </caption>
           )}
           <thead>
@@ -287,8 +287,11 @@ export function RulePreviewSample({
               <th scope="col">Sender</th>
               {structured ? (
                 <>
-                  <th scope="col" title="Adjusted read-rate diagnostic used by this rule">
-                    Read rate
+                  <th
+                    scope="col"
+                    title="Gmail read status used by this rule, adjusted for other tools"
+                  >
+                    Marked read
                   </th>
                   <th scope="col">Email history</th>
                 </>

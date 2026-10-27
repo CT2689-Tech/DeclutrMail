@@ -1764,7 +1764,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     const notice = await screen.findByTestId('payment-processing-notice');
     await waitFor(() =>
       expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
-        'Nothing is awaiting confirmation for this checkout',
+        'Neither DeclutrMail nor the payment provider has a pending payment to confirm',
       ),
     );
     expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(
@@ -2913,7 +2913,7 @@ describe('BillingScreen — paid subscriber', () => {
     // Cache write-back: scheduled-cancel note renders; affordance gone.
     expect(
       await screen.findByText(
-        'Cancellation scheduled — access from this subscription continues until Jul 1, 2026. A separate complimentary grant may still apply.',
+        'Cancellation scheduled — access from this subscription continues until Jul 1, 2026. Any plan included at no cost may still apply.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Review cancellation' })).not.toBeInTheDocument();
@@ -4589,7 +4589,7 @@ describe('BillingScreen — paid subscriber', () => {
     // support route — not just "nothing further to do".
     expect(notice).toHaveTextContent('It won’t renew');
     expect(notice).toHaveTextContent(
-      'If your plan picker doesn’t unlock on its own, email support@declutrmail.com.',
+      'If you still can’t choose another plan, email support@declutrmail.com.',
     );
     expect(notice).not.toHaveTextContent('cancel if you’re done with it');
     expect(within(notice).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
@@ -4666,7 +4666,7 @@ describe('BillingScreen — paid subscriber', () => {
     const notice = await screen.findByTestId('non-backing-subscription-notice');
     expect(notice).toHaveTextContent('It won’t renew');
     expect(notice).toHaveTextContent(
-      'If your plan picker doesn’t unlock on its own, email support@declutrmail.com.',
+      'If you still can’t choose another plan, email support@declutrmail.com.',
     );
     expect(within(notice).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
   });
@@ -5024,9 +5024,9 @@ describe('BillingScreen — one billing story (A6)', () => {
     // from subscription rows, which can move the workspace off Pro.
     const notice = screen.getByTestId('non-backing-subscription-notice');
     expect(notice).toHaveTextContent('paused Plus subscription');
-    expect(notice).toHaveTextContent('Your account is on Pro');
+    expect(notice).toHaveTextContent('Your current Pro plan');
     expect(notice).not.toHaveTextContent('Resume to reactivate Plus');
-    expect(notice).toHaveTextContent(/can move your account off Pro/);
+    expect(notice).toHaveTextContent(/may replace your current Pro plan/);
     expect(within(notice).getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
 
     // The paused row still occupies the server's one-live-subscription
@@ -5094,7 +5094,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(within(card).getByText('Pro')).toBeInTheDocument();
     expect(within(card).getByText('Complimentary')).toBeInTheDocument();
     expect(within(card).getByTestId('complimentary-note')).toHaveTextContent(
-      'Pro is complimentary on this account',
+      'Pro is included at no cost',
     );
     const summary = screen.getByText('View purchase options');
     const options = summary.closest('details')!;
@@ -5159,7 +5159,7 @@ describe('BillingScreen — one billing story (A6)', () => {
 
     const note = await screen.findByTestId('complimentary-note');
     expect(note).toHaveTextContent('through Dec 31, 2026');
-    expect(note).toHaveTextContent('reverts to your paid subscription');
+    expect(note).toHaveTextContent('return to your paid plan');
     expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
   });
 
@@ -5608,7 +5608,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     for (const link of within(notice).getAllByRole('link', { name: 'support@declutrmail.com' })) {
       expect(link).toHaveAttribute('href', 'mailto:support@declutrmail.com');
     }
-    expect(notice).toHaveTextContent('Your account is on Pro');
+    expect(notice).toHaveTextContent('Your current Pro plan');
     // The mismatch row never puts its price on the card…
     const card = screen.getByTestId('current-plan-card');
     expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();

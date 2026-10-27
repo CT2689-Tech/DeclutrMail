@@ -40,7 +40,7 @@ export function describeMatchReason(reason: string): { label: string; technical:
     if ([days, messages].every((value) => value === null || Number.isSafeInteger(value))) {
       return {
         label:
-          'At matching: ' +
+          'When this rule found the sender: ' +
           [
             ...(days === null ? [] : [`first seen ${days} ${plural(days, 'day')} earlier`]),
             ...(messages === null ? [] : [pluralCopy(matchCopy.newSenderCount, messages)]),

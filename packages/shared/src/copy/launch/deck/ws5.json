@@ -382,7 +382,7 @@
   "preview.empty.cancel": "Cancel to choose another action.",
   "preview.empty.age": "The age filter excludes these emails.",
   "preview.empty.anyAge": "Use Any age",
-  "preview.empty.archived": "Archived email is outside this scope.",
+  "preview.empty.archived": "Archived email isn’t included.",
   "preview.empty.includeArchived": "Include archived",
   "preview.empty.filters": "The filters exclude these emails.",
   "preview.empty.showAll": "Show all email",

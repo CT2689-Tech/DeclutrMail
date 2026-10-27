@@ -79,7 +79,28 @@
 
 import { resolveFlag } from '../flags/resolve';
 import { brandRoot } from '../senders/brand-root';
+import { FREE_MAIL_DOMAINS } from '../senders/thresholds';
 import { font, shadow } from '../tokens/tokens';
+
+const PERSONAL_MAIL_DOMAINS = new Set(FREE_MAIL_DOMAINS);
+const GRAPHEMES = new Intl.Segmenter('en', { granularity: 'grapheme' });
+
+function firstLetter(value: string): string | undefined {
+  for (const { segment } of GRAPHEMES.segment(value.normalize('NFC'))) {
+    if (/[\p{L}\p{N}]/u.test(segment)) return segment;
+  }
+  return undefined;
+}
+
+/** Skip decoration and role-address prefixes without splitting Unicode letters. */
+function senderInitial(name: string, domain?: string): string {
+  const address = name.trim().match(/^([^\s<>@]+)@([^\s<>@]+)$/u);
+  const root = brandRoot(domain || address?.[2]).replace(/\.$/, '');
+  // A role address identifies a brand by its domain; a personal address
+  // identifies the person by its local part, never by their mail provider.
+  const label = address ? (PERSONAL_MAIL_DOMAINS.has(root) ? address[1]! : root) : name;
+  return (firstLetter(label) ?? firstLetter(root) ?? '?').toUpperCase();
+}
 
 /**
  * Smallest avatar that may carry a logo. Below this a brand mark is
@@ -112,6 +133,8 @@ export function brandIconUrl(domain: string | undefined, size: number): string |
   if (size < LOGO_MIN_SIZE) return null;
   const root = brandRoot(domain);
   if (root.length === 0) return null;
+  // Gmail's logo describes the provider, not every person using Gmail.
+  if (PERSONAL_MAIL_DOMAINS.has(root.replace(/\.$/, ''))) return null;
   return `${API_BASE}/api/icons/${encodeURIComponent(root)}`;
 }
 
@@ -146,7 +169,7 @@ export function Avatar({
    */
   hasMark?: boolean;
 }) {
-  const initial = (name.trim()[0] ?? '?').toUpperCase();
+  const initial = senderInitial(name, domain);
   const iconUrl = hasMark === false ? null : brandIconUrl(domain, size);
 
   const radius = Math.max(6, Math.round(size * 0.28));

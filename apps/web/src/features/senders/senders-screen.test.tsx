@@ -6350,7 +6350,7 @@ describe('SendersScreen — multi-sender bulk actions (D52)', () => {
     expect(screen.getByText(/senders selected/i)).toBeInTheDocument();
     fireEvent.keyDown(document.body, { key: 'a' });
 
-    // The preview covers the 1 eligible sender AND says what it dropped.
+    // The preview covers the 1 sender AND says what it dropped.
     await screen.findByRole('heading', { name: 'Archive emails from 1 sender?' });
     expect(screen.getByText(/1 Protected sender is skipped\./)).toBeInTheDocument();
     // The selection bar and the preview fact both state the Protected skip.

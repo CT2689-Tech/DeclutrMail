@@ -16,18 +16,16 @@ describe('StepConnect privacy boundary', () => {
     const { container } = render(<StepConnect />);
     const text = container.textContent ?? '';
 
-    expect(text.indexOf('Access')).toBeLessThan(text.indexOf('Fetched during the scan'));
-    expect(text.indexOf('Fetched during the scan')).toBeLessThan(
-      text.indexOf('Stored in DeclutrMail'),
-    );
-    expect(text.indexOf('Stored in DeclutrMail')).toBeLessThan(text.indexOf('Actions you approve'));
+    expect(text.indexOf('Access')).toBeLessThan(text.indexOf('What we check'));
+    expect(text.indexOf('What we check')).toBeLessThan(text.indexOf('What we keep'));
+    expect(text.indexOf('What we keep')).toBeLessThan(text.indexOf('Before you confirm'));
     for (const label of GMAIL_MESSAGE_STORAGE_LABELS) expect(text).toContain(label);
     for (const item of [...GMAIL_CONNECTION_DATA_INVENTORY, ...GMAIL_DERIVED_DATA_INVENTORY]) {
       expect(text).toContain(item.label);
     }
     expect(text).toMatch(/We never fetch or store full email contents/);
-    expect(text).toMatch(/connecting grants that access, but does not change any email/i);
-    expect(text).toMatch(/what can be undone/i);
+    expect(text).toMatch(/connecting allows that access without changing any email/i);
+    expect(text).toMatch(/what you can undo/i);
     // A sent unsubscribe cannot be undone — never promise an undo for every verb.
     expect(text).not.toMatch(/how to undo it/i);
     expect(text).not.toMatch(/whole list|exactly this list/i);

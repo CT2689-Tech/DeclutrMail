@@ -340,8 +340,8 @@
     "autopilot": {
       "match": {
         "dormant": {
-          "one": "At matching: 1 email from this sender; last seen {ago}.",
-          "other": "At matching: {n} emails from this sender; last seen {ago}."
+          "one": "When this rule found the sender: 1 email; last seen {ago}.",
+          "other": "When this rule found the sender: {n} emails; last seen {ago}."
         },
         "daysEarlier": {
           "one": "1 day earlier",
@@ -356,7 +356,7 @@
     "onboarding": {
       "preview": {
         "toggle": "Preview senders found so far",
-        "intro": "Read-only preview. Counts cover the email scanned so far and may change when the scan resumes.",
+        "intro": "This preview won’t change your email. Counts cover emails scanned so far and may change as the scan continues.",
         "row": {
           "one": "{name} — 1 email",
           "other": "{name} — {n} emails"
@@ -666,7 +666,7 @@
     "activity": {
       "undoNote": "Undo Archive, Later or Delete for 30 days. Deleted email sits in Gmail Trash, and Gmail deletes it for good after 30 days, or sooner if you empty Trash. Unsubscribe requests can’t be recalled.",
       "supportExport": "Need help with something here? Export details for support.",
-      "bundleIncludes": "The bundle includes your Gmail address. Sender names and addresses stay hidden unless you choose to include them.",
+      "bundleIncludes": "The download includes your Gmail address. Sender names and addresses stay hidden unless you choose to include them.",
       "appendix": "Optional: add technical IDs that help support trace what happened. They contain no email content."
     },
     "onboarding": {
@@ -699,7 +699,7 @@
     },
     "sync": {
       "cantCheck": "We can’t check for new email right now.",
-      "lastFailed": "New email isn’t coming in. The last check failed.",
+      "lastFailed": "The last check for new email failed. Try again.",
       "alreadyChecking": "Already checking for new email.",
       "upToDate": "Up to date.",
       "unconfirmed": "Couldn’t confirm the check finished.",

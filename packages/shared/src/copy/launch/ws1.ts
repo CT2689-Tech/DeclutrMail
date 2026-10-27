@@ -132,8 +132,8 @@ export const WS1_COPY = {
     'In India: new purchases are processed by Paddle, our merchant of record, in rupees with GST included. Subscriptions bought earlier through Razorpay continue under DeclutrMail as the seller.',
   'terms.pastDue':
     'A subscription marked past due keeps subscription access for up to 14 days after its billing period ends.',
-  'meter.chip': '{remaining} of {allowance} free emails left · resets {resetDate}',
-  'meter.chip.compact': '{remaining} of {allowance} left',
+  'meter.chip': '{remaining} emails left to clear · resets {resetDate}',
+  'meter.chip.compact': '{remaining} emails left',
   'meter.chip.empty': 'No free emails left · resets {resetDate}',
   'meter.chip.aria': '{remaining} of {allowance} free emails left this month. Resets {resetDate}.',
   'meter.chip.link': 'See plans',
