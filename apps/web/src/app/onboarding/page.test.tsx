@@ -16,6 +16,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { toast as sharedToast } from '@declutrmail/shared';
+import { PRIVACY_NEVER_ITEMS, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -268,9 +269,7 @@ describe('onboarding page — a result carried from Settings (D108)', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText('Clear thousands of emails by sender — and see exactly what moves.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('A lighter inbox starts with one sender.')).toBeInTheDocument();
     expect(toastSpy).not.toHaveBeenCalled();
     expect(screen.getByTestId('oauth-result-status')).toBeEmptyDOMElement();
     expect(screen.getByTestId('oauth-result-alert')).toBeEmptyDOMElement();
@@ -295,10 +294,13 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
     installFetchStub([me401, refresh401]);
     renderPage();
 
+    expect(await screen.findByText('A lighter inbox starts with one sender.')).toBeInTheDocument();
     expect(
-      await screen.findByText('Clear thousands of emails by sender — and see exactly what moves.'),
-    ).toBeInTheDocument();
-    expect(screen.getByText('We never fetch or store full email contents.')).toBeInTheDocument();
+      screen.getByRole('heading', {
+        level: 2,
+        name: 'We never fetch or store full email contents.',
+      }),
+    ).toBeVisible();
     // The banned pre-D228 phrasing must not exist anywhere on step 1.
     expect(screen.queryByText(/Bodies read: 0/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Full bodies fetched: 0/)).not.toBeInTheDocument();
@@ -315,6 +317,23 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
     expect(screen.getByText('Stored in DeclutrMail')).toBeInTheDocument();
     expect(screen.getByText('Actions you approve')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue to Google' })).toBeInTheDocument();
+  });
+
+  it('keeps the full registry disclosure available without advancing to Google', async () => {
+    installFetchStub([me401, refresh401]);
+    renderPage();
+
+    const summary = await screen.findByText('See the full Gmail data list');
+    const disclosure = summary.closest('details');
+    expect(disclosure).not.toHaveAttribute('open');
+    await userEvent.click(summary);
+    expect(disclosure).toHaveAttribute('open');
+    for (const label of [...PRIVACY_STORAGE_ITEMS, ...PRIVACY_NEVER_ITEMS]) {
+      expect(screen.getByText(label, { exact: true })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: 'Connect Gmail' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue to Google' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Example only/)).toBeInTheDocument();
   });
 });
 

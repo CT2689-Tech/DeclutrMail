@@ -13,5 +13,6 @@ type Story = StoryObj<typeof meta>;
 
 /** Presentation fixtures; no Google consent or connection is started. */
 export const PromiseStep: Story = {};
+export const PromiseDark: Story = { globals: { theme: 'dark' } };
 export const Connect: Story = { render: () => <StepConnect /> };
 export const Reconnect: Story = { render: () => <StepConnect variant="reconnect" /> };
