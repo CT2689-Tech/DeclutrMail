@@ -775,9 +775,12 @@ test('a missing Supabase usage figure keeps the size as its own cause', () => {
     { mode: 0o755 },
   );
   const list = join(dir, 'list.tsv');
+  // The CLI uses today's real date; this test covers cause separation,
+  // while the pinned triage tests above cover acknowledgment expiry.
+  const acknowledgedUntil = new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10);
   writeFileSync(
     list,
-    `${LIST}Supabase (DB size)\tERROR\tMissing database connections\t-\t2026-10-26\tquery changed\n`,
+    `${LIST}Supabase (DB size)\tERROR\tMissing database connections\t-\t${acknowledgedUntil}\tquery changed\n`,
   );
   const run = cli(list, {
     PATH: `${dir}:${process.env.PATH}`,
