@@ -217,16 +217,27 @@ export async function normalizeSquareIcon(input: Buffer): Promise<Buffer | null>
 
     // Decoding then re-encoding strips EXIF/profile metadata and turns
     // every accepted source into one inert, predictable browser format.
-    return await decoder
+    const image = await decoder
       .rotate()
-      .resize(OUTPUT_SIZE, OUTPUT_SIZE, {
-        fit: 'contain',
-        background: { r: 255, g: 255, b: 255, alpha: 1 },
-      })
+      .resize(OUTPUT_SIZE, OUTPUT_SIZE, { fit: 'inside' })
       // Avatar's monogram is always painted underneath. An alpha
       // channel would let its initial show through a transparent mark,
       // so website-derived tiles are intentionally opaque.
       .flatten({ background: { r: 255, g: 255, b: 255 } })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    // A transparent/blank tile is a successful image load that hides
+    // Avatar's monogram. Check visible, flattened pixels, not alpha or
+    // source dimensions alone. Near-solid artwork has no readable mark.
+    const { channels } = await sharp(image).stats();
+    if (channels.slice(0, 3).every((channel) => channel.stdev < 2)) return null;
+    // Add square padding only after the gate, so artificial white
+    // margins cannot make a solid rectangular image look like a mark.
+    return await sharp(image)
+      .resize(OUTPUT_SIZE, OUTPUT_SIZE, {
+        fit: 'contain',
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
+      })
       .png({ compressionLevel: 9 })
       .toBuffer();
   } catch {
@@ -338,6 +349,9 @@ async function manifestIconHrefs(
 
 function declaredSize(raw: string | undefined): number {
   if (!raw) return 0;
+  // `any` is the standard declaration for scalable artwork. Treating
+  // it as 0 put a 32px bitmap ahead of a crisp SVG in the same tier.
+  if (raw.toLowerCase().split(/\s+/).includes('any')) return Number.MAX_SAFE_INTEGER;
   let largest = 0;
   for (const token of raw.toLowerCase().split(/\s+/)) {
     const match = /^(\d+)x(\d+)$/.exec(token);

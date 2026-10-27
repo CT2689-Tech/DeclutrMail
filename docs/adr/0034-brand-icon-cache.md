@@ -353,6 +353,19 @@ do not survive that boundary.
 
 ### 6. Monogram is the floor, never a fallback that can fail
 
+**2026-10-27 clarity refinement:** website discovery ranks `sizes="any"`
+artwork ahead of finite-size icons within the same tier. Website and
+Brandfetch rasters must also show visible variation after flattening onto
+white, before square padding is added; blank, transparent or near-solid
+assets are skipped so they cannot obscure the monogram. Existing cache
+entries keep their normal refresh schedule.
+
+Fallback initials skip leading decoration and preserve Unicode letters.
+Email-only brand names use the domain initial instead of a role prefix
+such as `noreply`; personal mail-provider domains use the person's initial
+and do not request a provider logo. The shared free-mail domain list is the
+boundary for this presentation rule, not an identity-verification signal.
+
 `Avatar` renders the monogram as its base layer **always**, and layers
 the mark over it. Every failure mode — `204`, `401`, network error,
 decode error, flag off — degrades to exactly what ships today, with no

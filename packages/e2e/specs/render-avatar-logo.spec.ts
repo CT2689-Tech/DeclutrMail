@@ -96,7 +96,7 @@ const LOGO_SVG =
   '<rect width="64" height="64" fill="#0b6"/>' +
   '<circle cx="32" cy="32" r="16" fill="#fff"/></svg>';
 
-type IconState = 'miss' | 'rejected' | 'hit';
+type IconState = 'miss' | 'rejected' | 'corrupt' | 'hit';
 
 /**
  * Serve one page containing real `Avatar` instances at every production
@@ -117,6 +117,10 @@ async function serveAvatar(state: IconState): Promise<{ url: string; close: () =
         // still reveal the monogram instead of an empty/broken tile.
         res.writeHead(401);
         return res.end();
+      }
+      if (state === 'corrupt') {
+        res.writeHead(200, { 'content-type': 'image/png' });
+        return res.end('not an image');
       }
       res.writeHead(200, { 'content-type': 'image/svg+xml' });
       return res.end(LOGO_SVG);
@@ -221,7 +225,7 @@ test.describe('Avatar brand logo (ADR-0034) — real-browser paint', () => {
     }
   });
 
-  for (const state of ['miss', 'rejected'] as const) {
+  for (const state of ['miss', 'rejected', 'corrupt'] as const) {
     test(`a ${state} icon response paints nothing over the monogram`, async ({ page }) => {
       const { url, close } = await serveAvatar(state);
       try {
