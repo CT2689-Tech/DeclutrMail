@@ -19,6 +19,33 @@ const [openMenuLabel] = WS3_COPY['ws3.nav.menu.aria'];
 
 const PERMISSION_ENTRY = '/sign-in';
 
+describe('Public brand home navigation', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(['/sign-in', '/sign-in?returning=1'])(
+    'leaves the app auth entry from %s through either logo',
+    (entry) => {
+      vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://declutrmail.com/');
+      render(
+        <>
+          <PublicHeader />
+          <PublicFooter />
+        </>,
+      );
+
+      const headerLogo = screen.getByRole('link', { name: 'DeclutrMail home' });
+      const footerLogo = within(screen.getByRole('contentinfo')).getByRole('link', {
+        name: 'DeclutrMail',
+      });
+      for (const logo of [headerLogo, footerLogo]) {
+        expect(
+          new URL(logo.getAttribute('href')!, `https://app.declutrmail.com${entry}`).href,
+        ).toBe('https://declutrmail.com/');
+      }
+    },
+  );
+});
+
 describe('PublicHeader auth entry', () => {
   beforeEach(() => {
     track.mockClear();

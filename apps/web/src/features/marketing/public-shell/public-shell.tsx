@@ -8,7 +8,7 @@ import { ThemeToggle } from '@/features/theme/theme-toggle';
 import { isFeatureEnabled } from '@/lib/flags';
 
 import { ALTERNATIVES_SLUGS, COMPARISONS, alternativesFor } from '../comparison/comparison-data';
-import { permissionEntryUrl } from '../landing/urls';
+import { permissionEntryUrl, siteUrl } from '../landing/urls';
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '../learn/how-to-content';
 import { PublicMobileMenu } from './public-mobile-menu';
 import { PublicNavLinks } from './public-nav-links';
@@ -99,7 +99,11 @@ export function PublicHeader() {
       </a>
       <header className="dm-public-header">
         <div className="dm-public-header-inner">
-          <Link href="/" className="dm-public-brand" aria-label="DeclutrMail home">
+          <Link
+            href={new URL('/', siteUrl()).href}
+            className="dm-public-brand"
+            aria-label="DeclutrMail home"
+          >
             <Logo size={27} label={null} />
           </Link>
 
@@ -132,7 +136,7 @@ export function PublicFooter() {
     <footer className="dm-public-footer">
       <div className="dm-public-footer-inner">
         <div className="dm-public-footer-intro">
-          <Link href="/" className="dm-public-brand">
+          <Link href={new URL('/', siteUrl()).href} className="dm-public-brand">
             <Logo size={27} />
           </Link>
           <p>{WS3_COPY['ws3.home.footerTagline']}</p>
