@@ -1480,7 +1480,7 @@ function ReadyState({
             <ScreenIntro
               id="sender-detail"
               title="How sender details work"
-              body="Review the sender’s current mail, recent history and suggestions before choosing an action. Archive, Later and Delete preview the matching emails before you confirm. Protect keeps a sender out of bulk and automatic actions."
+              body="Review this sender’s email and suggestions, then choose what to do. Preview Archive, Later or Delete before confirming. Protected senders are skipped by bulk changes and automatic rules."
             />
           </>
         )}

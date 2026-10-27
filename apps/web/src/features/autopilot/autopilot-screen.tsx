@@ -1265,7 +1265,7 @@ export function AutopilotScreen({
               tabIndex={-1}
               style={{ ...tokens.typography.sectionTitle, margin: 0 }}
             >
-              Preset rules
+              Built-in rules
             </h2>
           ) : (
             <h1 ref={presetHeading} tabIndex={-1} style={editorialTitleStyle}>
@@ -1280,7 +1280,7 @@ export function AutopilotScreen({
                 setPauseConfirmOpen(true);
               }}
               disabled={state.kind !== 'ready' || !hasRunningRules}
-              ariaLabel={embedded ? 'Pause every preset rule' : 'Pause every Autopilot rule'}
+              ariaLabel={embedded ? 'Pause every built-in rule' : 'Pause every Autopilot rule'}
             >
               Pause all
             </Button>
@@ -1307,7 +1307,7 @@ export function AutopilotScreen({
       )}
       {embedded && !renderLibrary && (
         <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
-          Presets can watch for your approval or act on their own when set to Active.
+          Built-in rules can wait for your approval or act automatically when set to Active.
         </p>
       )}
 

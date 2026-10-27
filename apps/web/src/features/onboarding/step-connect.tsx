@@ -83,15 +83,15 @@ export function StepConnect({
         {/* A consent disclosure, so it stays complete — but each step is
             at most two sentences; the field lists sit behind <details>. */}
         <ConsentStep number="1" title="Access">
-          Google asks for {GMAIL_OAUTH_ACCESS.map((item) => item.label.toLowerCase()).join(' and ')}
-          . Connecting grants that access, but does not change any email.
+          Google permissions: {GMAIL_OAUTH_ACCESS.map((item) => item.label).join('; ')}. Connecting
+          allows that access without changing any email.
         </ConsentStep>
-        <ConsentStep number="2" title="Fetched during the scan">
+        <ConsentStep number="2" title="What we check">
           Only sender, subject line, Gmail’s preview snippet, dates and labels. We never fetch or
           store full email contents.
-          <ConsentDetails label="Show fetched fields" items={GMAIL_MESSAGE_STORAGE_LABELS} />
+          <ConsentDetails label="Show scan details" items={GMAIL_MESSAGE_STORAGE_LABELS} />
         </ConsentStep>
-        <ConsentStep number="3" title="Stored in DeclutrMail">
+        <ConsentStep number="3" title="What we keep">
           Those details, plus your decisions and what we need to undo your changes. Settings →
           Privacy &amp; data lists everything we keep.
           <ConsentDetails
@@ -102,10 +102,9 @@ export function StepConnect({
             ]}
           />
         </ConsentStep>
-        <ConsentStep number="4" title="Actions you approve">
-          Archive, Later and Delete preview the matching count, planned change and what can be
-          undone before you confirm. Unsubscribe requests have a separate confirmation; a sent
-          request cannot be recalled.
+        <ConsentStep number="4" title="Before you confirm">
+          Before Archive, Later or Delete, see how many emails will move, where they’ll go and what
+          you can undo. Unsubscribe has its own confirmation; a sent request can’t be taken back.
         </ConsentStep>
       </ol>
 

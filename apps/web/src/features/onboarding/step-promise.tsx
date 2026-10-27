@@ -24,7 +24,7 @@ export function StepPromise({ onConnect }: { onConnect: () => void }) {
     <StepShell
       phase="connect"
       title="A lighter inbox starts with one sender."
-      sub="Review mail by sender, then see the matching count and planned change before you confirm."
+      sub="Review email by sender, then see how many emails will change and what will happen before you confirm."
     >
       <figure className={styles.senderExample} aria-label="Illustrative sender example">
         <div className={styles.exampleSender}>
@@ -58,7 +58,7 @@ export function StepPromise({ onConnect }: { onConnect: () => void }) {
       </Button>
 
       <p className={styles.connectNext}>
-        Next: review Google’s permission. Connecting won’t move mail.
+        Next: review Google’s permission. Connecting won’t move email.
       </p>
       <p className={styles.promiseLegal}>
         <a href="/privacy">Privacy policy</a>

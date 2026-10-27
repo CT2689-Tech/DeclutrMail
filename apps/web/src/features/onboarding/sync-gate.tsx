@@ -106,13 +106,13 @@ function recoverySurface(recovery: InitialSyncRecovery): { title: string; body: 
   switch (recovery.reason) {
     case 'insufficient_scopes':
       return {
-        title: 'Gmail needs a fuller permission grant',
-        body: 'DeclutrMail couldn’t finish setup because Google didn’t get all the permissions we asked for. Reconnect and approve every permission on the Google screen — we need them to find senders and clean up mail.',
+        title: 'Allow Gmail access to continue',
+        body: 'Gmail access wasn’t fully allowed. Reconnect and allow every permission on Google’s screen to finish setup.',
       };
     case 'invalid_grant':
       return {
         title: 'Reconnect Gmail to keep going',
-        body: 'Google is not granting the access needed to scan this inbox. Reconnect the account and allow Gmail access.',
+        body: 'Google hasn’t allowed the access needed to scan your inbox. Reconnect and allow Gmail access.',
       };
     case 'reconnect_required':
       return {
@@ -131,8 +131,8 @@ function recoverySurface(recovery: InitialSyncRecovery): { title: string; body: 
           };
     case 'stuck':
       return {
-        title: 'This scan has not moved.',
-        body: 'The scan has not moved in a while. Try again — Gmail is untouched.',
+        title: 'The scan hasn’t progressed.',
+        body: 'Try again to continue scanning your Gmail.',
       };
     case 'unknown':
       return {

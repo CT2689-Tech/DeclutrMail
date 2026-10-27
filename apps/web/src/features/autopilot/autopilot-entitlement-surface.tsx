@@ -97,7 +97,7 @@ export function AutopilotObservePreview() {
           Autopilot
         </h1>
         <p style={{ margin: '6px 0 0', color: color.fgMuted, fontSize: text.md, lineHeight: 1.5 }}>
-          See what each preset rule would match right now. Previews are read-only.
+          See what each built-in rule would match right now. Previews are read-only.
         </p>
       </div>
 
@@ -119,12 +119,12 @@ export function AutopilotObservePreview() {
         </h2>
         {rules.isLoading && (
           <p role="status" style={{ margin: 0, color: color.fgMuted, fontSize: text.md }}>
-            Loading your preset rules…
+            Loading your built-in rules…
           </p>
         )}
         {rules.isError && (
           <ErrorState
-            title="Couldn’t load your preset rules"
+            title="Couldn’t load your built-in rules"
             description="Try again in a moment."
             onRetry={() => void rules.refetch()}
           />
@@ -209,7 +209,7 @@ export function AutopilotObservePreview() {
           button, a quiet compare link, the money-back note once. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <p style={{ margin: 0, fontSize: text.md, color: color.fgMuted, lineHeight: 1.5 }}>
-          Matching and batch approval are part of {grantingName}
+          Finding email and approving batches are part of {grantingName}
           {actName === grantingName ? ', and so are' : `; ${actName} adds`} rules that act without
           asking.
         </p>

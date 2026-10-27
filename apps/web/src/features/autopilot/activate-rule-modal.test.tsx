@@ -100,11 +100,11 @@ function previewProps(rule = AUTO_ARCHIVE_LOW_ENGAGEMENT) {
 it.each([
   [AUTO_ARCHIVE_LOW_ENGAGEMENT, 'with Inbox email to Archive', 'no Inbox email to Archive'],
   [SCREEN_NEW_SENDERS, 'with Inbox email to move to Later', 'no Inbox email to move to Later'],
-  [AUTO_UNSUBSCRIBE_NOISY, 'eligible for Unsubscribe', 'Unsubscribe selected'],
+  [AUTO_UNSUBSCRIBE_NOISY, 'available for Unsubscribe', 'Unsubscribe selected'],
   [
     { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, actionKind: 'delete' as const },
     'with email to Delete',
-    'no email in this rule’s scope to Delete',
+    'no email that this rule can Delete',
   ],
 ])('explains zero eligibility alongside historical matches (%#)', (rule, label, reason) => {
   render(<ActivateRuleModal {...previewProps(rule)} />);

@@ -245,7 +245,7 @@ describe('SyncGate render', () => {
         withClient(<SyncGate status={{ ...FAILED, error_code: code, progress_pct: progress }} />),
       );
 
-    expect(html('ProviderPermissionError')).toContain('fuller permission grant');
+    expect(html('ProviderPermissionError')).toContain('Allow Gmail access to continue');
     expect(html('InvalidGrantError')).toContain('allow Gmail access');
     expect(html('AuthExpiredError')).toContain('stopped accepting our access');
     expect(html('RateLimitError', 0)).toContain('slow down');
@@ -520,10 +520,10 @@ describe('SyncGate — auth failures offer reconnect, not a doomed retry (QA-syn
       ),
     );
     expect(
-      screen.getByRole('heading', { name: 'Gmail needs a fuller permission grant' }),
+      screen.getByRole('heading', { name: 'Allow Gmail access to continue' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reconnect Gmail' })).toBeInTheDocument();
-    expect(screen.getByText(/get all the permissions/i)).toHaveAttribute(
+    expect(screen.getByText(/Gmail access wasn’t fully allowed/i)).toHaveAttribute(
       'data-reason-code',
       'insufficient_scopes',
     );
@@ -620,15 +620,18 @@ describe('SyncGate — stuck queued/syncing (stale heartbeat)', () => {
     // The negative control: ignoring `updated_at` leaves this assertion
     // on "Reading your inbox…" — the silent dead first-run.
     render(withClient(<SyncGate status={STUCK_SYNCING} mailboxId="mb-1" nowMs={NOW} />));
-    expect(screen.getByText('This scan has not moved.')).toBeInTheDocument();
+    expect(screen.getByText('The scan hasn’t progressed.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-    expect(screen.getByText(/Gmail is untouched/)).toHaveAttribute('data-reason-code', 'stuck');
+    expect(screen.getByText(/Try again to continue scanning your Gmail/)).toHaveAttribute(
+      'data-reason-code',
+      'stuck',
+    );
     expect(screen.getByRole('link', { name: 'Get help' })).toHaveAttribute(
       'href',
       '/settings/help',
     );
     expect(screen.queryByText(/Reading your inbox/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Gmail is untouched/)).toBeInTheDocument();
+    expect(screen.getByText(/Try again to continue scanning your Gmail/)).toBeInTheDocument();
   });
 
   it('keeps the progress bar while the heartbeat is still fresh', () => {

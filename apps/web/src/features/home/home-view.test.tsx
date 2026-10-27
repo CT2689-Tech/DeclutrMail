@@ -74,7 +74,7 @@ describe('Action overview', () => {
       homeShortlist([{ id: 'bad', name: 'Bad', domain: 'b.test', inboxCount: NaN }]),
     ).toBeNull();
     render(<HomeView state={ready} nextSteps={[shortlist!]} overview={overviewFixture} />);
-    expect(screen.getByRole('region', { name: 'Mailbox snapshot' })).toHaveTextContent('6,200');
+    expect(screen.getByRole('region', { name: 'Scanned email totals' })).toHaveTextContent('6,200');
     expect(document.querySelector('[data-home-impact]')).toHaveTextContent('1,200 emails');
   });
   it('does not call a returning mailbox a first cleanup when eligible senders have no Inbox mail', () => {
@@ -127,7 +127,7 @@ describe('Action overview', () => {
     fireEvent.click(results.getByRole('button', { name: 'All time' }));
     expect(results.getByTestId('home-hero')).toHaveTextContent('1,234');
     expect(results.getByText('1,200')).toBeInTheDocument();
-    expect(results.getByRole('link', { name: /activity & Undo/ })).toHaveAttribute(
+    expect(results.getByRole('link', { name: /Activity & Undo/ })).toHaveAttribute(
       'href',
       '/activity?window=all',
     );
@@ -146,8 +146,8 @@ describe('Action overview', () => {
         tier="pro"
       />,
     );
-    expect(screen.getByRole('region', { name: 'Mailbox snapshot' })).toHaveTextContent(
-      /unavailable/i,
+    expect(screen.getByRole('region', { name: 'Scanned email totals' })).toHaveTextContent(
+      /couldn’t load/i,
     );
     expect(screen.getByRole('region', { name: 'Your results' })).toHaveTextContent('Unavailable');
     expect(screen.getByRole('button', { name: 'Preview cleanup' })).toBeEnabled();
@@ -156,7 +156,7 @@ describe('Action overview', () => {
   });
   it('keeps missing size estimates unknown and labels partial coverage', () => {
     const { rerender } = render(<HomeView state={ready} overview={overviewFixture} />);
-    expect(screen.getByText('Size estimates are incomplete')).toBeInTheDocument();
+    expect(screen.getByText('Sizes aren’t available for every email')).toBeInTheDocument();
     rerender(
       <HomeView
         state={ready}
@@ -169,7 +169,7 @@ describe('Action overview', () => {
         }}
       />,
     );
-    expect(screen.getByRole('region', { name: 'Mailbox snapshot' })).toHaveTextContent(
+    expect(screen.getByRole('region', { name: 'Scanned email totals' })).toHaveTextContent(
       /unavailable/i,
     );
     expect(screen.queryByText('≈0 B')).toBeNull();

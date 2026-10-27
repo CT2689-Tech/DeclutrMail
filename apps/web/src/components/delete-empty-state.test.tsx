@@ -52,7 +52,7 @@ describe('empty Delete reason and next action', () => {
   it('explains archived-only mail and offers the matching reach', () => {
     const onIncludeArchived = vi.fn();
     show({ inboxTotal: 0, allMailTotal: 5, allMailWindowCount: 2, onIncludeArchived }, 180);
-    expect(screen.getByText('Archived email is outside this scope.')).toBeVisible();
+    expect(screen.getByText('Archived email isn’t included.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Include archived' }));
     expect(onIncludeArchived).toHaveBeenCalledOnce();
   });

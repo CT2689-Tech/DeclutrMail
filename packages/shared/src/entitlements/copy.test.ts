@@ -119,7 +119,7 @@ describe('emails-cleared meter helpers', () => {
   it('fills the chip and preview from the deck', () => {
     expect(
       meterChipLine({ remaining: 640, limit: 1000, resetAt: '2026-11-09T00:00:00.000Z' }).text,
-    ).toBe('640 of 1,000 free emails left \u00b7 resets Nov 9');
+    ).toBe('640 emails left to clear \u00b7 resets Nov 9');
     expect(meterPreviewText(2708, 100)).toBe(
       'This clears 2,708 emails. You have 100 free left this month.',
     );

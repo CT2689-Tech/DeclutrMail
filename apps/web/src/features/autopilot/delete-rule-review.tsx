@@ -47,14 +47,14 @@ export function DeleteRuleReview({
         <div role="alert">
           Current matches couldn’t be checked.{' '}
           <Button tone="ghost" onClick={() => void preview.refetch()}>
-            Retry matches
+            Check again
           </Button>
         </div>
       ) : (
         <div>
           <p>
             {preview.data?.actionableMessageCount.toLocaleString('en-US') ?? '—'} email
-            {preview.data?.actionableMessageCount === 1 ? '' : 's'} eligible for Delete ·{' '}
+            {preview.data?.actionableMessageCount === 1 ? '' : 's'} available to Delete ·{' '}
             {preview.data?.actionableSenderCount.toLocaleString('en-US') ?? '—'} sender
             {preview.data?.actionableSenderCount === 1 ? '' : 's'}. Preview before moving anything
             to Trash.

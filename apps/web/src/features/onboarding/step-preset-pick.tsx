@@ -53,7 +53,7 @@ const GOALS: ReadonlyArray<{
   {
     id: 'clear_old_promotions',
     title: 'Clear old promotions',
-    description: 'Prioritize promotional senders with enough email to make cleanup worthwhile.',
+    description: 'Start with senders whose older promotions are piling up.',
   },
 ];
 
@@ -254,8 +254,8 @@ export function StepPresetPick({
         <div style={{ marginBottom: 14 }}>
           <p role="status" style={{ color: color.fgMuted, fontSize: text.sm, maxWidth: 460 }}>
             {rules.isError
-              ? 'We couldn’t check your preset rules. You can still save your selections.'
-              : 'No preset rules are available yet. You can still save your selections.'}
+              ? 'We couldn’t check your starting rules. You can still save your choices.'
+              : 'Your starting rules aren’t available yet. You can still save your choices.'}
           </p>
           {rules.isError && (
             <Button

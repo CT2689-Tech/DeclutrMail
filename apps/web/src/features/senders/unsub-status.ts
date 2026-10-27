@@ -29,7 +29,7 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
     title: 'The unsubscribe request failed; Archive remains available for current email',
   },
   unconfirmed: {
-    label: 'Result unconfirmed',
+    label: 'Request not confirmed',
     title: 'We couldn’t confirm the sender received the request; watch for future email',
   },
   action_required: {
@@ -43,7 +43,7 @@ export const UNSUB_PILL: Record<UnsubscribeLifecycleStatus, { label: string; tit
   user_marked_sent: {
     label: 'Marked sent',
     title:
-      'You reported sending the unsubscribe email; future delivery still depends on the sender',
+      'You reported sending the unsubscribe email; whether email stops is still up to the sender',
   },
   unavailable: {
     label: 'Unavailable',
@@ -57,7 +57,7 @@ export function unsubscribeStatusCopy(
 ): { label: string; title: string } {
   if (status == null && method === 'one_click') {
     return {
-      label: 'Outcome unknown',
+      label: 'Request not confirmed',
       title: 'We can’t confirm whether this earlier request went through.',
     };
   }

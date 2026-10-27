@@ -18,8 +18,8 @@ export function MatchReasonCopy({ reason, prefix = '' }: { reason: string; prefi
           {copy.technical}
           {copy.technical.startsWith('Read rate ') && (
             <p style={{ marginBottom: 0 }}>
-              Read-rate diagnostics may exclude mail marked read by other tools. They do not prove
-              whether you read an email.
+              These figures may leave out emails marked read by other tools. They don’t show whether
+              you actually read an email.
             </p>
           )}
         </TechnicalDetails>

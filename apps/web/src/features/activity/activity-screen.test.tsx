@@ -413,7 +413,7 @@ describe('ActivityScreen — edge states', () => {
     await userEvent.click(screen.getByRole('checkbox', { name: /select activity row/i }));
     expect(screen.getByRole('region', { name: 'Bulk actions' })).toBeInTheDocument();
     await userEvent.click(screen.getByText('Help with Activity'));
-    expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Export for support' })).toBeEnabled();
     expect(requests).toBe(1);
 
     currentSearch = 'date_from=still-not-a-date&source=manual';
@@ -428,7 +428,7 @@ describe('ActivityScreen — edge states', () => {
     expect(screen.queryByText('Sender One')).toBeNull();
     expect(screen.queryByRole('region', { name: 'Activity summary' })).toBeNull();
     expect(screen.queryByRole('region', { name: 'Bulk actions' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Export for support' })).toBeDisabled();
   });
 
   it('does not mislabel a non-validation 4xx as a filter problem', async () => {
@@ -531,10 +531,10 @@ describe('ActivityScreen — what the numbers and rows admit to (QA-activity-202
     const support = screen.getByText('Help with Activity').closest('details');
     expect(support).not.toHaveAttribute('open');
     expect(
-      screen.getByRole('button', { name: 'Export support bundle', hidden: true }),
+      screen.getByRole('button', { name: 'Export for support', hidden: true }),
     ).not.toBeVisible();
     await userEvent.click(screen.getByText('Help with Activity'));
-    expect(screen.getByRole('button', { name: 'Export support bundle' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Export for support' })).toBeVisible();
   });
 
   it('names the window, and keeps the way out, when only the window is narrow', async () => {
@@ -683,7 +683,7 @@ describe('ActivityScreen — outcome filter (D246)', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Filter/ }));
     const outcomes = within(screen.getByRole('dialog', { name: 'Activity filters' })).getByRole(
       'group',
-      { name: 'Outcome' },
+      { name: 'Result' },
     );
     expect(
       within(outcomes)
@@ -759,7 +759,7 @@ describe('ActivityScreen — Filter popover', () => {
     const trigger = within(container).getByRole('button', { name: /^Filter/ });
     expect(trigger).toBeDisabled();
     const exportTrigger = within(container).getByRole('button', {
-      name: 'Export support bundle',
+      name: 'Export for support',
       hidden: true,
     });
     expect(exportTrigger).toBeDisabled();
@@ -803,7 +803,7 @@ describe('ActivityScreen — Filter popover', () => {
       within(dialog)
         .getAllByRole('group')
         .map((el) => el.getAttribute('aria-label')),
-    ).toEqual(['Source', 'Outcome', 'Time', 'View']);
+    ).toEqual(['Source', 'Result', 'Time', 'View']);
   });
 
   it('keeps keyboard focus inside the desktop filter dialog', async () => {
@@ -1143,8 +1143,8 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
 
     await userEvent.click(await screen.findByText('Help with Activity'));
-    await userEvent.click(screen.getByRole('button', { name: 'Export support bundle' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Export Activity support bundle' });
+    await userEvent.click(screen.getByRole('button', { name: 'Export for support' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Download activity details' });
     expect(within(dialog).getByText('active+mailbox@example.com')).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Manual' })).toHaveAttribute(
       'aria-pressed',
@@ -1201,9 +1201,9 @@ describe('ActivityScreen — populated', () => {
     renderScreen();
 
     await userEvent.click(await screen.findByText('Help with Activity'));
-    await userEvent.click(screen.getByRole('button', { name: 'Export support bundle' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Export Activity support bundle' });
-    expect(within(dialog).getByText(/review outcome: failed/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Export for support' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Download activity details' });
+    expect(within(dialog).getByText(/result: failed/i)).toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Autopilot' }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Archived' }));
     const senderSearch = within(dialog).getByRole('searchbox', { name: 'Search sender' });
@@ -1215,10 +1215,10 @@ describe('ActivityScreen — populated', () => {
     await userEvent.click(
       within(dialog).getByRole('checkbox', { name: /include technical details/i }),
     );
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Download bundle' }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Download details' }));
 
     const alert = await within(dialog).findByRole('alert');
-    expect(alert).toHaveTextContent(/couldn[’']t create the support bundle/i);
+    expect(alert).toHaveTextContent(/couldn[’']t prepare the download/i);
     expect(exportUrl).not.toBeNull();
     expect(exportUrl!.searchParams.get('source')).toBe('autopilot');
     expect(exportUrl!.searchParams.has('verb')).toBe(false);
@@ -1229,7 +1229,7 @@ describe('ActivityScreen — populated', () => {
     expect(exportRequest!.headers.get('x-active-mailbox-id')).toBe(
       'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
     );
-    expect(within(dialog).getByRole('button', { name: 'Download bundle' })).toBeEnabled();
+    expect(within(dialog).getByRole('button', { name: 'Download details' })).toBeEnabled();
   });
 
   it('registers the Undo disclosure as the screen help', async () => {
@@ -2363,9 +2363,9 @@ describe('ActivityScreen — outcome-aware recovery', () => {
   });
 
   it.each([
-    ['ACTION_ALREADY_RECOVERED', 409, /already recovered/i],
+    ['ACTION_ALREADY_RECOVERED', 409, /already succeeded on retry/i],
     ['RECOVERY_ATTEMPT_STALE', 409, /newer attempt/i],
-    ['ACTION_NOT_RECOVERABLE', 409, /no longer needs recovery/i],
+    ['ACTION_NOT_RECOVERABLE', 409, /no longer needs a retry/i],
   ] as const)(
     'a %s start refusal names the refusal, not a Gmail check that never ran',
     async (code, status, says) => {

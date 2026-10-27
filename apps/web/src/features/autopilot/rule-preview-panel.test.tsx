@@ -57,14 +57,14 @@ it('keeps the lifetime evidence and full identity in structured sender columns',
   expect(table.getByRole('columnheader', { name: 'Email history' })).toBeInTheDocument();
   expect(table.getByRole('columnheader', { name: 'In inbox' })).toBeInTheDocument();
   expect(
-    table.getByText(/Matching uses synced email history, including inbox and archived mail/),
+    table.getByText(/Rules check scanned email history, including Inbox and archived email/),
   ).toBeInTheDocument();
   expect(table.getByRole('rowheader', { name: /newsletter@example.com/ })).toBeInTheDocument();
   expect(table.getByRole('cell', { name: /0%/ })).toBeInTheDocument();
   expect(table.getByRole('cell', { name: /1,586/ })).toBeInTheDocument();
   expect(table.getByRole('cell', { name: /^In inbox 12$/ })).toBeInTheDocument();
   expect(table.getByRole('cell', { name: /128d ago/ })).toBeInTheDocument();
-  expect(table.getByText(/does not prove whether you read an email/)).toBeInTheDocument();
+  expect(table.getByText(/doesn’t show whether you actually read an email/)).toBeInTheDocument();
 });
 
 it('preserves unmatched reason formats instead of assigning invented metrics', () => {
@@ -81,7 +81,9 @@ it('preserves unmatched reason formats instead of assigning invented metrics', (
   expect(screen.getByRole('columnheader', { name: 'In inbox' })).toBeInTheDocument();
   expect(screen.getByText(dormant.reason)).toBeInTheDocument();
   expect(
-    screen.getByText('At matching: first seen 3 days earlier · 1 email from this sender'),
+    screen.getByText(
+      'When this rule found the sender: first seen 3 days earlier · 1 email from this sender',
+    ),
   ).toBeInTheDocument();
 });
 
@@ -94,7 +96,7 @@ it('keeps invalid recorded evidence inspectable without inventing table metrics'
       layout="table"
     />,
   );
-  expect(screen.queryByRole('columnheader', { name: 'Read rate' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('columnheader', { name: 'Marked read' })).not.toBeInTheDocument();
   expect(screen.getByText('Matches this rule’s recorded conditions.')).toBeInTheDocument();
   expect(screen.getByText(reason)).toBeInTheDocument();
 });
@@ -152,7 +154,7 @@ it('explains a historical Archive match with no Inbox email instead of implying 
 it.each([
   ['archive', 'no Inbox email to Archive'],
   ['later', 'no Inbox email to move to Later'],
-  ['delete', 'no email in this rule’s scope to Delete'],
+  ['delete', 'no email that this rule can Delete'],
   ['unsubscribe', 'already have Unsubscribe selected'],
 ] as const)(
   'explains the non-actionable subset for %s without treating protection as the cause',
@@ -200,7 +202,7 @@ it('does not infer action ineligibility from an empty sample or unknown Inbox co
       onRetry={vi.fn()}
     />,
   );
-  expect(screen.getByText(/1 sender is eligible for Unsubscribe/)).toBeInTheDocument();
+  expect(screen.getByText(/1 sender is available for Unsubscribe/)).toBeInTheDocument();
   expect(screen.getByText(/No sample senders available/)).toBeInTheDocument();
   expect(screen.queryByText(/no Inbox|Unsubscribe selected/)).not.toBeInTheDocument();
   view.rerender(
@@ -215,7 +217,7 @@ it('does not infer action ineligibility from an empty sample or unknown Inbox co
     />,
   );
   expect(screen.queryByText(/Inbox emails/)).not.toBeInTheDocument();
-  expect(screen.getByText(/1 sender is eligible for Unsubscribe/)).toBeInTheDocument();
+  expect(screen.getByText(/1 sender is available for Unsubscribe/)).toBeInTheDocument();
 });
 
 it('shows a true zero-match state without an exclusion explanation', () => {

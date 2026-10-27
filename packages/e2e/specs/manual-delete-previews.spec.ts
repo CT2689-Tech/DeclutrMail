@@ -209,9 +209,7 @@ test('empty Senders and Triage Delete previews explain location or no current ma
       .getByRole('button', { name: unsubscribe ? 'Unsubscribe (U)' : 'Delete (D)', exact: true })
       .click();
     if (unsubscribe) await dialog.getByRole('radio', { name: '+ Delete', exact: true }).click();
-    await expect(
-      dialog.getByText('Archived email is outside this scope.', { exact: true }),
-    ).toBeVisible();
+    await expect(dialog.getByText('Archived email isn’t included.', { exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: 'Include archived', exact: true }).click();
     await expect(dialog.getByRole('checkbox', { name: 'Include archived email' })).toBeChecked();
     await expect(dialog.getByRole('checkbox', { name: 'Include archived email' })).toBeFocused();
@@ -246,9 +244,7 @@ test('empty Senders and Triage Delete previews explain location or no current ma
       await archivedToolbar.getByText('More actions', { exact: true }).click();
     await action.click();
     if (unsubscribe) await dialog.getByRole('radio', { name: '+ Delete', exact: true }).click();
-    await expect(
-      dialog.getByText('Archived email is outside this scope.', { exact: true }),
-    ).toBeVisible();
+    await expect(dialog.getByText('Archived email isn’t included.', { exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: 'Include archived', exact: true }).click();
     await expect(dialog.getByRole('checkbox', { name: 'Include archived email' })).toBeFocused();
     await expect(dialog.getByRole('region', { name: 'What Delete will do' })).toContainText(

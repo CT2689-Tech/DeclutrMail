@@ -449,7 +449,7 @@ describe('complimentary comps', () => {
   it('names the comp instead of the generic no-price line', () => {
     const view = comped('pro', { tier: 'pro', expiresAt: null });
     expect(currentPlanPriceLabel(view)).toBe('Complimentary');
-    expect(complimentaryNote(view)).toContain('Pro is complimentary on this account');
+    expect(complimentaryNote(view)).toContain('Pro is included at no cost');
     // Permanent comps claim no end date — there isn't one.
     expect(complimentaryNote(view)).not.toContain('through');
   });
@@ -458,7 +458,7 @@ describe('complimentary comps', () => {
     const view = comped('pro', { tier: 'pro', expiresAt: '2026-12-31T23:59:59.000Z' });
     const note = complimentaryNote(view);
     expect(note).toContain('through Dec 31, 2026');
-    expect(note).toContain('reverts to your paid subscription');
+    expect(note).toContain('return to your paid plan');
   });
 
   it('a BACKING record still owns the headline — a paid plan is not complimentary', () => {
@@ -466,7 +466,7 @@ describe('complimentary comps', () => {
     // subscription; only the note may mention the comp.
     const view = comped('pro', { tier: 'plus', expiresAt: null }, SUB);
     expect(currentPlanPriceLabel(view)).toBe('$19/mo');
-    expect(complimentaryNote(view)).toContain('Plus is complimentary');
+    expect(complimentaryNote(view)).toContain('Plus is included at no cost');
   });
 
   it('a comp BELOW the named tier does not make the headline complimentary', () => {
@@ -615,7 +615,7 @@ describe('past-due scheduled cancellation disclosure', () => {
     };
     const note = backingStatusNote({ state: 'cancel_scheduled', sub });
     expect(note?.text).toMatch(/Payment past due.*Nov 12/);
-    expect(note?.text).toContain('complimentary grant may still apply');
+    expect(note?.text).toContain('plan included at no cost may still apply');
     expect(note?.text).not.toContain('switch to Free');
   });
 });

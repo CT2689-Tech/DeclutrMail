@@ -1687,7 +1687,7 @@ export function PaymentProcessingNotice({
             ) : (
               // Claim AND provider search both empty — nothing is in
               // flight anywhere. State that, never "found your payment".
-              'Nothing is awaiting confirmation for this checkout — on our server or at the payment provider.'
+              'Neither DeclutrMail nor the payment provider has a pending payment to confirm for this checkout.'
             )
           ) : providerCheck === 'payment_in_progress' ? (
             'The payment provider shows this checkout still in progress — for example awaiting bank confirmation. Waiting is safe; this page keeps checking.'
@@ -2417,7 +2417,7 @@ function NonBackingSubscriptionNotice({
               your account{isPaused && until ? ` (paused until ${until})` : ''}.
             </strong>{' '}
             <span style={{ color: color.fgSoft }}>
-              Your account is on {entitlementName} — this subscription isn&rsquo;t what grants it.{' '}
+              Your current {entitlementName} plan comes from a different subscription or offer.{' '}
               {sub.cancelAtPeriodEnd ? (
                 // QA-billing-20260901-02: the row was already canceled —
                 // repeating "cancel it if you're done with it" over a
@@ -2434,7 +2434,7 @@ function NonBackingSubscriptionNotice({
                 // below). Losing the support-route sentence here is
                 // exactly the gap the original finding named.
                 <>
-                  It won&rsquo;t renew. If your plan picker doesn&rsquo;t unlock on its own, email{' '}
+                  It won&rsquo;t renew. If you still can’t choose another plan, email{' '}
                   <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                     support@declutrmail.com
                   </a>
@@ -2442,13 +2442,13 @@ function NonBackingSubscriptionNotice({
                 </>
               ) : isPaused ? (
                 <>
-                  {`Resuming makes ${tierName} your paid subscription again; your plan is then recomputed from your subscriptions, which can move your account off ${entitlementName}. Cancel it if you’re done with it.`}{' '}
+                  {`Resuming restarts your paid ${tierName} subscription and may replace your current ${entitlementName} plan. Cancel this subscription if you no longer want it.`}{' '}
                   {/* QA-billing-20260901-01: the picker below is locked
                       while this row exists, and canceling isn't always
                       the fast unlock (a chargeback stays blocking until
                       its period ends) — name the route this screen has
                       no other way to reach. */}
-                  If canceling doesn&rsquo;t free up your plan picker right away, email{' '}
+                  If you still can’t choose another plan after canceling, email{' '}
                   <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                     support@declutrmail.com
                   </a>
@@ -2456,8 +2456,8 @@ function NonBackingSubscriptionNotice({
                 </>
               ) : (
                 <>
-                  Cancel it if you&rsquo;re done with it. If that doesn&rsquo;t free up your plan
-                  picker right away, email{' '}
+                  Cancel it if you&rsquo;re done with it. If you still can’t choose another plan,
+                  email{' '}
                   <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                     support@declutrmail.com
                   </a>
@@ -2476,7 +2476,7 @@ function NonBackingSubscriptionNotice({
               {entitlementName}.{' '}
               {sub.cancelAtPeriodEnd ? (
                 <>
-                  It won&rsquo;t renew. If your plan picker doesn&rsquo;t unlock on its own, email{' '}
+                  It won&rsquo;t renew. If you still can’t choose another plan, email{' '}
                   <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                     support@declutrmail.com
                   </a>
@@ -2488,7 +2488,7 @@ function NonBackingSubscriptionNotice({
                   <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
                     support@declutrmail.com
                   </a>{' '}
-                  if canceling doesn&rsquo;t free up your plan picker right away.
+                  if you still can’t choose another plan after canceling.
                 </>
               )}
             </span>
@@ -2504,8 +2504,8 @@ function NonBackingSubscriptionNotice({
         // method with the provider") named no destination at all; this
         // names the only one that is certainly correct (ADR-0035).
         <p style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
-          Payment past due on this subscription. It isn&rsquo;t the one granting your current plan,
-          so email{' '}
+          Payment past due on this subscription. Your current plan comes from a different
+          subscription or offer, so email{' '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
           </a>{' '}
@@ -2516,7 +2516,7 @@ function NonBackingSubscriptionNotice({
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
           {sub.provider === 'razorpay'
             ? 'Restarting a plan paid in rupees could start a new charge. To avoid that, email '
-            : 'We can’t confirm your retained billing period from here, so resume isn’t offered without review. Email '}
+            : 'We can’t confirm how much paid time remains, so we can’t restart this subscription here. Email '}
           <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
             support@declutrmail.com
           </a>{' '}
@@ -2535,7 +2535,7 @@ function NonBackingSubscriptionNotice({
           }}
         >
           {apiErrorCode(resume.error) === 'RESUME_PERIOD_ENDED'
-            ? 'Your retained billing period has ended. Nothing was charged. Email support@declutrmail.com to reactivate with a new paid period.'
+            ? 'Your paid time has ended, so nothing was charged; email support@declutrmail.com to start a new paid period.'
             : 'The payment provider didn’t confirm the resume. Resume starts no new charge either way — try again, or email support@declutrmail.com.'}
         </div>
       ) : null}
@@ -2551,13 +2551,13 @@ function NonBackingSubscriptionNotice({
             borderRadius: radius.lg,
           }}
         >
-          <strong style={{ fontWeight: 600 }}>Resume without starting a new billing period</strong>
+          <strong style={{ fontWeight: 600 }}>Resume with your remaining paid time</strong>
           <span style={{ color: color.fgSoft }}>
             $0 is due today. Your existing paid period continues through {retainedPeriodEnd}; plan
-            and billing changes take effect from the next billing period. If that retained period
-            has already ended, resume will stop safely instead of starting a new charge.
+            and billing changes take effect from the next billing period. If your paid time has
+            already ended, the subscription won’t restart and you won’t be charged.
             {mismatch
-              ? ` Resuming re-grants ${tierName} from this subscription; your account’s plan is then recomputed from your subscriptions and can change from ${entitlementName}.`
+              ? ` Resuming restarts your paid ${tierName} subscription and may replace your current ${entitlementName} plan.`
               : null}
           </span>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

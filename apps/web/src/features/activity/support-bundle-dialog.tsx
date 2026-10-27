@@ -107,7 +107,7 @@ export function ActivitySupportBundleDialog({
             onClick={() => void submit()}
             disabled={invalidRange || exportBundle.isPending}
           >
-            {exportBundle.isPending ? 'Creating bundle…' : 'Download bundle'}
+            {exportBundle.isPending ? 'Preparing download…' : 'Download details'}
           </Button>
         </>
       }
@@ -121,14 +121,14 @@ export function ActivitySupportBundleDialog({
             ...tokens.typography.dialogTitle,
           }}
         >
-          Export Activity support bundle
+          Download activity details
         </h2>
         <p
           id="activity-support-bundle-lead"
           style={{ margin: '7px 0 0', color: color.fgSoft, fontSize: text.base, lineHeight: 1.5 }}
         >
-          Review which Activity records to include. The ZIP contains a readable summary and CSV for
-          all matching records, not only rows currently loaded on screen.
+          Choose which activity to include. The download includes a summary and spreadsheet of every
+          result in your filters, including those on other pages.
         </p>
         <p style={{ margin: '7px 0 0', color: color.fgMuted, fontSize: text.sm }}>
           Gmail account:{' '}
@@ -180,7 +180,7 @@ export function ActivitySupportBundleDialog({
                   fontSize: text.sm,
                 }}
               >
-                <span>Review outcome: {draft.outcomes.join(', ')}</span>
+                <span>Result: {draft.outcomes.join(', ')}</span>
                 <button
                   type="button"
                   onClick={() => setDraft((current) => ({ ...current, outcomes: [] }))}
@@ -191,7 +191,7 @@ export function ActivitySupportBundleDialog({
                     cursor: 'pointer',
                   }}
                 >
-                  Include all outcomes
+                  Include all results
                 </button>
               </div>
             )}
@@ -232,7 +232,7 @@ export function ActivitySupportBundleDialog({
             <span>
               <strong style={{ color: color.fg }}>Include technical details</strong>
               <span style={supportBundleOptionHelpStyle}>
-                Adds a separate JSON appendix for support correlation.
+                Adds a separate file to help support trace what happened.
               </span>
             </span>
           </label>
@@ -257,8 +257,7 @@ export function ActivitySupportBundleDialog({
               fontSize: text.base,
             }}
           >
-            We couldn’t create the support bundle. Your Activity is unchanged. Review the options
-            and try again.
+            We couldn’t prepare the download. Check your options and try again.
             <TechnicalDetails summary="Show error details" style={{ marginTop: 8 }}>
               {technicalErrorDetails(exportBundle.error)}
             </TechnicalDetails>

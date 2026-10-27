@@ -49,9 +49,9 @@ describe('Home orientation', () => {
       last_sync_error_code: 'InvalidGrantError',
     };
     expect(homePriority({ ...inputs, sync })?.title).toBe('Reconnect Gmail to continue.');
-    expect(homeSyncLine(sync, false, false, now)).toBe('Gmail needs reconnect');
+    expect(homeSyncLine(sync, false, false, now)).toBe('Reconnect Gmail');
     // A background status-read error preserves the last-known reconnect in both surfaces.
-    expect(homeSyncLine(sync, true, true, now)).toBe('Gmail needs reconnect');
+    expect(homeSyncLine(sync, true, true, now)).toBe('Reconnect Gmail');
     expect(homePriority({ ...inputs, sync: undefined, needsReconnect: true })?.action?.href).toBe(
       '/settings#mailboxes',
     );

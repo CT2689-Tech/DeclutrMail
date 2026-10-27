@@ -274,11 +274,11 @@ export function FrozenRulePreview({
           {!checking && preview.data.hasMore && (
             <p>
               This batch includes {num(preview.data.messageCount)} of{' '}
-              {num(preview.data.totalEligibleCount)} eligible emails. Preview again after it
+              {num(preview.data.totalEligibleCount)} matching emails. Preview again after it
               finishes for the next batch.
             </p>
           )}
-          {preview.data.messageCount === 0 && <p>No eligible email in this batch.</p>}
+          {preview.data.messageCount === 0 && <p>No emails can be included in this batch.</p>}
           {preview.data.protectedSenderCount > 0 && (
             <p>
               {num(preview.data.protectedSenderCount)} Protected sender
