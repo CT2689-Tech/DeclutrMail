@@ -20,6 +20,7 @@ it is. Typing `/ct-` lists them all.
 | `ct-gates-verify-test` | workflow       | `workflows/ct-gates-verify-test.js`     | regression-test the `ct-gates` refuters                              |
 | `/ct-pr`               | local skill    | `skills/ct-pr/` (per machine)           | list what a PR still needs checked by hand before merge              |
 | `/ct-reddit`           | personal skill | `~/.claude/skills/ct-reddit/`           | draft a Reddit comment for a thread                                  |
+| `/ct-orchestrate`      | personal cmd   | `~/.claude/commands/ct-orchestrate.md`  | run a session as tech lead for every parallel session                |
 
 ## Where a new one goes
 

@@ -1,6 +1,6 @@
 ---
 name: flow-completeness-auditor
-description: Advisory reviewer that catches the defect class structural gates miss — incomplete user FLOWS and state machines. For features with a lifecycle (mailbox connect/disconnect/switch/reconnect, sync queued→syncing→ready→failed, active-scope=null), it enumerates every state + transition and flags any that lacks UI, cache handling, or a test, plus the two invariants this codebase keeps relearning (scope-change cache reset; guard-4xx-as-designed-state). Use on PRs touching apps/web/features/** or apps/api flows with lifecycle state. Reports findings; never refactors. Advisory tier — non-blocking.
+description: Advisory reviewer that catches the defect class structural gates miss — incomplete user FLOWS and state machines. For features with a lifecycle (mailbox connect/disconnect/switch/reconnect, sync queued→syncing→ready→failed, active-scope=null), it enumerates every state + transition and flags any that lacks UI, cache handling, or a test, plus the two invariants this codebase keeps relearning (scope-change cache reset; guard-4xx-as-designed-state). Use on PRs touching apps/web/src/features/** or apps/api flows with lifecycle state. Reports findings; never refactors. Advisory tier — non-blocking.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -34,8 +34,10 @@ behavior.
 
 - Mailbox lifecycle: connect · connect-second · disconnect · reconnect ·
   switch-active · no active mailbox (`activeMailboxId === null`).
-- Sync lifecycle: `queued → syncing → ready → failed` (+ transient/
-  superseded failures, + reconnect re-enqueue).
+- Sync lifecycle: `provider_sync_state.readiness` —
+  `queued → syncing → ready | failed | needs_reconnect` (`failed` is
+  retried; `needs_reconnect` is terminal until a reconnect), plus the
+  `sync_stage` progress steps and reconnect re-enqueue.
 - Any TanStack query whose result depends on a server-resolved scope
   (active mailbox) — the cache is NOT partitioned by that scope.
 - Onboarding / gate flows that auto-advance or trap.
@@ -59,7 +61,7 @@ behavior.
 - **Scope change ⇒ reset scoped cache.** Any mutation that changes a
   server-resolved scope (active mailbox: switch, disconnect, reconnect)
   MUST reset the scoped client cache (`resetMailboxScopedCache` in
-  `apps/web/src/features/mailboxes/api/`), not merely invalidate `me`.
+  `apps/web/src/features/mailboxes/api/reset-mailbox-cache.ts`), not merely invalidate `me`.
   Feature query keys are NOT partitioned by mailbox, so stale data
   survives otherwise. Flag any scope-changing mutation whose `onSuccess`
   does not route through the shared reset.

@@ -58,14 +58,20 @@ Allowed exceptions:
 
 ### Step 3: Migration safety checks
 
-For each new Atlas migration file (`packages/db/migrations/*.sql`):
+For each new Atlas migration file (`packages/db/migrations/NNNN_*.sql`):
 
-#### Check A — Reversibility
+#### Check A — Reversibility and applied-migration immutability
 
-- Does every `ALTER TABLE` have a paired down-migration? Atlas declarative
-  diffs handle this, but inline imperative statements must be explicit.
-- Does any `DROP COLUMN` / `DROP TABLE` exist? If yes, **[BLOCKING]** —
-  destructive changes need a deprecation window (rename, then drop later).
+- Does the migration ship its paired `NNNN_*.rollback` file, and does the
+  rollback actually undo every statement?
+- **[BLOCKING]** Any edit to an already-merged migration file. Atlas tracks
+  migrations by version, not content: once prod or a persistent dev DB has
+  applied vN, an in-place edit never reaches it. Ship vN+1 (CLAUDE.md §2.6;
+  2026-07-15, PR #333/#335/#336).
+- `DROP COLUMN` / `DROP TABLE`: prelaunch, superseded columns are removed
+  directly (CLAUDE.md §2.6, D245) — no deprecation window. **[BLOCKING]**
+  only if any code in the same tree still reads or writes the dropped
+  object (`rg` for the column and its camelCase Drizzle name).
 
 #### Check B — Locking + online safety
 
@@ -76,8 +82,10 @@ For tables that may already have production data:
   explicitly justified.
 - `CREATE INDEX` on hot tables must use `CONCURRENTLY` (`CREATE INDEX
   CONCURRENTLY`) — **[BLOCKING]** otherwise.
-- Renaming a column requires a multi-PR shim (add new col, dual-write,
-  cut over, drop old). Single-PR renames are **[BLOCKING]**.
+- A column rename must land with every reader and writer in the same PR,
+  and the API and worker deploy together. Flag **[WARNING]** if a deployed
+  reader outside this PR (another service, a cron, a raw `sql` string)
+  could hit the old name between deploys.
 
 #### Check C — Required indexes
 
@@ -94,7 +102,7 @@ D235 defers Postgres partitioning until 25M rows OR 2M/mailbox OR p95
 > 150ms. Migrations that ADD partitioning before those triggers are
 **[BLOCKING]** — premature.
 
-Migrations that change the shape of the `messages` or `triage_decision`
+Migrations that change the shape of the `mail_messages` or `triage_decisions`
 tables must be flagged **[WARNING]** for partitioning compatibility — once
 partitioning lands, partition keys are immutable.
 
@@ -113,9 +121,13 @@ or table is touched here, verify the undo journal can record it:
 Run the drift check if the environment supports it:
 
 ```bash
-pnpm --filter @declutrmail/db drizzle-kit check 2>&1 | tail -20
+pnpm --filter @declutrmail/db db:check 2>&1 | tail -20
 atlas migrate hash --dir file://packages/db/migrations 2>&1 | tail -5
 ```
+
+(CI's `migration-lint.yml` runs `atlas migrate lint` and a real apply; the
+local `atlas` binary may be missing — install it with
+`scripts/install-atlas.sh` or report the step as not run.)
 
 If drift exists (schema files don't match the latest migration):
 **[BLOCKING]** — the PR must regenerate the plan.
@@ -146,8 +158,8 @@ If no findings: `## Schema Migration Review — PR #<NN>: no findings.`
 ## Severity rubric
 
 - **[BLOCKING]** — direct violation of D7/D228 privacy, irreversible
-  destructive change, missing required index on FK, drizzle/atlas drift,
-  premature partitioning, single-PR rename
+  in-place edit of an applied migration, drop of an object still referenced,
+  missing required index on FK, drizzle/atlas drift, premature partitioning
 - **[WARNING]** — possibly-slow rewrite (default on huge table),
   missing index on suspected hot query, partition-key-affecting change
 - **[INFO]** — observation worth surfacing (e.g. "consider adding a
@@ -157,12 +169,12 @@ If no findings: `## Schema Migration Review — PR #<NN>: no findings.`
 
 Surface to founder immediately if the PR:
 
-- Drops a table or column with production data
+- Drops a table or column that holds production data
 - Changes the encryption schema (DEK / KEK columns per D14)
 - Modifies the `undo_journal` table shape
 - Adds a column that could hold body content
 - Modifies CLAUDE.md §2.1 (privacy guardrail)
-- Touches the messages table partitioning strategy before D235 triggers fire
+- Touches the `mail_messages` partitioning strategy before D235 triggers fire
 
 ## Non-goals
 

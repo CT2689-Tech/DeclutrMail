@@ -1,6 +1,6 @@
 ---
 name: privacy-auditor
-description: Data-flow review for DeclutrMail's no-body-storage privacy posture (D7, D228). Use on any PR touching Gmail data — apps/api/src/{gmail,messages,senders}/**, packages/db/src/schema/{mail-messages,senders}.ts, anywhere calling Gmail API or Sentry/PostHog with message data. Reports findings; never refactors.
+description: Data-flow review for DeclutrMail's no-body-storage privacy posture (D7, D228). Use on any PR touching Gmail data — apps/api/src/{gmail,senders,sync}/**, packages/workers/**, packages/shared/src/contracts/gmail-data-inventory.ts, packages/db/src/schema/{mail-messages,senders}.ts, anywhere calling Gmail API or Sentry/PostHog with message data. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -28,21 +28,29 @@ fixes. The implementing agent will fix; you verify.
 
 Per the trust promise "We never fetch or store full email contents":
 
-- **Allowed:** sender name + email, subject, Gmail `snippet` (short preview),
-  dates (received / internalDate), Gmail labels, read/unread state
+- **Source of truth:** `packages/shared/src/contracts/gmail-data-inventory.ts`
+  (D245). Every fetched Gmail field, persisted/derived dataset, purpose and
+  retention is declared there; a new field that is not in the registry is
+  **[BLOCKING]** regardless of how harmless it looks.
+- **Allowed:** what the registry declares — today the metadata envelope
+  (Gmail ids, `internalDate`, labels, `snippet`, size estimate) plus the
+  header allowlist below
 - **Forbidden:** full message body (HTML or plain text), attachments,
   inline images, raw MIME, headers other than the explicit allowlist below
-- **Header allowlist:** From, To, Cc, Subject, Date, List-Unsubscribe,
-  List-Unsubscribe-Post (only). **Message-ID is NOT stored** (per D231).
+- **Header allowlist:** From, Subject, To, Cc, List-Unsubscribe,
+  List-Unsubscribe-Post (only — CLAUDE.md §2.1). The received date comes
+  from `internalDate`, not the `Date` header. **Message-ID is NOT stored**
+  (per D231).
 
 ## Scope — files this agent reviews
 
 Run on any PR touching:
 
 - `apps/api/src/gmail/**`
-- `apps/api/src/messages/**`
 - `apps/api/src/senders/**`
-- `apps/api/src/workers/**` that touch message data
+- `apps/api/src/sync/**`
+- `packages/workers/**` that touch message data
+- `packages/shared/src/contracts/gmail-data-inventory.ts`
 - `packages/db/src/schema/{mail-messages,senders}.ts`
 - Any file calling `gmail.users.messages.get` or similar Gmail API
 - Any file calling `Sentry.captureException`, `Sentry.captureMessage`,
@@ -125,7 +133,7 @@ AND prove the body is discarded before any storage/log/response exit.
 
 #### Header allowlist check
 
-If a header outside the allowlist (From, To, Cc, Subject, Date,
+If a header outside the allowlist (From, Subject, To, Cc,
 List-Unsubscribe, List-Unsubscribe-Post) is read from a Gmail response
 AND assigned to a variable that exits the function, flag it.
 
@@ -196,17 +204,18 @@ If no findings: emit `## Privacy Audit — PR #<NN>: no findings.`
 
 If you find blockers:
 
-1. Post your findings as PR comments using the `[BLOCKING]` prefix
-   convention (CLAUDE.md §6)
-2. Set the PR status check to "Privacy Audit — failed"
-3. Add an entry file under `docs/log/mistakes/` with format from CLAUDE.md §11
-4. **Do not propose fixes.** The implementing agent fixes; you re-verify.
+1. Return your findings with the `[BLOCKING]` prefix convention
+   (CLAUDE.md §6). The caller (the `ct-gates` workflow or the session that
+   invoked you) posts comments and writes the `docs/log/mistakes/` entry —
+   you do neither.
+2. **Do not propose fixes.** The implementing agent fixes; you re-verify.
 
 ## Stop conditions (override "report and continue")
 
 Stop and surface to founder immediately if the PR:
 
-- Changes OAuth scope strings (D7's "no body" depends on `gmail.readonly` + `gmail.modify` only)
+- Changes OAuth scope strings (`apps/api/src/auth/google-oauth.service.ts`
+  requests `gmail.modify` + `openid` + `userinfo.email` only)
 - Modifies the body-storage hook (`verify-no-body-storage.sh`)
 - Modifies CLAUDE.md §2.1 (privacy guardrail)
 - Attempts to widen the header allowlist

@@ -195,7 +195,7 @@ If no findings: `## Silent Failure Hunt — PR #<NN>: no findings.`
 Surface to founder if the PR:
 
 - Adds catch blocks around OIDC verification that swallow auth failures
-- Adds catch blocks around HMAC verification (Stripe) that swallow
+- Adds catch blocks around HMAC verification (Paddle, Razorpay, Resend) that swallow
 - Adds catch blocks around the body-storage hook's logic
 - Disables global unhandled rejection handlers
 
