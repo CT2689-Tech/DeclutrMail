@@ -103,9 +103,9 @@ export function StepConnect({
           />
         </ConsentStep>
         <ConsentStep number="4" title="Actions you approve">
-          Archive, Later and Delete show which emails will move and what can be undone before you
-          confirm. Unsubscribe requests have a separate confirmation; a sent request cannot be
-          recalled.
+          Archive, Later and Delete preview the matching count, planned change and what can be
+          undone before you confirm. Unsubscribe requests have a separate confirmation; a sent
+          request cannot be recalled.
         </ConsentStep>
       </ol>
 

@@ -2,20 +2,18 @@
 
 import { editorialOnboardingActionStyle } from '@/features/editorial/page';
 
-import { Button, PrivacyBadge, tokens } from '@declutrmail/shared';
+import { Button, PrivacyBadge, PRIVACY_BADGE_HEADLINE } from '@declutrmail/shared';
 
 import { StepShell } from './step-shell';
-
-const { color, radius, shadow, text } = tokens;
+import styles from './onboarding-appearance.module.css';
 
 /**
  * Step 1 — the Promise screen (D107).
  *
  * Pre-OAuth, no inputs: the value promise plus the exact privacy
- * boundary BEFORE any Google consent screen. The trust badge is the
- * shared `PrivacyBadge` (locked D228 plain-language privacy promise
- * + the explicit storage list; the pre-D228 wording in D107's
- * original body is superseded by the GRILL2 patch on D109).
+ * boundary BEFORE any Google consent screen. The locked promise stays
+ * visible; the shared badge preserves the complete D245 field lists
+ * in a native disclosure. Step 2 still explains access before OAuth.
  *
  * Renders UNAUTHED by design — this is where fresh visitors entering
  * the app funnel land, so there must be no `/api/auth/me` gate in
@@ -25,34 +23,47 @@ export function StepPromise({ onConnect }: { onConnect: () => void }) {
   return (
     <StepShell
       phase="connect"
-      title="Clear thousands of emails by sender — and see exactly what moves."
+      title="A lighter inbox starts with one sender."
+      sub="Review mail by sender, then see the matching count and planned change before you confirm."
     >
-      {/* The privacy boundary, stated once, at the decision point —
-          directly above the button that starts Google consent. */}
-      <PrivacyBadge
-        headingLevel={2}
-        style={{
-          width: '100%',
-          textAlign: 'left',
-          margin: '20px 0 32px',
-          border: 'none',
-          borderRadius: radius.xl,
-          boxShadow: shadow.card,
-        }}
-      />
+      <figure className={styles.senderExample} aria-label="Illustrative sender example">
+        <div className={styles.exampleSender}>
+          <span className={styles.senderMonogram} aria-hidden="true">
+            S
+          </span>
+          <span>
+            <strong>Sunday Notes</strong>
+            <span className={styles.senderContext}>128 emails in Inbox</span>
+          </span>
+          <span className={styles.senderCount} aria-hidden="true">
+            128
+          </span>
+        </div>
+        <figcaption>Example only. Your senders appear after you connect.</figcaption>
+      </figure>
+
+      <section className={styles.promisePrivacy} aria-label="Gmail privacy">
+        <h2>{PRIVACY_BADGE_HEADLINE}</h2>
+        <details>
+          <summary>See the full Gmail data list</summary>
+          <PrivacyBadge
+            headingLevel={3}
+            style={{ border: 'none', boxShadow: 'none', padding: 0 }}
+          />
+        </details>
+      </section>
 
       <Button tone="primary" size="xl" onClick={onConnect} style={editorialOnboardingActionStyle}>
         Connect Gmail
       </Button>
 
-      <p style={{ color: color.fgMuted, fontSize: text.sm, marginTop: 20 }}>
-        <a href="/privacy" style={{ color: color.fgMuted }}>
-          Privacy policy
-        </a>
+      <p className={styles.connectNext}>
+        Next: review Google’s permission. Connecting won’t move mail.
+      </p>
+      <p className={styles.promiseLegal}>
+        <a href="/privacy">Privacy policy</a>
         {' · '}
-        <a href="/terms" style={{ color: color.fgMuted }}>
-          Terms
-        </a>
+        <a href="/terms">Terms</a>
       </p>
     </StepShell>
   );
