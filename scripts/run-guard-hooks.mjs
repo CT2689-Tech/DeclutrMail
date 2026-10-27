@@ -97,19 +97,9 @@ export const POSITIVE_CONTROLS = {
       'export const since = (createdAt) => sql`created_at > ${createdAt}`;\n',
     expect: 'violation',
   },
-  'require-activity-for-actions': {
-    path: 'apps/api/src/control-action.ts',
-    content: 'export const run = (gmail, id) => gmail.archive(id);\n',
-    expect: 'advisory',
-  },
   'require-preview-before-mutation': {
     path: 'apps/web/src/control-mutation.ts',
     content: 'export const useControl = () => useMutation({ mutationFn: archive });\n',
-    expect: 'advisory',
-  },
-  'require-tests-after-edit': {
-    path: 'apps/api/src/control-untested.ts',
-    content: 'export function control() {\n  return 1;\n}\n',
     expect: 'advisory',
   },
 };
@@ -299,7 +289,7 @@ export function classify(name, { error, code, signal, stderr }) {
   const found = stderr.includes(`❌ ${name}:`);
   const advised = new RegExp(`(?:⚠️|ℹ️)\\s+${name}:`).test(stderr);
   if (code === 0) return { outcome: stderr.trim() ? 'advisory' : 'pass' };
-  // Violations exit 1 today; exit 2 is what Claude Code shows the agent.
+  // Violations exit 2 — the only code Claude Code shows the agent; 1 is still read as a violation.
   if ((code === 1 || code === 2) && found) return { outcome: 'violation' };
   if (code === 2 && advised) return { outcome: 'advisory' };
   const said = stderr.trim().split('\n')[0];

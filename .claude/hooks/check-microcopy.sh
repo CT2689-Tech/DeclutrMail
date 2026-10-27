@@ -13,7 +13,7 @@
 # comply); the privacy-badge rule additionally covers packages/shared/**.
 # Skipped: .claude/, docs/, CLAUDE.md, agent definitions, the plan mirror, this hook.
 #
-# Exit 1 to block on canonical-verbs or privacy-badge violation.
+# Exit 2 to block on canonical-verbs or privacy-badge violation.
 
 set -euo pipefail
 
@@ -92,7 +92,7 @@ case "$file_path" in
       echo "" >&2
       echo "   D228: use 'We never fetch or store full email contents.' + the explicit storage list." >&2
       echo "   Render <PrivacyBadge> from @declutrmail/shared — copy lives only in packages/shared/src/copy/privacy.ts." >&2
-      exit 1
+      exit 2
     fi
     ;;
 esac
@@ -277,7 +277,7 @@ case "$file_path" in
       echo "" >&2
       echo "   Truth constraints live in docs/execution/repositioning-copy-spec-2026-08-01.md §1." >&2
       echo "   Positioning rules: docs/adr/0030-positioning-preview-guarantee.md." >&2
-      exit 1
+      exit 2
     fi
     ;;
 esac
@@ -341,7 +341,7 @@ if [ "$violations" -gt 0 ]; then
   echo "" >&2
   echo "   Product UI uses Keep / Archive / Unsubscribe / Later / Delete." >&2
   echo "   'Screen' is an internal enum only (triage_decision.verdict='screen')." >&2
-  exit 1
+  exit 2
 fi
 
 exit 0

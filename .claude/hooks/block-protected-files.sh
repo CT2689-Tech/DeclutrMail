@@ -2,7 +2,7 @@
 # block-protected-files.sh — PreToolUse hook for Edit/Write/MultiEdit
 #
 # Blocks edits to secrets, lock files, build artifacts, git internals.
-# Exit 0 to allow; non-zero to block.
+# Exit 0 to allow; exit 2 to block (Claude Code ignores any other non-zero code).
 #
 # NOTE on CLAUDE.md: Edits to CLAUDE.md are NOT blocked here, by design.
 # CLAUDE.md §11 declares a "founder-only via PR" CONVENTION for CLAUDE.md
@@ -64,7 +64,7 @@ for pattern in "${blocked_patterns[@]}"; do
     echo "❌ block-protected-files: edits to '$rel_path' are not allowed." >&2
     echo "   Matched pattern: $pattern" >&2
     echo "   If you need this change, raise it with the founder." >&2
-    exit 1
+    exit 2
   fi
 done
 

@@ -6,7 +6,7 @@
 # promotional / etc. categories to auto-protect or auto-route. Categories
 # are user-assigned or rule-matched only.
 #
-# Exit 1 on match.
+# Exit 2 on match.
 
 set -euo pipefail
 
@@ -62,7 +62,7 @@ if [ "$violations" -gt 0 ]; then
   echo "" >&2
   echo "   D222: ML-based email category prediction is permanently banned at all versions." >&2
   echo "   Categories are user-assigned or rule-matched only — never ML-predicted." >&2
-  exit 1
+  exit 2
 fi
 
 exit 0

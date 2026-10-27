@@ -27,7 +27,7 @@
 #     date-shaped suffix.
 #
 # This is a tripwire, not a type checker — it catches the exact shape
-# that has bitten this codebase three times, nothing more. Exit 1 to
+# that has bitten this codebase three times, nothing more. Exit 2 to
 # block; the fix is almost always `.toISOString()}::timestamptz` (or
 # the equivalent typed-column comparison via Drizzle's query builder
 # instead of a raw template at all).
@@ -84,7 +84,7 @@ if [ -n "$hit_lines" ]; then
   echo "   If this line is NOT inside a sql\`\` template (e.g. a log message in a file that also uses" >&2
   echo "   sql\`\` elsewhere), this is a false positive — safe to proceed." >&2
   echo "   See CLAUDE.md §2.6 and packages/workers/src/lapse-reengagement.worker.ts's fix." >&2
-  exit 1
+  exit 2
 fi
 
 exit 0

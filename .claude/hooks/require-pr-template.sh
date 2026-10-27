@@ -20,7 +20,7 @@
 #   - gh api repos/.../pulls (direct API)
 #   - PRs created via web UI
 #
-# Exit 0 to allow; non-zero to block.
+# Exit 0 to allow; exit 2 to block (Claude Code ignores any other non-zero code).
 
 set -euo pipefail
 
@@ -37,7 +37,7 @@ branch=$(git branch --show-current 2>/dev/null || echo "")
 
 if [ -z "$branch" ]; then
   echo "❌ require-pr-template: could not determine current branch." >&2
-  exit 1
+  exit 2
 fi
 
 # Bootstrap/distill branches are exempt (CLAUDE.md §6/§11)
@@ -62,7 +62,7 @@ if ! echo "$branch" | grep -qE "^((feat|fix|chore|docs|refactor|test|perf|securi
   echo "   chore/distill-<topic>, or (codex|claude|cursor)/<kebab>" >&2
   echo "   Allowed types: feat, fix, chore, docs, refactor, test, perf, security" >&2
   echo "   See CLAUDE.md §6 for the full pattern." >&2
-  exit 1
+  exit 2
 fi
 
 exit 0
