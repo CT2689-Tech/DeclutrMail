@@ -24,11 +24,39 @@ export {
 export type { SignupAttributionRef } from './signup-attribution-ref';
 
 /** Self-report values that do not carry free-text. */
-const HEARD_FROM_WITHOUT_OTHER = [...SIGNUP_ATTRIBUTION_REFS, 'friend', 'skipped'] as const;
+const HEARD_FROM_WITHOUT_OTHER = [
+  ...SIGNUP_ATTRIBUTION_REFS,
+  'friend',
+  'google',
+  'ai_assistant',
+  'youtube',
+  'instagram',
+  'tiktok',
+  'skipped',
+] as const;
 
 export const SIGNUP_HEARD_FROM_VALUES = [...HEARD_FROM_WITHOUT_OTHER, 'other'] as const;
 
 export type SignupHeardFrom = (typeof SIGNUP_HEARD_FROM_VALUES)[number];
+
+/** Self-report choices; independent of tracked link attribution. */
+export const SIGNUP_HEARD_FROM_CHOICES = [
+  { value: 'google', label: 'Google / search' },
+  { value: 'ai_assistant', label: 'ChatGPT / AI' },
+  { value: 'youtube', label: 'YouTube' },
+  { value: 'instagram', label: 'Instagram' },
+  { value: 'tiktok', label: 'TikTok' },
+  { value: 'hn', label: 'Hacker News' },
+  { value: 'ph', label: 'Product Hunt' },
+  { value: 'reddit', label: 'Reddit' },
+  { value: 'simulator', label: 'Inbox simulator' },
+  { value: 'x', label: 'X' },
+  { value: 'linkedin', label: 'LinkedIn' },
+  { value: 'friend', label: 'Friend or colleague' },
+] as const satisfies readonly {
+  value: Exclude<SignupHeardFrom, 'other' | 'skipped'>;
+  label: string;
+}[];
 
 /** Cap on the Other free-text field. */
 export const SIGNUP_HEARD_DETAIL_MAX = 200;

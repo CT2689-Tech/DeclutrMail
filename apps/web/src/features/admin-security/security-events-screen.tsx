@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { CleanupSelect } from '@/components/cleanup-select';
 import {
   editorialColumnStyle,
@@ -100,6 +102,7 @@ export function AdminSecurityEventsScreen(): ReactElement {
         onTo={setTo}
       />
       <Body query={query} rows={rows} />
+      {query.data && <Link href="/admin/acquisition">Source answers</Link>}
     </div>
   );
 }

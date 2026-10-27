@@ -78,6 +78,8 @@ export interface Me {
     ref: string | null;
     heardFrom: string | null;
     promptNeeded: boolean;
+    /** Absent on an older API: offer only legacy survey channels. */
+    supportedChannels?: readonly string[];
   };
 }
 
