@@ -66,12 +66,25 @@ export function notificationPolicy(policy, channelName, { preserveChannels = fal
     mimeType: 'text/markdown',
     subject: SUBJECTS[value.displayName] ?? value.documentation?.subject ?? value.displayName,
   };
+  if (channelName) {
+    if (preserveChannels) {
+      // Emergency setup must not take a policy off email. Keep a channel list
+      // that already delivers; otherwise use the existing admin channel.
+      const kept = policy.notificationChannels;
+      value.notificationChannels = kept?.length ? [...kept] : [channelName];
+    } else value.notificationChannels = daily ? [] : [channelName];
+  }
   value.alertStrategy = {
     ...value.alertStrategy,
     notificationPrompts: outage ? ['OPENED', 'CLOSED'] : ['OPENED'],
     notificationChannelStrategy:
       channelName && !daily && !digest
-        ? [{ notificationChannelNames: [channelName], renotifyInterval: '14400s' }]
+        ? [
+            {
+              notificationChannelNames: [...value.notificationChannels],
+              renotifyInterval: '14400s',
+            },
+          ]
         : [],
   };
   // Missing uptime measurements retain the last evaluation; silence cannot
@@ -85,14 +98,6 @@ export function notificationPolicy(policy, channelName, { preserveChannels = fal
       '\n\nA CLOSED notification is an incident closure, not independent proof of recovery. Policy changes or automatic expiry can also close incidents; verify current readiness and completed work.';
     if (!value.documentation.content?.includes('A CLOSED notification is an incident closure'))
       value.documentation.content = (value.documentation.content ?? '') + note;
-  }
-  if (channelName) {
-    if (preserveChannels) {
-      // Emergency setup must not take a policy off email. Keep a channel list
-      // that already delivers; otherwise use the existing admin channel.
-      const kept = policy.notificationChannels;
-      value.notificationChannels = kept?.length ? [...kept] : [channelName];
-    } else value.notificationChannels = daily ? [] : [channelName];
   }
   return value;
 }

@@ -542,9 +542,63 @@ test('pagination is complete or fails explicitly, and native empty protobuf list
     listAll(async () => ({ alerts: [], nextPageToken: 'same' }), 'alerts'),
     /Repeated/,
   );
-  assert.equal(contains({}, { notificationChannels: [] }), false);
+  assert.equal(contains({}, { notificationChannels: [] }), true);
   assert.equal(contains({ notificationChannels: [] }, { notificationChannels: [] }), true);
+  assert.equal(contains({}, { notificationChannels: ['expected'] }), false);
+  assert.equal(
+    contains({ notificationChannels: ['leftover'] }, { notificationChannels: [] }),
+    false,
+  );
+  assert.equal(contains({ notificationChannels: null }, { notificationChannels: [] }), false);
+  assert.equal(contains({}, { arbitraryList: [] }), false);
+  assert.equal(contains({}, { alertStrategy: { notificationChannelStrategy: [] } }), true);
   assert.ok(!contains({}, { enabled: true }));
+});
+
+test('prepare and apply accept native omitted empty repeated notification fields', async () => {
+  const initial = fixture();
+  const db = backend(initial, { verificationEntries: [smokeEntry] });
+  const request = async (url, method = 'GET', body) => {
+    const result = await db.request(url, method, body);
+    if (method === 'GET' && new URL(url).pathname.includes('/alertPolicies/')) {
+      if (result.notificationChannels?.length === 0) delete result.notificationChannels;
+      if (result.alertStrategy?.notificationChannelStrategy?.length === 0)
+        delete result.alertStrategy.notificationChannelStrategy;
+    }
+    return result;
+  };
+  await runRouting('prepare', { request, report: report(), expectedHash: planHash(initial) });
+  await runRouting('apply', {
+    request,
+    report: report(),
+    expectedHash: planHash(db.policies()),
+    digestEnabled: 'true',
+    receipt: smokeReceipt,
+  });
+  assert.ok(
+    db.policies().some((p) => DAILY_POLICIES.has(p.displayName) && !p.notificationChannels?.length),
+  );
+});
+
+test('emergency reminders target exactly the retained notification channels', () => {
+  const retained = [
+    'projects/p/notificationChannels/kept',
+    'projects/p/notificationChannels/backup',
+  ];
+  const policy = fixture().find((p) => p.displayName === 'DeclutrMail API unavailable');
+  const actual = notificationPolicy({ ...policy, notificationChannels: retained }, channel.name, {
+    preserveChannels: true,
+  });
+  assert.deepEqual(actual.notificationChannels, retained);
+  assert.deepEqual(actual.alertStrategy.notificationChannelStrategy, [
+    { notificationChannelNames: retained, renotifyInterval: '14400s' },
+  ]);
+  const fallback = notificationPolicy({ ...policy, notificationChannels: [] }, channel.name, {
+    preserveChannels: true,
+  });
+  assert.deepEqual(fallback.alertStrategy.notificationChannelStrategy[0].notificationChannelNames, [
+    channel.name,
+  ]);
 });
 
 test('digest lists open incidents and incidents closed in the last 24h', async () => {

@@ -72,15 +72,26 @@ export const planHash = (policies) =>
     )
     .digest('hex');
 
-export function contains(actual, expected) {
+export function contains(actual, expected, path = '') {
   if (Array.isArray(expected)) {
-    // A missing field is not an empty list. GCP omitting notificationChannels
-    // must not read back as "channels were cleared".
+    // Native ProtoJSON omits default-valued repeated fields. Normalize only
+    // the known notification arrays; nonempty expectations remain strict.
+    if (
+      actual === undefined &&
+      expected.length === 0 &&
+      ['notificationChannels', 'alertStrategy.notificationChannelStrategy'].includes(path)
+    )
+      return true;
     if (!Array.isArray(actual)) return false;
-    return actual.length === expected.length && expected.every((v, i) => contains(actual[i], v));
+    return (
+      actual.length === expected.length &&
+      expected.every((v, i) => contains(actual[i], v, `${path}[]`))
+    );
   }
   if (expected && typeof expected === 'object')
-    return Object.entries(expected).every(([k, v]) => contains(actual?.[k], v));
+    return Object.entries(expected).every(([k, v]) =>
+      contains(actual?.[k], v, path ? `${path}.${k}` : k),
+    );
   return actual === expected;
 }
 
