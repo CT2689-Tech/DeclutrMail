@@ -511,3 +511,11 @@ The public Promise and Connect steps now probe the session without redirecting
 anonymous visitors to returning sign-in. Protected secondary-mailbox entry
 retains its redirect. Regression and synthetic browser evidence are recorded in
 `docs/execution/onboarding-signedout-2026-10-26.md`. No D status reclassified.
+
+### 2026-10-27 — Sender logo clarity (Relates to D254, D210)
+
+Prefer scalable artwork within each discovery tier and reject blank assets before
+they can cover the sender fallback. Shared avatars now derive readable Unicode
+initials from names or email domains and retain personal initials on free-mail
+provider domains. Scope, verification and cache-refresh limits are recorded in
+`docs/execution/sender-logo-clarity-2026-10-27.md`. No D status reclassified.

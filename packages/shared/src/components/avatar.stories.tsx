@@ -52,7 +52,7 @@ const meta: StoryMeta<typeof Avatar> = {
     docs: {
       description: {
         component:
-          'Sender identity anchor. One silhouette everywhere: rounded square, fine rim, a Geist Mono initial, and a neutral dimensional surface in both themes. Only a verified logo introduces brand color (ADR-0024). With `brandLogos` on (ADR-0034), a brand mark from our first-party /api/icons endpoint layers over that monogram — the monogram itself never stops rendering, so no failure path yields an empty box and the component stays JS-free. Decorative by contract: always aria-hidden, with the sender name adjacent.',
+          'Sender identity anchor. One silhouette everywhere: rounded square, fine rim, a readable Geist initial, and a neutral dimensional surface in both themes. Cached brand artwork comes from our first-party /api/icons endpoint (ADR-0034). Personal mail-provider domains keep the sender initial. The monogram stays underneath every logo, so failed loads never leave an empty box and the component stays JS-free. Decorative by contract: always aria-hidden, with the sender name adjacent.',
       },
     },
   },
@@ -133,8 +133,17 @@ export const SizeScale: Story<typeof Avatar> = {
 export const Fallbacks: Story<typeof Avatar> = {
   render: () => (
     <div>
-      <Row label="no domain — tint derives from the name">
+      <Row label="no domain — sender initial">
         <Avatar name="Sarah Chen" size={40} />
+      </Row>
+      <Row label="personal address — person, not the Gmail logo">
+        <Avatar name="Sarah Chen" domain="gmail.com" size={40} hasMark />
+      </Row>
+      <Row label="email-only brand — domain initial">
+        <Avatar name="noreply@acme.example" domain="acme.example" size={40} hasMark={false} />
+      </Row>
+      <Row label="decorated name — readable initial">
+        <Avatar name="✨ Élodie" size={40} />
       </Row>
       <Row label="empty name — never an empty glyph">
         <Avatar name="" size={40} />

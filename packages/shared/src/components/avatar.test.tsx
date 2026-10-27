@@ -126,6 +126,26 @@ describe('Avatar (monogram, ADR-0024)', () => {
     expect(renderToStaticMarkup(<Avatar name="" />)).toContain('>?</span>');
   });
 
+  it.each([
+    ['noreply@etherscan.io', 'etherscan.io', 'E'],
+    ['jane.doe@gmail.com', 'gmail.com', 'J'],
+    ['✨ Acme', 'acme.com', 'A'],
+    ['  “Élodie”', undefined, 'É'],
+    ['e\u0301lodie', undefined, 'É'],
+    ['📬 山田', undefined, '山'],
+    ['क्षमा', undefined, 'क्ष'],
+    ['\u{10428} name', undefined, '\u{10400}'],
+    ['🔔', 'notify.acme.com', 'A'],
+    ['', 'acme.com', 'A'],
+    ['', undefined, '?'],
+  ])('uses a readable sender initial for %s', (name, domain, initial) => {
+    const markup = renderToStaticMarkup(
+      <Avatar name={name} {...(domain === undefined ? {} : { domain })} hasMark={false} />,
+    );
+    expect(markup).toContain(`>${initial}</span>`);
+    expect(markup).not.toContain('\uFFFD');
+  });
+
   it('stays aria-hidden (decorative — the sender name is always adjacent)', () => {
     expect(renderToStaticMarkup(<Avatar name="Acme" domain="acme.com" />)).toContain(
       'aria-hidden="true"',
@@ -268,6 +288,18 @@ describe('Avatar brand logos (ADR-0034)', () => {
     expect(renderToStaticMarkup(<Logos name="Sarah Chen" size={40} />)).not.toContain(
       'background-image',
     );
+  });
+
+  it('keeps personal senders distinct instead of showing their mail provider logo', async () => {
+    const { Avatar: Logos, brandIconUrl: url } = await withLogosEnabled();
+    for (const domain of ['gmail.com', 'OUTLOOK.COM', 'proton.me', 'gmail.com.']) {
+      expect(url(domain, 40)).toBeNull();
+      const markup = renderToStaticMarkup(<Logos name="Sarah Chen" domain={domain} hasMark />);
+      expect(markup).not.toContain('background-image');
+      expect(markup).toContain('>S</span>');
+    }
+    expect(url('google.com', 40)).not.toBeNull();
+    expect(url('gmail.com.attacker.example', 40)).not.toBeNull();
   });
 
   it('escapes the domain it puts in the path', async () => {

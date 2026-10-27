@@ -213,11 +213,7 @@ describe('resolveWebsiteIcon', () => {
   });
 
   it('accepts a usable 32px favicon instead of falling back to a monogram', async () => {
-    const favicon = await sharp({
-      create: { width: 32, height: 32, channels: 4, background: '#0a7a68' },
-    })
-      .png()
-      .toBuffer();
+    const favicon = await sharp(PNG).resize(32, 32).png().toBuffer();
     const calls: string[] = [];
     const result = await resolveWebsiteIcon('brand.example', {
       resolveHost: async () => ['93.184.216.34'],
@@ -244,11 +240,7 @@ describe('resolveWebsiteIcon', () => {
   });
 
   it('accepts a mildly rectangular application mark as a last-resort logo', async () => {
-    const mark = await sharp({
-      create: { width: 48, height: 32, channels: 4, background: '#0a7a68' },
-    })
-      .png()
-      .toBuffer();
+    const mark = await sharp(PNG).resize(48, 32, { fit: 'fill' }).png().toBuffer();
 
     const normalized = await normalizeSquareIcon(mark);
 
@@ -269,7 +261,8 @@ describe('resolveWebsiteIcon', () => {
               status: 200,
               contentType: 'text/html',
               body: Buffer.from(
-                '<link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg">',
+                '<link rel="icon" sizes="32x32" href="/favicon.png">' +
+                  '<link rel="icon" type="image/svg+xml" sizes="any" href="/favicon.svg">',
               ),
             };
           }
@@ -278,7 +271,7 @@ describe('resolveWebsiteIcon', () => {
               status: 200,
               contentType: 'image/svg+xml',
               body: Buffer.from(
-                '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#0a7a68"/></svg>',
+                '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#0a7a68"/><circle cx="32" cy="32" r="16" fill="white"/></svg>',
               ),
             };
           }
@@ -337,6 +330,61 @@ describe('resolveWebsiteIcon', () => {
       .toBuffer();
 
     await expect(normalizeSquareIcon(pixel)).resolves.toBeNull();
+  });
+
+  it.each([
+    [128, 128, '#ffffff'],
+    [128, 128, '#112233'],
+    [128, 128, '#ffffff00'],
+    [64, 32, '#112233'],
+  ])(
+    'rejects blank or transparent %sx%s artwork (%s) so it cannot hide the monogram',
+    async (width, height, background) => {
+      const blank = await sharp({
+        create: { width, height, channels: 4, background },
+      })
+        .png()
+        .toBuffer();
+      await expect(normalizeSquareIcon(blank)).resolves.toBeNull();
+    },
+  );
+
+  it('tries the next artwork when the preferred icon is blank', async () => {
+    const blank = await sharp({
+      create: { width: 180, height: 180, channels: 4, background: '#ffffff00' },
+    })
+      .png()
+      .toBuffer();
+    const calls: string[] = [];
+    const result = await resolveWebsiteIcon('brand.example', {
+      resolveHost: async () => ['93.184.216.34'],
+      http: {
+        get: async (url) => {
+          calls.push(url);
+          if (url === 'https://brand.example/') {
+            return {
+              status: 200,
+              contentType: 'text/html',
+              body: Buffer.from(
+                '<link rel="apple-touch-icon" href="/blank.png">' +
+                  '<link rel="icon" sizes="192x192" href="/real.png">',
+              ),
+            };
+          }
+          return {
+            status: 200,
+            contentType: 'image/png',
+            body: url.endsWith('/blank.png') ? blank : PNG,
+          };
+        },
+      },
+    });
+    expect(result.status).toBe('ok');
+    expect(calls).toEqual([
+      'https://brand.example/',
+      'https://brand.example/blank.png',
+      'https://brand.example/real.png',
+    ]);
   });
 
   it('propagates a manifest network failure instead of caching a false miss', async () => {
