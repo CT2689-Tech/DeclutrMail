@@ -128,7 +128,7 @@ describe('Avatar (monogram, ADR-0024)', () => {
 
   it.each([
     ['noreply@etherscan.io', 'etherscan.io', 'E'],
-    ['jane.doe@gmail.com', 'gmail.com', 'J'],
+    ['you@gmail.com', 'gmail.com', 'Y'],
     ['✨ Acme', 'acme.com', 'A'],
     ['  “Élodie”', undefined, 'É'],
     ['e\u0301lodie', undefined, 'É'],
