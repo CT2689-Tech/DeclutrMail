@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS "automation_rules_custom_library_idx";

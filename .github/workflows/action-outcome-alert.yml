@@ -1,0 +1,62 @@
+name: Verify and apply overdue cleanup alert
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/setup-action-outcome-alert*'
+      - '.github/workflows/action-outcome-alert.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Read live policy or apply the reviewed overdue-action policy'
+        type: choice
+        options: [verify, apply]
+        default: verify
+      expected_sha:
+        description: 'Reviewed main SHA; required for apply'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-outcome-alert-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: node --test scripts/setup-action-outcome-alert.test.mjs
+  production:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: contracts
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Validate reviewed operation before authentication
+        env:
+          MODE: ${{ inputs.mode }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          case "$MODE" in verify) ;; apply) test "$EXPECTED_SHA" = "$GITHUB_SHA" ;; *) exit 1 ;; esac
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Run bounded policy operation and independent readback
+        env:
+          MODE: ${{ inputs.mode }}
+        run: node scripts/setup-action-outcome-alert.mjs declutrmail-ai-prod "--$MODE"

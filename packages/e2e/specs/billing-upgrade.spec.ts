@@ -270,7 +270,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   await page.goto('/screener');
   const screenerGate = page.getByTestId('tier-gate-placeholder');
   await expect(screenerGate).toBeVisible({ timeout: 60_000 });
-  await expect(screenerGate.getByRole('heading', { name: 'Screener' })).toBeVisible();
+  await expect(screenerGate.getByRole('heading', { name: 'Needs first review' })).toBeVisible();
   await expect(screenerGate.getByRole('link', { name: /Plus/ }).first()).toBeVisible();
   const gated = await api.getRaw('/api/screener/queue?limit=5');
   expect(gated.status, 'screener read must 402 for a Free workspace').toBe(402);

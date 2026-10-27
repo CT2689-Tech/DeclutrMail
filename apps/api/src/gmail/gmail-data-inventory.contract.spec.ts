@@ -144,6 +144,8 @@ describe('D245 Gmail data inventory — Redis keys', () => {
       [
         `redis:${scanProgressKey('{mailboxAccountId}')}`,
         'redis:declutr:autopilot-preview:{mailboxAccountId}:{ruleId}:{previewId}',
+        'redis:declutr:autopilot-sender-preview:{mailboxAccountId}:{ruleId}:{previewId}',
+        'redis:declutr:autopilot-sender-previews:{mailboxAccountId}',
         `redis:bull:${BRIEF_EMAIL_SEND_QUEUE}:${briefReadyEmailJobId('{runId}')}`,
         `redis:bull:${BRIEF_EMAIL_SEND_QUEUE}:events`,
         `redis:bull:${INITIAL_SYNC_QUEUE}:{mailboxAccountId}`,

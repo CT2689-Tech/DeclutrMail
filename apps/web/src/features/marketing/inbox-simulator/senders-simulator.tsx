@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Avatar, PreviewSheet, SheetFactList, ToastHost, toast } from '@declutrmail/shared';
 import { MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
-import { defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
+import { DEFAULT_DELETE_WINDOW_DAYS, defaultLaterWakeAtIso } from '@declutrmail/shared/actions';
 import { WS2_COPY, WS3_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import { ActionReachControl } from '@/components/action-scope-controls';
@@ -47,7 +47,7 @@ interface SampleSender {
 
 const AGES = [12, 45, 120, 240, 420] as const;
 const WINDOWS = [
-  { label: 'All inbox', days: null },
+  { label: 'Any age', days: null },
   { label: '30 days+', days: 30 },
   { label: '3 months+', days: 90 },
   { label: '6 months+', days: 180 },
@@ -249,9 +249,6 @@ export function SendersSimulator() {
   const [activity, setActivity] = useState<readonly DemoActivity[]>([]);
   const [activityOpen, setActivityOpen] = useState(false);
   const [reportDismissed, setReportDismissed] = useState(false);
-  const [celebration, setCelebration] = useState<{ archived: number; senders: number } | null>(
-    null,
-  );
   const activitySequence = useRef(0);
 
   const visible = useMemo(
@@ -354,7 +351,7 @@ export function SendersSimulator() {
         : 'none',
     );
     setReach('inbox_only');
-    setOlderThanDays(verb === 'Delete' ? 180 : null);
+    setOlderThanDays(verb === 'Delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
     setWakeAt(verb === 'Later' ? localDateTime(defaultLaterWakeAtIso()) : '');
   };
 
@@ -423,7 +420,6 @@ export function SendersSimulator() {
           : item,
       ),
     ]);
-    if (mode === 'archive') setCelebration({ archived: n, senders: targets.length });
     setSelected([]);
     setActivityOpen(true);
     setPending(null);
@@ -529,7 +525,6 @@ export function SendersSimulator() {
             'all_mail',
           ),
         }}
-        celebration={celebration}
         onDismiss={() => setReportDismissed(true)}
         onReopen={() => setReportDismissed(false)}
         onReview={() => {
@@ -934,8 +929,7 @@ export function SendersSimulator() {
                 >
                   {WINDOWS.map((window) => (
                     <option key={window.label} value={window.days ?? 'all'}>
-                      {window.days === null && reach === 'all_mail' ? 'All mail' : window.label} ·{' '}
-                      {fmt(totalCount(pendingSenders, activeReach, window.days))}
+                      {window.label} · {fmt(totalCount(pendingSenders, activeReach, window.days))}
                     </option>
                   ))}
                 </select>

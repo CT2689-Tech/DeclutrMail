@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 
 import { ScanPreview } from './scan-preview';
+import styles from './onboarding-appearance.module.css';
 import { OnboardingAccountLinks } from './onboarding-account-links';
 
 import { editorialOnboardingActionStyle } from '@/features/editorial/page';
@@ -311,8 +312,8 @@ function SyncProgress({
           data-testid="sync-leave"
           style={{
             color: color.fgMuted,
-            fontSize: text.lg,
-            lineHeight: 1.45,
+            fontSize: text.md,
+            lineHeight: 1.6,
             maxWidth: 460,
             margin: '14px 0 0',
           }}
@@ -349,10 +350,6 @@ function SyncProgress({
         />
       </div>
 
-      <div style={{ marginTop: 16, maxWidth: 460 }}>
-        <TrustLine />
-      </div>
-
       {/* The real current_stage, as one sentence. Ready says it in the title.
           While counts show, it stays the live status for screen readers
           only — a count that changes every batch would be announced each
@@ -379,6 +376,10 @@ function SyncProgress({
           <style>{SCAN_COUNT_CSS}</style>
         </>
       )}
+
+      <div style={{ marginTop: 16, maxWidth: 460 }}>
+        <TrustLine />
+      </div>
 
       {!ready && mailboxId && <ScanPreview key={mailboxId} mailboxId={mailboxId} />}
 
@@ -443,7 +444,7 @@ function SyncFailed({
     <Shell>
       <h1 style={titleStyle}>{scheduled ? 'Your scan will resume' : copy.title}</h1>
       <p
-        style={{ color: color.fgMuted, fontSize: text.lg, lineHeight: 1.45, margin: '12px 0 28px' }}
+        style={{ color: color.fgMuted, fontSize: text.md, lineHeight: 1.6, margin: '12px 0 24px' }}
         data-recovery-action={recovery.action}
         data-reason-code={recovery.reason}
         data-partly-ready={recovery.partlyReady ? 'true' : 'false'}
@@ -585,6 +586,7 @@ const titleStyle = {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main
+      className={styles.page}
       style={{
         minHeight: '100vh',
         display: 'flex',
@@ -592,19 +594,14 @@ function Shell({ children }: { children: React.ReactNode }) {
         alignItems: 'center',
         justifyContent: 'center',
         textAlign: 'center',
-        padding: '48px 24px',
         background: color.bg,
         fontFamily: font.sans,
       }}
     >
       <div
+        className={styles.panel}
         style={{
-          width: '100%',
           maxWidth: 540,
-          padding: 'clamp(24px, 4vw, 40px)',
-          background: color.card,
-          border: `1px solid ${color.border}`,
-          borderRadius: radius.lg,
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',

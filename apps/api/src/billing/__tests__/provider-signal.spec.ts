@@ -8,6 +8,7 @@ import { lockSubscription } from '../subscription-lock.js';
 import {
   billingProviderSignal,
   runWithVerdictSignal,
+  runWithBillingReadSignal,
   VERDICT_DB_STATEMENT_TIMEOUT_MS,
 } from '../provider-signal.js';
 
@@ -56,6 +57,27 @@ describe('billing verdict abort scope', () => {
       setTimeout(() => deadline.abort(new Error('deadline')), 30);
       await expect(pending).rejects.toThrow();
       expect(Date.now() - started).toBeLessThan(5_000);
+    } finally {
+      await close(server);
+    }
+  });
+
+  it('aborts a history response body without entering the verdict lock scope', async () => {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.write('{"ok":');
+    });
+    const port = await listen(server);
+    const deadline = new AbortController();
+    try {
+      const pending = runWithBillingReadSignal(deadline.signal, async () => {
+        const res = await fetch(`http://127.0.0.1:${port}/`, {
+          signal: billingProviderSignal(60_000),
+        });
+        return res.json() as Promise<unknown>;
+      });
+      setTimeout(() => deadline.abort(new Error('history deadline')), 30);
+      await expect(pending).rejects.toThrow();
     } finally {
       await close(server);
     }

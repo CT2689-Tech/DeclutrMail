@@ -1,9 +1,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { tokens } from '@declutrmail/shared';
 import { SenderDetailRoute } from './sender-detail-page';
 import type { ActionRequest } from '../data';
+import { senderDetailHref } from '../sender-detail-navigation';
 import styles from '../sender-workspace.module.css';
 
 const { color, motion, radius } = tokens;
@@ -28,14 +30,13 @@ export function SenderDetailPane({
   /** Share the list's preview, in-flight ownership and row feedback. */
   onAction?: ((request: ActionRequest) => void) | undefined;
 }) {
+  const params = useSearchParams();
   return (
     <aside aria-label="Sender details" data-testid="sender-detail-pane" className={styles.pane}>
       <div className={styles.paneBar}>
         <div>
           <span className={styles.paneBarLabel}>Sender details</span>
-          <Link href={`/senders/${encodeURIComponent(senderId)}?from=senders_table`}>
-            Open full page
-          </Link>
+          <Link href={senderDetailHref(senderId, params?.toString() ?? '')}>Open full page</Link>
         </div>
         <button
           type="button"

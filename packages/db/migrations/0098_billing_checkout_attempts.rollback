@@ -1,0 +1,10 @@
+-- Pre-activation rollback only. Refuse to discard retained payment evidence.
+BEGIN;
+LOCK TABLE billing_checkout_attempts IN ACCESS EXCLUSIVE MODE;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM billing_checkout_attempts) THEN
+    RAISE EXCEPTION 'Retained checkout attempts require a reviewed forward recovery';
+  END IF;
+END $$;
+DROP TABLE billing_checkout_attempts;
+COMMIT;

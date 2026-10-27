@@ -6,7 +6,7 @@
 # handlers must dedupe on the external message ID; per-mailbox workers
 # must key on (mailbox_id, gmail_message_id) or equivalent.
 #
-# Exit 1 if a worker class is missing the key.
+# Exit 2 if a worker class is missing the key.
 
 set -euo pipefail
 
@@ -52,7 +52,7 @@ if ! grep -qE "(idempotencyKey\s*[:=(]|get\s+idempotencyKey\s*\(|getIdempotencyK
   echo "   - batchPolicy: key on the batch's deterministic identifier" >&2
   echo "   - cronPolicy: key on the run timestamp window" >&2
   echo "   - adminPolicy: key on the admin operation id" >&2
-  exit 1
+  exit 2
 fi
 
 exit 0

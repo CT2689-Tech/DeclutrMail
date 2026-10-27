@@ -158,7 +158,12 @@ describe('SendersSimulator', () => {
     });
     expect(includeArchived).not.toBeChecked();
     expect(includeArchived).toHaveStyle({ minHeight: '48px' });
-    expect(within(dialog).getByRole('heading')).toHaveTextContent('45 emails'); // Default 6-month window.
+    const age = within(dialog).getByRole('combobox', { name: 'Email age to act on' });
+    expect(age).toHaveValue('all');
+    expect(within(age).getByRole('option', { name: 'Any age · 111' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('111 emails');
+    fireEvent.change(age, { target: { value: '180' } });
+    expect(within(dialog).getByRole('heading')).toHaveTextContent('45 emails');
     fireEvent.click(within(dialog).getByText('Details'));
     const includes = () =>
       within(dialog)
@@ -169,6 +174,7 @@ describe('SendersSimulator', () => {
     );
     fireEvent.click(includeArchived);
     expect(includeArchived).toBeChecked();
+    expect(within(age).getByRole('option', { name: 'Any age · 273' })).toBeInTheDocument();
     expect(within(dialog).getByRole('heading')).toHaveTextContent('155 emails');
     expect(
       within(dialog)
@@ -240,19 +246,13 @@ describe('SendersSimulator', () => {
 describe('SendersSimulator — WS5 sample surfaces', () => {
   it('shows the Inbox Report from sample data', () => {
     render(<SendersSimulator />);
+    expect(screen.getByText('1 sender worth reviewing.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Review senders' })).toBeVisible();
+    expect(document.querySelector('details')).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByText('Details'));
     expect(screen.getByText(/mostly leave unread/)).toBeInTheDocument();
-    expect(screen.getByText(WS5_COPY['report.trust'])).toBeInTheDocument();
-    expect(
-      screen.getByText('1 of these senders includes an unsubscribe link.'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Review them first' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'What we store and share' })).toHaveAttribute(
-      'href',
-      '/privacy',
-    );
+    expect(screen.getByRole('button', { name: 'Preview bulk cleanup' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'What we store' })).toHaveAttribute('href', '/privacy');
     const links = document.querySelectorAll('a[href]');
     for (const link of links) {
       expect(link.getAttribute('href') ?? '').not.toMatch(

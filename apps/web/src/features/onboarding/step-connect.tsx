@@ -15,6 +15,7 @@ import {
 import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 
 import { StepShell } from './step-shell';
+import styles from './onboarding-appearance.module.css';
 
 const { color, font, text, radius, shadow } = tokens;
 
@@ -61,6 +62,7 @@ export function StepConnect({
       }
     >
       <ol
+        className={styles.consent}
         style={{
           listStyle: 'none',
           padding: 0,
@@ -101,9 +103,9 @@ export function StepConnect({
           />
         </ConsentStep>
         <ConsentStep number="4" title="Actions you approve">
-          Archive, Later and Delete show which emails will move and what can be undone before you
-          confirm. Unsubscribe requests have a separate confirmation; a sent request cannot be
-          recalled.
+          Archive, Later and Delete preview the matching count, planned change and what can be
+          undone before you confirm. Unsubscribe requests have a separate confirmation; a sent
+          request cannot be recalled.
         </ConsentStep>
       </ol>
 

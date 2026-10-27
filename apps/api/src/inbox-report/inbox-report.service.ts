@@ -8,12 +8,14 @@ import {
   type InboxReportDto,
   type ReportFacts,
   type ReportSenderFacts,
+  type MailboxSnapshot,
 } from '@declutrmail/shared/inbox-report';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import {
   backlogChangedSinceQuery,
   mailboxFactsQuery,
+  mailboxSnapshotQuery,
   senderFactsQuery,
   vendorQuery,
 } from './inbox-report.queries.js';
@@ -42,6 +44,20 @@ function flag(value: unknown): boolean {
 @Injectable()
 export class InboxReportService {
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+
+  /** Current scanned inbound metadata, including pre-1995 Inbox mail. Never cached by sync id. */
+  async getSnapshot(mailboxId: string, now = new Date()): Promise<MailboxSnapshot> {
+    const result = await this.db.execute(mailboxSnapshotQuery(mailboxId));
+    const row = rowsOf<Record<string, unknown>>(result)[0]!;
+    return {
+      asOf: now.toISOString(),
+      inboxCount: num(row.inbox_count),
+      unreadInboxCount: num(row.unread_inbox_count),
+      receivedCount: num(row.received_count),
+      totalBytes: row.total_bytes == null ? null : num(row.total_bytes),
+      sizeKnownCount: num(row.size_known_count),
+    };
+  }
 
   /** One compute per mailbox while a miss is already in flight. */
   private readonly inflight = new Map<string, Promise<InboxReportDto>>();

@@ -54,86 +54,89 @@ it('streams invoices on the billing page boundary instead of a nested suspense',
   expect(page).not.toContain('<Suspense');
 });
 
-it('keeps the invoice loading markup when the stream fulfills before hydration', async () => {
-  window.matchMedia = vi.fn().mockImplementation(() => ({
-    matches: false,
-    media: '',
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  }));
+it.each([null, { id: 'sub_1' }])(
+  'keeps invoice loading markup when the stream fulfills before hydration with subscription %j',
+  async (subscription) => {
+    window.matchMedia = vi.fn().mockImplementation(() => ({
+      matches: false,
+      media: '',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
 
-  const source = new QueryClient();
-  source.setQueryData(billingKeys.subscription(), { subscription: { id: 'sub_1' } });
-  let resolve!: (value: typeof INVOICES) => void;
-  void source.fetchQuery({
-    queryKey: billingKeys.invoices(),
-    queryFn: () =>
-      new Promise<typeof INVOICES>((done) => {
-        resolve = done;
-      }),
-  });
-  const state = dehydrate(source, {
-    shouldDehydrateQuery: (query) => query.state.status !== 'error',
-  });
-  const server = new QueryClient();
-  const html = renderToString(
-    <QueryClientProvider client={server}>
-      <QueryHydrationBoundary state={state}>
-        <BillingInvoiceHistoryGate />
-      </QueryHydrationBoundary>
-    </QueryClientProvider>,
-  );
-  expect(html).toContain('Loading invoices');
-
-  resolve(INVOICES);
-  await source.getQueryCache().find({ queryKey: billingKeys.invoices() })?.promise;
-  const fulfilled = {
-    status: 'fulfilled' as const,
-    value: INVOICES,
-    then(onFulfilled: (value: typeof INVOICES) => unknown) {
-      onFulfilled(INVOICES);
-    },
-  } as unknown as Promise<unknown>;
-  const clientState: DehydratedState = {
-    ...state,
-    queries: state.queries.map((query) =>
-      query.queryKey.join('|') === billingKeys.invoices().join('|')
-        ? { ...query, promise: fulfilled }
-        : query,
-    ),
-  };
-
-  const client = new QueryClient();
-  const container = document.createElement('div');
-  document.body.append(container);
-  container.innerHTML = html;
-  const errors: unknown[] = [];
-  let root!: ReturnType<typeof hydrateRoot>;
-  try {
-    await act(async () => {
-      root = hydrateRoot(
-        container,
-        <QueryClientProvider client={client}>
-          <QueryHydrationBoundary state={clientState}>
-            <BillingInvoiceHistoryGate />
-          </QueryHydrationBoundary>
-        </QueryClientProvider>,
-        { onRecoverableError: (error) => errors.push(error) },
-      );
+    const source = new QueryClient();
+    source.setQueryData(billingKeys.subscription(), { subscription });
+    let resolve!: (value: typeof INVOICES) => void;
+    void source.fetchQuery({
+      queryKey: billingKeys.invoices(),
+      queryFn: () =>
+        new Promise<typeof INVOICES>((done) => {
+          resolve = done;
+        }),
     });
-    await waitFor(() => expect(container.textContent).toContain('View invoice'));
-    expect(errors).toEqual([]);
-  } finally {
-    await act(async () => root?.unmount());
-    source.clear();
-    server.clear();
-    client.clear();
-  }
-});
+    const state = dehydrate(source, {
+      shouldDehydrateQuery: (query) => query.state.status !== 'error',
+    });
+    const server = new QueryClient();
+    const html = renderToString(
+      <QueryClientProvider client={server}>
+        <QueryHydrationBoundary state={state}>
+          <BillingInvoiceHistoryGate />
+        </QueryHydrationBoundary>
+      </QueryClientProvider>,
+    );
+    expect(html).toContain('Loading invoices');
+
+    resolve(INVOICES);
+    await source.getQueryCache().find({ queryKey: billingKeys.invoices() })?.promise;
+    const fulfilled = {
+      status: 'fulfilled' as const,
+      value: INVOICES,
+      then(onFulfilled: (value: typeof INVOICES) => unknown) {
+        onFulfilled(INVOICES);
+      },
+    } as unknown as Promise<unknown>;
+    const clientState: DehydratedState = {
+      ...state,
+      queries: state.queries.map((query) =>
+        query.queryKey.join('|') === billingKeys.invoices().join('|')
+          ? { ...query, promise: fulfilled }
+          : query,
+      ),
+    };
+
+    const client = new QueryClient();
+    const container = document.createElement('div');
+    document.body.append(container);
+    container.innerHTML = html;
+    const errors: unknown[] = [];
+    let root!: ReturnType<typeof hydrateRoot>;
+    try {
+      await act(async () => {
+        root = hydrateRoot(
+          container,
+          <QueryClientProvider client={client}>
+            <QueryHydrationBoundary state={clientState}>
+              <BillingInvoiceHistoryGate />
+            </QueryHydrationBoundary>
+          </QueryClientProvider>,
+          { onRecoverableError: (error) => errors.push(error) },
+        );
+      });
+      await waitFor(() => expect(container.textContent).toContain('View invoice'));
+      expect(errors).toEqual([]);
+    } finally {
+      await act(async () => root?.unmount());
+      source.clear();
+      server.clear();
+      client.clear();
+    }
+  },
+);
 
 it('hydrates a settled invoice list without a recoverable error', async () => {
   window.matchMedia = vi.fn().mockImplementation(() => ({

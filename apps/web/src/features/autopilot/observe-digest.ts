@@ -35,6 +35,8 @@ export function observeDigestSummary(rule: AutopilotRuleDto): string | null {
   const emails = `${digest.inboxMessagesNow.toLocaleString('en-US')} email${digest.inboxMessagesNow === 1 ? '' : 's'}`;
   const matched = `${senders} matched in the last 7 days`;
   switch (rule.actionKind) {
+    case 'delete':
+      return 'Preview a fresh batch to see which emails can be moved to Trash.';
     case 'archive':
       if (rule.presetKey === 'auto_archive_low_engagement') {
         return `${matched} · ${emails} could be archived if you approve them`;

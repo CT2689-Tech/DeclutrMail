@@ -176,6 +176,7 @@ export function StepPresetPick({
           return (
             <button
               key={preset.key}
+              className="dm-onboarding-choice"
               type="button"
               aria-pressed={isOn}
               onClick={() => toggle(preset.key)}
@@ -185,10 +186,9 @@ export function StepPresetPick({
                 gap: 12,
                 textAlign: 'left',
                 padding: '16px 18px',
-                background: color.card,
+                background: `var(--dm-onboarding-choice-bg, ${color.card})`,
                 border: 'none',
-                // Selected = teal ring on the raised surface, not a border.
-                boxShadow: isOn ? `0 0 0 2px ${color.primary}, ${shadow.card}` : shadow.card,
+                boxShadow: `var(--dm-onboarding-choice-shadow, ${isOn ? `0 0 0 2px ${color.primary}, ${shadow.card}` : shadow.card})`,
                 borderRadius: radius.xl,
                 cursor: 'pointer',
                 fontFamily: font.sans,
@@ -387,6 +387,7 @@ function GoalSelector({
         return (
           <button
             key={goal.id}
+            className="dm-onboarding-choice"
             type="button"
             role="radio"
             aria-checked={selected}
@@ -396,8 +397,8 @@ function GoalSelector({
               padding: '14px 18px',
               borderRadius: radius.xl,
               border: 'none',
-              boxShadow: selected ? `0 0 0 2px ${color.primary}, ${shadow.card}` : shadow.card,
-              background: color.card,
+              boxShadow: `var(--dm-onboarding-choice-shadow, ${selected ? `0 0 0 2px ${color.primary}, ${shadow.card}` : shadow.card})`,
+              background: `var(--dm-onboarding-choice-bg, ${color.card})`,
               color: color.fg,
               cursor: 'pointer',
               fontFamily: font.sans,

@@ -1,20 +1,23 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { expectScreenMounted } from '../helpers/screen-ready';
 import type postgres from 'postgres';
 
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 import { applyJourneySeed } from '../helpers/seed-journeys';
+import { BILLING_SEED } from '../helpers/seed-billing';
 
 /** Owned synthetic review records only: no worker, Gmail or approval intents. */
 const api = new ApiClient();
 const ruleId = randomUUID();
+const editorRuleId = randomUUID();
 const senderKeys = Array.from({ length: 61 }, (_, i) =>
   createHash('sha256').update(`autopilot-pages-${ruleId}-${i}`).digest('hex'),
 );
 let sql: postgres.Sql;
 let mailboxId: string;
+let originalAttribution: { source: string | null; detail: string | null } | undefined;
 
 interface PendingPage {
   data: { id: string; matchedAt: string }[];
@@ -29,19 +32,41 @@ async function pending(cursor?: string): Promise<PendingPage> {
   return response.body as PendingPage;
 }
 
+/** Follow the same visible dismissal as the Schedule journey; never click through an overlay. */
+async function dismissOptionalPrompts(page: Page) {
+  const essential = page.getByRole('button', { name: 'Essential only', exact: true });
+  if (await essential.isVisible()) await essential.click();
+  const me = await api.get<{ signupAttribution?: { promptNeeded?: boolean } }>('/api/auth/me');
+  if (me.signupAttribution?.promptNeeded) {
+    const prompt = page.getByTestId('heard-from-prompt');
+    await expect(prompt).toBeVisible();
+    await prompt.getByRole('button', { name: 'Skip', exact: true }).click();
+    await expect(prompt).toBeHidden();
+  }
+}
+
 test.beforeAll(async () => {
   const live = await requireLiveStack(api);
   expect(live.mailboxId).not.toBeNull();
   mailboxId = live.mailboxId!;
   sql = dbConnect();
   await applyJourneySeed(sql);
+  [originalAttribution] = await sql<{ source: string | null; detail: string | null }[]>`
+    SELECT signup_attribution_heard_from AS source, signup_attribution_heard_detail AS detail
+    FROM users WHERE id = ${BILLING_SEED.userId}
+  `;
 });
 
 test.afterAll(async () => {
   if (sql) {
     // Rule cascade deletes only this test's matches; names/keys are unique.
-    await sql`DELETE FROM automation_rules WHERE id = ${ruleId} AND mailbox_account_id = ${mailboxId}`;
+    await sql`DELETE FROM automation_rules WHERE id IN (${ruleId}, ${editorRuleId}) AND mailbox_account_id = ${mailboxId}`;
     await sql`DELETE FROM senders WHERE mailbox_account_id = ${mailboxId} AND sender_key IN ${sql(senderKeys)}`;
+    if (originalAttribution) {
+      await sql`UPDATE users SET signup_attribution_heard_from = ${originalAttribution.source},
+        signup_attribution_heard_detail = ${originalAttribution.detail}
+        WHERE id = ${BILLING_SEED.userId}`;
+    }
     await sql.end();
   }
   await api.dispose();
@@ -89,12 +114,14 @@ test('review pages cover the backlog and recover when the older page is exhauste
 
   await page.goto('/autopilot');
   await expectScreenMounted(page);
-  // Dismiss any consent overlay before interacting with the lower review section.
-  const essential = page.getByRole('button', { name: 'Essential only', exact: true });
-  if (await essential.isVisible()) await essential.click();
-  await expect(page.getByText('50 on this page · 61 waiting at last check')).toBeVisible();
+  await dismissOptionalPrompts(page);
+  await expect(
+    page.getByText('50 recorded sender matches on this page · 61 at last check'),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Older suggestions', exact: true }).click();
-  await expect(page.getByText('11 on this page · 61 waiting at last check')).toBeVisible();
+  await expect(
+    page.getByText('11 recorded sender matches on this page · 61 at last check'),
+  ).toBeVisible();
   await expect(page.getByText(`Matched ${matchedAt.slice(0, 10)} UTC`).first()).toBeVisible();
 
   // Dismiss each older suggestion through the real UI/API; Gmail is unchanged.
@@ -104,18 +131,76 @@ test('review pages cover the backlog and recover when the older page is exhauste
       .first()
       .click();
     await expect(
-      page.getByText(`${remaining - 1} on this page · ${50 + remaining - 1} waiting at last check`),
+      page.getByText(
+        `${remaining - 1} recorded sender match${remaining === 2 ? '' : 'es'} on this page · ${50 + remaining - 1} at last check`,
+      ),
     ).toBeVisible();
   }
-  await expect(page.getByText('No suggestions on this page', { exact: true })).toBeVisible();
+  await expect(page.getByText('No matches on this page', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Newest suggestions', exact: true }).click();
-  await expect(page.getByText('50 on this page · 50 waiting at last check')).toBeVisible();
+  await expect(
+    page.getByText('50 recorded sender matches on this page · 50 at last check'),
+  ).toBeVisible();
   await page.reload();
   await expectScreenMounted(page);
-  await expect(page.getByText('50 on this page · 50 waiting at last check')).toBeVisible();
+  await expect(
+    page.getByText('50 recorded sender matches on this page · 50 at last check'),
+  ).toBeVisible();
   const dismissed = await sql<{ count: string }[]>`
     SELECT count(*)::text AS count FROM rule_match_log
     WHERE rule_id = ${ruleId} AND resolution = 'dismissed' AND dismiss_reason = 'user'
   `;
   expect(Number(dismissed[0]?.count)).toBe(11);
+});
+
+test('customizes an existing preset through the real API and preserves it on reload', async ({
+  page,
+}) => {
+  await sql`INSERT INTO automation_rules (id, mailbox_account_id, preset_key, is_preset, name, enabled, mode, action_kind)
+    VALUES (${editorRuleId}, ${mailboxId}, 'long_dormant_unsubscribe', true, 'E2E existing rule', false, 'observe', 'unsubscribe')`;
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto('/autopilot');
+  await expectScreenMounted(page);
+  await dismissOptionalPrompts(page);
+  await page.getByRole('button', { name: /^Your rules/ }).click();
+  await page.getByRole('button', { name: 'Edit rule E2E existing rule', exact: true }).click();
+  const editor = page.getByRole('form', { name: 'Customize E2E existing rule', exact: true });
+  await editor.getByRole('textbox', { name: 'Rule name', exact: true }).fill('E2E customized rule');
+  await editor
+    .getByRole('spinbutton', { name: 'Last email more than (days ago)', exact: true })
+    .fill('90');
+  await editor
+    .getByRole('spinbutton', { name: 'Lifetime read rate below (%)', exact: true })
+    .fill('10');
+  await editor.getByRole('combobox', { name: 'Action', exact: true }).selectOption('archive');
+  await editor.getByRole('button', { name: 'Save rule', exact: true }).press('Enter');
+  const edit = page.getByRole('button', { name: 'Edit rule E2E customized rule', exact: true });
+  await expect(edit).toBeVisible();
+  await expect(edit).toBeFocused();
+  await page.reload();
+  await page.getByRole('button', { name: /^Your rules/ }).click();
+  await edit.click();
+  const saved = page.getByRole('form', { name: 'Customize E2E customized rule', exact: true });
+  await expect(
+    saved.getByRole('spinbutton', { name: 'Last email more than (days ago)', exact: true }),
+  ).toHaveValue('90');
+  await expect(saved.getByRole('combobox', { name: 'Action', exact: true })).toHaveValue('archive');
+  const [row] =
+    await sql`SELECT version, enabled, mode, conditions, action_kind FROM automation_rules WHERE id=${editorRuleId}`;
+  expect(row).toMatchObject({
+    version: 2,
+    enabled: false,
+    mode: 'observe',
+    action_kind: 'archive',
+    conditions: {
+      kind: 'dormant',
+      lastSeenAfterDays: 90,
+      lastSeenWithinDays: null,
+      minMessages: 5,
+      readRateBelow: 0.1,
+    },
+  });
+  await saved.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(edit).toBeFocused();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

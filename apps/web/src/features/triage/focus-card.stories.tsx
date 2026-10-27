@@ -142,3 +142,35 @@ export const UnbrokenIdentity: Story<typeof TriageFocusCard> = {
   },
   render: (args: Args) => frame(<TriageFocusCard {...args} />),
 };
+
+/** Same sender/action contract, compact choices for the Senders guided workspace. */
+export const GuidedReview: Story<typeof TriageFocusCard> = {
+  args: { ...base, row: row('t-linkedin'), guided: true },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
+export const GuidedNoSuggestion: Story<typeof TriageFocusCard> = {
+  args: { ...base, row: { ...row('t-linkedin'), confidence: 0.4 }, guided: true },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
+
+/** Known zero Inbox removes Archive emphasis; historical evidence stays available. */
+export const GuidedEmptyInbox: Story<typeof TriageFocusCard> = {
+  args: {
+    ...base,
+    row: { ...row('t-groupon'), inboxCount: 0, last90dMessages: 191 },
+    guided: true,
+    whyOpen: true,
+  },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};
+
+/** Later also has no current Inbox impact at zero; its action remains neutral. */
+export const GuidedEmptyInboxLater: Story<typeof TriageFocusCard> = {
+  args: {
+    ...base,
+    row: { ...row('t-shipping'), inboxCount: 0, last90dMessages: 191 },
+    guided: true,
+    whyOpen: true,
+  },
+  render: (args: Args) => frame(<TriageFocusCard {...args} />),
+};

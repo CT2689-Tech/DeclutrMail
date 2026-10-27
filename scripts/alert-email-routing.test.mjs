@@ -66,8 +66,16 @@ function fixture() {
   }));
 }
 function backend(initial = fixture(), options = {}) {
-  let policies = structuredClone(initial);
+  const nativePolicy = (policy) => {
+    const p = structuredClone(policy);
+    if (options.omitDefaultThreshold)
+      for (const c of p.conditions ?? [])
+        if (c.conditionThreshold?.thresholdValue === 0) delete c.conditionThreshold.thresholdValue;
+    return p;
+  };
+  let policies = initial.map(nativePolicy);
   const writes = [];
+  const logSearches = [];
   let serial = 0;
   const request = async (url, method = 'GET', body) => {
     const parsed = new URL(url);
@@ -106,10 +114,12 @@ function backend(initial = fixture(), options = {}) {
       return found;
     }
     if (method === 'POST' && parsed.pathname.endsWith('/alertPolicies')) {
-      const p = {
+      const p = nativePolicy({
         ...structuredClone(body),
         name: `projects/declutrmail-ai-prod/alertPolicies/new${++serial}`,
-      };
+      });
+      if (options.wrongCreatedThreshold && p.displayName === 'DeclutrMail Gmail reconnect required')
+        p.conditions[0].conditionThreshold.thresholdValue = 1;
       policies.push(p);
       if (options.lostCreateResponse && serial === 1) throw new Error('Create response was lost');
       return structuredClone(p);
@@ -118,7 +128,7 @@ function backend(initial = fixture(), options = {}) {
       const i = policies.findIndex((p) => p.name === body.name);
       assert.ok(i >= 0);
       for (const key of parsed.searchParams.get('updateMask').split(',')) delete policies[i][key];
-      policies[i] = { ...policies[i], ...structuredClone(body) };
+      policies[i] = nativePolicy({ ...policies[i], ...structuredClone(body) });
       return structuredClone(policies[i]);
     }
     if (method === 'DELETE') {
@@ -127,6 +137,8 @@ function backend(initial = fixture(), options = {}) {
     }
     if (parsed.pathname.endsWith('/entries:list')) {
       if (options.logsUnavailable) throw new Error('digest log read denied');
+      logSearches.push(structuredClone(body));
+      if (options.logPages) return options.logPages[logSearches.length - 1];
       if (String(body?.filter ?? '').includes('ROUTING_VERIFICATION'))
         return { entries: options.verificationEntries ?? [] };
       return { entries: options.alreadyPublished ? [{}] : [] };
@@ -134,12 +146,24 @@ function backend(initial = fixture(), options = {}) {
     if (parsed.pathname.endsWith('/entries:write')) return {};
     throw new Error(`Unexpected mock request ${method} ${url}`);
   };
-  return { request, writes, policies: () => structuredClone(policies) };
+  return { request, writes, logSearches, policies: () => structuredClone(policies) };
 }
 const report = () => ({ mode: 'test' });
 const smokeEntry = verificationLogEntry('4821');
 const smokeReceipt = verificationReceipt(smokeEntry);
 const BANNED_SUBJECT = [/run ledger/i, /lock ownership/i, /worker observations/i];
+
+test('plan hash tolerates provider object-key ordering while detecting value changes', () => {
+  const initial = fixture();
+  const reordered = JSON.parse(JSON.stringify(initial), (_key, value) =>
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).reverse())
+      : value,
+  );
+  assert.equal(planHash(reordered), planHash(initial));
+  reordered[0].enabled = false;
+  assert.notEqual(planHash(reordered), planHash(initial));
+});
 
 test('routine warnings are opening-only and daily, while major outages retain deliberate closure and reminders', () => {
   for (const p of fixture()) {
@@ -458,6 +482,43 @@ test('a new policy committed before a lost create response is discovered and rol
   assert.ok(db.writes.some((w) => w.method === 'DELETE'));
 });
 
+test('native omitted zero thresholds compare as zero, while other defaults and missing parents remain strict', async () => {
+  assert.ok(contains({ conditionThreshold: {} }, { conditionThreshold: { thresholdValue: 0 } }));
+  assert.ok(!contains({}, { conditionThreshold: { thresholdValue: 0 } }));
+  assert.ok(!contains({ conditionThreshold: 7 }, { conditionThreshold: { thresholdValue: 0 } }));
+  assert.ok(!contains({ conditionThreshold: [] }, { conditionThreshold: { thresholdValue: 0 } }));
+  assert.ok(!contains({}, { anotherValue: 0 }));
+  assert.ok(!contains({ thresholdValue: 1 }, { thresholdValue: 0 }));
+  assert.ok(!contains({}, { thresholdValue: 1 }));
+  const db = backend(fixture(), { omitDefaultThreshold: true });
+  const result = report();
+  await runRouting('prepare', {
+    request: db.request,
+    report: result,
+    expectedHash: planHash(db.policies()),
+  });
+  assert.equal(db.writes.length, 3);
+  assert.equal(result.after.length, fixture().length + 3);
+});
+
+test('a changed native threshold is rejected, retained privately, and rolled back', async () => {
+  const initial = fixture();
+  const db = backend(initial, { wrongCreatedThreshold: true });
+  const result = report();
+  await assert.rejects(
+    runRouting('prepare', {
+      request: db.request,
+      report: result,
+      expectedHash: planHash(initial),
+    }),
+    /Native policy readback mismatch/,
+  );
+  assert.equal(result.readbackMismatch.policy, 'DeclutrMail Gmail reconnect required');
+  assert.equal(result.readbackMismatch.expected.conditions[0].conditionThreshold.thresholdValue, 0);
+  assert.equal(result.readbackMismatch.actual.conditions[0].conditionThreshold.thresholdValue, 1);
+  assert.deepEqual(db.policies(), initial);
+});
+
 test('digest does not publish before activation; after activation zero warnings produce only INFO and same-day retries skip', async () => {
   const initial = fixture();
   const pending = backend(initial);
@@ -690,6 +751,43 @@ test('emergency routing repair is an explicit skip, not the default', () => {
     () => enforceDailyRouting([], { reconnect: true, allowUnverified: false }),
     /installed/,
   );
+});
+
+test('digest replay search follows empty partial pages and refuses incomplete searches', async () => {
+  const active = routingPlan(fixture(), checks, channel).map((p, i) => ({
+    ...p,
+    name: p.name ?? `projects/p/alertPolicies/a${i}`,
+  }));
+  active.find((p) => p.displayName === DIGEST_POLICY).userLabels.delivery_verified = 'true';
+  const prior = backend(active, {
+    logPages: [{ entries: [], nextPageToken: 'next' }, { entries: [{}] }],
+  });
+  const result = report();
+  await runRouting('digest', { request: prior.request, report: result });
+  assert.equal(result.digest.alreadyPublished, true);
+  assert.equal(prior.writes.length, 0);
+  assert.equal(prior.logSearches[1].pageToken, 'next');
+  const { pageToken: _token, ...second } = prior.logSearches[1];
+  assert.deepEqual(second, prior.logSearches[0]);
+  assert.match(second.filter, /timestamp >=/);
+  assert.match(second.filter, /timestamp </);
+  assert.equal(second.orderBy, 'timestamp desc');
+
+  const absent = backend(active, { logPages: [{ entries: [], nextPageToken: 'next' }, {}] });
+  await runRouting('digest', { request: absent.request, report: report() });
+  assert.equal(absent.writes.length, 1);
+
+  for (const pages of [
+    [{ nextPageToken: 'repeat' }, { nextPageToken: 'repeat' }],
+    Array.from({ length: 11 }, (_, i) => ({ nextPageToken: `page${i}` })),
+  ]) {
+    const incomplete = backend(active, { logPages: pages });
+    await assert.rejects(
+      runRouting('digest', { request: incomplete.request, report: report() }),
+      /replay search incomplete/,
+    );
+    assert.equal(incomplete.writes.length, 0);
+  }
 });
 
 test('rollout and scheduled digest use existing WIF and daily cadence without payment-provider operations', () => {

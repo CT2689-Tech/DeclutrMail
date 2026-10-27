@@ -8,6 +8,8 @@ import type { InboxReportDto } from '@declutrmail/shared/inbox-report';
 import { installFetchStub, jsonOk, jsonServerError, resetFetchStub } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
+import { pendingActionFeedback } from '@/features/undo/feedback-store';
+
 import { InboxReportFirstLanding } from './first-landing-entry';
 
 const report: InboxReportDto = {
@@ -37,6 +39,97 @@ afterEach(() => {
 });
 
 describe('InboxReportFirstLanding', () => {
+  it('ignores an old optimistic celebration after reload', async () => {
+    localStorage.setItem(
+      'dm-inbox-report-celebration:mb-1',
+      JSON.stringify({ archived: 40, senders: 1, actionId: 'queued', actionHandle: 'batch' }),
+    );
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    expect(await screen.findByText('1 sender worth reviewing.')).toBeVisible();
+    expect(screen.queryByText(/Archived/)).toBeNull();
+    expect(document.querySelector('[data-celebration]')).toBeNull();
+  });
+
+  it('Home reopens a dismissed report, and Close still works on that deep link', async () => {
+    localStorage.setItem('dm-inbox-report-dismissed:mb-1', '1');
+    window.history.replaceState(null, '', '/senders#inbox-report');
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Close Inbox Report' }));
+    expect(screen.getByRole('button', { name: 'Reopen' })).toBeVisible();
+    expect(window.location.hash).toBe('');
+    localStorage.removeItem('dm-inbox-report-dismissed:mb-1');
+  });
+
+  it('shows loading, then a recoverable error, then the report after retry', async () => {
+    let fail: ((response: Response) => void) | undefined;
+    const response = new Promise<Response>((resolve) => {
+      fail = resolve;
+    });
+    let calls = 0;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => (++calls === 1 ? response : jsonOk({ data: report })),
+      },
+    ]);
+    const client = createTestQueryClient();
+    client.setDefaultOptions({ queries: { retry: false } });
+    render(
+      <QueryWrapper client={client}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
+      </QueryWrapper>,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('Loading snapshot…');
+    await act(async () => {
+      fail?.(jsonServerError());
+    });
+    expect(await screen.findByRole('status')).toHaveTextContent('Couldn’t load your Inbox Report');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry report' }));
+    expect(await screen.findByRole('button', { name: 'Close Inbox Report' })).toBeVisible();
+  });
+
+  it('passes the report IDs to review without submitting cleanup', async () => {
+    const review = vi.fn();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/mailboxes/mb-1/inbox-report',
+        respond: () => jsonOk({ data: report }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} onReview={review} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Review senders' }));
+    expect(review).toHaveBeenCalledWith(['s1']);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it.each(['archive', 'delete'] as const)(
     'forwards the selected age from the %s add-on to the cleanup request',
     async (mode) => {
@@ -96,9 +189,8 @@ describe('InboxReportFirstLanding', () => {
           <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
         </QueryWrapper>,
       );
-      fireEvent.click(
-        await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
-      );
+      fireEvent.click(await screen.findByText('Details'));
+      fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
       const archive = await screen.findByRole('radio', { name: '+ Archive' });
       await waitFor(() => expect(archive).toBeEnabled());
       if (mode === 'delete') {
@@ -180,7 +272,8 @@ describe('InboxReportFirstLanding', () => {
         <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
       </QueryWrapper>,
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
+    fireEvent.click(await screen.findByText('Details'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
     const option = await screen.findByRole('radio', { name: '+ Delete' });
     await waitFor(() => expect(option).toBeEnabled());
     fireEvent.click(option);
@@ -247,7 +340,8 @@ describe('InboxReportFirstLanding', () => {
         <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
       </QueryWrapper>,
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    fireEvent.click(await screen.findByText('Details'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
     const archive = await screen.findByRole('radio', { name: '+ Archive' });
     await waitFor(() => expect(archive).toBeEnabled());
     fireEvent.click(archive);
@@ -257,418 +351,7 @@ describe('InboxReportFirstLanding', () => {
     await waitFor(() => expect(submitted?.senderIds).toEqual(['s1']));
   });
 
-  it('undoes the latest archive when Activity has a token', async () => {
-    const undoPosts: string[] = [];
-    localStorage.setItem(
-      'dm-inbox-report-celebration:mb-1',
-      JSON.stringify({
-        archived: 4,
-        senders: 1,
-        verb: 'archive',
-        actionId: 'act-1',
-        actionHandle: 'action',
-      }),
-    );
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/mailboxes/mb-1/inbox-report',
-        respond: () => jsonOk({ data: report }),
-      },
-      {
-        method: 'GET',
-        path: '/api/actions/act-1',
-        respond: () =>
-          jsonOk({
-            data: {
-              actionId: 'act-1',
-              verb: 'archive',
-              direction: 'forward',
-              status: 'done',
-              requestedCount: 4,
-              affectedCount: 4,
-              wakeAt: null,
-              undoToken: 'undo-1',
-              undoExpiresAt: '2026-11-11T00:00:00.000Z',
-              undoExecutedAt: null,
-              undoRevertedAt: null,
-              errorCode: null,
-            },
-          }),
-      },
-      {
-        method: 'POST',
-        path: '/api/undo/undo-1',
-        respond: async (req) => {
-          undoPosts.push(new URL(req.url, 'http://localhost').pathname);
-          return jsonOk({
-            data: {
-              token: 'undo-1',
-              actionKind: 'archive',
-              reverted: false,
-              expired: false,
-              revertedAt: null,
-              actionId: 'rev-1',
-            },
-          });
-        },
-      },
-    ]);
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
-      </QueryWrapper>,
-    );
-    const undo = await screen.findByRole('button', {
-      name: WS5_COPY['report.celebrate.undo.button'],
-    });
-    expect(screen.getByText(WS5_COPY['report.celebrate.undo'])).toBeInTheDocument();
-    fireEvent.click(undo);
-    await waitFor(() => expect(undoPosts).toEqual(['/api/undo/undo-1']));
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }),
-      ).toBeNull(),
-    );
-    expect(screen.getByText(WS5_COPY['report.celebrate.undo'])).toBeInTheDocument();
-  });
-
-  it.each(['done', 'failed', 'unavailable'] as const)(
-    'settles the stored result only after the complete Undo set (%s)',
-    async (outcome) => {
-      let finished = false;
-      let groupReads = 0;
-      const stored = JSON.stringify({
-        archived: 4,
-        senders: 1,
-        verb: 'archive',
-        actionId: 'act-1',
-        actionHandle: 'action',
-        senderKeys: ['s1'],
-        fixGeneratedAt: report.generatedAt,
-      });
-      localStorage.setItem('dm-inbox-report-celebration:mb-1', stored);
-      sessionStorage.setItem('dm-inbox-report-celebration:mb-1', stored);
-      installFetchStub([
-        {
-          method: 'GET',
-          path: '/api/mailboxes/mb-1/inbox-report',
-          respond: () => jsonOk({ data: report }),
-        },
-        {
-          method: 'GET',
-          path: '/api/actions/act-1',
-          respond: () =>
-            jsonOk({
-              data: {
-                actionId: 'act-1',
-                verb: 'archive',
-                direction: 'forward',
-                status: 'done',
-                requestedCount: 4,
-                affectedCount: 4,
-                wakeAt: null,
-                undoToken: 'undo-1',
-                undoExpiresAt: '2026-11-11T00:00:00.000Z',
-                undoExecutedAt: null,
-                undoRevertedAt: null,
-                errorCode: null,
-              },
-            }),
-        },
-        {
-          method: 'POST',
-          path: '/api/undo/undo-1',
-          respond: () =>
-            jsonOk({
-              data: {
-                token: 'undo-1',
-                actionKind: 'archive',
-                reverted: false,
-                expired: false,
-                revertedAt: null,
-                actionId: 'rev-1',
-                actionIds: ['rev-1', 'rev-2'],
-              },
-            }),
-        },
-        {
-          method: 'POST',
-          path: '/api/actions/undo-status',
-          respond: () => {
-            groupReads += 1;
-            if (finished && outcome === 'unavailable') return jsonServerError();
-            return jsonOk({
-              data: {
-                actionId: 'rev-1',
-                verb: 'archive',
-                direction: 'reverse',
-                status: finished ? outcome : 'executing',
-                requestedCount: 4,
-                affectedCount: finished && outcome === 'done' ? 4 : 2,
-                undoToken: null,
-                undoRevertedAt: finished && outcome === 'done' ? '2026-10-12T00:00:00.000Z' : null,
-                errorCode: null,
-              },
-            });
-          },
-        },
-        {
-          method: 'GET',
-          path: '/api/actions/rev-1',
-          respond: () =>
-            jsonOk({
-              data: {
-                actionId: 'rev-1',
-                verb: 'archive',
-                direction: 'reverse',
-                status: 'done',
-                requestedCount: 4,
-                affectedCount: 4,
-                wakeAt: null,
-                undoToken: null,
-                undoExpiresAt: null,
-                undoExecutedAt: null,
-                undoRevertedAt: '2026-10-12T00:00:00.000Z',
-                errorCode: null,
-              },
-            }),
-        },
-      ]);
-      render(
-        <QueryWrapper client={createTestQueryClient()}>
-          <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
-          <ToastHost />
-        </QueryWrapper>,
-      );
-      fireEvent.click(
-        await screen.findByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }),
-      );
-      await waitFor(() => expect(groupReads).toBe(1));
-      expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).not.toBeNull();
-      finished = true;
-      if (outcome !== 'done') {
-        // Unknown/failure must preserve the recovery route instead of
-        // permanently hiding this panel's Undo after the first attempt.
-        expect(
-          await screen.findByRole(
-            'button',
-            { name: WS5_COPY['report.celebrate.undo.button'] },
-            { timeout: 2500 },
-          ),
-        ).toBeInTheDocument();
-        expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).not.toBeNull();
-        expect(
-          await screen.findByText(outcome === 'failed' ? /Undo failed/ : /Couldn’t confirm undo/i),
-        ).toBeInTheDocument();
-        return;
-      }
-      expect(
-        await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
-      ).toBeInTheDocument();
-      expect(screen.queryByText('Archived 4 emails from 1 sender.')).toBeNull();
-      expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toBeNull();
-      expect(sessionStorage.getItem('dm-inbox-report-celebration:mb-1')).toBeNull();
-    },
-  );
-
-  it.each([true, false])(
-    'ignores a late Undo response after switching mailboxes (reverted=%s)',
-    async (reverted) => {
-      const stored = (id: string) =>
-        JSON.stringify({
-          archived: 4,
-          senders: 1,
-          verb: 'archive',
-          actionId: `act-${id}`,
-          actionHandle: 'action',
-          senderKeys: ['s1'],
-          fixGeneratedAt: report.generatedAt,
-        });
-      for (const id of ['a', 'b']) {
-        localStorage.setItem(`dm-inbox-report-celebration:mb-${id}`, stored(id));
-        sessionStorage.setItem(`dm-inbox-report-celebration:mb-${id}`, stored(id));
-      }
-      let release!: (response: Response) => void;
-      const pending = new Promise<Response>((resolve) => {
-        release = resolve;
-      });
-      let posts = 0;
-      const reversePolls: string[] = [];
-      installFetchStub([
-        {
-          method: 'GET',
-          path: /\/api\/mailboxes\/mb-[ab]\/inbox-report/,
-          respond: () => jsonOk({ data: report }),
-        },
-        {
-          method: 'GET',
-          path: /\/api\/actions\/act-[ab]/,
-          respond: (_req, url) =>
-            jsonOk({
-              data: {
-                actionId: url.pathname.split('/').pop(),
-                status: 'done',
-                undoToken: url.pathname.endsWith('a') ? 'undo-a' : 'undo-b',
-                undoExpiresAt: '2099-01-01T00:00:00.000Z',
-              },
-            }),
-        },
-        {
-          method: 'POST',
-          path: '/api/undo/undo-a',
-          respond: () => {
-            posts += 1;
-            return pending;
-          },
-        },
-        {
-          method: 'POST',
-          path: '/api/actions/undo-status',
-          respond: (req) => {
-            reversePolls.push(req.headers.get('X-Active-Mailbox-Id') ?? 'missing');
-            return jsonOk({ data: { status: 'done' } });
-          },
-        },
-      ]);
-      const client = createTestQueryClient();
-      const content = (id: string) => (
-        <QueryWrapper client={client}>
-          <InboxReportFirstLanding mailboxId={`mb-${id}`} onResolved={vi.fn()} />
-          <ToastHost />
-        </QueryWrapper>
-      );
-      const view = render(content('a'));
-      fireEvent.click(
-        await screen.findByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }),
-      );
-      await waitFor(() => expect(posts).toBe(1));
-      view.rerender(content('b'));
-      await screen.findByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] });
-      await act(async () => {
-        release(
-          jsonOk({
-            data: {
-              token: 'undo-a',
-              actionKind: 'delete',
-              reverted,
-              expired: false,
-              revertedAt: reverted ? '2026-10-15T12:00:00.000Z' : null,
-              actionId: reverted ? null : 'reverse-a',
-              actionIds: reverted ? [] : ['reverse-a'],
-            },
-          }),
-        );
-      });
-      await waitFor(() =>
-        expect(
-          client
-            .getMutationCache()
-            .getAll()
-            .some((mutation) => mutation.state.status === 'success'),
-        ).toBe(true),
-      );
-      expect(
-        screen.getByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }),
-      ).toBeInTheDocument();
-      expect(localStorage.getItem('dm-inbox-report-celebration:mb-b')).toBe(stored('b'));
-      expect(reversePolls).toEqual([]);
-      view.unmount();
-      for (const id of ['a', 'b']) {
-        localStorage.removeItem(`dm-inbox-report-celebration:mb-${id}`);
-        sessionStorage.removeItem(`dm-inbox-report-celebration:mb-${id}`);
-      }
-    },
-  );
-
-  it('drops a stored result when a later report lists those senders again', async () => {
-    localStorage.setItem(
-      'dm-inbox-report-celebration:mb-1',
-      JSON.stringify({
-        archived: 4,
-        senders: 1,
-        verb: 'archive',
-        senderKeys: ['s1'],
-        fixGeneratedAt: '2020-01-01T00:00:00.000Z',
-      }),
-    );
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/mailboxes/mb-1/inbox-report',
-        respond: () => jsonOk({ data: report }),
-      },
-    ]);
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
-      </QueryWrapper>,
-    );
-    expect(
-      await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('Archived 4 emails from 1 sender.')).toBeNull();
-    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toBeNull();
-  });
-
-  it('keeps a stored result when the later report no longer offers those senders', async () => {
-    localStorage.setItem(
-      'dm-inbox-report-celebration:mb-1',
-      JSON.stringify({
-        archived: 4,
-        senders: 1,
-        verb: 'archive',
-        senderKeys: ['s1'],
-        fixGeneratedAt: '2020-01-01T00:00:00.000Z',
-      }),
-    );
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/mailboxes/mb-1/inbox-report',
-        respond: () =>
-          jsonOk({
-            data: {
-              ...report,
-              generatedAt: '2026-10-12T00:00:00.000Z',
-              fix: { senderKeys: [], sendersCount: 0, inboxEmailCount: 0 },
-            },
-          }),
-      },
-    ]);
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
-      </QueryWrapper>,
-    );
-    expect(await screen.findByText('Archived 4 emails from 1 sender.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
-    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain('"senderKeys"');
-  });
-
-  it('keeps the done state after a reload and does not offer the action again', async () => {
-    localStorage.setItem(
-      'dm-inbox-report-celebration:mb-1',
-      JSON.stringify({ archived: 4, senders: 1 }),
-    );
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/mailboxes/mb-1/inbox-report',
-        respond: () => jsonOk({ data: report }),
-      },
-    ]);
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
-      </QueryWrapper>,
-    );
-    expect(await screen.findByText('Archived 4 emails from 1 sender.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
-    localStorage.removeItem('dm-inbox-report-celebration:mb-1');
-  });
-
-  it('stays hidden when the report request fails', async () => {
+  it('reports a recoverable snapshot failure', async () => {
     const onResolved = vi.fn();
     installFetchStub([]);
     render(
@@ -729,9 +412,10 @@ describe('InboxReportFirstLanding', () => {
         <InboxReportFirstLanding mailboxId="mb-1" onResolved={onResolved} />
       </QueryWrapper>,
     );
-    expect(await screen.findByText(/mostly leave unread/)).toBeInTheDocument();
+    expect(await screen.findByText('1 sender worth reviewing.')).toBeInTheDocument();
     await waitFor(() => expect(onResolved).toHaveBeenCalledWith(true));
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
+    fireEvent.click(screen.getByText('Details'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
     expect(screen.getByRole('radio', { name: '+ Archive' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
     expect(screen.getByRole('dialog')).not.toHaveTextContent('archive 4 emails');
@@ -788,12 +472,17 @@ describe('InboxReportFirstLanding', () => {
       mode: 'archive',
       senderIds: ['s1'],
     });
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      pluralCopy(WS5_COPY['f1.toast.both.archive'], 4, { n: 4 }),
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText(/Archived/)).toBeNull();
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toBeNull();
+    await waitFor(() =>
+      expect(pendingActionFeedback('mb-1')).toEqual([
+        expect.objectContaining({ groupId: 'act-1', verb: 'archive', senderIds: ['s1'] }),
+      ]),
     );
   });
 
-  it('keeps an unsubscribe-only run done after it succeeds', async () => {
+  it('reports unsubscribe-only requests without persisting a success banner', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -861,23 +550,14 @@ describe('InboxReportFirstLanding', () => {
         <InboxReportFirstLanding mailboxId="mb-1" onResolved={vi.fn()} />
       </QueryWrapper>,
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
+    fireEvent.click(await screen.findByText('Details'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
     fireEvent.click(await screen.findByRole('radio', { name: 'Unsubscribe only' }));
     // Confirm stays closed while the single-sender preview is still loading.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Unsubscribe' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe' }));
-    await waitFor(() =>
-      expect(document.querySelector('[data-celebration]')).toHaveTextContent(
-        'Unsubscribe requested from 1 sender',
-      ),
-    );
-    expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
-    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
-      '"verb":"unsub_only"',
-    );
-    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toContain(
-      '"senderKeys":["s1"]',
-    );
-    localStorage.removeItem('dm-inbox-report-celebration:mb-1');
+    expect(await screen.findByRole('status')).toHaveTextContent('Unsubscribe requested');
+    expect(document.querySelector('[data-celebration]')).toBeNull();
+    expect(localStorage.getItem('dm-inbox-report-celebration:mb-1')).toBeNull();
   });
 });

@@ -1,3 +1,7 @@
+import type {
+  AutopilotRuleConditions,
+  AutopilotRuleConfiguration,
+} from '@declutrmail/shared/contracts';
 /**
  * Autopilot API — typed fetchers for the Autopilot endpoints
  * (D99-D105, D234). Mirrors the BE wire contract in
@@ -46,7 +50,7 @@ export type AutopilotRuleMode = 'observe' | 'active' | 'paused';
 export type AutopilotRuleScope = 'account' | 'all_accounts' | 'workspace';
 
 /** Action a rule emits. Mirrors `autopilot_action_kind` pgEnum. */
-export type AutopilotActionKind = 'archive' | 'unsubscribe' | 'later';
+export type AutopilotActionKind = 'archive' | 'unsubscribe' | 'later' | 'delete';
 
 /** Preset library at launch (D101 + D124). Custom rules are NULL. */
 export type AutopilotPresetKey =
@@ -89,6 +93,8 @@ export interface AutopilotObserveDigestDto {
 
 /** One Autopilot rule, as the read service returns it. */
 export interface AutopilotRuleDto {
+  version?: number;
+  conditions?: AutopilotRuleConditions;
   id: string;
   presetKey: AutopilotPresetKey | null;
   isPreset: boolean;
@@ -136,6 +142,8 @@ export interface AutopilotRuleDto {
  * Mirrors `AutopilotRulePatch` in `autopilot.types.ts`.
  */
 export interface AutopilotRulePatchDto {
+  expectedVersion?: number;
+  configuration?: AutopilotRuleConfiguration;
   /** D101 — toggle the rule on / off. */
   enabled?: boolean;
   /** D10 / D105 — observe ↔ active ↔ paused. */
@@ -217,8 +225,9 @@ export interface AutopilotMatchDismissResult {
 /** GET /api/autopilot/rules — list rules for the caller's mailbox. */
 export function fetchAutopilotRules(
   signal?: AbortSignal,
+  mailboxId?: string,
 ): Promise<Envelope<AutopilotRuleDto[], unknown>> {
-  return apiGet<AutopilotRuleDto[]>('/api/autopilot/rules', { signal });
+  return apiGet<AutopilotRuleDto[]>('/api/autopilot/rules', { signal, mailboxId });
 }
 
 /** GET /api/autopilot/pending-suggestions — D104 Observe-mode buffer. */
@@ -318,10 +327,12 @@ export function postApproveAllForRule(
 export function postRulePreview(
   ruleId: string,
   includeSenders = false,
+  mailboxId?: string,
 ): Promise<Envelope<AutopilotRulePreviewResult, unknown>> {
   return apiPost<AutopilotRulePreviewResult>(
     `/api/autopilot/rules/${encodeURIComponent(ruleId)}/preview`,
     includeSenders ? { includeSenders: true } : undefined,
+    { mailboxId },
   );
 }
 

@@ -7,6 +7,12 @@ import { presetDisplayName } from './preset-labels';
 
 const { color, space, text } = tokens;
 
+export interface PauseRuleScope {
+  rules: readonly (Pick<AutopilotRuleDto, 'id' | 'name' | 'mode'> &
+    Partial<Pick<AutopilotRuleDto, 'presetKey'>>)[];
+  complete: boolean;
+}
+
 /**
  * D105 master-pause confirmation.
  *
@@ -23,13 +29,15 @@ const { color, space, text } = tokens;
 export function PauseConfirmModal({
   open,
   rules,
+  complete = true,
   onCancel,
   onConfirm,
   isPausing,
   pauseError,
 }: {
   open: boolean;
-  rules: AutopilotRuleDto[];
+  rules: PauseRuleScope['rules'];
+  complete?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
   isPausing: boolean;
@@ -41,25 +49,38 @@ export function PauseConfirmModal({
   // mutation touches, not the full rule library.
   const affected = rules.filter((r) => r.mode !== 'paused');
   const n = affected.length;
+  const nothingToPause = complete && n === 0;
 
   return (
     <ConfirmModalFrame
-      title={n === 0 ? 'Nothing to pause' : `Pause ${n} Autopilot rule${n === 1 ? '' : 's'}?`}
+      title={
+        !complete
+          ? 'Pause all Autopilot rules?'
+          : nothingToPause
+            ? 'Nothing to pause'
+            : `Pause ${n} Autopilot rule${n === 1 ? '' : 's'}?`
+      }
       subtitle={
-        n === 0
+        nothingToPause
           ? 'No rules are running.'
           : 'No new suggestions and no automated actions. Pending suggestions stay.'
       }
-      note={n === 0 ? undefined : 'Turn each rule back on from the rules list.'}
+      note={
+        !complete
+          ? 'The complete rule list is unavailable. All rules in this mailbox will pause.'
+          : nothingToPause
+            ? undefined
+            : 'Turn each rule back on from the rules list.'
+      }
       confirmLabel="Pause all"
       confirmBusyLabel="Pausing…"
-      canConfirm={n > 0}
+      canConfirm={!complete || n > 0}
       isBusy={isPausing}
       error={pauseError}
       onCancel={onCancel}
       onConfirm={onConfirm}
       details={
-        n === 0 ? undefined : (
+        !complete || n === 0 ? undefined : (
           <ul
             aria-label="Rules that will pause"
             style={{
@@ -80,7 +101,7 @@ export function PauseConfirmModal({
                   color: color.fg,
                 }}
               >
-                {presetDisplayName(r.presetKey, r.name)}
+                {r.presetKey == null ? r.name : presetDisplayName(r.presetKey, r.name)}
               </li>
             ))}
           </ul>

@@ -2020,10 +2020,13 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     );
   });
 
-  it('returns an existing user to the exact validated billing choice', async () => {
+  it.each([
+    '/billing?plan=plus&cycle=monthly',
+    '/billing?plan=plus&cycle=annual&offer=pass_onetime',
+  ])('returns an existing user to the exact validated billing choice: %s', async (returnTo) => {
     await controller.callback(
       req({
-        cookies: loginCookie(NONCE, '/billing?plan=plus&cycle=monthly'),
+        cookies: loginCookie(NONCE, returnTo),
       }),
       res as unknown as Response,
       'code',
@@ -2031,7 +2034,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     );
 
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}/billing?plan=plus&cycle=monthly`);
+    expect(res.redirect).toHaveBeenCalledWith(302, `${webBase}${returnTo}`);
   });
 
   it.each(['/senders/s-123', '/settings?cancelDeletion=1#account'])(
@@ -2097,7 +2100,10 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     );
   });
 
-  it('finishes onboarding before returning a new signup to billing', async () => {
+  it.each([
+    '/billing?plan=pro&cycle=annual&promo=foundingPro',
+    '/billing?plan=plus&cycle=annual&offer=pass_onetime',
+  ])('finishes onboarding before returning a new signup to billing: %s', async (returnTo) => {
     orchestrator.connect.mockResolvedValueOnce({
       tokens: { accessToken: 'a', refreshToken: 'r', jti: 'j', refreshTokenHash: 'h' },
       csrfToken: 'csrf',
@@ -2108,7 +2114,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
 
     await controller.callback(
       req({
-        cookies: loginCookie(NONCE, '/billing?plan=pro&cycle=annual&promo=foundingPro'),
+        cookies: loginCookie(NONCE, returnTo),
       }),
       res as unknown as Response,
       'code',
@@ -2118,7 +2124,7 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
     expect(res.redirect).toHaveBeenCalledWith(
       302,
-      `${webBase}/onboarding?returnTo=%2Fbilling%3Fplan%3Dpro%26cycle%3Dannual%26promo%3DfoundingPro`,
+      `${webBase}/onboarding?${new URLSearchParams({ returnTo })}`,
     );
   });
 

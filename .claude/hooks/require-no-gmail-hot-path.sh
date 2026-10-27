@@ -6,7 +6,7 @@
 # apps/api/workers/**) so the request thread isn't blocked on Gmail
 # latency + rate limits.
 #
-# Exit 1 if a synchronous Gmail call appears in non-worker code.
+# Exit 2 if a synchronous Gmail call appears in non-worker code.
 
 set -euo pipefail
 
@@ -71,7 +71,7 @@ if grep -nE "gmail\.users\.(messages|labels|threads|history|drafts)\." "$file_pa
     echo "   Gmail calls must originate from packages/workers/** or apps/api/workers/**." >&2
     echo "   The request hot path cannot block on Gmail latency / rate limits." >&2
     echo "   Override with '// @declutrmail-allow-gmail-hot-path' on the prior line if intentional." >&2
-    exit 1
+    exit 2
   fi
 fi
 

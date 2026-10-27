@@ -1,6 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import type { AutopilotRuleConfiguration } from '@declutrmail/shared/contracts';
+import dynamic from 'next/dynamic';
+const PresetRuleEditor = dynamic(
+  () => import('./preset-rule-editor').then((module) => module.PresetRuleEditor),
+  { loading: () => <p role="status">Loading rule editor…</p> },
+);
+import styles from './sender-rule-library.module.css';
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import { Switch } from '@/features/settings/switch';
@@ -35,6 +42,8 @@ const ACT_PLAN_NAME = TIER_MANIFEST[minimumTierForCapability('autopilot-active')
  */
 export function RuleCard({
   rule,
+  libraryRow = false,
+  canEdit = true,
   canActivate,
   canChangeMode = true,
   pendingCount,
@@ -42,6 +51,7 @@ export function RuleCard({
   isSaving,
   onToggleEnabled,
   onCommitThreshold,
+  onSaveConfiguration,
   onResume,
   previewOpen,
   preview,
@@ -49,6 +59,8 @@ export function RuleCard({
   onRetryPreview,
 }: {
   rule: AutopilotRuleDto;
+  libraryRow?: boolean;
+  canEdit?: boolean;
   /**
    * D251 — whether this workspace's rules may act unattended
    * (`autopilot-active`, Pro). On Plus an `active` rule is skipped by the apply
@@ -66,6 +78,7 @@ export function RuleCard({
   /** True while any PATCH for THIS rule is in flight. */
   isSaving: boolean;
   onToggleEnabled: (next: boolean) => void;
+  onSaveConfiguration?: (configuration: AutopilotRuleConfiguration) => Promise<string | null>;
   /**
    * Fires on slider release with the new threshold in [0,1]. Resolves
    * `true` when the server accepted the PATCH, `false` when it rejected
@@ -80,14 +93,23 @@ export function RuleCard({
   onTogglePreview: () => void;
   onRetryPreview: () => void;
 }) {
+  const rowRef = useRef<HTMLLIElement>(null);
   const now = useNow();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const restoreEditorFocus = useRef(false);
+  useEffect(() => {
+    if (!restoreEditorFocus.current || detailsOpen || isSaving) return;
+    const button = rowRef.current?.querySelector<HTMLButtonElement>('button[aria-expanded]');
+    if (button && !button.disabled) button.focus();
+    else rowRef.current?.focus();
+    restoreEditorFocus.current = false;
+  }, [detailsOpen, isSaving]);
   const name = presetDisplayName(rule.presetKey, rule.name);
   // D10/D101 — Observe-mode digest, only meaningful while the rule is
   // actually watching (enabled + Observe). Disabled rules stay quiet.
   const digestSummary = rule.enabled ? observeDigestSummary(rule) : null;
   const observeSummary = observeWindowSummary(rule, now);
-  const explanation = isReviewOnlyPreset(rule.presetKey)
+  const explanation = isReviewOnlyPreset(rule.presetKey, rule.actionKind)
     ? rule.enabled
       ? 'Matches wait for your approval; no mail moves on its own.'
       : null
@@ -96,6 +118,8 @@ export function RuleCard({
 
   return (
     <li
+      ref={rowRef}
+      tabIndex={-1}
       data-rule-id={rule.id}
       className="dm-rule-row"
       style={{
@@ -103,11 +127,12 @@ export function RuleCard({
         display: 'flex',
         flexDirection: 'column',
         gap: 4,
-        padding: '16px 20px',
+        padding: libraryRow ? '20px 0' : '16px 20px',
+        borderBottom: libraryRow ? `1px solid ${color.line}` : undefined,
         fontFamily: font.sans,
       }}
     >
-      <style>{RULE_ROW_CSS}</style>
+      {!libraryRow && <style>{RULE_ROW_CSS}</style>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44 }}>
         <div
           style={{
@@ -119,12 +144,24 @@ export function RuleCard({
             flexWrap: 'wrap',
           }}
         >
-          <span style={{ fontSize: text.lg, fontWeight: 500, color: color.fg }}>{name}</span>
+          <span
+            style={{
+              fontSize: libraryRow ? text.md : text.lg,
+              fontWeight: 600,
+              color: color.fg,
+              overflowWrap: 'anywhere',
+            }}
+          >
+            {name}
+          </span>
+          {libraryRow && (
+            <span style={{ fontSize: text.xs, color: color.fgMuted }}>Built-in rule</span>
+          )}
           <ModeStatus rule={rule} canActivate={canActivate} />
         </div>
         <Switch
           checked={rule.enabled}
-          disabled={isSaving || !canChangeMode}
+          disabled={isSaving || !canEdit || !canChangeMode}
           ariaLabel={`${rule.enabled ? 'Disable' : 'Enable'} rule ${name}`}
           onChange={() => onToggleEnabled(!rule.enabled)}
         />
@@ -149,13 +186,18 @@ export function RuleCard({
         }}
       >
         <Button
-          tone="ghost"
+          tone={libraryRow ? 'default' : 'ghost'}
           size="sm"
+          disabled={isSaving || !canEdit}
           onClick={() => setDetailsOpen((open) => !open)}
-          ariaLabel={`${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`}
+          ariaLabel={
+            libraryRow
+              ? `${detailsOpen ? 'Close rule' : 'Edit rule'} ${name}`
+              : `${detailsOpen ? 'Hide' : 'Show'} details for rule ${name}`
+          }
           ariaExpanded={detailsOpen}
         >
-          Details
+          {libraryRow ? (detailsOpen ? 'Close rule' : 'Edit rule') : 'Details'}
           <span
             aria-hidden="true"
             style={{
@@ -166,12 +208,23 @@ export function RuleCard({
             ⌄
           </span>
         </Button>
+        {libraryRow && !detailsOpen && (
+          <Button
+            tone="ghost"
+            size="sm"
+            onClick={onTogglePreview}
+            disabled={!canEdit}
+            ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
+          >
+            {previewOpen ? 'Hide preview' : 'Preview matches'}
+          </Button>
+        )}
         {rule.mode === 'paused' && (
           <Button
             tone="default"
             size="sm"
             onClick={onResume}
-            disabled={isSaving || !canChangeMode}
+            disabled={isSaving || !canEdit || !canChangeMode}
             ariaLabel={`Resume rule ${name}`}
           >
             {isSaving ? 'Resuming…' : 'Resume'}
@@ -191,40 +244,62 @@ export function RuleCard({
             color: color.fgMuted,
           }}
         >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flexWrap: 'wrap',
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            <span>{lastRunSummary(rule, now !== null)}</span>
-            <span aria-hidden="true">·</span>
-            <span>
-              {pendingCount === undefined
-                ? 'Pending suggestions not loaded'
-                : pendingApproximate
-                  ? `${pendingCount}+ pending`
-                  : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
-            </span>
-            {observeSummary != null && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span>{observeSummary}</span>
-              </>
-            )}
-          </div>
+          {libraryRow && onSaveConfiguration && (
+            <PresetRuleEditor
+              rule={rule}
+              saving={isSaving}
+              disabled={!canEdit}
+              onCancel={() => {
+                restoreEditorFocus.current = true;
+                setDetailsOpen(false);
+              }}
+              onSave={async (configuration) => {
+                const error = await onSaveConfiguration(configuration);
+                if (error === null) {
+                  restoreEditorFocus.current = true;
+                  setDetailsOpen(false);
+                }
+                return error;
+              }}
+            />
+          )}
+          <details className={styles.diagnostics}>
+            <summary>Rule activity and recorded matches</summary>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                flexWrap: 'wrap',
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              <span>{lastRunSummary(rule, now !== null)}</span>
+              <span aria-hidden="true">·</span>
+              <span>
+                {pendingCount === undefined
+                  ? 'Pending suggestions not loaded'
+                  : pendingApproximate
+                    ? `${pendingCount}+ pending`
+                    : `${pendingCount} pending suggestion${pendingCount === 1 ? '' : 's'}`}
+              </span>
+              {observeSummary != null && (
+                <>
+                  <span aria-hidden="true">·</span>
+                  <span>{observeSummary}</span>
+                </>
+              )}
+            </div>
 
-          {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
-          {digestSummary != null && <div style={{ color: color.fgSoft }}>{digestSummary}</div>}
+            {/* D10/D101 — Observe-mode digest: what a sweep right now would do. */}
+            {digestSummary != null && <div style={{ color: color.fgSoft }}>{digestSummary}</div>}
+          </details>
 
-          {rule.confidenceThreshold != null && (
+          {!libraryRow && rule.confidenceThreshold != null && (
             <ThresholdSlider
               ruleName={name}
               committed={rule.confidenceThreshold}
-              disabled={isSaving}
+              disabled={isSaving || !canEdit}
               onCommit={onCommitThreshold}
             />
           )}
@@ -235,6 +310,7 @@ export function RuleCard({
               tone="ghost"
               size="sm"
               onClick={onTogglePreview}
+              disabled={!canEdit}
               ariaLabel={`${previewOpen ? 'Hide' : 'Preview'} matches for rule ${name}`}
             >
               {previewOpen ? 'Hide preview' : 'Preview matches'}
@@ -248,7 +324,7 @@ export function RuleCard({
           ruleName={name}
           state={preview}
           onRetry={onRetryPreview}
-          requiresApproval={isReviewOnlyPreset(rule.presetKey)}
+          actionKind={rule.actionKind}
         />
       )}
     </li>
@@ -261,6 +337,8 @@ const RULE_ROW_CSS = `.dm-rule-row + .dm-rule-row::before { content: ''; positio
 /** Canonical-verb description of the rule's action (D227 — K/A/U/L/D only). */
 function describeRuleAction(kind: AutopilotActionKind): string {
   switch (kind) {
+    case 'delete':
+      return 'Deletes after approval';
     case 'archive':
       return 'Archives';
     case 'unsubscribe':
@@ -315,7 +393,7 @@ function ruleModeExplanation(rule: AutopilotRuleDto, canActivate: boolean): stri
     }
     return 'Future matches run automatically; results appear in Activity.';
   }
-  return 'Matches become suggestions for your approval.';
+  return 'Matching senders wait for your review.';
 }
 
 /**

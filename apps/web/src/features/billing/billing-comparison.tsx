@@ -55,39 +55,46 @@ export function billingComparisonRows(pricingV2: boolean): readonly BillingCompa
 }
 
 export function BillingComparison({ pricingV2 = false }: { pricingV2?: boolean }) {
-  const rows = billingComparisonRows(pricingV2);
+  const allRows = billingComparisonRows(pricingV2);
+  const shared = allRows.filter((row) => row.values.every((value) => value === 'Included'));
+  const rows = allRows.filter((row) => !shared.includes(row));
   return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
-      <caption style={{ textAlign: 'left', marginBottom: 10 }}>Included features by plan</caption>
-      <thead>
-        <tr>
-          <th scope="col" style={{ textAlign: 'left' }}>
-            Includes
-          </th>
-          {COMPARISON_TIERS.map((id) => (
-            <th scope="col" key={id}>
-              {TIER_MANIFEST[id].name}
+    <div>
+      <p style={{ margin: '0 0 16px', lineHeight: 1.6 }}>
+        <strong>Included on every plan:</strong> {shared.map((row) => row.label).join('; ')}.
+      </p>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+        <caption style={{ textAlign: 'left', marginBottom: 10 }}>Included features by plan</caption>
+        <thead>
+          <tr>
+            <th scope="col" style={{ textAlign: 'left' }}>
+              Includes
             </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row, index) => (
-          <tr
-            key={row.label}
-            style={index < 2 ? undefined : { borderTop: `1px solid ${color.border}` }}
-          >
-            <th scope="row" style={{ textAlign: 'left', padding: '8px 0', fontWeight: 400 }}>
-              {row.label}
-            </th>
-            {row.values.map((value, index) => (
-              <td style={{ textAlign: 'center' }} key={COMPARISON_TIERS[index]}>
-                {value}
-              </td>
+            {COMPARISON_TIERS.map((id) => (
+              <th scope="col" key={id}>
+                {TIER_MANIFEST[id].name}
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr
+              key={row.label}
+              style={index < 2 ? undefined : { borderTop: `1px solid ${color.border}` }}
+            >
+              <th scope="row" style={{ textAlign: 'left', padding: '8px 0', fontWeight: 400 }}>
+                {row.label}
+              </th>
+              {row.values.map((value, index) => (
+                <td style={{ textAlign: 'center' }} key={COMPARISON_TIERS[index]}>
+                  {value}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }

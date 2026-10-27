@@ -41,15 +41,17 @@ export function ResumeConfirmModal({
   const name = presetDisplayName(rule.presetKey, rule.name);
 
   const note =
-    preview.status === 'ready'
-      ? preview.result.waitingApprovedCount > 0
-        ? `${preview.result.waitingApprovedCount} approval${
-            preview.result.waitingApprovedCount === 1 ? '' : 's'
-          } from before it paused will run on the next check.`
-        : 'Nothing is waiting to run.'
-      : preview.status === 'loading'
-        ? 'Checking for approvals waiting to run…'
-        : undefined;
+    rule.actionKind === 'delete'
+      ? 'Preview and approve a new batch before any emails move.'
+      : preview.status === 'ready'
+        ? preview.result.waitingApprovedCount > 0
+          ? `${preview.result.waitingApprovedCount} approval${
+              preview.result.waitingApprovedCount === 1 ? '' : 's'
+            } from before it paused will run on the next check.`
+          : 'Nothing is waiting to run.'
+        : preview.status === 'loading'
+          ? 'Checking for approvals waiting to run…'
+          : undefined;
 
   return (
     <ConfirmModalFrame

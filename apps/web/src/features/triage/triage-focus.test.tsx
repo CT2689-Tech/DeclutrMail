@@ -79,6 +79,7 @@ function rowById(id: string) {
 }
 
 const GROUPON = rowById('t-groupon'); // archive verdict, unprotected
+const SHIPPING = rowById('t-shipping'); // Later verdict, no at-rest recommendation
 const LINKEDIN = rowById('t-linkedin'); // unsubscribe, recommended
 const SARAH = rowById('t-sarah'); // protected
 const AMAZON = TRIAGE_QUEUE.filter((r) => r.id.startsWith('t-amazon-'));
@@ -128,7 +129,12 @@ function ready(rows: readonly (typeof TRIAGE_QUEUE)[number][]): TriageScreenStat
 function renderScreen(
   state: TriageScreenState,
   client: QueryClient = createTestQueryClient(),
-  props: { journey?: 'daily' | 'first_relief' } = {},
+  props: {
+    journey?: 'daily' | 'first_relief';
+    presentation?: 'triage' | 'guided';
+    active?: boolean;
+    onExitGuided?: () => void;
+  } = {},
 ) {
   const ui = (s: TriageScreenState) => (
     <QueryWrapper client={client}>
@@ -735,5 +741,157 @@ describe('focus mode — mobile', () => {
     fireEvent.pointerUp(surface, { ...touch, clientX: 80, clientY: 203 });
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(useTriageStore.getState().pendingAction?.verb).toBe('Archive');
+  });
+});
+
+describe('Guided Review inside Senders', () => {
+  it('does not suggest Later in Why for an empty Inbox, keeping its action and preview', async () => {
+    renderScreen(ready([{ ...SHIPPING, inboxCount: 0, last90dMessages: 191 }]), undefined, {
+      presentation: 'guided',
+    });
+    expect(await screen.findByText('Your Inbox is clear for this sender.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+    expect(screen.queryByText(/Suggested: Later/)).toBeNull();
+    expect(screen.getByText(SHIPPING.reasoning)).toBeInTheDocument();
+    const more = screen.getByText('More actions').closest('details')!;
+    fireEvent.click(within(more).getByText('More actions'));
+    fireEvent.click(within(more).getByRole('button', { name: 'Later (L)' }));
+    await screen.findByRole('dialog');
+    expect(useTriageStore.getState().pendingAction?.verb).toBe('Later');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(cardTitle()).toBe(SHIPPING.senderName);
+  });
+  it.each([3, undefined])('keeps the Later assessment at Inbox count %s', async (inboxCount) => {
+    const row = { ...SHIPPING };
+    if (inboxCount === undefined) delete row.inboxCount;
+    else row.inboxCount = inboxCount;
+    renderScreen(ready([row]), undefined, { presentation: 'guided' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Why?' }));
+    expect(screen.getByText('No clear suggestion')).toBeInTheDocument();
+    if (inboxCount === undefined)
+      expect(screen.getByText('Current Inbox count unavailable')).toBeInTheDocument();
+    else expect(screen.getByText('emails in Inbox now')).toBeInTheDocument();
+    expect(screen.queryByText('Your Inbox is clear for this sender.')).toBeNull();
+  });
+  it('keeps standalone Triage Later evidence at zero Inbox', async () => {
+    renderScreen(ready([{ ...SHIPPING, inboxCount: 0 }]));
+    fireEvent.click(await screen.findByRole('button', { name: 'Why?' }));
+    expect(screen.getByText('No clear suggestion')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Later (L)' })).toBeInTheDocument();
+  });
+  it('does not suggest Archive for an empty Inbox, keeping its neutral action and preview', async () => {
+    renderScreen(ready([{ ...GROUPON, inboxCount: 0, last90dMessages: 191 }]), undefined, {
+      presentation: 'guided',
+    });
+    expect(await screen.findByText('Your Inbox is clear for this sender.')).toBeInTheDocument();
+    expect(screen.queryByText(/Suggested: Archive/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+    expect(screen.queryByText(/Suggested: Archive/)).toBeNull();
+    expect(screen.getByText(GROUPON.reasoning)).toBeInTheDocument();
+    const more = screen.getByText('More actions').closest('details')!;
+    fireEvent.click(within(more).getByText('More actions'));
+    const archive = within(more).getByRole('button', { name: 'Archive (A)' });
+    expect(archive.style.background).toBe(tokens.color.fill);
+    fireEvent.click(archive);
+    await screen.findByRole('dialog');
+    expect(useTriageStore.getState().pendingAction?.verb).toBe('Archive');
+  });
+  it.each([18, 1, 0])(
+    'leads guided review with %s current Inbox emails, keeping history separate',
+    async (inboxCount) => {
+      renderScreen(ready([{ ...GROUPON, inboxCount, last90dMessages: 191 }]), undefined, {
+        presentation: 'guided',
+      });
+      await screen.findByText(`${inboxCount === 1 ? 'email' : 'emails'} in Inbox now`);
+      if (inboxCount === 0) fireEvent.click(screen.getByText('More actions'));
+      else expect(screen.getByText('Suggested: Archive')).toBeInTheDocument();
+      expect(document.querySelector('[data-dm-focus-count]')).toHaveTextContent(String(inboxCount));
+      expect(
+        within(card()).getByText(`${inboxCount === 1 ? 'email' : 'emails'} in Inbox now`),
+      ).toBeInTheDocument();
+      expect(within(card()).getByText('191 received in the last 90 days')).toBeInTheDocument();
+      if (inboxCount === 0)
+        expect(
+          within(card()).getByText('Your Inbox is clear for this sender.'),
+        ).toBeInTheDocument();
+      else expect(within(card()).queryByText('Your Inbox is clear for this sender.')).toBeNull();
+      // The existing action owner still opens its mandatory preview, including at zero.
+      fireEvent.click(screen.getByRole('button', { name: 'Archive (A)' }));
+      await screen.findByRole('dialog');
+      expect(useTriageStore.getState().pendingAction?.verb).toBe('Archive');
+    },
+  );
+  it('does not turn an unavailable Inbox count into zero or use historical volume as current', async () => {
+    const unknown = { ...GROUPON };
+    delete unknown.inboxCount;
+    renderScreen(ready([{ ...unknown, last90dMessages: 0, totalAllTime: 555 }]), undefined, {
+      presentation: 'guided',
+    });
+    await screen.findByRole('button', { name: 'Archive (A)' });
+    expect(document.querySelector('[data-dm-focus-count]')).toHaveTextContent('—');
+    expect(within(card()).getByText('Current Inbox count unavailable')).toBeInTheDocument();
+    expect(within(card()).getByText('0 received in the last 90 days')).toBeInTheDocument();
+    expect(within(card()).queryByText('Your Inbox is clear for this sender.')).toBeNull();
+    expect(screen.getByText('Suggested: Archive')).toBeInTheDocument();
+  });
+  it('retains future-email Unsubscribe suggestions when the Inbox is empty', async () => {
+    renderScreen(ready([{ ...LINKEDIN, inboxCount: 0 }]), undefined, { presentation: 'guided' });
+    expect(await screen.findByText('Suggested: Unsubscribe')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Unsubscribe (U)' })).toBeInTheDocument();
+  });
+  it('keeps standalone Triage historical evidence unchanged at zero Inbox', async () => {
+    renderScreen(ready([{ ...GROUPON, inboxCount: 0, last90dMessages: 191 }]));
+    expect(document.querySelector('[data-dm-focus-count]')).toHaveTextContent('191');
+    expect(screen.getByRole('button', { name: 'Archive (A)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Why?' }));
+    expect(screen.getByText(/Suggested: Archive/)).toBeInTheDocument();
+  });
+  it('uses the server order for Previous and Next without recording decisions', async () => {
+    let writes = 0;
+    addFetchHandlers([
+      {
+        method: 'POST',
+        path: /\/api\/actions/,
+        respond: () => {
+          writes += 1;
+          return jsonOk({ data: {} });
+        },
+      },
+    ]);
+    renderScreen(ready([GROUPON, LINKEDIN, SARAH]), undefined, { presentation: 'guided' });
+    await screen.findByRole('button', { name: 'Next sender' });
+    expect(cardTitle()).toBe(GROUPON.senderName);
+    expect(screen.queryByRole('group', { name: 'Review layout' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next sender' }));
+    expect(cardTitle()).toBe(LINKEDIN.senderName);
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    expect(cardTitle()).toBe(GROUPON.senderName);
+    expect(writes).toBe(0);
+    expect(useTriageStore.getState().sessionDecidedCount).toBe(0);
+  });
+  it('keeps navigation disabled for an open mandatory preview', async () => {
+    renderScreen(ready([GROUPON, LINKEDIN]), undefined, { presentation: 'guided' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive (A)' }));
+    await screen.findByRole('dialog');
+    expect(screen.getByRole('button', { name: 'Next sender' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Back to Senders' })).toBeDisabled();
+    expect(cardTitle()).toBe(GROUPON.senderName);
+  });
+  it('leaves a hidden action owner polling without consuming verb shortcuts', async () => {
+    renderScreen(ready([GROUPON, LINKEDIN]), undefined, { presentation: 'guided', active: false });
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => expect(useTriageStore.getState().pendingAction).toBeNull());
+  });
+  it('opens accurate guided keyboard help and keeps shortcuts inert while it owns the keyboard', async () => {
+    renderScreen(ready([GROUPON, LINKEDIN]), undefined, { presentation: 'guided' });
+    fireEvent.keyDown(window, { key: '?' });
+    const help = await screen.findByRole('dialog');
+    expect(within(help).getByRole('heading', { name: 'Keyboard shortcuts' })).toBeInTheDocument();
+    expect(within(help).queryByText('Skip to the next sender')).toBeNull();
+    expect(within(help).queryByText('Open or close a list row')).toBeNull();
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(useTriageStore.getState().pendingAction).toBeNull();
+    expect(cardTitle()).toBe(GROUPON.senderName);
   });
 });

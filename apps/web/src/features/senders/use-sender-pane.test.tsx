@@ -68,6 +68,6 @@ describe('sender pane navigation', () => {
     rerender();
     expect(result.current.senderId).toBe('restored');
     act(() => result.current.navigateTo('restored', 'replace'));
-    expect(router.replace).toHaveBeenCalledWith('/senders/restored');
+    expect(router.replace).toHaveBeenCalledWith('/senders/restored?from=senders_table');
   });
 });

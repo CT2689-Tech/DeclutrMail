@@ -13,6 +13,7 @@ describe('app destinations surviving login', () => {
     '/settings?cancelDeletion=1',
     '/settings#mailbox-mb-123',
     '/quiet',
+    '/admin/acquisition',
     '/brief?date=2026-10-10',
     '/onboarding?mailbox=mb-123&reconnect=1',
   ])('preserves %s', (path) => {
@@ -40,6 +41,21 @@ describe('app destinations surviving login', () => {
       '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Ds-1',
     );
     expect(parseUpgradeReturnTo('/billing')).toBeUndefined();
+  });
+  it('preserves the one-time Pass choice through login and onboarding recovery', () => {
+    const path = '/billing?plan=plus&cycle=annual&offer=pass_onetime';
+    expect(parseAppReturnTo(path)).toBe(path);
+    expect(parseBillingReturnTo(path)).toBe(path);
+    expect(parseAppReturnTo(`${path}&from=%2Fsenders`)).toBe(`${path}&from=%2Fsenders`);
+  });
+  it.each([
+    '/billing?plan=plus&cycle=annual&offer=unknown',
+    '/billing?plan=pro&cycle=annual&offer=pass_onetime',
+    '/billing?plan=plus&cycle=monthly&offer=pass_onetime',
+    '/billing?offer=pass_onetime',
+    '/billing?plan=plus&cycle=annual&offer=pass_onetime&offer=pass_onetime',
+  ])('rejects invalid or conflicting one-time offer intent: %s', (path) => {
+    expect(parseAppReturnTo(path)).toBeUndefined();
   });
   it('keeps a Paddle transaction id on billing', () => {
     expect(parseAppReturnTo('/billing?_ptxn=txn_test')).toBe('/billing?_ptxn=txn_test');

@@ -126,11 +126,14 @@ describe('buildCatalog', () => {
     expect(PLUS_ANNUAL_2026_10.paddlePriceId).toBe('pri_01m4qk99878y7jynh1h00jfhy8');
     expect(OFFERS.backlogPass.price.paddlePriceId).toBe('pri_01m4qkayqz3t54gdh9jq5b8ypq');
     expect(PROMO_DISCOUNT_IDS.live).toBe('FILL_ME');
-    expect(checkoutDiscountId(sandboxEnv)).toBe(PROMO_DISCOUNT_IDS.sandbox);
-    expect(checkoutDiscountId(sandboxEnv, SANDBOX_PRICE_IDS.plus_annual)).toBe(
+    const activePromoTime = Date.parse('2026-10-18T12:00:00Z');
+    expect(checkoutDiscountId(sandboxEnv, undefined, activePromoTime)).toBe(
       PROMO_DISCOUNT_IDS.sandbox,
     );
-    expect(checkoutDiscountId(sandboxEnv, 'pri_legacy')).toBeNull();
+    expect(checkoutDiscountId(sandboxEnv, SANDBOX_PRICE_IDS.plus_annual, activePromoTime)).toBe(
+      PROMO_DISCOUNT_IDS.sandbox,
+    );
+    expect(checkoutDiscountId(sandboxEnv, 'pri_legacy', activePromoTime)).toBeNull();
 
     const liveEnv = { PRICING_V2: 'true', PADDLE_ENV: 'production' } as NodeJS.ProcessEnv;
     const live = new BillingCatalog(buildCatalog(liveEnv), 0, passPriceFromEnv(liveEnv));

@@ -1,13 +1,13 @@
 import { act } from '@testing-library/react';
 import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
-import { dehydrate, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { BillingSubscription } from '@declutrmail/shared/contracts';
+import { dehydrate, hydrate, QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { BillingInvoiceList, BillingSubscription } from '@declutrmail/shared/contracts';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { priceLineFor } from '@/features/marketing/pricing/pricing-model';
-import { QueryHydrationBoundary } from '@/lib/query-hydration-boundary';
+import { QueryHydrationBoundary, SERVER_STREAM_PLACEHOLDER } from '@/lib/query-hydration-boundary';
 
 import { billingSubscriptionQueryOptions } from './api/query-options';
 import { billingKeys } from './api/query-keys';
@@ -115,7 +115,8 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
   expect(html).toContain('aria-pressed="true"');
   expect(html).toContain('>Annual');
   expect(html).toContain(annualLine('plus'));
-  expect(html).toContain(annualLine('pro'));
+  expect(html).not.toContain(annualLine('pro'));
+  expect(html).toContain('Current access');
   expect(html).not.toContain('Loading billing');
 
   // The app shell can start this read while billing/loading.tsx is still
@@ -158,7 +159,8 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
     const annual = container.querySelector('[data-testid="cycle-toggle"] [aria-pressed="true"]');
     expect(annual?.textContent).toContain('Annual');
     expect(container.textContent).toContain(annualLine('plus'));
-    expect(container.textContent).toContain(annualLine('pro'));
+    expect(container.textContent).not.toContain(annualLine('pro'));
+    expect(container.textContent).toContain('Current access');
     expect(container.textContent).not.toContain('Loading billing');
   } finally {
     await act(async () => root?.unmount());
@@ -167,3 +169,71 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
     client.clear();
   }
 });
+
+it.each([0, 6])(
+  'hydrates the full billing screen with %i streamed invoices without losing the placeholder',
+  async (invoiceCount) => {
+    stubMatchMedia();
+    const invoices: BillingInvoiceList = {
+      invoices: Array.from({ length: invoiceCount }, (_, index) => ({
+        id: `txn_${index}`,
+        provider: 'paddle',
+        issuedAt: '2026-05-01T00:00:00.000Z',
+        amount: '1900',
+        currencyCode: 'USD',
+        status: 'paid',
+        hostedUrl: null,
+        documentAvailable: true,
+      })),
+      unavailableProviders: [],
+      truncated: false,
+      omittedRows: 0,
+    };
+    const source = new QueryClient();
+    source.setQueryData(billingKeys.subscription(), COMPLIMENTARY_PRO);
+    source.setQueryData(billingKeys.invoices(), invoices);
+    const state = dehydrate(source);
+    const streamed = state.queries.find(
+      (query) => query.queryKey.join('|') === billingKeys.invoices().join('|'),
+    );
+    if (!streamed) throw new Error('missing invoice query');
+    streamed.meta = { [SERVER_STREAM_PLACEHOLDER]: true };
+    const tree = (client: QueryClient) => (
+      <QueryClientProvider client={client}>
+        <BillingScreen pricingV2 invoiceHistory={<BillingInvoiceHistoryGate />} />
+      </QueryClientProvider>
+    );
+    const server = new QueryClient();
+    hydrate(server, state);
+    const html = renderToString(tree(server));
+    expect(html).toContain('Loading invoices');
+    expect(html).not.toContain('Download');
+    const client = new QueryClient();
+    hydrate(client, state);
+    const container = document.createElement('div');
+    document.body.append(container);
+    container.innerHTML = html;
+    const errors: unknown[] = [];
+    let root!: ReturnType<typeof hydrateRoot>;
+    try {
+      await act(async () => {
+        root = hydrateRoot(container, tree(client), {
+          onRecoverableError: (error) => errors.push(error),
+        });
+      });
+      expect(errors).toEqual([]);
+      expect(container.querySelectorAll('[data-testid="invoice-history"] button').length).toBe(
+        invoiceCount,
+      );
+      expect(container.querySelector('nav[aria-label="On this page"]') !== null).toBe(
+        invoiceCount > 5,
+      );
+    } finally {
+      await act(async () => root?.unmount());
+      container.remove();
+      source.clear();
+      server.clear();
+      client.clear();
+    }
+  },
+);

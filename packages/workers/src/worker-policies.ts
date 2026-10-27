@@ -78,7 +78,7 @@ export interface WorkerPolicyConfig {
 }
 
 export const WORKER_POLICIES = {
-  /** Pub/Sub / Stripe webhooks — keyed on the webhook event id (D225). */
+  /** Pub/Sub / billing webhooks — keyed on the webhook event id (D225). */
   webhookPolicy: {
     maxAttempts: 5,
     backoff: { type: 'exponential', delayMs: 1_000 },

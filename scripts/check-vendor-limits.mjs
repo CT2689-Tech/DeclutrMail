@@ -82,6 +82,8 @@ import { budgetStatus } from './gcp-budget-status.mjs';
  */
 
 import { checkGcpBillingExport } from './gcp-billing-export.mjs';
+import { assessVercelSpend, readVercelBudget } from './vercel-spend-guard.mjs';
+import { paddleWebhookHealth, paddleMonitorExpiry } from './paddle-webhook-monitor.mjs';
 import { execFile } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -515,7 +517,24 @@ export async function checkAnthropic() {
 }
 
 export async function checkVercel() {
-  const warnUsd = envNum('VERCEL_MTD_COST_WARN_USD', 20);
+  const team = process.env.VERCEL_TEAM_ID;
+  const headers = { Authorization: `Bearer ${process.env.VERCEL_TOKEN}` };
+  // These are the same read-only contracts used by `vercel budgets inspect`.
+  // Current-cycle on-demand spend excludes seats and monthly add-ons. Calendar
+  // FOCUS charges remain a separate finance observation, not the pause budget.
+  const budget = readVercelBudget(
+    await httpJson(
+      `https://api.vercel.com/v1/budgets?scope=team&teamId=${encodeURIComponent(team)}`,
+      { headers },
+    ),
+    team,
+  );
+  const spend = await readKeeping(budget.causes, async () =>
+    assessVercelSpend(
+      budget,
+      await httpJson(`https://api.vercel.com/teams/${encodeURIComponent(team)}/spend`, { headers }),
+    ),
+  );
   const url = new URL('https://api.vercel.com/v1/billing/charges');
   url.searchParams.set('from', monthStartIso());
   url.searchParams.set('to', new Date().toISOString());
@@ -526,22 +545,40 @@ export async function checkVercel() {
   // 07-26), leaving Vercel spend unverified the entire time. The path itself
   // is fine — unauthenticated it answers 403 in ~88ms, so it is the response
   // body that is slow, not resolution. Give it its own budget.
-  const text = await httpText(url.toString(), {
-    headers: { Authorization: `Bearer ${process.env.VERCEL_TOKEN}` },
-    timeoutMs: envNum('VERCEL_TIMEOUT_MS', 45_000),
-  });
+  const text = await readKeeping(spend.causes, () =>
+    httpText(url.toString(), {
+      headers,
+      timeoutMs: envNum('VERCEL_TIMEOUT_MS', 45_000),
+    }),
+  );
   // Response is FOCUS v1.3 JSONL — one charge object per line.
   let usd = 0;
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    const row = JSON.parse(line);
-    if (row.BillingCurrency !== 'USD') throw new Error('Unexpected Vercel billing currency');
-    usd += finiteNumber(row.BilledCost, 'Vercel BilledCost');
+  await readKeeping(spend.causes, () => {
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      const row = JSON.parse(line);
+      if (row.BillingCurrency !== 'USD') throw new Error('Unexpected Vercel billing currency');
+      usd += finiteNumber(row.BilledCost, 'Vercel BilledCost');
+    }
+  });
+  const causes = [...spend.causes];
+  // Preserve an explicitly configured, independent calendar-month warning.
+  if (process.env.VERCEL_MTD_COST_WARN_USD) {
+    const warnUsd = envNum('VERCEL_MTD_COST_WARN_USD', 20);
+    if (!(warnUsd > 0)) throw new Error('Invalid Vercel calendar warning');
+    causes.push({
+      ...gauge(usd, warnUsd),
+      text: `Calendar MTD billed $${usd.toFixed(2)} (explicit warn $${warnUsd})`,
+      value: usd,
+    });
   }
   return {
-    ...gauge(usd, warnUsd),
+    status: worstStatus(causes),
+    usagePct: spend.usagePct,
+    usage: spend.usage,
     costMtdUsd: usd,
-    detail: `MTD billed $${usd.toFixed(2)} (warn $${warnUsd})`,
+    detail: `${causes.map((c) => c.text).join('; ')}; calendar MTD billed $${usd.toFixed(2)} incl. subscriptions (separate measure)`,
+    causes,
   };
 }
 
@@ -736,31 +773,39 @@ export async function checkPosthog() {
   };
 }
 
-async function checkPaddle() {
+export async function checkPaddle() {
   // Paddle is a REVENUE vendor (merchant-of-record, % fees) — the
   // operational risk is not spend but silent webhook death: Paddle
   // auto-deactivates a notification destination after sustained
-  // delivery failures, after which subscription tier flips stop
-  // arriving with zero error on our side. The check asserts >= 1
-  // ACTIVE destination exists (D117).
+  // delivery failures. Verify the exact production callback, platform
+  // traffic and every event the adapter consumes, using its dedicated
+  // notification_setting.read credential (D117).
   const base =
     process.env.PADDLE_ENV === 'production'
       ? 'https://api.paddle.com'
       : 'https://sandbox-api.paddle.com';
+  const environment = process.env.PADDLE_ENV || 'sandbox';
+  if (!['production', 'sandbox'].includes(environment))
+    throw new Error('Unknown Paddle monitoring environment');
+  const key = process.env.PADDLE_WATCHDOG_API_KEY;
+  if (
+    (environment === 'production' && !key?.startsWith('pdl_live_')) ||
+    (environment === 'sandbox' && !key?.startsWith('pdl_sdbx_'))
+  )
+    throw new Error('Paddle watchdog key does not match its configured environment');
   const res = await httpJson(`${base}/notification-settings`, {
-    headers: { Authorization: `Bearer ${process.env.PADDLE_API_KEY}` },
+    headers: { Authorization: `Bearer ${key}` },
   });
-  const destinations = Array.isArray(res?.data) ? res.data : [];
-  const active = destinations.filter((d) => d.active === true);
-  if (active.length === 0) {
-    return {
-      status: 'BREACH',
-      detail: `no ACTIVE webhook destination (${destinations.length} total) — subscription events are NOT being delivered`,
-    };
-  }
+  const health = paddleWebhookHealth(res);
+  const expiry = await readKeeping(health.causes, () =>
+    paddleMonitorExpiry(process.env.PADDLE_WATCHDOG_KEY_EXPIRES_ON),
+  );
+  const causes = [...health.causes, ...expiry.causes];
   return {
-    status: 'OK',
-    detail: `${active.length} active webhook destination(s) of ${destinations.length}`,
+    status: worstStatus(causes),
+    detail: causes.map((c) => c.text).join('; '),
+    usage: { ...health.usage, ...expiry.usage },
+    causes,
   };
 }
 
@@ -890,7 +935,12 @@ const VENDORS = [
   { name: 'GitHub Actions', requires: ['GH_BILLING_PAT'], check: checkGithubActions },
   // Billing providers (D117, ADR-0023): revenue vendors — the check
   // guards webhook-delivery health, not spend (see each check's note).
-  { name: 'Paddle (webhooks)', requires: ['PADDLE_API_KEY'], check: checkPaddle },
+  {
+    name: 'Paddle (webhooks)',
+    requires: ['PADDLE_WATCHDOG_API_KEY'],
+    requiredInProduction: true,
+    check: checkPaddle,
+  },
   {
     name: 'Razorpay (webhooks)',
     requires: ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET'],
@@ -913,7 +963,14 @@ function errorRow(name, detail, err) {
 export async function runVendor(vendor) {
   const missing = vendor.requires.filter((k) => !process.env[k]);
   if (missing.length > 0) {
-    return { name: vendor.name, status: 'UNCONFIGURED', detail: `missing ${missing.join(', ')}` };
+    return {
+      name: vendor.name,
+      status:
+        vendor.requiredInProduction && process.env.PADDLE_ENV === 'production'
+          ? 'ERROR'
+          : 'UNCONFIGURED',
+      detail: `missing ${missing.join(', ')}`,
+    };
   }
   try {
     return { name: vendor.name, ...(await vendor.check()) };

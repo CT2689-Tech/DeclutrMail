@@ -7,16 +7,17 @@ const expected = new Map([
   ['sender-policy.spec.ts', 1],
   ['protection-review.spec.ts', 1],
   ['followups-dismiss.spec.ts', 1],
-  ['autopilot-pages.spec.ts', 1],
+  ['autopilot-pages.spec.ts', 2],
   ['later-recovery.spec.ts', 1],
   ['quiet-hours.spec.ts', 1],
   ['brief-preview.spec.ts', 1],
   ['senders-search-typing.spec.ts', 3],
-  ['public-journeys.spec.ts', 2],
+  ['public-journeys.spec.ts', 3],
   ['cookie-consent.spec.ts', 2],
   ['journey-recovery.spec.ts', 4],
   ['unsubscribe-backlog.spec.ts', 4],
   ['home-next-step.spec.ts', 1],
+  ['manual-delete-previews.spec.ts', 4],
 ]);
 const report = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const counts = new Map();

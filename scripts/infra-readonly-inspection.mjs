@@ -52,6 +52,9 @@ const USAGE_FIELDS = new Set([
   'gcp_logging_mtd_usd',
   'gcp_pubsub_mtd_usd',
   'gcp_bigquery_mtd_usd',
+  'vercel_cycle_spend_usd',
+  'vercel_on_demand_budget_usd',
+  'vercel_pause_enabled',
 ]);
 const finite = (n) => typeof n === 'number' && Number.isFinite(n);
 function requireField(ok) {

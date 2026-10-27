@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import '@/features/theme/app-light-theme.css';
 import { notFound } from 'next/navigation';
 
 import { HomePreview } from '@/features/home/home-preview';
@@ -23,6 +24,7 @@ export default async function HomePreviewPage({
   const state = parseHomePreviewState(typeof raw === 'string' ? raw : undefined);
   return (
     <>
+      <span id="dm-app-theme" hidden />
       <ThemeScript />
       <HomePreview state={state} />
     </>

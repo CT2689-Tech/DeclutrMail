@@ -29,6 +29,7 @@ import { ToastHost, useUiStore } from '@declutrmail/shared';
 import userEvent from '@testing-library/user-event';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { AutopilotRoute, AutopilotScreen } from './autopilot-screen';
+import { FIXTURE_RULES } from './sender-rule-browser-data.fixture';
 import { ActivateRuleModal } from './activate-rule-modal';
 import { ApproveConfirmModal } from './approve-confirm-modal';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -220,9 +221,11 @@ describe('Autopilot pending pages', () => {
         />
       </QueryClientProvider>,
     );
-    expect(screen.getByText('No suggestions on this page')).toBeInTheDocument();
-    expect(screen.queryByText('No pending suggestions')).not.toBeInTheDocument();
-    expect(screen.getByText(/on this page · 10 waiting/)).toHaveTextContent('0 on this page');
+    expect(screen.getByText('No matches on this page')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs review')).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/recorded sender matches on this page · 10 at last check/),
+    ).toHaveTextContent('0 recorded sender matches on this page');
     fireEvent.click(screen.getByRole('button', { name: 'Newest suggestions' }));
     expect(newest).toHaveBeenCalledOnce();
   });
@@ -270,24 +273,24 @@ describe('Autopilot pending pages', () => {
       },
     ]);
     const view = renderRoute();
-    expect(await screen.findByText(/on this page · 61 waiting at last check/)).toHaveTextContent(
-      '50 on this page',
-    );
+    expect(
+      await screen.findByText(/recorded sender match(?:es)? on this page · 61 at last check/),
+    ).toHaveTextContent('50 recorded sender matches on this page');
     expect(screen.queryByText('Older fixture')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Older suggestions' }));
-    expect(await screen.findByText('Couldn’t load pending suggestions')).toBeInTheDocument();
+    expect(await screen.findByText('Couldn’t load matches for review')).toBeInTheDocument();
     // Failed pages expose recovery; no stale first-page rows become actionable.
     expect(screen.queryByRole('checkbox', { name: /Select suggestion/ })).not.toBeInTheDocument();
     fireEvent.click(
       within(
-        screen.getByText('Couldn’t load pending suggestions').closest('[role="alert"]')!,
+        screen.getByText('Couldn’t load matches for review').closest('[role="alert"]')!,
       ).getByRole('button', { name: /Retry|Try again/i }),
     );
     expect(await screen.findByText('Older fixture')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Older suggestions' })).toBeDisabled();
-    expect(screen.getByText(/on this page · 61 waiting at last check/)).toHaveTextContent(
-      '1 on this page',
-    );
+    expect(
+      screen.getByText(/recorded sender match(?:es)? on this page · 61 at last check/),
+    ).toHaveTextContent('1 recorded sender match on this page');
     fireEvent.click(screen.getByRole('button', { name: 'Newest suggestions' }));
     await waitFor(() => expect(screen.queryByText('Older fixture')).not.toBeInTheDocument());
     expect(requests).toContain('opaque-next');
@@ -308,9 +311,330 @@ describe('Autopilot pending pages', () => {
       </QueryClientProvider>,
     );
     await waitFor(() =>
-      expect(screen.getByText(/on this page · 61 waiting/)).toHaveTextContent('50 on this page'),
+      expect(
+        screen.getByText(/recorded sender match(?:es)? on this page · 61 at last check/),
+      ).toHaveTextContent('50 recorded sender matches on this page'),
     );
     expect(screen.queryByText('Older fixture')).not.toBeInTheDocument();
+  });
+});
+
+describe('Quiet watch rule inventory', () => {
+  afterEach(() => resetFetchStub());
+
+  it('opens on review, preserves selections and rule drafts across views, and creates only on save', async () => {
+    const writes = vi.fn();
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => jsonOk({ data: PRESET_RULES_OBSERVE }),
+      },
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: PENDING_SUGGESTIONS }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/senders',
+        respond: () => jsonOk({ data: { senders: [], nextCursor: null } }),
+      },
+      {
+        method: 'PATCH',
+        path: `/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}`,
+        respond: () => {
+          writes();
+          return jsonServerError();
+        },
+      },
+    ]);
+    renderRoute();
+    const queue = await screen.findByRole('heading', { name: 'Needs review' });
+    const select = await screen.findByRole('checkbox', {
+      name: 'Select suggestion for Bargain Bulletin',
+    });
+    expect(queue).toBeVisible();
+    expect(screen.queryByRole('complementary', { name: 'Rule library' })).toBeNull();
+    fireEvent.click(select);
+    fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
+    expect(queue).not.toBeVisible();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Edit rule Review low-engagement senders for Archive' }),
+    );
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Rule name' }), {
+      target: { value: 'My draft rule' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Needs review' }));
+    expect(select).toBeChecked();
+    expect(
+      screen.getByRole('button', {
+        name: /Review selected suggestions from rule Review low-engagement/,
+      }),
+    ).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
+    expect(screen.getByRole('textbox', { name: 'Rule name' })).toHaveValue('My draft rule');
+    expect(writes).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Needs review' }));
+    fireEvent.click(screen.getByRole('button', { name: 'New rule' }));
+    expect(screen.getByRole('region', { name: 'Rule editor' })).toBeVisible();
+    expect(queue).not.toBeVisible();
+    expect(writes).not.toHaveBeenCalled();
+  });
+
+  it('offers ready sender-rule batches on review even with no preset matches', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => jsonOk({ data: PRESET_RULES_OBSERVE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/sender-rules',
+        respond: () => jsonOk({ data: [FIXTURE_RULES[0]] }),
+      },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    renderRoute();
+    expect(
+      await screen.findByRole('button', { name: `Preview batch for ${FIXTURE_RULES[0]!.name}` }),
+    ).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Sender rule batches to review' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Nothing needs review' })).toBeNull();
+    expect(screen.queryByRole('complementary', { name: 'Rule library' })).toBeNull();
+  });
+
+  it('keeps failed custom match reads visible on review and retries without a false all-clear', async () => {
+    let failed = true;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => jsonOk({ data: PRESET_RULES_OBSERVE }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/sender-rules',
+        respond: () => (failed ? jsonServerError() : jsonOk({ data: [] })),
+      },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    renderRoute();
+    expect(await screen.findByText('Couldn’t check your saved rule matches.')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Nothing needs review' })).toBeNull();
+    failed = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry rules' }));
+    expect(await screen.findByRole('heading', { name: 'Nothing needs review' })).toBeVisible();
+  });
+
+  it('keeps successful custom review available when the independent preset read fails', async () => {
+    installFetchStub([
+      { method: 'GET', path: '/api/autopilot/rules', respond: () => jsonServerError() },
+      {
+        method: 'GET',
+        path: '/api/autopilot/sender-rules',
+        respond: () => jsonOk({ data: [FIXTURE_RULES[0]] }),
+      },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    renderRoute();
+    expect(
+      await screen.findByRole('button', { name: `Preview batch for ${FIXTURE_RULES[0]!.name}` }),
+    ).toBeEnabled();
+    expect(screen.getByRole('heading', { name: 'We couldn’t load your Autopilot' })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Nothing needs review' })).toBeNull();
+  });
+
+  it('does not call the whole inventory paused when a custom rule is watching', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => jsonOk({ data: [{ ...AUTO_ARCHIVE_LOW_ENGAGEMENT, mode: 'paused' }] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/sender-rules',
+        respond: () => jsonOk({ data: [FIXTURE_RULES[0]] }),
+      },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    renderRoute();
+    expect(await screen.findByText('1 watching')).toBeVisible();
+    expect(screen.queryByText(/Every rule is paused/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Paused since/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
+    const library = screen.getByRole('complementary', { name: 'Rule library' });
+    expect(
+      within(library).getByRole('heading', { name: 'Your rules' }).parentElement,
+    ).toHaveTextContent('2');
+  });
+
+  it('disables cached preset settings after a failed read and recovers with Retry', async () => {
+    let fail = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/autopilot/rules',
+        respond: () => (fail ? jsonServerError() : jsonOk({ data: [AUTO_ARCHIVE_LOW_ENGAGEMENT] })),
+      },
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+    ]);
+    const view = renderRoute();
+    fireEvent.click(await screen.findByRole('button', { name: /^Your rules/ }));
+    fireEvent.click(
+      await screen.findByRole('button', {
+        name: 'Edit rule Review low-engagement senders for Archive',
+      }),
+    );
+    expect(screen.getByLabelText('Confidence above (%)')).toBeEnabled();
+    fail = true;
+    await view.client.invalidateQueries({ queryKey: ['autopilot', 'rules'] });
+    await screen.findByRole('heading', { name: 'We couldn’t load your Autopilot' });
+    expect(screen.getByLabelText('Confidence above (%)')).toBeDisabled();
+    expect(screen.getByRole('switch')).toBeDisabled();
+    expect(
+      screen.getByRole('button', {
+        name: 'Preview matches for rule Review low-engagement senders for Archive',
+      }),
+    ).toBeDisabled();
+    expect(screen.getByRole('heading', { name: 'Your rules' }).parentElement).toHaveTextContent(
+      '—',
+    );
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: /Try again/i }));
+    await waitFor(() => expect(screen.getByLabelText('Confidence above (%)')).toBeEnabled());
+  });
+
+  it('lists the two watching presets without custom rules and edits the real threshold', async () => {
+    const presets = [AUTO_ARCHIVE_LOW_ENGAGEMENT, AUTO_UNSUBSCRIBE_NOISY];
+    const patches: unknown[] = [];
+    installFetchStub([
+      { method: 'GET', path: '/api/autopilot/rules', respond: () => jsonOk({ data: presets }) },
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+      {
+        method: 'PATCH',
+        path: `/api/autopilot/rules/${AUTO_ARCHIVE_LOW_ENGAGEMENT.id}`,
+        respond: async (request) => {
+          patches.push(await request.json());
+          return jsonOk({ data: { ...AUTO_ARCHIVE_LOW_ENGAGEMENT, confidenceThreshold: 0.8 } });
+        },
+      },
+    ]);
+    renderRoute();
+    fireEvent.click(await screen.findByRole('button', { name: /^Your rules/ }));
+    const library = await screen.findByRole('complementary', { name: 'Rule library' });
+    expect(
+      await within(library).findByText('Review low-engagement senders for Archive'),
+    ).toBeVisible();
+    expect(within(library).getByText(AUTO_UNSUBSCRIBE_NOISY.name)).toBeVisible();
+    expect(
+      within(library).getByRole('heading', { name: 'Your rules' }).parentElement,
+    ).toHaveTextContent('2');
+    expect(
+      screen.queryByRole('heading', { name: 'Your first sender rule' }),
+    ).not.toBeInTheDocument();
+    expect(within(library).queryByLabelText('Confidence above (%)')).not.toBeInTheDocument();
+    fireEvent.click(
+      within(library).getByRole('button', {
+        name: 'Edit rule Review low-engagement senders for Archive',
+      }),
+    );
+    const confidence = within(library).getByLabelText('Confidence above (%)');
+    fireEvent.change(confidence, { target: { value: '80' } });
+    fireEvent.click(within(library).getByRole('button', { name: 'Save rule' }));
+    await waitFor(() =>
+      expect(patches).toEqual([
+        {
+          configuration: {
+            version: 1,
+            name: 'Review low-engagement senders for Archive',
+            actionKind: 'archive',
+            reach: 'inbox_only',
+            conditions: { kind: 'recommendation', verdict: 'archive', confidence: 0.8 },
+          },
+        },
+      ]),
+    );
+    fireEvent.change(within(library).getByRole('searchbox', { name: 'Search rules' }), {
+      target: { value: 'unsubscribe' },
+    });
+    await waitFor(() =>
+      expect(
+        within(library).queryByText('Review low-engagement senders for Archive'),
+      ).not.toBeInTheDocument(),
+    );
+    expect(within(library).getByText(AUTO_UNSUBSCRIBE_NOISY.name)).toBeVisible();
   });
 });
 
@@ -324,6 +648,7 @@ describe('AutopilotScreen — edge states', () => {
       release = resolve;
     });
     installFetchStub([
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
       {
         method: 'GET',
         path: '/api/autopilot/rules',
@@ -346,21 +671,26 @@ describe('AutopilotScreen — edge states', () => {
     renderRoute();
     try {
       expect(
-        await screen.findByRole('list', { name: 'Autopilot rules' }, { timeout: 300 }),
+        await screen.findByRole(
+          'list',
+          { name: 'Autopilot rules', hidden: true },
+          { timeout: 300 },
+        ),
       ).toBeInTheDocument();
       expect(screen.getByText('Loading Autopilot suggestions')).toBeInTheDocument();
-      expect(screen.queryByText('No pending suggestions')).not.toBeInTheDocument();
+      expect(screen.queryByText('Nothing needs review')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /Approve all/ })).not.toBeInTheDocument();
     } finally {
       release();
     }
-    expect(await screen.findByText('No pending suggestions')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs review')).toBeInTheDocument();
   });
 
   it('retries a failed suggestion section without replacing the rules', async () => {
     let ruleReads = 0;
     let suggestionReads = 0;
     installFetchStub([
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
       {
         method: 'GET',
         path: '/api/autopilot/rules',
@@ -385,12 +715,12 @@ describe('AutopilotScreen — edge states', () => {
     ]);
     renderRoute();
     expect(
-      await screen.findByRole('heading', { name: 'Couldn’t load pending suggestions' }),
+      await screen.findByRole('heading', { name: 'Couldn’t load matches for review' }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('list', { name: 'Autopilot rules' })).toBeInTheDocument();
-    expect(screen.queryByText('No pending suggestions')).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Autopilot rules', hidden: true })).toBeInTheDocument();
+    expect(screen.queryByText('Nothing needs review')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /try again/i }));
-    expect(await screen.findByText('No pending suggestions')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing needs review')).toBeInTheDocument();
     expect(ruleReads).toBe(1);
     expect(suggestionReads).toBe(2);
   });
@@ -454,7 +784,7 @@ describe('AutopilotScreen — edge states', () => {
 
   it('renders the empty-pending state when rules exist but nothing matched', () => {
     renderScreen({ kind: 'ready', rules: PRESET_RULES_OBSERVE, suggestions: [] });
-    expect(screen.getByRole('heading', { name: /no pending suggestions/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /nothing needs review/i })).toBeInTheDocument();
   });
 
   it('groups pending suggestions under their rule (D104)', () => {
@@ -485,7 +815,7 @@ describe('AutopilotScreen — edge states', () => {
       name: /pending suggestions from review low-engagement senders for archive — rows/i,
     });
     expect(within(group).getAllByRole('listitem')).toHaveLength(8);
-    fireEvent.click(screen.getByRole('button', { name: 'Show all 50 suggestions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show all 50 matches' }));
     expect(within(group).getAllByRole('listitem')).toHaveLength(50);
     // Section header says 50+ — a page count, not a total claim.
     expect(screen.getByText(/^50\+$/)).toBeInTheDocument();
@@ -828,7 +1158,9 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(dialog).getByText(/no mail moves until you approve/i)).toBeInTheDocument();
     expect(within(dialog).queryByText(/act now/i)).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Turn on' }));
-    await waitFor(() => expect(observed).toEqual([{ enabled: true, mode: 'observe' }]));
+    await waitFor(() =>
+      expect(observed).toEqual([{ enabled: true, mode: 'observe', expectedVersion: 1 }]),
+    );
   });
 
   it('offers review only when turning on low-engagement Archive', async () => {
@@ -860,7 +1192,9 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(within(dialog).getByText(/no mail moves until you approve/i)).toBeInTheDocument();
     expect(within(dialog).queryByRole('radio', { name: /act now/i })).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Turn on' }));
-    await waitFor(() => expect(observed).toEqual([{ enabled: true, mode: 'observe' }]));
+    await waitFor(() =>
+      expect(observed).toEqual([{ enabled: true, mode: 'observe', expectedVersion: 1 }]),
+    );
   });
 
   it('“Act now” (the default choice) patches enabled + mode=active in ONE request', async () => {
@@ -895,7 +1229,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     expect(observed[0]!.path).toBe(`/api/autopilot/rules/${LONG_DORMANT_UNSUBSCRIBE.id}`);
     // ONE patch, both fields. Two sequential calls would leave a window
     // where the rule is on in whichever mode the row happened to hold.
-    expect(observed[0]!.body).toEqual({ enabled: true, mode: 'active' });
+    expect(observed[0]!.body).toEqual({ enabled: true, mode: 'active', expectedVersion: 1 });
   });
 
   it('“Watch first” patches enabled + mode=observe — a choice, not a tier', async () => {
@@ -927,7 +1261,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(watch);
 
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe', expectedVersion: 1 });
   });
 
   it('gates BOTH commit paths on the preview resolving (D226)', async () => {
@@ -1012,7 +1346,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
     await userEvent.click(confirm);
 
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe', expectedVersion: 1 });
   });
 
   it('shows the busy label for the commit that was chosen, not the other one', async () => {
@@ -1089,7 +1423,7 @@ describe('AutopilotScreen — rules management (D101)', () => {
 
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]).toEqual({ enabled: true, mode: 'observe' });
+    expect(observed[0]).toEqual({ enabled: true, mode: 'observe', expectedVersion: 1 });
   });
 
   it('keeps the modal open and the toggle Off when the commit fails', async () => {
@@ -1219,11 +1553,11 @@ describe('AutopilotScreen — rules management (D101)', () => {
     const panel = await screen.findByRole('region', {
       name: /current match preview for rule review low-engagement senders for archive/i,
     });
-    // The would-match count, out of the senders checked…
-    expect(within(panel).getByText(/12 of 148 senders checked match/i)).toBeInTheDocument();
-    // …and the one number a person can review now.
-    expect(within(panel).getByText('10')).toBeInTheDocument();
-    expect(within(panel).getByText('senders ready for review')).toBeInTheDocument();
+    expect(within(panel).getByText('12', { selector: 'strong' })).toBeInTheDocument();
+    expect(within(panel).getByText(/senders match this rule/)).toBeInTheDocument();
+    expect(within(panel).getByText(/148 senders checked/)).toBeInTheDocument();
+    expect(within(panel).getByText(/10 senders have email to Archive/)).toBeInTheDocument();
+    expect(within(panel).getByText(/2 matching senders have no Inbox email/)).toBeInTheDocument();
   });
 });
 
@@ -1482,7 +1816,7 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // The first-sweep dry-run rendered inside the sheet: the one number
     // up front, the activation report (no longer under its own heading)
     // in Details.
-    expect(within(dialog).getByText('senders actionable now')).toBeInTheDocument();
+    expect(within(dialog).getByText('senders eligible for Unsubscribe')).toBeInTheDocument();
     expect(within(dialog).getByText('10 unsubscribe requests')).toBeInTheDocument();
     expect(
       within(dialog).getByText('Stays where it is, including 74 inbox emails'),
@@ -1490,12 +1824,12 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
     // Said once per surface — in the note; the Details totals omit it.
     expect(within(dialog).getAllByText(/3 Protected senders are skipped/i)).toHaveLength(1);
     expect(within(dialog).getByText('34 matches')).toBeInTheDocument();
-    expect(within(dialog).getByText(/^100 actions, the rest wait/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/Up to 100 actions per day/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Unsubscribe requests can’t be undone/i)).toBeInTheDocument();
 
     await userEvent.click(confirm);
     await waitFor(() => expect(observed).toHaveLength(1));
-    expect(observed[0]!.body).toEqual({ mode: 'active' });
+    expect(observed[0]!.body).toEqual({ mode: 'active', expectedVersion: 1 });
   });
 
   it('keeps Confirm locked when the dry-run fails; retry re-fires it (D226)', async () => {
@@ -1530,6 +1864,43 @@ describe('AutopilotScreen — day-7 observe banner (D104)', () => {
 });
 
 describe('ActivateRuleModal — action-specific recovery', () => {
+  it('describes approved Delete batches with archived reach, without the unattended daily cap', () => {
+    render(
+      <ActivateRuleModal
+        rule={{
+          ...NEWSLETTER_GRAVEYARD,
+          actionKind: 'delete',
+          actionPayload: { reach: 'all_mail' },
+        }}
+        pendingCount={0}
+        pendingApproximate={false}
+        undoWindowDays={30}
+        preview={{
+          status: 'ready',
+          result: {
+            ...RULE_PREVIEW_RESULT,
+            actionableMessageCount: 2,
+            actionableSenderCount: 1,
+            reach: 'all_mail',
+          },
+        }}
+        onRetryPreview={() => undefined}
+        isActivating={false}
+        error={null}
+        onCancel={() => undefined}
+        onConfirm={() => undefined}
+      />,
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).toContain('Inbox + archived');
+    expect(dialog.textContent).toContain('5,000 emails');
+    expect(dialog.textContent).not.toContain('inbox email');
+    expect(dialog.textContent).not.toContain('Daily cap');
+    expect(
+      within(dialog).queryByRole('button', { name: 'Switch to Active' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('states that unsubscribe is irreversible and does not remove existing mail', () => {
     render(
       <ActivateRuleModal
@@ -2098,7 +2469,7 @@ describe('AutopilotScreen — approvals blocked on paused/off rules + Resume pre
     });
     expect(within(group).queryByRole('button', { name: /review all/i })).toBeNull();
     expect(within(group).queryByRole('button', { name: /review selected/i })).toBeNull();
-    expect(within(group).getByText(/paused.*resume the rule above/i)).toBeInTheDocument();
+    expect(within(group).getByText(/paused.*resume this rule/i)).toBeInTheDocument();
   });
 
   it('hides Approve buttons on a disabled rule’s suggestion group, explaining why', () => {
@@ -2112,7 +2483,7 @@ describe('AutopilotScreen — approvals blocked on paused/off rules + Resume pre
       name: /pending suggestions from review low-engagement senders for archive/i,
     });
     expect(within(group).queryByRole('button', { name: /review all/i })).toBeNull();
-    expect(within(group).getByText(/off.*resume the rule above/i)).toBeInTheDocument();
+    expect(within(group).getByText(/off.*enable this rule/i)).toBeInTheDocument();
   });
 
   it('Resume opens a preview naming waiting approvals; PATCHes mode=observe only after confirm', async () => {
@@ -2154,7 +2525,7 @@ describe('AutopilotScreen — approvals blocked on paused/off rules + Resume pre
     await userEvent.click(within(dialog).getByRole('button', { name: /^resume$/i }));
     await waitFor(() => expect(patched).toHaveLength(1));
     expect(patched[0]!.path).toBe(`/api/autopilot/rules/${paused.id}`);
-    expect(patched[0]!.body).toEqual({ mode: 'observe' });
+    expect(patched[0]!.body).toEqual({ mode: 'observe', expectedVersion: 1 });
   });
 
   it('Resume says nothing is waiting when there is nothing approved, but still requires confirmation', async () => {
@@ -2314,7 +2685,7 @@ describe('Autopilot rule status views', () => {
     const group = screen.getByRole('group', { name: 'Filter rules by status' });
     fireEvent.click(within(group).getByRole('button', { name: /^Acting/ }));
     expect(screen.getByText('No rules in this view')).toBeInTheDocument();
-    expect(screen.getByText('Pending suggestions')).toBeInTheDocument();
+    expect(screen.getByText('Needs review')).toBeInTheDocument();
     expect(within(group).getByRole('button', { name: /^Acting/ })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -2333,5 +2704,98 @@ describe('Autopilot rule status views', () => {
     });
     expect(screen.getByRole('button', { name: 'Paused or inactive · 1' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Acting · 0' })).toBeInTheDocument();
+  });
+});
+
+describe('built-in Delete batches', () => {
+  it('uses fresh matches in Your rules and restores visible focus if its preview opener disappears', async () => {
+    const preset = {
+      ...NEWSLETTER_GRAVEYARD,
+      actionKind: 'delete' as const,
+      actionPayload: { reach: 'all_mail' },
+      mode: 'observe' as const,
+      enabled: true,
+      version: 1,
+      observeDigest: { pendingTotal: 0, senders7d: 0, inboxMessagesNow: 0 },
+    };
+    let presets = [preset];
+    let failMatches = false;
+    installFetchStub([
+      { method: 'GET', path: '/api/autopilot/rules', respond: () => jsonOk({ data: presets }) },
+      { method: 'GET', path: '/api/autopilot/sender-rules', respond: () => jsonOk({ data: [] }) },
+      { method: 'GET', path: '/api/actions/active', respond: () => jsonOk({ data: [] }) },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pending-suggestions',
+        respond: () => jsonOk({ data: [] }),
+      },
+      {
+        method: 'GET',
+        path: '/api/autopilot/pattern-suggestion',
+        respond: () => jsonOk({ data: null }),
+      },
+      {
+        method: 'POST',
+        path: `/api/autopilot/rules/${preset.id}/preview`,
+        respond: () =>
+          failMatches
+            ? jsonServerError()
+            : jsonOk({
+                data: {
+                  ...RULE_PREVIEW_RESULT,
+                  actionableMessageCount: 2,
+                  actionableSenderCount: 1,
+                  reach: 'all_mail',
+                },
+              }),
+      },
+      {
+        method: 'POST',
+        path: `/api/autopilot/sender-rules/${preset.id}/preview`,
+        respond: () =>
+          jsonOk({
+            data: {
+              previewId: 'frozen',
+              ruleId: preset.id,
+              version: 1,
+              messageCount: 2,
+              totalEligibleCount: 2,
+              reach: 'all_mail',
+              action: 'delete',
+              olderThanDays: null,
+              senders: [],
+              expiresAt: new Date(Date.now() + 60000).toISOString(),
+              hasMore: false,
+            },
+          }),
+      },
+    ]);
+    const view = renderRoute();
+    expect(await screen.findByText(/2 emails eligible for Delete/)).toBeVisible();
+    expect(screen.queryByText('Nothing needs review')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /^Your rules/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'With matches' }));
+    failMatches = true;
+    await view.client.invalidateQueries({ queryKey: ['autopilot', 'delete-review'] });
+    expect(await screen.findByText('Some Delete matches couldn’t be checked.')).toBeVisible();
+    expect(screen.queryByText('No rules ready for review.')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Preview matches for rule Newsletter graveyard' }),
+    ).not.toBeInTheDocument();
+    failMatches = false;
+    fireEvent.click(screen.getByRole('button', { name: 'Retry matches' }));
+    const opener = await screen.findByRole('button', {
+      name: 'Preview matches for rule Newsletter graveyard',
+    });
+    opener.focus();
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText(/Inbox \+ archived/)).toBeVisible();
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeEnabled();
+    presets = [];
+    await view.client.invalidateQueries({ queryKey: ['autopilot', 'rules'] });
+    await waitFor(() => expect(opener).not.toBeInTheDocument());
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Autopilot' })).toHaveFocus());
   });
 });

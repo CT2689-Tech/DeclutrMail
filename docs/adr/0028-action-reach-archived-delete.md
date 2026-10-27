@@ -242,3 +242,67 @@ archived" choice appears, defaulting to Inbox only. Nowhere else.
 No API, worker or schema change for this amendment — Triage's Delete
 already rides `enqueueComposite`, which has accepted `reach` since the
 original decision.
+
+## Amendment 2026-10-24 — durable placement before Delete
+
+The founder authorized closing the crash/sync degradation described above.
+Before the first Gmail request, the worker now measures Inbox membership
+and atomically saves it with `status=executing` in versioned, server-only
+`action_jobs.selector.deleteUndo` metadata. The snapshot includes its bound
+message IDs and the Inbox subset. This supersedes terminal-transaction-only
+capture in decision 5 and the known degradation for newly executed work.
+
+An untouched root can refresh its snapshot before sending. A possibly
+applied retry or reviewed recovery inherits the original snapshot, can
+narrow its target set, and cannot expand it. Recovery already copies the
+selector; no SQL migration or extra provider fields are required. The
+terminal transaction copies the durable partition into the existing Undo
+journal. Undo publication and its retention window remain unchanged.
+
+Legacy in-flight work without a snapshot has unknown original placement.
+It is explicitly recorded as unknown and restores to Archive conservatively,
+regardless of a mutable reach value. No post-Delete mirror is treated as
+proof of original placement. Existing completed journals keep their prior
+reverse semantics. A skipped provider hook retains its existing error
+reporting and cannot reconstruct placement after the request.
+
+## Amendment 2026-10-25 — reviewed built-in Autopilot Delete batches
+
+The founder requested Delete and Inbox + archived in existing-rule customization.
+Built-in rules may now use Delete through the same explicit, versioned,
+frozen-message preview and approval pipeline as sender-list rules. Delete never
+runs unattended and never uses the legacy sender-level approval sweep. Inbox only
+remains the default; only Delete may include archived mail. Archive/Later and
+Unsubscribe retain their existing reach semantics.
+
+Each accepted batch is bounded to 100 senders and 5,000 message IDs, with any
+remainder disclosed before confirmation. Schedule defers those exact IDs; later
+arrivals are not added. Preset material edits are refused while accepted work is
+queued or executing. Pause still revokes admission. Delete reuses the existing
+durable original-placement snapshot and normal Undo restoration. This supersedes
+the earlier statement that Autopilot has no per-run preview or Delete capability;
+it does not authorize unattended archived-mail cleanup.
+
+## Amendment 2026-10-25 — manual Delete starts at Any age
+
+The founder found a sender showing two inbox emails whose Delete preview opened
+with zero matches because its implicit 180-day age filter excluded both. The
+approved default is now **Any age across all manual Delete previews**, including
+Unsubscribe + Delete and the interactive demo. Inbox only remains the default
+reach; including archived email remains an explicit choice. Mandatory previews,
+confirmation, protected exclusions and Undo are unchanged. Users can still select
+an older-only filter, which must govern both the displayed count and the request.
+Cancel/reopen restores Any age and Inbox only. Saved automation rules retain their
+chosen age filters; this amendment changes no automation, API or worker defaults.
+
+## Amendment 2026-10-25 — inline Unsubscribe + Delete scope parity
+
+Triage's remembered-preference preview must offer Include archived email for
+Unsubscribe + Delete just like its full sheet and Senders. Presentation does not
+change action scope: the choice starts off, follows the selected age, uses the
+selected scope for count/Details/Gmail verification and travels with both button
+and keyboard confirmation. Missing or stale all-mail counts never fall back to
+inbox counts. Changing cleanup mode or reopening resets reach to Inbox only.
+Archive, Unsubscribe only and onboarding remain inbox-scoped. The control is
+assembled by the authenticated caller and passed as a node so public demo imports
+do not acquire authenticated preview code.

@@ -35,6 +35,7 @@ import { MAILBOX_SCOPE_RESET_EVENT } from '@/features/mailboxes/api/reset-mailbo
 import type { ActionReceipt } from '../action-receipt';
 import { RecommendationBanner } from './recommendation-banner';
 import { currentRecommendation } from './current-recommendation';
+import { SenderDetailBackLink } from './sender-detail-back-link';
 import { ActionToolbar } from './action-toolbar';
 import { RowActivityProvider, type RowActivityVerb, type SenderRowActivity } from '../row-activity';
 import { RecentMessages } from './recent-messages';
@@ -1475,9 +1476,7 @@ function ReadyState({
       <div className={styles.detailContent}>
         {layout === 'page' && (
           <>
-            <a href="/senders" className="dm-external-link">
-              ← Back to Senders
-            </a>
+            <SenderDetailBackLink senderId={sender.id} arrow className="dm-external-link" />
             <ScreenIntro
               id="sender-detail"
               title="How sender details work"
@@ -1657,7 +1656,7 @@ function ReadyState({
           <div role="group" aria-label="Sender actions" className={styles.actionSection}>
             <h3 className={styles.actionHeading}>{WS2_COPY.senders.detail.actionHeading}</h3>
             {detail.policyType === 'keep' && (
-              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>Skipped in Triage</p>
+              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>Kept</p>
             )}
             {actionToolbar}
           </div>
@@ -2043,9 +2042,7 @@ function NotFoundState({ layout, onClose }: { layout: DetailLayout; onClose?: ()
               </Button>
             )
           ) : (
-            <Button tone="primary" onClick={() => window.location.assign('/senders')}>
-              Back to Senders
-            </Button>
+            <SenderDetailBackLink asButton />
           )
         }
       />
@@ -2077,17 +2074,14 @@ function SenderDetailErrorState({
           always in its header. */}
       {layout === 'page' && (
         <div style={{ textAlign: 'center' }}>
-          <a
-            href="/senders"
+          <SenderDetailBackLink
             style={{
               fontSize: text.sm,
               fontWeight: 600,
               color: color.fgSoft,
               textDecoration: 'none',
             }}
-          >
-            Back to Senders
-          </a>
+          />
         </div>
       )}
     </DetailFrame>

@@ -30,16 +30,12 @@
 // finding 5.14 and systemic cause 5.
 
 /**
- * Default time-window for Delete (spec v1.2 Decision 15): "6 months+",
- * the one primary verb whose default is a safer, narrower scope rather
- * than the whole inbox. Single source of truth — every Delete surface
- * (the senders confirm modal, the Screener decide preview) applies this
- * same default so the two cannot drift out of sync on what "Delete"
- * does when nobody has touched a window control (QA-delete-20260829-01,
- * 2026-08-30: Screener had no default at all, so identical fresh mail
- * was dead-on-open through Senders and friction-free through Screener).
+ * Manual Delete previews start at Any age (founder decision 2026-10-25).
+ * The opening count matches the sender's inbox count; an older-only filter
+ * remains an explicit choice. Shared by Delete and Unsubscribe + Delete
+ * across manual surfaces. Saved automation filters do not use this default.
  */
-export const DEFAULT_DELETE_WINDOW_DAYS = 180;
+export const DEFAULT_DELETE_WINDOW_DAYS: number | null = null;
 
 /**
  * Which reconciliation, if any, the preview owes the reader. `none` is
@@ -154,7 +150,11 @@ export function inboxScopeNoticeCopy(
   verbLabel: string,
   // 'the unprotected senders': a bulk count that left Protected senders
   // out cannot speak for the whole selection.
-  subject: 'this sender' | 'these senders' | 'the unprotected senders' = 'this sender',
+  subject:
+    | 'this sender'
+    | 'these senders'
+    | 'the unprotected senders'
+    | 'the included senders' = 'this sender',
   options: {
     /**
      * ADR-0028 — set when the surface offers a reach control that lets

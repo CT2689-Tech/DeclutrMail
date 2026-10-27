@@ -159,16 +159,47 @@ test(homeVisitTitle, async ({ page }) => {
   try {
     const sinceLast = WS2_COPY.liveFix.home.sinceLast;
     const summary = page.getByRole('region', { name: sinceLast.eyebrow });
+    await expect(page.getByRole('region', { name: 'Your results' })).toBeVisible();
     await expect(
       summary.getByRole('heading', { name: pluralCopy(sinceLast.title, 3, { n: '3' }) }),
     ).toBeVisible();
     await expect(
       summary.getByText(pluralCopy(sinceLast.senders, 2, { n: '2' }), { exact: true }),
     ).toBeVisible();
+    // The visible GET is a read-only peek. Wait for the browser's POST to
+    // persist that visit before changing the data its snapshot is built from.
+    await expect
+      .poll(async () => {
+        const visitId = await page.evaluate((scope) => {
+          const saved = localStorage.getItem(`declutrmail:visit:${scope}`);
+          return saved ? ((JSON.parse(saved) as { id?: string }).id ?? null) : null;
+        }, `${fixture.userId}:${fixture.mailboxId}`);
+        if (!visitId) return false;
+        const [row] = await sql<
+          {
+            visits: Array<{
+              visitId: string;
+              indexedEmails: number | null;
+              indexedSenders: number | null;
+            }> | null;
+          }[]
+        >`
+        SELECT preferences->'mailboxVisits'->${fixture.mailboxId}::text AS visits
+        FROM users WHERE id = ${fixture.userId}
+      `;
+        return (
+          row?.visits?.some(
+            (visit) =>
+              visit.visitId === visitId && visit.indexedEmails === 3 && visit.indexedSenders === 2,
+          ) ?? false
+        );
+      })
+      .toBe(true);
     await sql`UPDATE mail_messages SET created_at = now() + interval '1 day' WHERE mailbox_account_id = ${fixture.mailboxId}`;
     await page.goto('/senders');
     await page.goto('/home');
     await page.reload();
+    await expect(page.getByRole('region', { name: 'Your results' })).toBeVisible();
     await expect(
       summary.getByRole('heading', { name: pluralCopy(sinceLast.title, 3, { n: '3' }) }),
     ).toBeVisible();
@@ -249,7 +280,7 @@ test('Home retries the displayed inbox and truthfully reports queued recovery', 
   try {
     await sql`UPDATE provider_sync_state SET readiness_status='failed', current_stage='failed', error_code='TransientError', initial_recovery_attempts=5, initial_retry_at=NULL, initial_attempt_id=NULL, last_history_id=987654321 WHERE mailbox_account_id=${fixture.mailboxId}`;
     await page.reload();
-    const recovery = page.getByRole('region', { name: 'Gmail account needs attention' });
+    const recovery = page.getByRole('region', { name: 'Mailbox needs attention' });
     const response = page.waitForResponse(
       (res) =>
         res.url().endsWith('/api/v1/sync/initial/retry') && res.request().method() === 'POST',

@@ -4,8 +4,9 @@ import { isUserScopedAppPath } from '@declutrmail/shared/contracts/account-navig
 
 import { useEffect, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { AppShell, ToastHost } from '@declutrmail/shared';
+import workspaceAppearance from '@/features/theme/workspace-appearance.module.css';
 import {
   hasCapability,
   minimumTierForCapability,
@@ -53,6 +54,8 @@ const HeardFromPrompt = dynamic(
 );
 
 function shellRoute(id: string): string {
+  if (id === 'triage') return '/senders?view=guided';
+  if (id === 'screener') return '/senders?view=first-review';
   return id === 'snoozed' ? '/later' : `/${id}`;
 }
 
@@ -111,7 +114,7 @@ function shellRoute(id: string): string {
  *
  * Account menu (D116 surface — partial): the topbar's right slot
  * carries the switcher / disconnect / connect-another / sign-out menu,
- * plus the Settings and Billing links that used to be sidebar rows.
+ * plus shortcuts to the sidebar's Settings and Billing destinations.
  * The menu reads `useAuth` so the AuthProvider must wrap this layout —
  * it does, right here: since the D134 public-route split, the
  * `(app)` group owns its own AuthProvider (the root `providers.tsx`
@@ -154,6 +157,7 @@ export function AppChromeLayout({ children }: { children: ReactNode }) {
 function AppChrome({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     const refreshServerScope = () => router.refresh();
@@ -311,6 +315,7 @@ function AppChrome({ children }: { children: ReactNode }) {
             }
             onNavigate={(id) => router.push(shellRoute(id))}
             onNavigateIntent={(id) => router.prefetch(shellRoute(id))}
+            hrefFor={shellRoute}
             routeKey={pathname}
             locks={navLocks}
             counts={{
@@ -323,7 +328,7 @@ function AppChrome({ children }: { children: ReactNode }) {
                 : {
                     screener: {
                       text: screenerPending > 99 ? '99+' : screenerPending,
-                      label: `${screenerPending} sender${screenerPending === 1 ? '' : 's'} awaiting a first review in Screener`,
+                      label: `${screenerPending} sender${screenerPending === 1 ? '' : 's'} awaiting first review`,
                     },
                   }),
             }}
@@ -341,7 +346,27 @@ function AppChrome({ children }: { children: ReactNode }) {
               </div>
             }
           >
-            {children}
+            <div
+              className={workspaceAppearance.content}
+              data-workspace-appearance={
+                [
+                  'senders',
+                  'triage',
+                  'screener',
+                  'autopilot',
+                  'brief',
+                  'followups',
+                  'snoozed',
+                  'activity',
+                  'settings',
+                  'billing',
+                ].includes(active)
+                  ? ''
+                  : undefined
+              }
+            >
+              {children}
+            </div>
           </AppShell>
         </div>
       </div>
@@ -356,7 +381,9 @@ function AppChrome({ children }: { children: ReactNode }) {
           receipts remain in /activity and on mailbox-backed surfaces. */}
       {hasActiveMailbox && !userScopedRoute && (
         <ProductUndoTray
-          enableShortcut={active === 'triage'}
+          enableShortcut={
+            active === 'triage' || (active === 'senders' && searchParams.get('view') === 'guided')
+          }
           mailboxId={me.activeMailboxId ?? undefined}
         />
       )}

@@ -1,8 +1,9 @@
+import { DEFAULT_DELETE_WINDOW_DAYS } from '@declutrmail/shared/actions';
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { HomeFixDialog } from '../features/home/home-fix-dialog';
 import { DecidePreview } from '../features/screener/decide-preview';
-import { SCREENER_QUEUE } from '../features/screener/data';
+import { SCREENER_QUEUE, type ScreenerDecideVerb } from '../features/screener/data';
 import { makeSender } from '../features/senders/testing/make-sender';
 import { UnsubscribeBacklogDialog } from '../features/senders/unsubscribe-backlog/unsubscribe-backlog-dialog';
 import { ActionSheet } from '../features/triage/action-sheet';
@@ -54,6 +55,7 @@ const preview: CompositeActionPreviewResult = {
 function Fixture() {
   const surface = new URLSearchParams(location.search).get('surface') ?? 'senders';
   const [open, setOpen] = useState(false);
+  const [screenerVerb, setScreenerVerb] = useState<ScreenerDecideVerb>('delete');
   const [accepted, setAccepted] = useState('');
   const [days, setDays] = useState<number | null>(null);
   const [reach, setReach] = useState<'inbox_only' | 'all_mail'>('inbox_only');
@@ -62,8 +64,12 @@ function Fixture() {
     setAccepted(JSON.stringify(payload));
     setOpen(false);
   };
-  const inboxCount = pickBucketCount(counts, days)!;
-  const allMailCount = pickBucketCount(archived, days)!;
+  const scenario = new URLSearchParams(location.search).get('scenario');
+  const empty = { all: 0, olderThan30d: 0, olderThan90d: 0, olderThan180d: 0, olderThan365d: 0 };
+  const inboxBuckets = scenario ? empty : counts;
+  const allMailBuckets = scenario === 'empty' ? empty : scenario ? { ...empty, all: 2 } : archived;
+  const inboxCount = pickBucketCount(inboxBuckets, days)!;
+  const allMailCount = scenario === 'unavailable' ? null : pickBucketCount(allMailBuckets, days)!;
   return (
     <main style={{ maxWidth: 640, margin: 'auto', padding: 12 }}>
       <h1>Cleanup review fixture</h1>
@@ -71,7 +77,8 @@ function Fixture() {
         type="button"
         onClick={() => {
           setAccepted('');
-          setDays(surface === 'screener' ? 180 : null);
+          setScreenerVerb('delete');
+          setDays(surface === 'screener' ? DEFAULT_DELETE_WINDOW_DAYS : null);
           setReach('inbox_only');
           setOpen(true);
         }}
@@ -100,12 +107,14 @@ function Fixture() {
           mailboxEmail="fixture@example.invalid"
           verb="Unsubscribe"
           row={{ ...TRIAGE_QUEUE[0]!, senderName: sender.name, inboxCount: 12 }}
-          inboxCount={reach === 'all_mail' ? allMailCount : inboxCount}
+          inboxCount={reach === 'all_mail' ? (allMailCount ?? 'unavailable') : inboxCount}
           reach={reach}
           onReachChange={setReach}
           onCancel={cancel}
           onConfirm={accept}
-          onBacklogModeChange={(mode) => setDays(mode === 'delete' ? 180 : null)}
+          onBacklogModeChange={(mode) =>
+            setDays(mode === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null)
+          }
           detail={{
             inboxTotal: 12,
             ageControl: {
@@ -132,19 +141,28 @@ function Fixture() {
       )}
       {open && surface === 'screener' && (
         <DecidePreview
-          verb="delete"
+          verb={screenerVerb}
           row={{ ...SCREENER_QUEUE[0]!, senderName: sender.name, brandMark: false }}
           inboxCount={inboxCount}
-          inboxTotal={12}
+          inboxTotal={inboxBuckets.all}
           windowDays={days}
           onWindowChange={setDays}
           allMailCount={allMailCount}
-          allMailTotal={20}
+          allMailTotal={scenario === 'unavailable' ? null : allMailBuckets.all}
           reach={reach}
           onReachChange={setReach}
           confirming={false}
           onCancel={cancel}
-          onConfirm={() => accept({ olderThanDays: days, reach })}
+          onChooseDecision={(verb) => {
+            setScreenerVerb(verb);
+            setDays(null);
+            setReach('inbox_only');
+          }}
+          onConfirm={() =>
+            accept(
+              screenerVerb === 'delete' ? { olderThanDays: days, reach } : { verb: screenerVerb },
+            )
+          }
         />
       )}
       {surface === 'screener' && <button type="button">Next row</button>}

@@ -39,7 +39,7 @@ const { color, font, text } = tokens;
  * Per D95 quiet is PER MAILBOX: one card per connected account, each
  * backed by its own query/mutation pair.
  */
-export function QuietRoute() {
+export function AutopilotSettingsRoute() {
   const { me } = useAuth();
   const mailboxes = me.mailboxes;
 
@@ -58,21 +58,30 @@ export function QuietRoute() {
         gap: 24,
       }}
     >
-      <EditorialKicker>Automations / On your schedule</EditorialKicker>
-      <h1 style={editorialTitleStyle}>Quiet hours</h1>
+      <EditorialKicker>Autopilot / Settings</EditorialKicker>
+      <Link href="/autopilot" style={{ color: color.primary }}>
+        ← Autopilot
+      </Link>
+      <h1 style={editorialTitleStyle}>Autopilot settings</h1>
+      <h2 style={{ margin: 0, fontSize: text.lg }}>Schedule</h2>
       <EditorialDescription>
-        Autopilot holds its actions during quiet hours. Gmail delivery continues.
+        Choose a daily pause window for each Gmail account. Rule approvals wait too; direct cleanup
+        actions run as usual.
       </EditorialDescription>
       <ScreenIntro
         id="quiet"
-        title="Quiet hours"
-        body="During quiet hours, Autopilot also holds suggestions you approve."
+        title="Schedule"
+        body="You can preview and approve during the pause window. Autopilot runs approved batches after it ends. Queued batches recheck Schedule at their assigned resume time."
       />
+      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm, lineHeight: 1.6 }}>
+        Already queued batches keep their assigned resume time and recheck Schedule then. Pausing a
+        rule stops its unstarted approvals.
+      </p>
       {mailboxes.length === 0 ? (
         <EmptyState
           headingLevel={2}
           title="No Gmail account connected"
-          description="Connect a Gmail account to set quiet hours for it."
+          description="Connect a Gmail account to set its Schedule."
         />
       ) : (
         <div style={{ display: 'grid', gap: 32, maxWidth: 720 }}>
@@ -100,7 +109,7 @@ function QuietHoursCardContainer({ mailbox, active }: { mailbox: MeMailbox; acti
   const state: QuietHoursCardState = query.isError
     ? {
         kind: 'error',
-        message: 'We couldn’t load quiet hours right now.',
+        message: 'We couldn’t load Schedule right now.',
       }
     : query.data
       ? {
@@ -195,7 +204,7 @@ function QuietQueueSummary({
         fontVariantNumeric: 'tabular-nums',
       }}
     >
-      {heldCount} {heldCount === 1 ? 'Autopilot action is' : 'Autopilot actions are'} held.{' '}
+      {heldCount} {heldCount === 1 ? 'preset approval is' : 'preset approvals are'} held.{' '}
       {activeInbox ? (
         <Link href="/autopilot" style={{ color: color.primary }}>
           Review Autopilot rules →

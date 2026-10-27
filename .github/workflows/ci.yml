@@ -300,7 +300,7 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/promtool" --version
       - name: Infrastructure telemetry contracts
-        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/alert-email-routing.test.mjs scripts/alert-promql-fixtures.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
+        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/alert-email-routing.test.mjs scripts/alert-promql-fixtures.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/vercel-spend-guard.test.mjs scripts/paddle-webhook-monitor.test.mjs scripts/vendor-monitoring-followups.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
       - name: Scoped private infrastructure inspection contracts
@@ -310,7 +310,7 @@ jobs:
       - name: Build selection and artifact retention contracts
         run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/artifact-cleanup-policy.test.mjs scripts/deploy-api-safely.test.mjs scripts/live-india-billing-env.test.mjs scripts/check-billing-queue-runtime.test.mjs
       - name: PR-body D-citation matcher
-        run: node --test scripts/check-pr-body-d-ref.test.mjs
+        run: node --test scripts/check-pr-body-d-ref.test.mjs scripts/merged-pr-history.test.mjs
       - name: ct-gates verdicts (a run that reviewed nothing never passes)
         run: node --test scripts/ct-gates-workflow.test.mjs
       - name: User-journey log trace
@@ -340,7 +340,7 @@ jobs:
       - name: Performance probes and release contract
         run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
       - name: CI and release coordination contracts
-        run: node --test scripts/check-ci-required.test.mjs scripts/ci-queue-reuse.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/cloud-run-deploy-paths.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs
+        run: node --test scripts/check-ci-required.test.mjs scripts/ci-queue-reuse.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/cloud-run-deploy-paths.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs scripts/ci-command-deadline.test.mjs scripts/install-ci-chromium.test.mjs
       - name: Bundle budget contracts (served-HTML measure, fails closed)
         run: node --test scripts/check-web-bundle-budget.test.mjs
       # Re-renders every brand raster from the geometry in ADR-0036 and
@@ -961,37 +961,12 @@ jobs:
             echo "$rc" > web-build.rc
           ) &
           echo $! > web-build.pid
-      # RETRIED, because the failure it guards against is not ours and
-      # not detectable from the result. `--with-deps` runs apt-get, and
-      # an Ubuntu mirror that stalls mid-fetch does not fail — it hangs
-      # until the job's 25-minute timeout kills it. That burned 25
-      # minutes and redded an unrelated PR four times in one session,
-      # each time reading as "the e2e lane failed" when nothing in the
-      # diff was involved.
-      #
-      # Three attempts with a widening pause. Playwright's install is
-      # idempotent, so a retry re-fetches only what is missing. The inner
-      # `timeout` is the load-bearing part: without it the first attempt
-      # consumes the whole job budget and there is never a second one.
-      #
-      # 4 minutes is ~2x the observed healthy install, and the budget is
-      # what makes three attempts safe rather than reckless: this job is
-      # capped at 25 minutes and finishes in ~6-7 when healthy, so the
-      # worst case here is 12 minutes of install plus ~5 of actual work.
-      # A longer per-attempt cap would spend the retries and then run out
-      # of job before the specs, which is the failure it is meant to
-      # prevent wearing a different hat.
+      # D160: a timed-out parent can leave privileged apt children holding the
+      # lock. Bound the dependency process group as root, finish cleanup before
+      # retrying, then download browser files as the runner user. Keep three
+      # attempts, a four-minute work budget per attempt and every coverage gate.
       - name: Install Chromium
-        run: |
-          for attempt in 1 2 3; do
-            if timeout 4m pnpm --filter @declutrmail/e2e exec playwright install --with-deps chromium; then
-              exit 0
-            fi
-            echo "::warning::playwright install attempt $attempt failed or timed out"
-            sleep $((attempt * 15))
-          done
-          echo "::error::playwright install failed after 3 attempts — likely an apt/CDN outage, not this change"
-          exit 1
+        run: bash scripts/install-ci-chromium.sh
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update -qq

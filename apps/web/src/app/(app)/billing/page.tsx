@@ -10,8 +10,6 @@ import { parseUpgradeReturnTo } from '@declutrmail/shared/contracts/app-navigati
 // its own hydration boundary painted the invoice list on the server and
 // the empty fallback on the client (React hydration error #418).
 
-import type { BillingInvoiceList } from '@declutrmail/shared/contracts';
-
 import { headers } from 'next/headers';
 
 import { BillingScreen } from '@/features/billing/billing-screen';
@@ -32,13 +30,6 @@ import {
 import { hasServerAccessCookie } from '@/features/auth/api/server-me';
 import { ServerApiError, serverGet } from '@/lib/api/server';
 import { ServerQueryHydration } from '@/lib/server-query-hydration';
-
-const EMPTY_INVOICES: BillingInvoiceList = {
-  invoices: [],
-  unavailableProviders: [],
-  omittedRows: 0,
-  truncated: false,
-};
 
 export const metadata = {
   title: 'Billing — DeclutrMail',
@@ -95,17 +86,15 @@ export default async function BillingPage({
             ]
       }
       streamPrefetch={(queryClient) =>
-        !eligible
+        !eligible || e2eBillingDark
           ? []
           : [
               queryClient.fetchQuery(
-                billingInvoicesQueryOptions(async (signal) => {
-                  const subscription = await getServerBillingSubscription(cookieHeader);
-                  if (subscription.subscription == null) return EMPTY_INVOICES;
-                  return parseBillingInvoices(
+                billingInvoicesQueryOptions(async (signal) =>
+                  parseBillingInvoices(
                     await serverGet<unknown>('/api/billing/invoices', cookieHeader, signal),
-                  );
-                }),
+                  ),
+                ),
               ),
             ]
       }

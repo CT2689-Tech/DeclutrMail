@@ -101,6 +101,7 @@ import {
   type FocusItem,
 } from './focus-plan';
 import { TriageFocusStack } from './focus-stack';
+import { GuidedReviewFrame } from '@/features/senders/guided-review-frame';
 import { TriageKeyboardHelp } from './keyboard-help';
 import { SessionProgress } from './session-progress';
 import { useTriageStore, type RememberableVerb, type SheetableVerb } from './store';
@@ -235,8 +236,14 @@ export function TriageScreen({
   journey = 'daily',
   offerUnprotect = false,
   onboardedAt = null,
+  presentation = 'triage',
+  active = true,
+  onExitGuided = () => {},
 }: {
   state: TriageScreenState;
+  presentation?: 'triage' | 'guided';
+  active?: boolean;
+  onExitGuided?: () => void;
   journey?: 'daily' | 'first_relief';
   /** When the user finished onboarding. Day one is the first 24 hours. */
   onboardedAt?: string | null;
@@ -248,6 +255,7 @@ export function TriageScreen({
    */
   offerUnprotect?: boolean;
 }) {
+  const guided = presentation === 'guided';
   const qc = useQueryClient();
   const auth = useOptionalAuth();
   const pricingV2 = auth?.me.pricingV2 === true;
@@ -305,7 +313,7 @@ export function TriageScreen({
     // arm the refresh on an empty selection.
     { stale: expandedRow?.stale === true },
     {
-      enabled: journey === 'daily' && expandedRow !== null,
+      enabled: active && journey === 'daily' && expandedRow !== null,
       invalidate: TRIAGE_BOOTSTRAP_KEY,
     },
   );
@@ -413,8 +421,9 @@ export function TriageScreen({
   );
   const [modeReady, setModeReady] = useState(false);
   useEffect(() => setModeReady(true), []);
-  const mode: 'focus' | 'list' = journey === 'daily' && storedMode !== 'list' ? 'focus' : 'list';
-  const showDecisionLayout = journey !== 'daily' || modeReady;
+  const mode: 'focus' | 'list' =
+    guided || (journey === 'daily' && storedMode !== 'list') ? 'focus' : 'list';
+  const showDecisionLayout = guided || journey !== 'daily' || modeReady;
   /** Focus-stack items passed over this session — a view state, never a decision. */
   const [skipped, setSkipped] = useState<string[]>([]);
   /** The card kept on stage across refetches within this mailbox. */
@@ -561,6 +570,7 @@ export function TriageScreen({
         ? state.rows.filter((row) => row.stale !== true)
         : state.rows,
     {
+      enabled: active,
       invalidate: TRIAGE_BOOTSTRAP_KEY,
       showing: [expandedRow, sheetRow].filter(
         (row): row is TriageDecisionRow => row !== null && !reScoring(row),
@@ -600,9 +610,9 @@ export function TriageScreen({
     (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe') &&
     (previewSettled || deleteReach === 'all_mail');
   const activeReach: ActionReach =
-    pendingAction?.surface === 'sheet' &&
     journey === 'daily' &&
-    (pendingAction?.verb === 'Delete' || pendingAction?.verb === 'Unsubscribe')
+    (pendingAction?.verb === 'Delete' ||
+      (pendingAction?.verb === 'Unsubscribe' && pendingAction.backlogMode === 'delete'))
       ? deleteReach
       : 'inbox_only';
   const hasAgeControl =
@@ -759,6 +769,7 @@ export function TriageScreen({
     });
     return {
       inboxTotal: unsubscribeInboxTotal,
+      allMailTotal: data.allMail?.counts.all ?? null,
       ageControl,
       ...(mailLocationLine === null ? {} : { mailLocationLine }),
       ...(sampleRows.length > 0 ? { matchSample: { rows: sampleRows, total: armedTotal } } : {}),
@@ -1440,6 +1451,10 @@ export function TriageScreen({
             archiveHistoric: backlogMode === 'archive',
             ...(backlogMode ? { backlogMode } : {}),
             rememberPreference: true,
+            ...((verb === 'Delete' || (verb === 'Unsubscribe' && backlogMode === 'delete')) &&
+            activeReach === 'all_mail'
+              ? { reach: activeReach }
+              : {}),
             wakeAt: pendingAction.wakeAt,
             ...(verb === 'Archive' ||
             verb === 'Delete' ||
@@ -1458,6 +1473,7 @@ export function TriageScreen({
       pendingAction,
       previewAge,
       inlineBacklogMode,
+      activeReach,
       previewInboxCount,
       inlinePreviewBlocked,
       dispatchAction,
@@ -1642,7 +1658,7 @@ export function TriageScreen({
    * effect doesn't mount for it.
    */
   useEffect(() => {
-    if (pendingAction == null || pendingAction.surface !== 'inline') return;
+    if (!active || pendingAction == null || pendingAction.surface !== 'inline') return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
@@ -1658,13 +1674,21 @@ export function TriageScreen({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pendingAction, clearPending]);
+  }, [active, pendingAction, clearPending]);
+
+  useEffect(() => {
+    if (!active) {
+      clearPending();
+      setPendingBatch(null);
+    }
+  }, [active, clearPending]);
 
   // ── Focus stack ───────────────────────────────────────────────────
   const readyRows = state.kind === 'ready' ? state.rows : NO_ROWS;
   const focusItems = useMemo(
-    () => planFocusItems(readyRows, dismissedBatchDomains, journey === 'daily', busyRowIds),
-    [readyRows, dismissedBatchDomains, journey, busyRowIds],
+    () =>
+      planFocusItems(readyRows, dismissedBatchDomains, !guided && journey === 'daily', busyRowIds),
+    [readyRows, dismissedBatchDomains, guided, journey, busyRowIds],
   );
   // A sender with an open preview stays on stage. The stack re-plans on
   // every refetch (a batch offer can appear, the order can change), and
@@ -1705,6 +1729,7 @@ export function TriageScreen({
 
   return (
     <div
+      inert={!active ? true : undefined}
       style={{
         ...editorialColumnStyle,
         paddingBottom: 96,
@@ -1714,8 +1739,8 @@ export function TriageScreen({
         fontFamily: font.sans,
       }}
     >
-      {journey === 'daily' && <EditorialKicker>Cleanup</EditorialKicker>}
-      {journey === 'daily' && (
+      {!guided && journey === 'daily' && <EditorialKicker>Cleanup</EditorialKicker>}
+      {!guided && journey === 'daily' && (
         <div
           style={{
             display: 'flex',
@@ -1770,9 +1795,9 @@ export function TriageScreen({
         </div>
       )}
 
-      {journey === 'daily' && <AiInlinePrompt />}
+      {!guided && journey === 'daily' && <AiInlinePrompt />}
 
-      {journey === 'daily' && (
+      {!guided && journey === 'daily' && (
         <ScreenIntro
           id="triage"
           title="How Triage works"
@@ -1782,6 +1807,15 @@ export function TriageScreen({
             label: 'What each action does',
           }}
         />
+      )}
+
+      {guided && !(state.kind === 'ready' && hasQueue) && (
+        <div>
+          <Button tone="ghost" onClick={onExitGuided}>
+            Back to Senders
+          </Button>
+          <h1 style={editorialTitleStyle}>Guided Review</h1>
+        </div>
       )}
 
       {/* D230 manual path — after U on a mailto sender, the user sends
@@ -1798,7 +1832,7 @@ export function TriageScreen({
       <div
         style={{
           width: '100%',
-          maxWidth: mode === 'focus' ? 640 : 880,
+          maxWidth: guided ? 1200 : mode === 'focus' ? 640 : 880,
           margin: '0 auto',
           display: 'flex',
           flexDirection: 'column',
@@ -1834,20 +1868,38 @@ export function TriageScreen({
           hasQueue &&
           mode === 'focus' &&
           focusItem != null && (
-            <TriageFocusStack
+            <GuidedStage
+              guided={guided}
+              rows={readyRows}
               item={focusItem}
-              canSkip={focusItems.length > 1}
-              onSkip={onSkip}
-              onAction={onRowActionWithInlineConfirm}
-              busyRowIds={busyRowIds}
-              unknownVerbs={unknownVerbs}
-              previewInboxCount={previewInboxCount}
-              onRetryPreview={() => void compositePreview.refetch()}
-              previewDetail={previewDetail}
-              previewQuotaRemaining={cleanupRemaining}
-              onBatchVerb={onBatchVerb}
-              batchBusyDomain={batchBusyDomain}
-            />
+              disabled={pendingAction !== null}
+              onNavigate={(index) => {
+                const row = readyRows[index];
+                if (!row) return;
+                clearPending();
+                setExpandedRow(null);
+                setSkipped([]);
+                setHeldKey(`row:${row.id}`);
+              }}
+              onExit={onExitGuided}
+            >
+              <TriageFocusStack
+                item={focusItem}
+                guided={guided}
+                active={active}
+                canSkip={focusItems.length > 1}
+                onSkip={onSkip}
+                onAction={onRowActionWithInlineConfirm}
+                busyRowIds={busyRowIds}
+                unknownVerbs={unknownVerbs}
+                previewInboxCount={previewInboxCount}
+                onRetryPreview={() => void compositePreview.refetch()}
+                previewDetail={previewDetail}
+                previewQuotaRemaining={cleanupRemaining}
+                onBatchVerb={onBatchVerb}
+                batchBusyDomain={batchBusyDomain}
+              />
+            </GuidedStage>
           )}
         {showDecisionLayout && state.kind === 'ready' && hasQueue && mode === 'list' && (
           <TriageQueue
@@ -1881,7 +1933,7 @@ export function TriageScreen({
 
       {/* Sheet — only mounted when the pending action's surface is sheet. */}
       <ActionSheet
-        open={pendingAction != null && pendingAction.surface === 'sheet'}
+        open={active && pendingAction != null && pendingAction.surface === 'sheet'}
         verb={(pendingAction?.verb ?? 'Archive') as SheetableVerb}
         row={pendingRow}
         inboxCount={previewInboxCount}
@@ -1930,7 +1982,7 @@ export function TriageScreen({
 
       {/* Batch sheet — the D226 preview for a domain-batch decision. */}
       <BatchActionSheet
-        open={pendingBatch != null}
+        open={active && pendingBatch != null}
         verb={pendingBatch?.verb ?? 'Archive'}
         batch={pendingBatch?.batch ?? null}
         // Codex review 2026-09-03 round 3: `useBulkActionPreview` sets
@@ -1975,7 +2027,7 @@ export function TriageScreen({
       />
 
       {/* `?` reveals the shortcut overlay — real bindings only. */}
-      <TriageKeyboardHelp />
+      {active && <TriageKeyboardHelp guided={guided} />}
     </div>
   );
 }
@@ -2020,5 +2072,46 @@ export function TriageLoadingState({ variant = 'list' }: { variant?: 'focus' | '
       ))}
       <span style={{ position: 'absolute', left: -9999 }}>Loading Triage…</span>
     </div>
+  );
+}
+
+/** Reuse the triage action engine; this frame changes only how its rows are navigated. */
+function GuidedStage({
+  guided,
+  rows,
+  item,
+  disabled,
+  onNavigate,
+  onExit,
+  children,
+}: {
+  guided: boolean;
+  rows: readonly TriageDecisionRow[];
+  item: FocusItem;
+  disabled: boolean;
+  onNavigate: (index: number) => void;
+  onExit: () => void;
+  children: React.ReactNode;
+}) {
+  if (!guided) return children;
+  return (
+    <GuidedReviewFrame
+      senders={rows.map((row) => ({
+        id: row.id,
+        name: row.senderName,
+        domain: row.senderDomain,
+        brandMark: row.brandMark,
+      }))}
+      index={Math.max(
+        0,
+        rows.findIndex((row) => item.kind === 'row' && row.id === item.row.id),
+      )}
+      label="Suggested senders"
+      onNavigate={onNavigate}
+      onExit={onExit}
+      navigationDisabled={disabled}
+    >
+      {children}
+    </GuidedReviewFrame>
   );
 }

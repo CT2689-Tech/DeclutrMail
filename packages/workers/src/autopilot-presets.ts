@@ -332,3 +332,41 @@ export const AUTOPILOT_PRESETS: Record<AutopilotPresetKey, PresetDefinition> = {
     },
   },
 };
+import { AutopilotRuleConditionsSchema } from '@declutrmail/shared/contracts';
+
+/** The preview and the apply worker interpret exactly the same saved configuration. */
+export function matchConfiguredPreset(
+  key: AutopilotPresetKey,
+  input: PresetInput,
+  threshold: number | null,
+  stored: unknown,
+): PresetMatchResult {
+  if (stored && typeof stored === 'object' && Object.keys(stored).length === 0)
+    return AUTOPILOT_PRESETS[key].match(input, threshold);
+  // Invalid persisted configurations fail closed rather than reverting to wider defaults.
+  const parsed = AutopilotRuleConditionsSchema.safeParse(stored);
+  if (!parsed.success) return { matched: false, reason: '' };
+  const c = parsed.data;
+  const { signals, triageDecision } = input;
+  let matched: boolean;
+  let reason: string;
+  if (c.kind === 'recommendation') {
+    const floor = threshold ?? c.confidence;
+    matched = triageDecision?.verdict === c.verdict && triageDecision.confidence > floor;
+    reason = `Recommendation ${c.verdict}, confidence above ${Math.round(floor * 100)}%`;
+  } else if (c.kind === 'new_sender') {
+    matched =
+      signals.firstSeenDaysAgo < c.firstSeenWithinDays ||
+      signals.totalMessages < c.fewerThanMessages;
+    reason = `Sender first seen ${signals.firstSeenDaysAgo}d ago, ${signals.totalMessages} messages`;
+  } else {
+    matched =
+      signals.readRateLifetime !== null &&
+      signals.totalMessages >= c.minMessages &&
+      signals.readRateLifetime < c.readRateBelow &&
+      signals.lastSeenDaysAgo > c.lastSeenAfterDays &&
+      (c.lastSeenWithinDays === null || signals.lastSeenDaysAgo <= c.lastSeenWithinDays);
+    reason = `Read rate ${Math.round((signals.readRateLifetime ?? 0) * 100)}% across ${signals.totalMessages} messages, last seen ${signals.lastSeenDaysAgo}d ago`;
+  }
+  return { matched, reason: matched ? reason : '' };
+}

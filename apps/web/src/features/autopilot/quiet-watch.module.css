@@ -1,0 +1,21 @@
+.status {
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--dm-line-soft);
+  min-width: 0;
+}
+.status > div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.status strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.status span {
+  color: var(--dm-fg-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}

@@ -8,12 +8,14 @@ import {
 } from '@declutrmail/shared/entitlements';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { CheckoutHold } from '../billing-provider.interface.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
 import {
   paddleAdjustmentCreated,
   paddleAdjustmentUpdated,
   paddleSubscriptionActivated,
   paddleTransactionCompleted,
+  signedCustomData,
 } from './fixtures.js';
 
 /**
@@ -444,6 +446,7 @@ function postedTransaction(fetchSpy: ReturnType<typeof vi.fn>): {
 describe('PaddleAdapter checkout + cancel', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('createCheckout posts a USD transaction and returns no price id', async () => {
@@ -514,6 +517,7 @@ describe('PaddleAdapter checkout + cancel', () => {
   });
 
   it('puts the sandbox PH30 discount on a launch-price transaction only', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T12:00:00Z'));
     const fetchSpy = stubTransaction();
     const adapter = makeAdapter({
       PADDLE_CLIENT_TOKEN: 'test_abc',
@@ -544,7 +548,30 @@ describe('PaddleAdapter checkout + cancel', () => {
     expect(postedTransaction(fetchSpy).body).not.toHaveProperty('discount_id');
   });
 
+  it.each([SANDBOX_PRICE_IDS.plus_annual, SANDBOX_PRICE_IDS.pass_onetime])(
+    'creates checkout without the expired sandbox discount for %s',
+    async (providerPriceId) => {
+      vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-24T12:00:00Z'));
+      const fetchSpy = stubTransaction();
+      const adapter = makeAdapter({
+        PADDLE_CLIENT_TOKEN: 'test_abc',
+        PADDLE_API_KEY: 'pdl_test_key',
+        PADDLE_ENV: 'sandbox',
+      });
+      const session = await adapter.createCheckout({
+        workspaceId: WORKSPACE,
+        userEmail: 'user@example.com',
+        tierId: 'plus',
+        cycle: 'annual',
+        providerPriceId,
+      });
+      expect(postedTransaction(fetchSpy).body).not.toHaveProperty('discount_id');
+      expect(session).toMatchObject({ provider: 'paddle', transactionId: LOCKED_TXN });
+    },
+  );
+
   it('puts PH30 on the Pass transaction and does not return it to the client', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T12:00:00Z'));
     const fetchSpy = stubTransaction();
     const adapter = makeAdapter({
       PADDLE_CLIENT_TOKEN: 'test_abc',
@@ -575,6 +602,7 @@ describe('PaddleAdapter checkout + cancel', () => {
   });
 
   it('charges the India price in INR only for a trusted IN country', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-18T12:00:00Z'));
     const fetchSpy = stubTransaction('INR');
     const adapter = makeAdapter({
       PADDLE_CLIENT_TOKEN: 'test_abc',
@@ -812,11 +840,204 @@ describe('PaddleAdapter checkout + cancel', () => {
       });
     }
 
+    it('scopes customer history, excludes unfinished checkouts and discloses another page', async () => {
+      const row = {
+        id: 'txn_one_time',
+        customer_id: 'ctm_owned',
+        status: 'completed',
+        created_at: '2026-07-30T18:00:27.000Z',
+        currency_code: 'USD',
+        details: { totals: { grand_total: '1900' } },
+      };
+      const fetchSpy = vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            data: [row, { ...row, id: 'txn_unpaid', status: 'ready' }],
+            meta: { pagination: { has_more: true } },
+          }),
+          { status: 200 },
+        ),
+      );
+      vi.stubGlobal('fetch', fetchSpy);
+      const result = await makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listCustomerInvoices(
+        'ctm_owned',
+      );
+      expect(result.invoices.map((invoice) => invoice.id)).toEqual(['txn_one_time']);
+      expect(result.truncated).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      const url = new URL(String(fetchSpy.mock.calls[0]?.[0]));
+      expect(url.searchParams.get('customer_id')).toBe('ctm_owned');
+      expect(url.searchParams.get('per_page')).toBe('30');
+      expect(url.searchParams.get('include')).toBe('adjustments_totals');
+    });
+
+    it.each([
+      { amount: '1900', refundedAmount: '0' },
+      { amount: '1900', refundedAmount: '500' },
+      { amount: '1900', refundedAmount: '1900' },
+      { amount: '9007199254740993', refundedAmount: '9007199254740992' },
+    ])(
+      'retains the original payment and PDF beside settled refund totals: %j',
+      async ({ amount, refundedAmount }) => {
+        const row = {
+          id: 'txn_owned',
+          status: 'completed',
+          created_at: '2026-07-30T18:00:27.000Z',
+          currency_code: 'USD',
+          details: { totals: { grand_total: amount } },
+          adjustments_totals: { currency_code: 'USD', breakdown: { refund: refundedAmount } },
+        };
+        const fetchSpy = vi
+          .fn()
+          .mockResolvedValue(new Response(JSON.stringify({ data: row }), { status: 200 }));
+        vi.stubGlobal('fetch', fetchSpy);
+        const result = await makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).invoiceTransaction(
+          'txn_owned',
+        );
+        expect(result.invoices[0]).toMatchObject({
+          amount,
+          status: 'paid',
+          refundedAmount,
+          documentAvailable: true,
+        });
+        expect(fetchSpy).toHaveBeenCalledTimes(1);
+        expect(new URL(String(fetchSpy.mock.calls[0]?.[0])).searchParams.get('include')).toBe(
+          'adjustments_totals',
+        );
+      },
+    );
+
+    it.each([
+      { currency_code: 'EUR', breakdown: { refund: '1900' } },
+      { currency_code: 'USD', breakdown: { refund: '-1' } },
+      { currency_code: 'USD', breakdown: { refund: '1901' } },
+      { currency_code: 'USD', breakdown: { refund: 1900 } },
+      { currency_code: 'USD', breakdown: {} },
+    ])('discloses a malformed refund total as an omitted row: %j', async (adjustments) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          transactionsResponse([
+            {
+              id: 'txn_bad_refund',
+              customer_id: 'ctm_owned',
+              status: 'completed',
+              created_at: '2026-07-30T18:00:27.000Z',
+              currency_code: 'USD',
+              details: { totals: { grand_total: '1900' } },
+              adjustments_totals: adjustments,
+            },
+          ]),
+        ),
+      );
+      const result = await makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listCustomerInvoices(
+        'ctm_owned',
+      );
+      expect(result).toMatchObject({ invoices: [], omitted: 1 });
+    });
+
+    it('rejects customer history that contains a foreign customer', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            transactionsResponse([
+              { id: 'txn_foreign', customer_id: 'ctm_other', status: 'completed' },
+            ]),
+          ),
+      );
+      await expect(
+        makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listCustomerInvoices('ctm_owned'),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+    });
+
+    it('offers downloads only for provider-supported nonzero invoices', async () => {
+      const row = {
+        id: 'txn_complete',
+        subscription_id: 'sub_owned',
+        status: 'completed',
+        created_at: '2026-07-30T18:00:27.000Z',
+        currency_code: 'USD',
+        details: { totals: { grand_total: '1900' } },
+      };
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            transactionsResponse([
+              row,
+              { ...row, id: 'txn_paid', status: 'paid' },
+              { ...row, id: 'txn_zero', details: { totals: { grand_total: '0' } } },
+              { ...row, id: 'txn_manual', status: 'billed', collection_mode: 'manual' },
+              { ...row, id: 'txn_automatic', status: 'billed', collection_mode: 'automatic' },
+            ]),
+          ),
+      );
+      const result = await makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listInvoices(
+        'sub_owned',
+      );
+      expect(
+        result.invoices.filter((invoice) => invoice.documentAvailable).map((invoice) => invoice.id),
+      ).toEqual(['txn_complete', 'txn_manual']);
+    });
+
+    it.each([undefined, null, 'sub_foreign'])(
+      'rejects subscription responses with unproven ownership: %s',
+      async (subscriptionId) => {
+        vi.stubGlobal(
+          'fetch',
+          vi
+            .fn()
+            .mockResolvedValue(
+              transactionsResponse([
+                { id: 'txn_unknown', subscription_id: subscriptionId, status: 'completed' },
+              ]),
+            ),
+        );
+        await expect(
+          makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).listInvoices('sub_owned'),
+        ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+      },
+    );
+
+    it('rejects empty customer, subscription and transaction scopes before HTTP', async () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      const adapter = makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+      await expect(adapter.listInvoices('')).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
+      });
+      await expect(adapter.listCustomerInvoices('')).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
+      });
+      await expect(adapter.invoiceTransaction('')).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('rejects a mismatched transaction when resolving a legacy Pass invoice', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            new Response(JSON.stringify({ data: { id: 'txn_foreign' } }), { status: 200 }),
+          ),
+      );
+      await expect(
+        makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' }).invoiceTransaction('txn_owned'),
+      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+    });
+
     it('drops a subscription_payment_method_change transaction from the list', async () => {
       const fetchSpy = vi.fn().mockResolvedValue(
         transactionsResponse([
           {
             id: 'txn_paid',
+            subscription_id: 'sub_01paddle000001',
             status: 'paid',
             billed_at: '2026-07-30T18:00:27.000Z',
             currency_code: 'USD',
@@ -824,6 +1045,7 @@ describe('PaddleAdapter checkout + cancel', () => {
           },
           {
             id: 'txn_card_verify',
+            subscription_id: 'sub_01paddle000001',
             status: 'ready',
             origin: 'subscription_payment_method_change',
             billed_at: null,
@@ -849,6 +1071,7 @@ describe('PaddleAdapter checkout + cancel', () => {
         transactionsResponse([
           {
             id: 'txn_zero_other',
+            subscription_id: 'sub_01paddle000001',
             status: 'billed',
             billed_at: '2026-07-30T18:00:27.000Z',
             currency_code: 'USD',
@@ -2044,4 +2267,280 @@ describe('Paddle deletion billing evidence', () => {
       ).toBe('unknown');
     },
   );
+});
+
+describe('PaddleAdapter.readPassRefund', () => {
+  const txn = 'txn_01m5rv36azwpkwewjnpy2z3qzv';
+  const adj = 'adj_01m5rv6me2exdqk7k8kfym5238';
+  const transaction = {
+    id: txn,
+    status: 'completed',
+    subscription_id: null,
+    details: { totals: { grand_total: '1900' } },
+  };
+  const refund = {
+    id: adj,
+    transaction_id: txn,
+    subscription_id: null,
+    action: 'refund',
+    status: 'approved',
+    type: 'full',
+  };
+  const response = (data: unknown) => new Response(JSON.stringify(data), { status: 200 });
+  function setup(rows: unknown[] = [refund], tx: unknown = transaction) {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response({ data: tx }))
+      .mockResolvedValueOnce(response({ data: rows, meta: { pagination: { has_more: false } } }));
+    vi.stubGlobal('fetch', fetch);
+    return {
+      fetch,
+      adapter: makeAdapter({ PADDLE_API_KEY: 'sandbox-test', PADDLE_ENV: 'sandbox' }),
+    };
+  }
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+  it('confirms an approved full refund using only the exact grant transaction', async () => {
+    const { fetch, adapter } = setup();
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'refunded', adjustmentId: adj });
+    expect(fetch.mock.calls.map((c) => String(c[0]))).toEqual([
+      'https://sandbox-api.paddle.com/transactions/' + txn,
+      'https://sandbox-api.paddle.com/adjustments?transaction_id=' + txn + '&per_page=50',
+    ]);
+    expect(fetch.mock.calls.every((c) => !c[1].method || c[1].method === 'GET')).toBe(true);
+  });
+  it.each([
+    { status: 'pending_approval' },
+    { status: 'rejected' },
+    { status: 'reversed' },
+    { type: 'partial' },
+    { action: 'credit' },
+    { action: 'chargeback' },
+  ])('preserves access for non-full/non-approved-refund facts %j', async (patch) => {
+    const { adapter } = setup([{ ...refund, ...patch }]);
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unchanged' });
+  });
+  it('does not turn cumulative partial or all-full subset items into a full refund', async () => {
+    const { adapter } = setup(
+      [1, 2].map((n) => ({
+        ...refund,
+        id: 'adj_' + String(n).repeat(26),
+        type: 'partial',
+        items: [{ type: 'full' }],
+        totals: { total: '950' },
+      })),
+    );
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unchanged' });
+  });
+  it.each([
+    null,
+    { id: adj },
+    { ...refund, transaction_id: 'txn_other' },
+    { ...refund, subscription_id: 'sub_other' },
+    { ...refund, type: undefined },
+    { ...refund, id: 'invalid' },
+  ])('refuses malformed or mismatched adjustment %j', async (row) => {
+    const { adapter } = setup([row]);
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unreadable' });
+  });
+  it.each([
+    { ...transaction, id: 'txn_other' },
+    { ...transaction, status: 'paid' },
+    { ...transaction, subscription_id: 'sub_other' },
+    { ...transaction, subscription_id: undefined },
+    { ...transaction, details: { totals: { grand_total: '0' } } },
+  ])('refuses a mismatched, unpaid, or subscription transaction', async (tx) => {
+    const { adapter, fetch } = setup([refund], tx);
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unreadable' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('pages to the end while retaining our transaction filter and host', async () => {
+    const { adapter, fetch } = setup([]);
+    fetch
+      .mockReset()
+      .mockResolvedValueOnce(response({ data: transaction }))
+      .mockResolvedValueOnce(
+        response({
+          data: [],
+          meta: {
+            pagination: {
+              has_more: true,
+              next: 'https://untrusted.example/adjustments?transaction_id=other&after=cursor',
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        response({ data: [refund], meta: { pagination: { has_more: false } } }),
+      );
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'refunded', adjustmentId: adj });
+    expect(fetch.mock.calls[2]![0]).toBe(
+      'https://sandbox-api.paddle.com/adjustments?transaction_id=' +
+        txn +
+        '&per_page=50&after=cursor',
+    );
+  });
+  it('does not act on a full refund from an incomplete capped listing', async () => {
+    const { adapter, fetch } = setup();
+    let n = 0;
+    fetch
+      .mockReset()
+      .mockResolvedValueOnce(response({ data: transaction }))
+      .mockImplementation(async () =>
+        response({
+          data: [refund],
+          meta: {
+            pagination: {
+              has_more: true,
+              next: 'https://sandbox-api.paddle.com/adjustments?after=' + ++n,
+            },
+          },
+        }),
+      );
+    expect(await adapter.readPassRefund(txn)).toEqual({ kind: 'unreadable' });
+    expect(fetch).toHaveBeenCalledTimes(11);
+  });
+  it.each([403, 404, 500])('does not assert refund truth after HTTP %i', async (status) => {
+    const { adapter, fetch } = setup();
+    fetch.mockReset().mockResolvedValue(new Response('{}', { status }));
+    await expect(adapter.readPassRefund(txn)).resolves.toEqual({ kind: 'unreadable' });
+  });
+});
+
+describe('PaddleAdapter.fetchCheckoutHold', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  const TXN = 'txn_01abcdefghjkmnpqrstvwxyz12';
+  const OTHER_WORKSPACE = '99999999-2222-4333-8444-555555555555';
+
+  function transaction(over: Record<string, unknown> = {}) {
+    return {
+      id: TXN,
+      status: 'ready',
+      subscription_id: null,
+      custom_data: signedCustomData(WORKSPACE, SECRET),
+      payments: [],
+      ...over,
+    };
+  }
+  function answer(data: unknown, status = 200) {
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(JSON.stringify({ data }), { status }));
+    vi.stubGlobal('fetch', fetchSpy);
+    return fetchSpy;
+  }
+  const adapter = () => makeAdapter({ PADDLE_API_KEY: 'pdl_test_key' });
+
+  it('reads exactly one transaction, and never writes', async () => {
+    const fetchSpy = answer(transaction());
+    expect(await adapter().fetchCheckoutHold(TXN, WORKSPACE)).toBe('unpaid');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit | undefined];
+    expect(url).toBe(`https://sandbox-api.paddle.com/transactions/${TXN}`);
+    expect(init?.method ?? 'GET').toBe('GET');
+  });
+
+  const IN_FLIGHT_STATES = [
+    'created',
+    'authorized',
+    'authorized_flagged',
+    'action_required',
+    'pending_no_action_required',
+  ];
+  const HOLD_CASES: Array<readonly [string, Record<string, unknown>, CheckoutHold]> = [
+    ['ready, no attempts', transaction(), 'unpaid'],
+    ['draft, no attempts', transaction({ status: 'draft' }), 'unpaid'],
+    [
+      'ready, only canceled/dropped attempts',
+      transaction({ payments: [{ status: 'canceled' }, { status: 'dropped' }] }),
+      'unpaid',
+    ],
+    ['canceled', transaction({ status: 'canceled' }), 'stopped'],
+    ['paid', transaction({ status: 'paid' }), 'paid'],
+    ['completed', transaction({ status: 'completed' }), 'paid'],
+    ['linked to a subscription', transaction({ subscription_id: 'sub_01x' }), 'paid'],
+    [
+      'ready but an attempt was captured',
+      transaction({ payments: [{ status: 'captured' }] }),
+      'paid',
+    ],
+    ...IN_FLIGHT_STATES.map(
+      (state) =>
+        [
+          `ready with a ${state} attempt`,
+          transaction({ payments: [{ status: state }] }),
+          'in_flight',
+        ] as const,
+    ),
+    [
+      'an in-flight attempt outranks a later unrecognised one',
+      transaction({ payments: [{ status: 'pending_no_action_required' }, { status: 'weird' }] }),
+      'in_flight',
+    ],
+  ];
+
+  it.each(HOLD_CASES)('%s → %s', async (_label, data, expected) => {
+    answer(data);
+    expect(await adapter().fetchCheckoutHold(TXN, WORKSPACE)).toBe(expected);
+  });
+
+  // The point of the whole read: nothing it cannot positively recognise
+  // may come back `unpaid`.
+  it.each([
+    ['no attempts list at all', transaction({ payments: undefined })],
+    ['attempts list is null', transaction({ payments: null })],
+    ['attempts is not a list', transaction({ payments: { status: 'captured' } })],
+    ['an unrecognised attempt state', transaction({ payments: [{ status: 'error' }] })],
+    ['an attempt with no state', transaction({ payments: [{}] })],
+    ['billed', transaction({ status: 'billed' })],
+    ['past_due', transaction({ status: 'past_due' })],
+    ['an unrecognised transaction status', transaction({ status: 'mystery' })],
+    ['no status', transaction({ status: undefined })],
+    ['another transaction id', transaction({ id: 'txn_01zzzzzzzzzzzzzzzzzzzzzzzz' })],
+    ['no attribution', transaction({ custom_data: null })],
+    ['an unsigned workspace', transaction({ custom_data: { workspace_id: WORKSPACE } })],
+    [
+      'a forged signature',
+      transaction({ custom_data: { workspace_id: WORKSPACE, sig: 'a'.repeat(64) } }),
+    ],
+    [
+      "another workspace's attribution",
+      transaction({ custom_data: signedCustomData(OTHER_WORKSPACE, SECRET) }),
+    ],
+  ])('%s → unknown, never unpaid', async (_label, data) => {
+    answer(data);
+    expect(await adapter().fetchCheckoutHold(TXN, WORKSPACE)).toBe('unknown');
+  });
+
+  it('a 404 is unknown, not unpaid', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 404 })));
+    expect(await adapter().fetchCheckoutHold(TXN, WORKSPACE)).toBe('unknown');
+  });
+
+  it('an unsigned deployment (no webhook secret) can verify nothing → unknown', async () => {
+    answer(transaction());
+    const noSecret = new PaddleAdapter({ PADDLE_API_KEY: 'pdl_test_key' } as NodeJS.ProcessEnv);
+    expect(await noSecret.fetchCheckoutHold(TXN, WORKSPACE)).toBe('unknown');
+  });
+
+  it('a malformed id is rejected before any request', async () => {
+    const fetchSpy = answer(transaction());
+    expect(await adapter().fetchCheckoutHold('sub_01abcdefghjkmnpqrstvwxyz12', WORKSPACE)).toBe(
+      'unknown',
+    );
+    expect(await adapter().fetchCheckoutHold('txn_short', WORKSPACE)).toBe('unknown');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('network failure and 5xx throw BILLING_PROVIDER_ERROR — the caller decides what that means', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
+    await expect(adapter().fetchCheckoutHold(TXN, WORKSPACE)).rejects.toMatchObject({
+      code: 'BILLING_PROVIDER_ERROR',
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 503 })));
+    await expect(adapter().fetchCheckoutHold(TXN, WORKSPACE)).rejects.toMatchObject({
+      code: 'BILLING_PROVIDER_ERROR',
+    });
+  });
 });

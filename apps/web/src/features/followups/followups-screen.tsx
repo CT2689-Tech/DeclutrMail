@@ -1,5 +1,7 @@
 'use client';
 
+import workspaceAppearance from '@/features/theme/workspace-appearance.module.css';
+
 import {
   editorialColumnStyle,
   editorialTitleStyle,
@@ -114,7 +116,7 @@ export function FollowupsScreen() {
         ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
-        gap: 32,
+        gap: 24,
       }}
     >
       <EditorialKicker>Catch up</EditorialKicker>
@@ -303,30 +305,9 @@ function FollowupsOverview({ overdue, recent }: { overdue: number; recent: numbe
       }}
     >
       {cards.map((card) => (
-        <a
-          key={card.href}
-          href={card.href}
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 8,
-            padding: '20px',
-            border: `1px solid ${color.line}`,
-            borderRadius: tokens.radius.md,
-            background: color.card,
-            color: color.fg,
-            textDecoration: 'none',
-          }}
-        >
-          <span
-            style={{
-              ...tokens.typography.kicker,
-              color: color.fgMuted,
-            }}
-          >
-            {card.title}
-          </span>
-          <strong style={tokens.typography.stat}>{card.count}</strong>
+        <a key={card.href} href={card.href} className={workspaceAppearance.overviewLink}>
+          <span className={workspaceAppearance.overviewLabel}>{card.title}</span>
+          <strong className={workspaceAppearance.overviewMetric}>{card.count}</strong>
           <span style={{ color: color.fgMuted, fontSize: text.sm, lineHeight: 1.45 }}>
             {card.detail} →
           </span>
@@ -355,6 +336,7 @@ function PriorityGroup({
 }) {
   return (
     <section
+      className={workspaceAppearance.panel}
       id={id}
       aria-label={`${label} (${rows.length})`}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
@@ -398,18 +380,7 @@ function GroupHeading({ label, count }: { label: string; count: number }) {
       }}
     >
       {label}
-      <span
-        style={{
-          ...tokens.typography.rowCount,
-          color: color.fgSoft,
-          background: color.fill,
-          padding: '2px 8px',
-          borderRadius: tokens.radius.pill,
-          alignSelf: 'center',
-        }}
-      >
-        {count}
-      </span>
+      <span className={workspaceAppearance.countBadge}>{count}</span>
     </h2>
   );
 }
@@ -453,11 +424,9 @@ export function FollowupListItem({
       style={{
         display: 'grid',
         // Mobile (D60): recipient + subject stack full-width; the meta
-        // actions (time · Gmail · resolve) wrap onto one row below.
+        // time takes its own row; Gmail and resolve share the row below.
         gridTemplateColumns: isMobile
-          ? onDismiss
-            ? '1fr auto auto'
-            : '1fr auto'
+          ? 'repeat(2, minmax(0, 1fr))'
           : onDismiss
             ? 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto auto'
             : 'minmax(180px, 1fr) minmax(220px, 2fr) auto auto',
@@ -504,6 +473,7 @@ export function FollowupListItem({
           color: color.fgMuted,
           fontVariantNumeric: 'tabular-nums',
           minWidth: 0,
+          ...(isMobile ? { gridColumn: '1 / -1' } : null),
         }}
       >
         <time dateTime={row.sentAt} style={{ whiteSpace: 'nowrap' }}>

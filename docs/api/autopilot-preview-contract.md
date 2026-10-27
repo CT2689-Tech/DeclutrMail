@@ -41,3 +41,20 @@ The preview is display evidence, not an execution token. Activation retains
 the existing rule mutation and daily action cap. The worker independently
 rechecks current matches, protection, and action eligibility before acting;
 cached preview rows never drive Gmail mutations.
+
+Rule-card previews distinguish matching from action eligibility:
+
+- `wouldMatchCount` and `sample` include unprotected senders matching the rule,
+  even when they have no current mail eligible for its action. The headline
+  describes these matches; it is not the saved suggestion queue.
+- `actionableSenderCount` is the subset eligible for the configured action.
+  Archive/Later require inbound Inbox mail, Delete uses the configured reach,
+  and Unsubscribe excludes already-unsubscribed senders.
+- `evaluatedSenders` excludes Protected senders. `protectedWouldMatchCount`
+  reports additional matching Protected senders outside both match/action
+  counts. Zero protected matches are omitted from the rule-card copy.
+
+Sample Inbox counts explain historical matches with nothing to Archive or move
+to Later. Missing Inbox counts stay unavailable; they are never treated as zero.
+Activation continues to lead with the actionable count and uses the complete
+paged actionable list when available.

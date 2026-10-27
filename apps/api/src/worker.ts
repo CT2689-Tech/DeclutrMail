@@ -10,6 +10,7 @@ import {
   buildBriefNoticeCleanup,
 } from './briefs/brief-ready-email.js';
 import 'reflect-metadata';
+import { senderRuleQuietResume } from './autopilot/sender-rule-quiet-queue.js';
 
 import {
   SupportRequestWorker,
@@ -1221,11 +1222,13 @@ async function bootstrap(): Promise<void> {
    * (POST /api/undo/:token enqueues the reverse). Policy `perMailboxPolicy`
    * + the per-mailbox advisory lock serialize destructive mutations.
    */
+  const senderRuleResumeQueue = new Queue<LabelActionJobData>(LABEL_ACTION_QUEUE, { connection });
   const labelActionWorker = new LabelActionWorker({
     db,
     gmailMutation: gmailMutationAccess,
     outbox: new OutboxPublisher(),
     lock: mailboxLock,
+    onQuietDeferred: senderRuleQuietResume(senderRuleResumeQueue),
   });
   labelActionWorker.setObserver(observer);
   labelActionWorker.setDeadLetterRecorder(deadLetterRecorder);
@@ -2611,6 +2614,7 @@ async function bootstrap(): Promise<void> {
       // pass may flip dunning rows; the drift pass then verifies what
       // remains live against the provider (D249).
       const drift = await billingReconciliationService.reconcileLiveSubscriptions();
+      const passRefunds = await billingReconciliationService.reconcilePassRefunds();
       // The verdict counters (verdictsEnforced / verdictsUnenforced /
       // verdictsRefuted) left this line: refund + chargeback enforcement
       // now runs on BillingVerdictWorker's 10-minute tick (D253) and
@@ -2627,6 +2631,7 @@ async function bootstrap(): Promise<void> {
           subscriptionsUnchanged: drift.subscriptionsUnchanged,
           subscriptionsUnreadable: drift.subscriptionsUnreadable,
           providerErrors: drift.providerErrors,
+          passRefunds,
         }),
       );
     } catch (err) {
@@ -3239,6 +3244,7 @@ async function bootstrap(): Promise<void> {
       await scoreBullWorker.close();
       await scoreExplainBullWorker.close();
       await labelActionBullWorker.close();
+      await senderRuleResumeQueue.close();
       await actionRecoveryBullWorker.close();
       await unsubExecutionBullWorker.close();
       await undoExpiryBullWorker.close();

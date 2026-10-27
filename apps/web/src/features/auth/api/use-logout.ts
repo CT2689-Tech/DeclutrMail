@@ -6,6 +6,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiPost, redirectAfterLogout } from '@/lib/api/client';
 import { resetIdentity } from '@/lib/posthog';
+import { clearGuidedReviewSession } from '@/features/senders/guided-review-storage';
 
 export function useLogout() {
   const qc = useQueryClient();
@@ -21,6 +22,7 @@ export function useLogout() {
       void resetIdentity().catch(() => undefined);
       // Clearing mounted queries can start unauthorized reads. Reserve
       // the signed-out destination first so their 401 cannot replace it.
+      clearGuidedReviewSession();
       redirectAfterLogout();
       qc.clear();
     },

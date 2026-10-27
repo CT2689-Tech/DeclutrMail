@@ -293,6 +293,34 @@ export function ActivityScreen() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
   const [failedTokens, setFailedTokens] = useState<Set<string>>(new Set());
+  const rows = useMemo(() => query.data?.pages.flatMap((page) => page.data) ?? [], [query.data]);
+  const selectionNow = useNow(30_000, String(query.dataUpdatedAt));
+  const pendingUndoTokens = useMutationState({
+    filters: { mutationKey: ['activity-undo', activeMailboxId ?? undefined], status: 'pending' },
+    select: (mutation) => mutation.state.variables,
+  });
+  const selectableIds = useMemo(
+    () =>
+      new Set(
+        rows
+          .filter(
+            (row) =>
+              row.undoState.kind === 'available' &&
+              (selectionNow === null || Date.parse(row.undoState.expiresAt) > selectionNow) &&
+              !pendingUndoTokens.includes(row.undoState.token),
+          )
+          .map((row) => row.id),
+      ),
+    [rows, selectionNow, pendingUndoTokens],
+  );
+  useEffect(() => {
+    // Preserve an in-flight batch's receipt; prune stale selections when it settles.
+    if (bulkBusy || query.isPlaceholderData) return;
+    setSelectedIds((previous) => {
+      const next = new Set([...previous].filter((id) => selectableIds.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [selectableIds, bulkBusy, query.isPlaceholderData]);
   const filterKey = useMemo(
     () =>
       JSON.stringify([
@@ -332,7 +360,7 @@ export function ActivityScreen() {
   }, [filterKey, bulkBusy]);
   const toggleRow = useCallback(
     (id: string) => {
-      if (query.isPlaceholderData) return;
+      if (query.isPlaceholderData || bulkBusy || !selectableIds.has(id)) return;
       setSelectedIds((prev) => {
         const next = new Set(prev);
         if (next.has(id)) next.delete(id);
@@ -340,7 +368,7 @@ export function ActivityScreen() {
         return next;
       });
     },
-    [query.isPlaceholderData],
+    [query.isPlaceholderData, bulkBusy, selectableIds],
   );
 
   const invalidActiveFilters =
@@ -373,7 +401,6 @@ export function ActivityScreen() {
   // previous query as placeholder data. In both cases the filter surface
   // stays mounted below while the stale rows stay hidden.
   const pages = query.data?.pages ?? [];
-  const rows = pages.flatMap((page) => page.data);
   const meta = pages[0]?.meta;
   const stats = meta?.stats;
   const allTimeStats = meta?.allTimeStats;
@@ -482,9 +509,18 @@ export function ActivityScreen() {
           <ActionChips verbs={filters.verbs ?? []} onVerbs={setVerbs} />
 
           <ActivityInteractionBlocked.Provider value={showingStaleRows}>
+            {selectableIds.size > 0 && (
+              <p
+                id="activity-selection-help"
+                style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}
+              >
+                Select actions to undo together.
+              </p>
+            )}
             <BulkActionBar
               rows={rows}
               selectedIds={selectedIds}
+              selectableIds={selectableIds}
               bulkBusy={bulkBusy}
               bulkError={bulkError}
               onSetBulkBusy={setBulkBusy}
@@ -511,6 +547,8 @@ export function ActivityScreen() {
                 <GroupedList
                   rows={rows}
                   selectedIds={selectedIds}
+                  selectableIds={selectableIds}
+                  selectionBlocked={bulkBusy}
                   onToggle={toggleRow}
                   failedTokens={failedTokens}
                   isMobile={isMobile}
@@ -521,6 +559,8 @@ export function ActivityScreen() {
                 <Timeline
                   rows={rows}
                   selectedIds={selectedIds}
+                  selectableIds={selectableIds}
+                  selectionBlocked={bulkBusy}
                   onToggle={toggleRow}
                   failedTokens={failedTokens}
                   isMobile={isMobile}
@@ -596,6 +636,8 @@ const screenColumnStyle: CSSProperties = {
 interface RowListProps {
   rows: readonly ActivityRowWire[];
   selectedIds: Set<string>;
+  selectableIds: Set<string>;
+  selectionBlocked: boolean;
   onToggle: (id: string) => void;
   failedTokens?: Set<string> | undefined;
   isMobile: boolean;
@@ -715,6 +757,8 @@ function groupByDay(
 function Timeline({
   rows,
   selectedIds,
+  selectableIds,
+  selectionBlocked,
   onToggle,
   failedTokens,
   isMobile,
@@ -758,7 +802,8 @@ function Timeline({
                   key={row.id}
                   row={row}
                   isSelected={selectedIds.has(row.id)}
-                  selectionActive={selectedIds.size > 0}
+                  canSelect={selectableIds.has(row.id)}
+                  selectionBlocked={selectionBlocked}
                   onToggleSelect={() => onToggle(row.id)}
                   failedTokens={failedTokens}
                   isMobile={isMobile}
@@ -940,13 +985,12 @@ function hasAnyCount(stats: ActivityStatsWire | null | undefined): boolean {
 }
 
 /**
- * A raised surface — `shadow.card` is a soft drop in light and carries a
- * hairline ring in dark, so one token holds both themes.
+ * A clear panel boundary in both themes, matching the Home overview.
  */
 const panelStyle: CSSProperties = {
   background: color.card,
-  borderRadius: radius.lg,
-  boxShadow: shadow.card,
+  borderRadius: 12,
+  border: `1px solid ${color.border}`,
 };
 
 /**
@@ -1486,6 +1530,7 @@ function ExportSupportBundleButton({
 function BulkActionBar({
   rows,
   selectedIds,
+  selectableIds,
   bulkBusy,
   bulkError,
   onSetBulkBusy,
@@ -1495,6 +1540,7 @@ function BulkActionBar({
 }: {
   rows: readonly ActivityRowWire[];
   selectedIds: Set<string>;
+  selectableIds: Set<string>;
   bulkBusy: boolean;
   bulkError: string | null;
   onSetBulkBusy: (busy: boolean) => void;
@@ -1504,24 +1550,17 @@ function BulkActionBar({
 }) {
   const interactionBlocked = useContext(ActivityInteractionBlocked);
   const revert = useRevertActivity();
-  const mailboxId = useOptionalAuth()?.me?.activeMailboxId ?? undefined;
-  const pendingTokens = useMutationState({
-    filters: { mutationKey: ['activity-undo', mailboxId], status: 'pending' },
-    select: (mutation) => mutation.state.variables,
-  });
   // Only rows with an available undo are valid bulk-undo targets.
   // Show the count of revertable selections vs the total selection
   // so the user can SEE that a stale / expired row was skipped.
   const selectedRows = rows.filter((row) => selectedIds.has(row.id));
-  const revertableRows = selectedRows.filter(
-    (r) => r.undoState.kind === 'available' && !pendingTokens.includes(r.undoState.token),
-  );
+  const revertableRows = selectedRows.filter((row) => selectableIds.has(row.id));
   const revertableCount = revertableRows.length;
 
   if (selectedIds.size === 0) return null;
 
   const runBulkUndo = async () => {
-    if (interactionBlocked || bulkBusy) return;
+    if (interactionBlocked || bulkBusy || revertableCount === 0) return;
     onSetBulkBusy(true);
     onSetBulkError(null);
     onSetFailedTokens(() => new Set());
@@ -1601,7 +1640,7 @@ function BulkActionBar({
       }}
     >
       <span style={{ ...numeralStyle, fontSize: text.md, fontWeight: 600, marginRight: 8 }}>
-        {selectedIds.size} row{selectedIds.size === 1 ? '' : 's'}
+        {selectedIds.size} action{selectedIds.size === 1 ? '' : 's'} selected
         {revertableCount < selectedIds.size && (
           <span style={{ fontWeight: 500, fontSize: text.sm, color: color.fgMuted, marginLeft: 8 }}>
             {revertableCount} undoable
@@ -1614,9 +1653,11 @@ function BulkActionBar({
         onClick={runBulkUndo}
         disabled={interactionBlocked || revertableCount === 0 || bulkBusy}
       >
-        {bulkBusy ? 'Undoing…' : `Undo ${revertableCount}`}
+        {bulkBusy
+          ? 'Undoing…'
+          : `Undo ${revertableCount} action${revertableCount === 1 ? '' : 's'}`}
       </Button>
-      <Button tone="ghost" size="md" onClick={onClear}>
+      <Button tone="ghost" size="md" onClick={onClear} disabled={bulkBusy}>
         Clear
       </Button>
       {bulkError && (
@@ -1680,6 +1721,8 @@ function groupBySender(rows: readonly ActivityRowWire[]): SenderGroup[] {
 function GroupedList({
   rows,
   selectedIds,
+  selectableIds,
+  selectionBlocked,
   onToggle,
   failedTokens,
   isMobile,
@@ -1829,7 +1872,8 @@ function GroupedList({
                     key={row.id}
                     row={row}
                     isSelected={selectedIds.has(row.id)}
-                    selectionActive={selectedIds.size > 0}
+                    canSelect={selectableIds.has(row.id)}
+                    selectionBlocked={selectionBlocked}
                     onToggleSelect={() => onToggle(row.id)}
                     variant="grouped"
                     failedTokens={failedTokens}
@@ -1920,7 +1964,8 @@ export function activityRowTime(iso: string, timeZone: string, withDate: boolean
 function ActivityRow({
   row,
   isSelected,
-  selectionActive = false,
+  canSelect,
+  selectionBlocked,
   onToggleSelect,
   variant = 'flat',
   failedTokens,
@@ -1930,8 +1975,8 @@ function ActivityRow({
 }: {
   row: ActivityRowWire;
   isSelected: boolean;
-  /** Any row selected — every row's checkbox shows, not just the hovered one. */
-  selectionActive?: boolean;
+  canSelect: boolean;
+  selectionBlocked: boolean;
   onToggleSelect: () => void;
   variant?: 'flat' | 'grouped';
   /** Set of undo tokens that just failed in a bulk-undo burst. Each
@@ -1955,13 +2000,6 @@ function ActivityRow({
   const isSyntheticReviewEvidence =
     row.reviewOutcome === 'skipped' || row.reviewOutcome === 'protected';
   const [hovered, setHovered] = useState(false);
-  const [checkFocused, setCheckFocused] = useState(false);
-  // The checkbox sits ON the logo, not in a gutter of its own: it shows
-  // while the row is hovered, focused or selected, while any selection
-  // is live, and as a corner badge on touch (no hover there). Inside a
-  // sender group there is no logo, so it always shows in the logo's slot.
-  const showCheck =
-    variant === 'grouped' || isMobile || isSelected || selectionActive || hovered || checkFocused;
 
   // D57 rule attribution — Autopilot rows name the rule that fired
   // ("by Autopilot · Newsletter graveyard"); a deleted rule degrades to
@@ -2065,6 +2103,24 @@ function ActivityRow({
     </div>
   );
 
+  const timestamp = (
+    <time
+      dateTime={row.occurredAt}
+      title={absolute}
+      style={{
+        ...numeralStyle,
+        fontSize: text.sm,
+        color: color.fgMuted,
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
+        minWidth: variant === 'flat' ? 64 : undefined,
+        textAlign: isMobile ? 'left' : 'right',
+      }}
+    >
+      {activityRowTime(row.occurredAt, timeZone, variant === 'grouped')}
+    </time>
+  );
+
   const tinted = (hovered && !isMobile) || isSelected;
   return (
     <li
@@ -2116,63 +2172,47 @@ function ActivityRow({
           background: resultColor,
         }}
       />
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
-        <label
-          style={{
-            position: 'relative',
-            flexShrink: 0,
-            width: 40,
-            height: 40,
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          {/* Inside a sender group the header already carries the identity. */}
-          {variant === 'flat' && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 14, minWidth: 0 }}>
+        {canSelect && (
+          <label
+            style={{
+              flexShrink: 0,
+              width: isMobile ? 44 : 28,
+              minHeight: 44,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+            title="Select for Undo"
+          >
+            <input
+              type="checkbox"
+              checked={isSelected}
+              disabled={selectionBlocked}
+              onChange={onToggleSelect}
+              aria-label={`Select activity row from ${senderName}: ${verbLabel}, ${absolute || row.occurredAt}`}
+              aria-describedby="activity-selection-help"
+              style={{
+                width: 20,
+                height: 20,
+                margin: 0,
+                cursor: 'pointer',
+                accentColor: color.primary,
+              }}
+            />
+          </label>
+        )}
+        {variant === 'flat' && (
+          <span data-activity-sender-avatar style={{ display: 'inline-flex', flexShrink: 0 }}>
             <Avatar
               size={40}
               name={senderName}
               domain={senderEmail}
               hasMark={row.sender?.brandMark ?? false}
             />
-          )}
-          <span
-            style={{
-              position: 'absolute',
-              ...(variant === 'flat' && isMobile && !isSelected && !selectionActive
-                ? // Touch at rest: a small badge on the logo's corner, so
-                  // the logo stays readable and selection stays findable.
-                  { right: -4, bottom: -4, width: 22, height: 22 }
-                : { inset: variant === 'flat' ? 0 : 6 }),
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: variant === 'flat' ? 11 : radius.pill,
-              background: variant === 'flat' ? color.card : 'transparent',
-              boxShadow: variant === 'flat' ? shadow.card : 'none',
-              opacity: showCheck ? 1 : 0,
-              transition: `opacity ${motion.fast} ${motion.ease}`,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={onToggleSelect}
-              onFocus={() => setCheckFocused(true)}
-              onBlur={() => setCheckFocused(false)}
-              aria-label={`Select activity row from ${senderName}`}
-              style={{
-                width: 18,
-                height: 18,
-                margin: 0,
-                cursor: 'pointer',
-                accentColor: color.primary,
-              }}
-            />
           </span>
-        </label>
+        )}
         {variant === 'flat' ? identity : result('left')}
         {variant === 'flat' && !isMobile && result('right')}
         {!isMobile && (
@@ -2182,22 +2222,7 @@ function ActivityRow({
             {actions}
           </div>
         )}
-        <time
-          dateTime={row.occurredAt}
-          title={absolute}
-          style={{
-            ...numeralStyle,
-            fontSize: text.sm,
-            color: color.fgMuted,
-            whiteSpace: 'nowrap',
-            flexShrink: 0,
-            minWidth: variant === 'flat' ? 64 : undefined,
-            textAlign: 'right',
-            alignSelf: isMobile ? 'flex-start' : undefined,
-          }}
-        >
-          {activityRowTime(row.occurredAt, timeZone, variant === 'grouped')}
-        </time>
+        {!isMobile && timestamp}
       </div>
       {isMobile && (
         <div
@@ -2206,12 +2231,21 @@ function ActivityRow({
             flexDirection: 'column',
             alignItems: 'stretch',
             gap: 8,
-            // Under the name, past the logo.
-            paddingLeft: variant === 'flat' ? 54 : 0,
           }}
         >
           {variant === 'flat' && result('left')}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>{actions}</div>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 8,
+            }}
+          >
+            {timestamp}
+            {actions}
+          </div>
         </div>
       )}
       {showFeedback && (

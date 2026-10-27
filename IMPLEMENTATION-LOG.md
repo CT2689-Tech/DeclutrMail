@@ -10,10 +10,9 @@
 > rebuild the table from the plan.
 
 Source of truth for the status of each D-decision in the plan. See
-CLAUDE.md §8 for the lifecycle and how this auto-updates from PRs.
+CLAUDE.md §8.1 for the lifecycle and how this auto-updates from PRs.
 
-**Plan source:** `~/.claude/plans/i-want-you-to-smooth-kahn.md` (repo
-mirror to be created at `docs/execution/Implementation-Plan.md`).
+**Plan source:** `docs/execution/Implementation-Plan.md`.
 
 ## Status legend
 
@@ -462,3 +461,53 @@ the required Monitoring channel read. The scheduled digest now requires explicit
 verified. Until then the existing watchdog skips the new step and production
 warning channels remain unchanged. Human login and scheduled access are separate.
 Preflight also verifies the digest-log read needed for daily replay protection.
+
+## Alert digest provider-response handling — 2026-10-23
+
+Relates to D159 and D160. Digest replay protection now follows empty partial
+Logging search pages within the current UTC day and refuses incomplete searches.
+Plan hashes normalize provider object-key ordering; native reads with identical
+policy values had produced different hashes from map ordering alone. Regression
+checks cover both provider behaviors without weakening policy-value drift checks.
+
+The native preparation rehearsal then exposed protobuf omission of a zero
+threshold on the new reconnect diagnostic. Readback now recognizes that exact
+default, keeps other missing fields strict, and retains mismatched definitions
+in the encrypted failure report. A changed nonzero threshold still fails and
+rolls back all resources created during preparation. Relates to D159 and D160.
+
+Production alert routing was activated on October 23 after native preparation,
+rendered test-email receipt, apply/readback and a received real daily summary.
+The temporary IAM binding and role were removed; a subsequent CI digest read
+confirmed same-day duplicate suppression with the ongoing permissions only.
+The runbook now records this evidence in place of the earlier pending status.
+Relates to D159 and D160.
+
+## Home Action overview — 2026-10-25
+
+Relates to D198, D200 and D210. The approved Home composition now exposes a bounded sender shortlist, capability-gated attention queues, windowed Activity results, complete automation states, and mailbox insights. A workspace-authorized snapshot read aggregates all scanned inbound metadata, independently of sender pagination. See `docs/execution/home-action-overview-2026-10-25.md` for scope, state coverage, independent review and local verification. This entry does not assert deployment or production provider execution.
+
+### 2026-10-25 — Home visual sharpening (Relates to D198, D210)
+
+Founder-approved presentation pass after accepting the Action overview data. Sharpened hierarchy, sender/count contrast, typography, phone CTA and result/snapshot surfaces without changing data or action behavior. Added long-name story and preview theme parity. Local tests, build/budgets and independent visual review recorded in `docs/execution/home-visual-sharpen-2026-10-25.md`. No D status reclassified.
+
+
+### 2026-10-25 — Workspace visual consistency (Relates to D198, D210)
+
+Extended the approved Home typography, boundaries, spacing and count hierarchy to Cleanup, Automations, Catch up and Activity. Retained feature-specific layouts and all data/action behavior; fixed 320px report, summary, metadata and button containment discovered in visual smoke. Home/account routes remain outside the scope. Desktop, phone, dark mode, preview/cancel, existing regression suites, build/budgets and independent review are recorded in `docs/execution/workspace-visual-consistency-2026-10-25.md`. No D status reclassified.
+
+
+### 2026-10-25 — Account visual consistency (Relates to D198, D210)
+
+Extended the accepted app typography, compact spacing, panel boundaries and restrained accents to Settings (including subpages) and Plan & billing. Preserved all account/payment data, controls, deep links and safety gates; active billing checkout files remain untouched. Production-build synthetic desktop/320px/dark smoke, preference restore, billing warning/recovery states, regression checks and independent review are recorded in `docs/execution/account-visual-consistency-2026-10-25.md`. No D status reclassified.
+
+### 2026-10-25 — Setup and preview visual consistency (Relates to D198, D210)
+
+Extended the accepted app typography and panel treatment to centered onboarding and scoped action previews. Kept setup choices and scan status simple; preserved each preview's account, scope, consequence, recovery and Cancel. Repaired the first-review header at 320px and its inline-preview story fixture. Synthetic desktop/phone/light/dark checks, Cancel/focus-return evidence, regression results, independent review and limits are recorded in `docs/execution/setup-preview-visual-2026-10-25.md`. No D status reclassified.
+
+### 2026-10-26 — Signed-out onboarding entry (Relates to D107, D108)
+
+The public Promise and Connect steps now probe the session without redirecting
+anonymous visitors to returning sign-in. Protected secondary-mailbox entry
+retains its redirect. Regression and synthetic browser evidence are recorded in
+`docs/execution/onboarding-signedout-2026-10-26.md`. No D status reclassified.

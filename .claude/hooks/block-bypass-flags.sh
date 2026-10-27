@@ -10,7 +10,7 @@
 #   Bash(*--no-verify*) does not reliably enforce — its semantics are
 #   inconsistent across versions. A small hook gives precise control.
 #
-# Exit 0 to allow; non-zero to block.
+# Exit 0 to allow; exit 2 to block (Claude Code ignores any other non-zero code).
 
 set -euo pipefail
 
@@ -38,7 +38,7 @@ for pattern in "${forbidden[@]}"; do
     echo "   Command: $command" >&2
     echo "   If a hook is failing, fix the underlying issue rather than bypassing." >&2
     echo "   If this is genuinely needed, ask the founder to override per-PR." >&2
-    exit 1
+    exit 2
   fi
 done
 

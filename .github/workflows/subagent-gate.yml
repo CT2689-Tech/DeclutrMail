@@ -58,8 +58,9 @@ jobs:
           filters: |
             privacy:
               - 'apps/api/src/gmail/**'
-              - 'apps/api/src/messages/**'
               - 'apps/api/src/senders/**'
+              - 'apps/api/src/sync/**'
+              - 'packages/shared/src/contracts/gmail-data-inventory.ts'
               - 'packages/db/src/schema/mail-messages.ts'
               - 'packages/db/src/schema/senders.ts'
             architecture:
@@ -79,6 +80,8 @@ jobs:
             webhooks:
               - 'apps/api/src/webhooks/**'
               - 'apps/api/**/*-webhook.controller.ts'
+              - 'apps/api/src/billing/paddle.adapter.ts'
+              - 'apps/api/src/billing/razorpay.adapter.ts'
 
   # Placeholder gate that documents which agents WOULD run for this PR.
   # Replaced with real Claude API invocations once ANTHROPIC_API_KEY is

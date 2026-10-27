@@ -1,3 +1,4 @@
+import { DEFAULT_DELETE_WINDOW_DAYS } from '@declutrmail/shared/actions';
 import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
 import { Button } from '@declutrmail/shared';
@@ -49,7 +50,7 @@ function Story({
     : state;
   const onMode = (next: UnsubscribeCleanupMode) => {
     setMode(next);
-    setDays(next === 'delete' ? 180 : null);
+    setDays(next === 'delete' ? DEFAULT_DELETE_WINDOW_DAYS : null);
     setReach('inbox_only');
   };
   const ageControl = { olderThanDays: days, options: TIME_WINDOW_PRESETS, onChange: setDays };

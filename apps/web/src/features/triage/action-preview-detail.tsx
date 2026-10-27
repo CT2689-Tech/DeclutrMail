@@ -33,6 +33,8 @@ const { color, space, text } = tokens;
 export interface ActionPreviewDetail {
   /** Unfiltered inbox count keeps the opening cleanup mode stable as age changes. */
   inboxTotal?: number | null;
+  /** Fresh unfiltered Inbox + archived count, not the selected age bucket. */
+  allMailTotal?: number | null;
   /** The owner keeps count, sample and request on this same age selection. */
   ageControl?: CleanupAgeControl | undefined;
   /**

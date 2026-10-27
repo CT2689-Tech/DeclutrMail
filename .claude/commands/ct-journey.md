@@ -220,6 +220,6 @@ ORDER BY u.created_at DESC;
    **unverified**. Anything touching a CLAUDE.md §2 Tier 1 area says so.
 5. **Is it just them?** — the funnel, one line, plus any finding seen on other
    mailboxes.
-6. **Next** — each defect class gets a task chip (`spawn_task`: self-contained,
-   mailbox UUID not email) or `/ct-class`. Founder-only actions (billing, DNS,
+6. **Next** — each defect class gets a proposed session (`start_session`,
+   self-contained brief, mailbox UUID not email) or `/ct-class`. Founder-only actions (billing, DNS,
    provider consoles, re-running someone's scan) go under **Your steps**.

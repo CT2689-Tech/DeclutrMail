@@ -1247,6 +1247,7 @@ describe('SenderDetailRoute', () => {
   ] as const)(
     'reconciles the suggestion after $action and restores eligible reads after Undo',
     async ({ action, verdict, policyType, inbox, archived }) => {
+      const contextLabel = verdict === 'later' ? 'Review context' : /Optional suggestion/;
       const before: SenderDetailDto = {
         ...DETAIL,
         policyType: null,
@@ -1267,7 +1268,7 @@ describe('SenderDetailRoute', () => {
       const current = { ...before };
       installHappyPath(MESSAGE, undefined, undefined, current);
       renderDetail();
-      await screen.findByRole('group', { name: /Optional suggestion/ });
+      await screen.findByRole('group', { name: contextLabel });
       Object.assign(current, {
         policyType,
         inboxCount: inbox,
@@ -1281,9 +1282,7 @@ describe('SenderDetailRoute', () => {
         });
       });
       await waitFor(() =>
-        expect(
-          screen.queryByRole('group', { name: /Optional suggestion/ }),
-        ).not.toBeInTheDocument(),
+        expect(screen.queryByRole('group', { name: contextLabel })).not.toBeInTheDocument(),
       );
       // An unsubscribe cannot be recalled. Only the reversible choices
       // return to their previous eligible state here.
@@ -1295,9 +1294,7 @@ describe('SenderDetailRoute', () => {
             exact: true,
           });
         });
-        expect(
-          await screen.findByRole('group', { name: /Optional suggestion/ }),
-        ).toBeInTheDocument();
+        expect(await screen.findByRole('group', { name: contextLabel })).toBeInTheDocument();
       }
     },
   );
@@ -1325,7 +1322,15 @@ describe('SenderDetailRoute', () => {
       const current = { ...original };
       let completed = false;
       let posted:
-        { primary: { type: string; olderThanDays?: number | null; wakeAt?: string } } | undefined;
+        | {
+            primary: {
+              type: string;
+              olderThanDays?: number | null;
+              wakeAt?: string;
+              reach?: string;
+            };
+          }
+        | undefined;
       const primaryType = verb === 'Archive' ? 'archive' : verb === 'Later' ? 'later' : 'delete';
       const remainingInbox = verb === 'Delete' ? 0 : inbox - affected;
       const remainingArchived = verb === 'Delete' ? 0 : archived + affected;
@@ -1454,9 +1459,17 @@ describe('SenderDetailRoute', () => {
       const dialog = screen.getByRole('dialog');
       const includeArchived = () =>
         within(dialog).queryByRole('checkbox', { name: 'Include archived email' });
-      // An empty inbox hides Email age until archived email is included.
-      // A tied age window hides the checkbox until the window changes.
-      if (verb === 'Delete' && includeArchived()) fireEvent.click(includeArchived()!);
+      if (verb === 'Delete') {
+        expect(within(dialog).getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+        expect(includeArchived()).not.toBeChecked();
+        fireEvent.click(includeArchived()!);
+        expect(
+          within(dialog).getByRole('region', { name: 'What Delete will do' }),
+        ).toHaveTextContent(`${total} emails will move to Gmail Trash.`);
+        expect(
+          within(dialog).getByRole('region', { name: 'What Delete will do' }),
+        ).toHaveTextContent('Inbox and archived email · Any age');
+      }
       if (verb !== 'Later') {
         const windowControl = within(dialog).queryByRole('combobox', {
           name: 'Email age',
@@ -1508,6 +1521,8 @@ describe('SenderDetailRoute', () => {
         ).toBe(unavailable ? 'true' : null);
       }
       expect(posted?.primary.type).toBe(primaryType);
+      if (verb === 'Delete')
+        expect(posted?.primary).toMatchObject({ olderThanDays: null, reach: 'all_mail' });
       if (verb === 'Archive' && affected < inbox) expect(posted?.primary.olderThanDays).toBe(30);
       if (verb === 'Later') expect(typeof posted?.primary.wakeAt).toBe('string');
       const { result } = renderHook(() => useRevertUndo(), {
@@ -2177,15 +2192,13 @@ describe('SenderDetailRoute', () => {
         ]);
         renderDetail();
         fireEvent.click(await screen.findByRole('button', { name: 'Keep (K)' }));
-        await screen.findByText('Skipped in Triage', { exact: true });
+        await screen.findByText('Kept', { exact: true });
         const undo = h.toast.mock.calls.find(([msg]) => msg === 'Kept LinkedIn')?.[2];
         expect(undo).toBeDefined();
         act(() => undo.onClick());
         if (success) {
-          await waitFor(() =>
-            expect(screen.queryByText('Skipped in Triage', { exact: true })).toBeNull(),
-          );
-          expect(screen.queryByText('Skipped in Triage')).toBeNull();
+          await waitFor(() => expect(screen.queryByText('Kept', { exact: true })).toBeNull());
+          expect(screen.queryByText('Kept')).toBeNull();
         } else {
           await waitFor(() =>
             expect(h.toast).toHaveBeenCalledWith(
@@ -2194,7 +2207,7 @@ describe('SenderDetailRoute', () => {
               expect.objectContaining({ label: 'Retry' }),
             ),
           );
-          expect(screen.getByText('Skipped in Triage', { exact: true })).toBeInTheDocument();
+          expect(screen.getByText('Kept', { exact: true })).toBeInTheDocument();
         }
       },
     );
@@ -3468,4 +3481,140 @@ describe('SenderDetailRoute — explaining a template reason on open (D24)', () 
     await new Promise((r) => setTimeout(r, 60));
     expect(explained).toHaveLength(0);
   });
+});
+
+describe('manual Delete audit — sender detail Unsubscribe cleanup', () => {
+  it.each(['page', 'pane'] as const)(
+    'keeps Any age, archived scope and reset consistent in %s',
+    async (layout) => {
+      const bodies: Record<string, unknown>[] = [];
+      const counts = (all: number, old = 0) => ({
+        all,
+        olderThan30d: old,
+        olderThan90d: old,
+        olderThan180d: old,
+        olderThan365d: 0,
+      });
+      const recentMessages = {
+        all: [],
+        olderThan30d: [],
+        olderThan90d: [],
+        olderThan180d: [],
+        olderThan365d: [],
+      };
+      installHappyPath(MESSAGE, undefined, undefined, {
+        ...DETAIL,
+        unsubscribeMethod: 'one_click',
+        inboxCount: 2,
+        archivedCount: 3,
+      });
+      addFetchHandlers([
+        {
+          method: 'GET',
+          path: '/api/actions/preview',
+          respond: () =>
+            jsonOk({
+              data: {
+                sender: {
+                  id: 'linkedin',
+                  name: 'LinkedIn',
+                  domain: 'linkedin.com',
+                  lastSeenDays: 2,
+                  wroteToCount: 0,
+                },
+                counts: counts(2),
+                recentMessages,
+                allMail: { counts: counts(5, 1), recentMessages },
+                unsubAvailable: true,
+                protected: false,
+              },
+            }),
+        },
+        {
+          method: 'POST',
+          path: '/api/actions/unsubscribe-backlog',
+          respond: async (req) => {
+            bodies.push((await req.json()) as Record<string, unknown>);
+            return jsonOk({
+              data: {
+                mode: 'delete',
+                backlog: { actionId: 'audit-detail', requestedCount: 5, verb: 'delete' },
+                senders: [
+                  {
+                    senderId: 'linkedin',
+                    method: 'one_click',
+                    unsubStatus: 'requested',
+                    executionActionId: null,
+                    mailtoUrl: null,
+                    lifecycleStatus: null,
+                    reasonCode: null,
+                  },
+                ],
+              },
+            });
+          },
+        },
+        {
+          method: 'GET',
+          path: '/api/actions/audit-detail',
+          respond: () =>
+            jsonOk({
+              data: {
+                actionId: 'audit-detail',
+                status: 'executing',
+                requestedCount: 5,
+                affectedCount: 0,
+                undoToken: null,
+                errorCode: null,
+              },
+            }),
+        },
+      ]);
+      renderDetail('linkedin', undefined, layout);
+      const opener = await screen.findByRole('button', {
+        name: layout === 'page' ? 'Unsubscribe (U)' : 'Unsubscribe',
+      });
+      fireEvent.click(opener);
+      const dialog = await screen.findByRole('dialog');
+      const deleteChoice = await within(dialog).findByRole('radio', { name: '+ Delete' });
+      await waitFor(() => expect(deleteChoice).toBeEnabled());
+      fireEvent.click(deleteChoice);
+      const age = within(dialog).getByRole('combobox', { name: 'Email age' });
+      const archived = within(dialog).getByRole('checkbox', { name: 'Include archived email' });
+      expect(age).toHaveValue('all');
+      expect(archived).not.toBeChecked();
+      expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+        '2 emails',
+      );
+      fireEvent.click(archived);
+      expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+        '5 emails',
+      );
+      fireEvent.change(age, { target: { value: '180' } });
+      expect(archived).toBeChecked();
+      expect(within(dialog).getByRole('region', { name: 'What Delete will do' })).toHaveTextContent(
+        '1 email',
+      );
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+      expect(bodies).toHaveLength(0);
+      fireEvent.click(opener);
+      const reopened = await screen.findByRole('dialog');
+      const reopenedDelete = await within(reopened).findByRole('radio', { name: '+ Delete' });
+      await waitFor(() => expect(reopenedDelete).toBeEnabled());
+      fireEvent.click(reopenedDelete);
+      expect(within(reopened).getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+      expect(
+        within(reopened).getByRole('checkbox', { name: 'Include archived email' }),
+      ).not.toBeChecked();
+      fireEvent.click(within(reopened).getByRole('checkbox', { name: 'Include archived email' }));
+      fireEvent.click(within(reopened).getByRole('button', { name: 'Unsubscribe + Delete' }));
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toMatchObject({
+        mode: 'delete',
+        olderThanDays: null,
+        reach: 'all_mail',
+        senderIds: ['linkedin'],
+      });
+    },
+  );
 });

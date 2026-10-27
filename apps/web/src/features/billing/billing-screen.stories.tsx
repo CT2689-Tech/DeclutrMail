@@ -12,7 +12,7 @@ import { useEffect, useState, type ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { tokens } from '@declutrmail/shared';
-import type { BillingSubscription } from '@declutrmail/shared/contracts';
+import type { BillingSubscription, BillingInvoiceList } from '@declutrmail/shared/contracts';
 
 import { AuthProvider } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY, type Me } from '@/features/auth/api/use-me';
@@ -80,13 +80,31 @@ const PRO_SUB: BillingSubscription = {
   },
 };
 
-function makeClient(me: Me, billing: BillingSubscription | null): QueryClient {
+function makeClient(
+  me: Me,
+  billing: BillingSubscription | null,
+  history?: BillingInvoiceList,
+): QueryClient {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
   });
   client.setQueryData(ME_QUERY_KEY, me);
+  client.setQueryData(
+    billingKeys.invoices(),
+    history ?? {
+      invoices: [],
+      unavailableProviders: [],
+      truncated: false,
+      omittedRows: 0,
+    },
+  );
   if (billing) {
-    client.setQueryData(billingKeys.subscription(), billing);
+    client.setQueryData(
+      billingKeys.subscription(),
+      Object.hasOwn(billing, 'checkoutSetupComplete')
+        ? billing
+        : { ...billing, checkoutSetupComplete: true },
+    );
   }
   return client;
 }
@@ -163,6 +181,75 @@ export const PaymentUnconfirmed: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) => (
     <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
       <PaymentProcessingNotice phase="unconfirmed" onRelease={() => {}} />
+    </div>
+  ),
+};
+
+/** A Backlog Pass is a one-time purchase: named as one, and checked
+ *  against its own transaction (the server answers a Pass from that
+ *  transaction only, never from the subscription search), so the check
+ *  line reads like a plan's. */
+export const PassUnconfirmed: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
+      <PaymentProcessingNotice
+        phase="unconfirmed"
+        kind="checkout"
+        offer="pass_onetime"
+        onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
+      />
+    </div>
+  ),
+};
+
+/** The Pass checkout closed without a completed event: the check ran and
+ *  found nothing, so the re-check and the two-step release are offered.
+ *  (When the overlay was closed in this tab and the answer is exact, the
+ *  screen releases it by itself and this notice never lingers.) */
+export const PassCheckoutStarted: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 160, padding: 12 }}>
+      <PaymentProcessingNotice
+        kind="checkout_intent"
+        offer="pass_onetime"
+        onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
+      />
+    </div>
+  ),
+};
+
+/** A plan checkout the provider has no completed payment for: the
+ *  re-check and the two-step release are both offered. */
+export const CheckoutStartedNothingFound: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) => (
+    <div style={{ background: tokens.color.bg, minHeight: 200, padding: 12 }}>
+      <PaymentProcessingNotice
+        kind="checkout_intent"
+        onRelease={() => {}}
+        onProviderCheck={async () => 'none_found'}
+      />
+    </div>
+  ),
+};
+
+export const CheckoutHoldReleasing: Story<typeof BillingScreen> = {
+  render: () => (
+    <div style={{ background: tokens.color.bg, padding: 12 }}>
+      <PaymentProcessingNotice kind="checkout_intent" releasing onRelease={() => {}} />
+    </div>
+  ),
+};
+
+export const CheckoutHoldReleaseFailed: Story<typeof BillingScreen> = {
+  render: () => (
+    <div style={{ background: tokens.color.bg, padding: 12 }}>
+      <PaymentProcessingNotice
+        kind="checkout_intent"
+        releaseError="This hold couldn’t be released; try confirming again."
+        onRelease={() => {}}
+      />
     </div>
   ),
 };
@@ -416,17 +503,56 @@ export const ProWithoutSubscription: Story<typeof BillingScreen> = {
     ),
 };
 
-/** Complimentary Pro: subscribing to a lower paid tier is not an upgrade. */
+/** Complimentary Pro: extra purchases stay secondary to current access. */
 export const CompedPro: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
-      makeClient(meFixture('pro', null), {
-        complimentary: { tier: 'pro', expiresAt: null },
-        tier: 'pro',
-        foundingMember: false,
-        pendingCheckout: null,
-        subscription: null,
-      }),
+      makeClient(
+        { ...meFixture('pro', null), pricingV2: true, passEnabled: true },
+        {
+          complimentary: { tier: 'pro', expiresAt: null },
+          tier: 'pro',
+          foundingMember: false,
+          pendingCheckout: null,
+          subscription: null,
+        },
+      ),
+      { pricingV2: true },
+    ),
+};
+
+/** Current complimentary access must not hide a receipt from an older purchase. */
+export const CompedProWithPaymentHistory: Story<typeof BillingScreen> = {
+  render: () =>
+    frame(
+      makeClient(
+        { ...meFixture('pro', null), pricingV2: true, passEnabled: true },
+        {
+          complimentary: { tier: 'pro', expiresAt: null },
+          tier: 'pro',
+          foundingMember: false,
+          pendingCheckout: null,
+          subscription: null,
+        },
+        {
+          invoices: [
+            {
+              id: 'txn_previous_pass',
+              provider: 'paddle',
+              issuedAt: '2026-05-01T00:00:00.000Z',
+              amount: '1900',
+              currencyCode: 'USD',
+              status: 'paid',
+              hostedUrl: null,
+              documentAvailable: true,
+            },
+          ],
+          unavailableProviders: [],
+          truncated: false,
+          omittedRows: 0,
+        },
+      ),
+      { pricingV2: true },
     ),
 };
 
@@ -698,6 +824,7 @@ function ComplimentaryConfirmationFixture({
     me.user.workspaceId = 'storybook-complimentary-confirmation';
     const body: BillingSubscription = {
       ...PRO_SUB,
+      checkoutSetupComplete: true,
       complimentary: { tier: 'pro', expiresAt: null },
       subscription: {
         ...PRO_SUB.subscription!,

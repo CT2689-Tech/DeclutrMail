@@ -1,15 +1,17 @@
-import { and, eq, inArray, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNull, notExists, sql, type SQL } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
 import {
   actionJobs,
   activityLog,
+  automationRules,
   invalidateInboxReportCache,
   mailboxAccounts,
   mailMessages,
   senderActionWhere,
   senderPolicies,
+  senders,
   undoJournal,
   workspaces,
 } from '@declutrmail/db';
@@ -17,11 +19,13 @@ import type { schema, SenderActionReach } from '@declutrmail/db';
 import { ActionLabelAppliedPayloadSchema, TOPICS } from '@declutrmail/events';
 import { getActionDescriptor } from '@declutrmail/shared/actions';
 import {
+  isApprovalFirstDeletePreset,
+  AutopilotSenderRuleConditionsSchema,
   LABEL_SENDER_PROTECTED_ERROR_CODE,
   RECOVERY_SENDER_PROTECTED_ERROR_CODE,
 } from '@declutrmail/shared/contracts';
 import type { ActionVerb, LabelChangePair } from '@declutrmail/shared/actions';
-import { undoWindowDaysFor } from '@declutrmail/shared/entitlements';
+import { hasCapability, undoWindowDaysFor } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import {
@@ -32,12 +36,14 @@ import {
 } from './gmail-mutation-client.js';
 import { scheduleLaterReturn } from './later-return-timer.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
+import { isQuietActive, msUntilQuietEnds } from './quiet-hours-state.js';
 import { backoffJobOptions } from './rate-limit-backoff.js';
 import {
   AuthExpiredError,
   InvalidGrantError,
   PermanentError,
   RateLimitError,
+  TransientError,
   ValidationError,
 } from './worker-errors.js';
 import { WORKER_POLICIES } from './worker-policies.js';
@@ -230,6 +236,8 @@ export interface LabelActionResult {
   skippedProtected?: true;
   /** Present only on a recovery attempt stopped for the same reason (it fails, retryable). */
   stoppedProtected?: true;
+  /** The approved action remains queued for the quiet-resume delivery. */
+  deferredQuiet?: true;
 }
 
 /**
@@ -256,6 +264,8 @@ export interface LabelActionDeps {
   gmailMutation: GmailMutationAccess;
   outbox: OutboxPublisher;
   lock: MailboxActionLock;
+  /** Requeue this same durable action with a new delayed queue delivery id. */
+  onQuietDeferred?: (payload: LabelActionJobData, delayMs: number) => Promise<void>;
 }
 
 /**
@@ -309,6 +319,9 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       // job that a retry cannot fix.
       throw new ValidationError(`action_jobs row ${payload.actionId} not found`);
     }
+    if (job.mailboxAccountId !== payload.mailboxAccountId) {
+      throw new ValidationError('label-action mailbox does not match its durable action');
+    }
     if (job.status === 'done') {
       // Idempotent replay (BullMQ retry after a committed terminal tx).
       return { affectedCount: job.affectedCount, undoToken: job.undoToken, alreadyDone: true };
@@ -342,9 +355,53 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
 
     const change = labelChangeForVerb(job.verb);
 
-    return job.direction === 'reverse'
-      ? this.executeReverse(job, change.reverse)
-      : this.executeForward(job, change.forward, payload.protectedConfirmed === true);
+    if (job.direction === 'reverse') return this.executeReverse(job, change.reverse);
+    try {
+      return await this.executeForward(job, change.forward, payload.protectedConfirmed === true);
+    } catch (err) {
+      if (err instanceof CustomAutopilotBlocked) {
+        await db
+          .update(actionJobs)
+          .set({
+            status: 'failed',
+            errorCode: err.code,
+            affectedCount: 0,
+            ...settledQuotaUnits(0),
+            updatedAt: sql`now()`,
+          })
+          .where(eq(actionJobs.id, job.id));
+        return { affectedCount: 0, undoToken: null, alreadyDone: false };
+      }
+      if (err instanceof CustomAutopilotQuiet) {
+        if (!this.deps.onQuietDeferred) {
+          throw new Error('custom Autopilot quiet-resume queue is unavailable', { cause: err });
+        }
+        // No transaction is open here. A failed publish leaves the original
+        // delivery retryable; a successful one retains the frozen job row.
+        const delayMs = Math.max(1000, Math.ceil(err.delayMs));
+        const resumeDeadlineMs = Date.now() + delayMs;
+        await this.deps.onQuietDeferred(payload, delayMs);
+        // Record the actual published due time, not an inference from current Quiet state.
+        // A lost resume delivery must become overdue after that time plus normal grace.
+        // Merge only this key so a concurrent execution/recovery cannot lose Undo metadata.
+        await db
+          .update(actionJobs)
+          .set({
+            selector: sql`${actionJobs.selector} || jsonb_build_object('quietDeferredUntilMs', ${resumeDeadlineMs}::bigint)`,
+          })
+          .where(
+            and(
+              eq(actionJobs.id, job.id),
+              eq(actionJobs.status, 'queued'),
+              eq(actionJobs.direction, 'forward'),
+              eq(actionJobs.recoveryAttempt, 0),
+              isNull(actionJobs.rootActionId),
+            ),
+          );
+        return { affectedCount: 0, undoToken: null, alreadyDone: false, deferredQuiet: true };
+      }
+      throw err;
+    }
   }
 
   /** Forward action — apply the verb, then issue undo + activity + event. */
@@ -360,6 +417,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // narrow `job.verb` to the ACTION_LABEL_APPLIED schema's enum for the
     // event payload. `labelChangeForVerb` already assumes this.
     const labelVerb = job.verb as 'archive' | 'later' | 'delete';
+    const autopilot = customAutopilot(job);
+    if (autopilot && labelVerb !== 'archive' && labelVerb !== 'delete') {
+      throw new ValidationError('custom Autopilot supports Archive and Delete only');
+    }
 
     if (labelVerb === 'later' && (job.selector.type !== 'sender' || job.wakeAt === null)) {
       throw new ValidationError('Later action requires a sender selector and wake time');
@@ -378,10 +439,15 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // Checked here, before any work; atomically with the `executing` write
     // as the first request leaves (`markExecuting`); and before every later
     // request (`assertNotProtected`).
-    const subject = protectionSubject(job, protectedConfirmed);
+    const subject = protectionSubject(
+      job,
+      autopilot && job.recoveryAttempt === 0 ? false : protectedConfirmed,
+    );
     if (subject !== null && (await this.subjectIsProtected(mailboxAccountId, subject))) {
       return this.stopProtected(job, 0);
     }
+    const startingCustom = autopilot && job.recoveryAttempt === 0 && neverReachedGmail(job);
+    if (startingCustom) await this.customStartPredicate(job);
 
     // Resolve the durable execution set (sender selector resolves the
     // job's reach — "in INBOX now", or inbox + archived for an ADR-0028
@@ -397,7 +463,16 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     // first request leaves, because the re-check reads it as "Gmail may
     // already have been changed".
     let ids = job.resolvedMessageIds;
-    if (ids.length === 0 && job.selector.type === 'sender') {
+    if (startingCustom) {
+      // Approval freezes the maximum set. Only shrink it before execution,
+      // so overlapping/manual changes cannot manufacture a misleading Undo.
+      // An empty approved set is final: never resolve it against new mail.
+      ids = await this.eligibleCustomIds(job, ids);
+      await db
+        .update(actionJobs)
+        .set({ resolvedMessageIds: ids, updatedAt: sql`now()` })
+        .where(eq(actionJobs.id, job.id));
+    } else if (!autopilot && ids.length === 0 && job.selector.type === 'sender') {
       ids = await this.resolveSenderActionIds(
         mailboxAccountId,
         job.selector.senderKey,
@@ -431,7 +506,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
         await tx.insert(activityLog).values({
           mailboxAccountId,
           senderKey,
-          source: 'manual',
+          source: autopilot ? 'autopilot' : 'manual',
+          ruleId: autopilot?.ruleId ?? null,
           action: job.verb,
           affectedCount: 0,
           actionJobId: job.id,
@@ -485,14 +561,33 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
             ? {
                 beforeFirstRequest: async () => {
                   hookRan = true;
-                  await this.markExecuting(job.id, mailboxAccountId, subject);
+                  const startPredicate = startingCustom
+                    ? await this.customStartPredicate(job)
+                    : undefined;
+                  if (
+                    startingCustom &&
+                    (await this.eligibleCustomIds(job, ids)).length !== ids.length
+                  ) {
+                    // A provider sync can observe an outside/manual change
+                    // during quota admission. Retry the still-queued action
+                    // with its newly narrowed set before recording any Undo.
+                    throw new TransientError('custom Autopilot message scope changed before send');
+                  }
+                  await this.markExecuting(
+                    job.id,
+                    mailboxAccountId,
+                    subject,
+                    startPredicate,
+                    job,
+                    ids,
+                  );
                 },
               }
             : subject === null
               ? {}
               : { beforeFirstRequest: () => this.assertNotProtected(mailboxAccountId, subject) },
         );
-        if (first && !hookRan) await this.recordHookSkipped(job);
+        if (first && !hookRan) await this.recordHookSkipped(job, ids);
         landed += 1;
         // What moved to Later must come back even if a later request never
         // runs (a stop, a terminal failure): the return timer is set as the
@@ -533,41 +628,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     const appliedAt = new Date().toISOString();
 
     const undoToken = await db.transaction(async (tx) => {
-      // ADR-0028: a Delete's undo must restore each message to where it
-      // was — so record which ids carried INBOX. Read from the LOCAL
-      // mirror, inside this transaction and BEFORE the mirror update
-      // below rewrites it: the mirror only changes in this atomic
-      // commit, so even a Gmail-mutated-then-crashed retry still sees
-      // the pre-action state here. (An incremental sync racing that
-      // narrow crash window could overwrite the mirror first — then
-      // those messages restore to archive instead of inbox: degraded,
-      // never destructive.)
-      //
-      // MEASURED FOR EVERY DELETE, never gated on `job.reach` (Codex
-      // stop-review round 2, 2026-07-28): a job that froze its wide
-      // all-mail id set and then crashed before this transaction can be
-      // retried AFTER a migration rollback + re-apply reset the column
-      // to 'inbox_only' — the retry executes the frozen WIDE set, and a
-      // column-gated partition would write a legacy-looking payload
-      // whose undo floods the inbox. The partition is ground truth
-      // measured from the ids actually being mutated; for an inbox-only
-      // delete it simply equals the whole set and the reverse split
-      // degenerates to the uniform reverse.
+      // The partition was durably captured before the first Gmail request.
+      // Never reconstruct it from a mirror that sync may already have updated.
       const inboxMessageIds =
-        job.verb === 'delete'
-          ? (
-              await tx
-                .select({ providerMessageId: mailMessages.providerMessageId })
-                .from(mailMessages)
-                .where(
-                  and(
-                    eq(mailMessages.mailboxAccountId, mailboxAccountId),
-                    inArray(mailMessages.providerMessageId, ids),
-                    sql`'INBOX' = ANY(${mailMessages.labelIds})`,
-                  ),
-                )
-            ).map((r) => r.providerMessageId)
-          : null;
+        job.verb === 'delete' ? (storedDeleteUndo(job, ids)?.inboxMessageIds ?? null) : null;
 
       const [issued] = await tx
         .insert(undoJournal)
@@ -587,7 +651,8 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       await tx.insert(activityLog).values({
         mailboxAccountId,
         senderKey,
-        source: 'manual',
+        source: autopilot ? 'autopilot' : 'manual',
+        ruleId: autopilot?.ruleId ?? null,
         action: job.verb,
         affectedCount: ids.length,
         undoToken: issued.token,
@@ -904,7 +969,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
    * `queued`, which a retry would take for "never reached Gmail". Mark it
    * now, and say so: that client is broken.
    */
-  private async recordHookSkipped(job: typeof actionJobs.$inferSelect): Promise<void> {
+  private async recordHookSkipped(
+    job: typeof actionJobs.$inferSelect,
+    ids: string[],
+  ): Promise<void> {
     console.error(
       JSON.stringify({
         severity: 'ERROR',
@@ -921,7 +989,25 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
       kind: 'label_action.before_first_request_skipped',
       tags: { worker: this.workerName, mailbox_account_id: job.mailboxAccountId },
     });
-    await this.markExecuting(job.id, job.mailboxAccountId, null);
+    if (job.verb === 'delete' && job.recoveryAttempt === 0 && neverReachedGmail(job)) {
+      // A previously refused root may still carry an old snapshot. The
+      // broken client bypassed the refresh hook, so neither it nor the
+      // post-request mirror proves this attempt's original placement.
+      const [marked] = await this.deps.db
+        .update(actionJobs)
+        .set({
+          status: 'executing',
+          selector: {
+            ...job.selector,
+            deleteUndo: { version: 1, messageIds: ids, inboxMessageIds: null },
+          },
+          updatedAt: sql`now()`,
+        })
+        .where(eq(actionJobs.id, job.id))
+        .returning({ selector: actionJobs.selector });
+      if (!marked) throw new ValidationError('Delete action vanished after its provider request');
+      job.selector = marked.selector;
+    } else await this.markExecuting(job.id, job.mailboxAccountId, null);
   }
 
   /** Is this job's sender (or, for a message list, any of its senders) Protected right now? */
@@ -972,31 +1058,218 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     jobId: string,
     mailboxAccountId: string,
     subject: ProtectionSubject | null,
+    startPredicate?: SQL,
+    customJob?: ActionJobRow,
+    ids?: string[],
   ): Promise<void> {
     const { db } = this.deps;
+    const deleteUndo =
+      customJob?.verb === 'delete' && ids
+        ? await this.prepareDeleteUndo(customJob, ids)
+        : undefined;
+    const selector = deleteUndo ? { ...customJob!.selector, deleteUndo } : undefined;
     const [marked] = await db
       .update(actionJobs)
-      .set({ status: 'executing', updatedAt: sql`now()` })
+      .set({ status: 'executing', ...(selector ? { selector } : {}), updatedAt: sql`now()` })
       .where(
         and(
           eq(actionJobs.id, jobId),
           ...(subject === null
             ? []
             : [notExists(protectedSubjectRow(db, mailboxAccountId, subject))]),
+          ...(startPredicate ? [startPredicate] : []),
         ),
       )
-      .returning({ id: actionJobs.id });
-    if (marked) return;
+      .returning({ id: actionJobs.id, selector: actionJobs.selector });
+    if (marked) {
+      if (selector && customJob) customJob.selector = marked.selector;
+      return;
+    }
     // Nothing was marked: name the real reason rather than assume one.
     const [still] = await db
       .select({ id: actionJobs.id })
       .from(actionJobs)
       .where(eq(actionJobs.id, jobId))
       .limit(1);
+    if (still && startPredicate && customJob) {
+      if (subject !== null && (await this.subjectIsProtected(mailboxAccountId, subject))) {
+        throw new SenderProtectedAtSend();
+      }
+      // Classify a gate that changed after its read. A still-eligible but
+      // different snapshot retries without a provider request.
+      await this.customStartPredicate(customJob);
+      throw new TransientError('custom Autopilot changed before its Gmail request');
+    }
     if (still && subject !== null) {
       throw new SenderProtectedAtSend();
     }
     throw new ValidationError(`action_jobs row ${jobId} vanished before its Gmail request`);
+  }
+
+  private async prepareDeleteUndo(job: ActionJobRow, ids: string[]) {
+    // A reviewed child is queued too, but its parent may already have changed
+    // Gmail. Only an untouched root may replace its original placement.
+    if (job.recoveryAttempt > 0 || !neverReachedGmail(job)) {
+      const stored = storedDeleteUndo(job, ids);
+      if (stored) return stored;
+      console.warn(
+        JSON.stringify({
+          severity: 'WARNING',
+          kind: 'label_action.delete_undo_placement_unknown',
+          actionId: job.id,
+          message:
+            'Legacy in-flight Delete has no original Inbox placement; Undo restores to archive.',
+        }),
+      );
+      return { version: 1 as const, messageIds: ids, inboxMessageIds: null };
+    }
+    const rows = await this.deps.db
+      .select({ id: mailMessages.providerMessageId })
+      .from(mailMessages)
+      .where(
+        and(
+          eq(mailMessages.mailboxAccountId, job.mailboxAccountId),
+          inArray(mailMessages.providerMessageId, ids),
+          sql`'INBOX' = ANY(${mailMessages.labelIds})`,
+        ),
+      );
+    return { version: 1 as const, messageIds: ids, inboxMessageIds: rows.map((row) => row.id) };
+  }
+
+  /** Initial gates only: retries of possibly applied work finish the same durable ids. */
+  private async customStartPredicate(job: ActionJobRow): Promise<SQL> {
+    const autopilot = customAutopilot(job);
+    if (!autopilot || job.selector.type !== 'sender') {
+      throw new ValidationError('custom Autopilot requires a sender selector');
+    }
+    const { db } = this.deps;
+    const [current] = await db
+      .select({
+        rule: automationRules,
+        revoked: sql<boolean>`${automationRules.modeChangedAt} > ${actionJobs.createdAt}`,
+      })
+      .from(automationRules)
+      .innerJoin(
+        actionJobs,
+        and(eq(actionJobs.id, job.id), eq(actionJobs.mailboxAccountId, job.mailboxAccountId)),
+      )
+      .where(eq(automationRules.id, autopilot.ruleId))
+      .limit(1);
+    const rule = current?.rule;
+    if (
+      !rule ||
+      rule.mailboxAccountId !== job.mailboxAccountId ||
+      (rule.isPreset
+        ? !isApprovalFirstDeletePreset(rule) || job.verb !== 'delete'
+        : rule.presetKey !== null) ||
+      rule.scope !== 'account'
+    ) {
+      throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
+    }
+    if (rule.retiredAt !== null || !rule.enabled || rule.mode !== 'observe' || current?.revoked) {
+      throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INACTIVE');
+    }
+    // Approval freezes the job's action and IDs. Later edits affect future
+    // previews; pause/retire still revoke admission before the first request.
+    const conditions = AutopilotSenderRuleConditionsSchema.safeParse(rule.conditions);
+    if (!conditions.success && !isApprovalFirstDeletePreset(rule)) {
+      throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
+    }
+    const [mailbox] = await db
+      .select({
+        quietState: mailboxAccounts.quietState,
+        tier: workspaces.tier,
+        status: mailboxAccounts.status,
+      })
+      .from(mailboxAccounts)
+      .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+      .where(eq(mailboxAccounts.id, job.mailboxAccountId))
+      .limit(1);
+    if (!mailbox || mailbox.status !== 'active') {
+      throw new CustomAutopilotBlocked('AUTOPILOT_MAILBOX_INACTIVE');
+    }
+    if (!hasCapability(mailbox.tier, 'autopilot')) {
+      throw new CustomAutopilotBlocked('AUTOPILOT_NOT_ENTITLED');
+    }
+    const now = new Date();
+    if (isQuietActive(mailbox.quietState, now)) {
+      throw new CustomAutopilotQuiet(
+        Math.max(1, msUntilQuietEnds(mailbox.quietState, now) ?? 300_000),
+      );
+    }
+    const [sender] = await db
+      .select({ id: senders.id })
+      .from(senders)
+      .where(
+        and(
+          eq(senders.id, job.selector.senderId),
+          eq(senders.mailboxAccountId, job.mailboxAccountId),
+          eq(senders.senderKey, job.selector.senderKey),
+        ),
+      )
+      .limit(1);
+    if (!sender) throw new CustomAutopilotBlocked('AUTOPILOT_RULE_INVALID');
+
+    // The state evaluated above must still match in the statement that
+    // records the first possible Gmail mutation. No network is in a tx.
+    return exists(
+      db
+        .select({ one: sql`1` })
+        .from(automationRules)
+        .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, automationRules.mailboxAccountId))
+        .innerJoin(workspaces, eq(workspaces.id, mailboxAccounts.workspaceId))
+        .innerJoin(
+          senders,
+          and(
+            eq(senders.mailboxAccountId, mailboxAccounts.id),
+            eq(senders.id, job.selector.senderId),
+            eq(senders.senderKey, job.selector.senderKey),
+          ),
+        )
+        .where(
+          and(
+            eq(automationRules.id, rule.id),
+            eq(automationRules.mailboxAccountId, job.mailboxAccountId),
+            eq(automationRules.version, rule.version),
+            sql`${automationRules.modeChangedAt} <= ${actionJobs.createdAt}`,
+            eq(automationRules.isPreset, rule.isPreset),
+            rule.presetKey === null
+              ? isNull(automationRules.presetKey)
+              : eq(automationRules.presetKey, rule.presetKey),
+            eq(automationRules.actionKind, rule.actionKind),
+            eq(automationRules.actionPayload, rule.actionPayload),
+            isNull(automationRules.retiredAt),
+            eq(automationRules.enabled, true),
+            eq(automationRules.mode, 'observe'),
+            eq(automationRules.scope, 'account'),
+            eq(automationRules.conditions, rule.conditions),
+            eq(mailboxAccounts.status, 'active'),
+            eq(mailboxAccounts.quietState, mailbox.quietState),
+            eq(workspaces.tier, mailbox.tier),
+          ),
+        ),
+    );
+  }
+
+  private async eligibleCustomIds(job: ActionJobRow, ids: string[]): Promise<string[]> {
+    if (ids.length === 0 || job.selector.type !== 'sender') return [];
+    const rows = await this.deps.db
+      .select({ id: mailMessages.providerMessageId })
+      .from(mailMessages)
+      .where(
+        and(
+          senderActionWhere({
+            mailboxAccountId: job.mailboxAccountId,
+            senderKeys: [job.selector.senderKey],
+            olderThanDays: job.olderThanDays,
+            reach: job.reach,
+          }),
+          inArray(mailMessages.providerMessageId, ids),
+          sql`NOT (${mailMessages.labelIds} && ARRAY['TRASH', 'SPAM', 'DRAFT', 'CHAT']::text[])`,
+        ),
+      );
+    const eligible = new Set(rows.map((row) => row.id));
+    return [...new Set(ids)].filter((id) => eligible.has(id));
   }
 
   protected override async onTerminalFailure(
@@ -1012,7 +1285,12 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           ...settledQuotaUnits(0),
           updatedAt: sql`now()`,
         })
-        .where(eq(actionJobs.id, payload.actionId));
+        .where(
+          and(
+            eq(actionJobs.id, payload.actionId),
+            eq(actionJobs.mailboxAccountId, payload.mailboxAccountId),
+          ),
+        );
     } catch (recordErr) {
       // Recording the failure must never mask the original error.
       console.error(
@@ -1099,7 +1377,10 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
     if (inboxMessageIds === null) {
       // No readable split. If ANY surviving signal says this was an
       // all-mail delete, fail toward the archive — never the flood.
-      const wasAllMail = readPayloadReach(payload) === 'all_mail' || job.reach === 'all_mail';
+      const wasAllMail =
+        (payload as { inboxPlacementUnknown?: boolean })?.inboxPlacementUnknown === true ||
+        readPayloadReach(payload) === 'all_mail' ||
+        job.reach === 'all_mail';
       return wasAllMail ? [{ ids, change: archiveChange }] : uniform;
     }
     const inboxSet = new Set(inboxMessageIds);
@@ -1138,6 +1419,39 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
 }
 
 type ActionJobRow = typeof actionJobs.$inferSelect;
+
+type CustomAutopilot = NonNullable<
+  Extract<ActionJobRow['selector'], { type: 'sender' }>['autopilot']
+>;
+
+function customAutopilot(job: ActionJobRow): CustomAutopilot | undefined {
+  if (!('autopilot' in job.selector)) return undefined;
+  const value = job.selector.autopilot;
+  if (
+    job.selector.type !== 'sender' ||
+    !value ||
+    typeof value.ruleId !== 'string' ||
+    !value.ruleId ||
+    !Number.isInteger(value.ruleVersion) ||
+    value.ruleVersion < 1 ||
+    typeof value.previewId !== 'string' ||
+    !value.previewId
+  )
+    throw new ValidationError('invalid custom Autopilot provenance');
+  return value;
+}
+
+class CustomAutopilotBlocked extends Error {
+  constructor(readonly code: string) {
+    super(code);
+  }
+}
+
+class CustomAutopilotQuiet extends Error {
+  constructor(readonly delayMs: number) {
+    super('custom Autopilot deferred during quiet');
+  }
+}
 
 /**
  * `action_jobs.error_code` `ActionsService.enqueueJob` writes when the queue
@@ -1310,10 +1624,41 @@ function buildUndoPayload(
       // (sufficient) measured partition (Codex stop-review 2026-07-28).
       messageIds,
       ...(inboxMessageIds !== null ? { inboxMessageIds } : {}),
+      ...(inboxMessageIds === null ? { inboxPlacementUnknown: true } : {}),
       ...(reach === 'all_mail' ? { reach: 'all_mail' as const } : {}),
     };
   }
   return { kind: verb, messageIds, priorLabels: ['INBOX'] as string[] };
+}
+
+/** Validate server-only recovery metadata and refuse any expansion of its scope. */
+function storedDeleteUndo(job: ActionJobRow, ids: string[]) {
+  const snapshot = job.selector.deleteUndo;
+  if (snapshot === undefined) return undefined;
+  if (
+    snapshot === null ||
+    snapshot.version !== 1 ||
+    !Array.isArray(snapshot.messageIds) ||
+    !snapshot.messageIds.every((id) => typeof id === 'string') ||
+    (snapshot.inboxMessageIds !== null &&
+      (!Array.isArray(snapshot.inboxMessageIds) ||
+        !snapshot.inboxMessageIds.every((id) => typeof id === 'string')))
+  ) {
+    throw new ValidationError('Delete recovery placement is invalid');
+  }
+  const original = new Set(snapshot.messageIds);
+  if (
+    ids.some((id) => !original.has(id)) ||
+    snapshot.inboxMessageIds?.some((id) => !original.has(id))
+  ) {
+    throw new ValidationError('Delete recovery placement does not cover the execution scope');
+  }
+  const current = new Set(ids);
+  return {
+    version: 1 as const,
+    messageIds: ids,
+    inboxMessageIds: snapshot.inboxMessageIds?.filter((id) => current.has(id)) ?? null,
+  };
 }
 
 /**

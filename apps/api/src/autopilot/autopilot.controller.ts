@@ -1,3 +1,4 @@
+import { AutopilotRuleConfigurationSchema } from '@declutrmail/shared/contracts';
 // apps/api/src/autopilot/autopilot.controller.ts — HTTP surface for the
 // Autopilot read + lightweight-mutation endpoints (D99-D105, D124, D234).
 //
@@ -416,6 +417,15 @@ function parseRulePatch(body: unknown): AutopilotRulePatch {
   const obj = body as Record<string, unknown>;
   const out: AutopilotRulePatch = {};
 
+  if ('expectedVersion' in obj) {
+    if (
+      typeof obj.expectedVersion !== 'number' ||
+      !Number.isInteger(obj.expectedVersion) ||
+      obj.expectedVersion < 1
+    )
+      throw new BadRequestException('Provide the current rule version.');
+    out.expectedVersion = obj.expectedVersion;
+  }
   if ('enabled' in obj) {
     if (typeof obj.enabled !== 'boolean') {
       throw new BadRequestException('`enabled` must be a boolean.');
@@ -450,6 +460,16 @@ function parseRulePatch(body: unknown): AutopilotRulePatch {
     out.observePromptDismissed = obj.observePromptDismissed;
   }
 
+  if ('configuration' in obj) {
+    const parsed = AutopilotRuleConfigurationSchema.safeParse(obj.configuration);
+    if (!parsed.success)
+      throw new BadRequestException(
+        'Provide a valid rule name, conditions, action and current version.',
+      );
+    if (Object.keys(obj).some((k) => k !== 'configuration'))
+      throw new BadRequestException('Save rule configuration separately from lifecycle changes.');
+    out.configuration = parsed.data;
+  }
   return out;
 }
 

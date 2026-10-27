@@ -11,7 +11,7 @@
 # advisory memory + the per-action approval convention catch most
 # cases — this hook is the enforced backstop.
 #
-# Exit 0 = allow. Exit 1 = block with a message explaining what
+# Exit 0 = allow. Exit 2 = block with a message explaining what
 # matched and why. To override for a specific session, the founder
 # can comment out the matching pattern below OR move the hook out of
 # `.claude/settings.json`.
@@ -106,7 +106,7 @@ for pattern in "${forbidden[@]}"; do
     echo "   founder's go-ahead, then have them run it directly OR comment" >&2
     echo "   out this pattern in .claude/hooks/block-destructive-cloud-ops.sh" >&2
     echo "   for a single session and revert immediately after." >&2
-    exit 1
+    exit 2
   fi
 done
 

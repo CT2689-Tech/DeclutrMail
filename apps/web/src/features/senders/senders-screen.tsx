@@ -1,14 +1,13 @@
 'use client';
 
 import { AiInlinePrompt } from '@/features/ai-consent/ai-inline-prompt';
-import { EditorialKicker } from '@/features/editorial/page';
 
 import { reconcileAction } from '@/lib/api/reconcile-action';
 
 import { useMailboxScopeReset } from '@/features/mailboxes/use-mailbox-scope-reset';
 import { useHydrated } from '@/lib/use-hydrated';
 import { ACTION_OVERDUE_MS, useSenderInFlightLock } from '@/features/undo/in-flight';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import {
   Button,
@@ -49,7 +48,6 @@ import { isFeatureEnabled } from '@/lib/flags';
 import { normalizeProtectionReason, protectionReasonClause } from '@declutrmail/shared/copy';
 import { fillCopy, WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import { allProtectedSelectionCopy } from './unsubscribe-backlog/preview-copy';
-import { senderSizeCell } from './sender-size';
 import {
   ActiveFilterChips,
   EMPTY_COMPOSE,
@@ -114,7 +112,20 @@ import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { SenderList } from './sender-list';
 import workspaceStyles from './sender-workspace.module.css';
 import { useSenderPane } from './use-sender-pane';
+import { GuidedReviewFrame } from './guided-review-frame';
+import { TriageKeyboardHelp } from '@/features/triage/keyboard-help';
+import { useGuidedReviewSession } from './use-guided-review-session';
+import { writeGuidedReviewToken } from './guided-review-session';
 import { prefetchSenderInspector } from './inspector-intent';
+
+const GuidedSenderCard = dynamic(
+  () => import('./guided-sender-card').then((m) => m.GuidedSenderCard),
+  { ssr: false, loading: () => <p role="status">Loading sender…</p> },
+);
+const SuggestedGuidedReview = dynamic(
+  () => import('./suggested-guided-review').then((m) => m.SuggestedGuidedReview),
+  { ssr: false, loading: () => <p role="status">Loading Guided Review…</p> },
+);
 
 // Load the preview separately from the list route.
 const ConfirmActionModal = dynamic(
@@ -278,7 +289,23 @@ function protectedSelectionLead(sender: Sender): string {
   return fillCopy(WS5_COPY['f1.protected.lead'], { Sender: sender.name, reason: clause });
 }
 
-export function SendersScreen() {
+export interface SendersScreenProps {
+  guided?: boolean;
+  active?: boolean;
+  navigation?: ReactNode;
+  showIntro?: boolean;
+  onStartGuided?: () => void;
+  onExitGuided?: () => void;
+}
+
+export function SendersScreen({
+  guided = false,
+  active = true,
+  navigation,
+  showIntro = true,
+  onStartGuided,
+  onExitGuided,
+}: SendersScreenProps = {}) {
   const { me } = useAuth();
   // D159 — one page_viewed per route mount, loading/error branches
   // included (the content component only mounts on success).
@@ -460,9 +487,6 @@ export function SendersScreen() {
   const sendersSummary = useSendersSummary({});
   const hydrated = useHydrated();
 
-  if (sendersQuery.isLoading) {
-    return <SendersLoadingState />;
-  }
   const failedQuery = sendersQuery.isError
     ? sendersQuery
     : showingWidened && widenProbe.isError
@@ -477,12 +501,28 @@ export function SendersScreen() {
       failedQuery.error.status >= 400 &&
       failedQuery.error.status < 500
     );
-  if (failedQuery && !retainRows) {
-    return <SendersErrorState onRetry={() => failedQuery.refetch()} />;
-  }
-  return (
+  const fallback =
+    !guided && sendersQuery.isLoading ? (
+      <SendersLoadingState />
+    ) : !guided && failedQuery && !retainRows ? (
+      <SendersErrorState onRetry={() => failedQuery.refetch()} />
+    ) : null;
+  // Once started, action owners survive later list failures and Back navigation.
+  const contentMounted = useRef(false);
+  if (fallback === null) contentMounted.current = true;
+  if (!contentMounted.current) return fallback;
+  const content = (
     <SendersScreenContent
+      guided={guided}
+      active={active && fallback === null}
+      navigation={navigation}
+      showIntro={showIntro}
+      onStartGuided={onStartGuided}
+      onExitGuided={onExitGuided}
       senders={allSenders}
+      reviewScope={JSON.stringify(
+        sendersListQueryFromScreen({ compose, sort, direction, q: query.trim() }),
+      )}
       senderQueryKey={sendersKeys.list(
         sendersListQueryFromScreen({
           compose: showingWidened ? EMPTY_COMPOSE : compose,
@@ -537,6 +577,12 @@ export function SendersScreen() {
       onQueryChange={setQuery}
       hasCompletedCleanup={hydrated ? sendersSummary.data?.data.hasCompletedCleanup : undefined}
       totalMatching={totalMatching}
+      scopeLoading={
+        sendersQuery.isLoading ||
+        showingStaleRows ||
+        query.trim() !== debouncedQuery ||
+        (searchNarrowedToNothing && !keepNarrow && widenProbe.isPending)
+      }
       showingStaleRows={showingStaleRows}
       countsMayBeStale={countsMayBeStale}
       refreshFailed={failedQuery !== null}
@@ -554,6 +600,17 @@ export function SendersScreen() {
       applySavedScope={applySavedScope}
       clearSearchAndFilters={clearSearchAndFilters}
     />
+  );
+  return (
+    <>
+      {fallback}
+      <div
+        hidden={fallback !== null}
+        style={fallback !== null ? { display: 'none' } : { display: 'contents' }}
+      >
+        {content}
+      </div>
+    </>
   );
 }
 
@@ -598,6 +655,13 @@ function describeNarrowedFilters(compose: ComposeState): string {
 /** Renders the screen once the senders list is loaded. */
 function SendersScreenContent({
   senders: serverSenders,
+  reviewScope,
+  guided = false,
+  active = true,
+  navigation,
+  showIntro = true,
+  onStartGuided,
+  onExitGuided,
   senderQueryKey,
   listKey,
   widenedFrom,
@@ -613,6 +677,7 @@ function SendersScreenContent({
   hasCompletedCleanup,
   totalMatching,
   showingStaleRows,
+  scopeLoading,
   countsMayBeStale,
   refreshFailed,
   loadingMoreFailed,
@@ -627,6 +692,13 @@ function SendersScreenContent({
   clearSearchAndFilters,
 }: {
   senders: Sender[];
+  reviewScope: string;
+  guided?: boolean;
+  active?: boolean;
+  navigation?: ReactNode;
+  showIntro?: boolean;
+  onStartGuided?: (() => void) | undefined;
+  onExitGuided?: (() => void) | undefined;
   senderQueryKey: ReturnType<typeof sendersKeys.list>;
   listKey: string;
   /**
@@ -666,6 +738,7 @@ function SendersScreenContent({
   totalMatching: number | undefined;
   /** Prior query's pages retained while the active search/filter resolves. */
   showingStaleRows: boolean;
+  scopeLoading: boolean;
   /**
    * QA-senders-20260901-01 — the currently-rendered aggregates
    * (`filterCounts`, `totalMatching`) may be one response behind: true
@@ -828,7 +901,7 @@ function SendersScreenContent({
     // The detail page writes the undo result into local policy state.
     // The list row reads `policyType` from the list cache and, once the
     // server drops the row, from the pin. Clearing `settled` alone leaves
-    // "Skipped in Triage" until a refetch, and a failed refetch keeps it.
+    // "Kept" until a refetch, and a failed refetch keeps it.
     qc.setQueriesData<{ pages: SenderListEnvelope[] }>(
       { queryKey: ['senders', 'list'] },
       (current) => {
@@ -1263,6 +1336,75 @@ function SendersScreenContent({
     [selected, senders],
   );
 
+  // Only navigation context survives native detail navigation; current sender
+  // facts remain owned by GuidedSenderCard's authenticated detail read.
+  const scopedReview = hasQuery || !isDefaultCompose(compose);
+  const [suggestedVisited, setSuggestedVisited] = useState(guided && !scopedReview);
+  const [localGuided, setLocalGuided] = useState(false);
+  const reviewing = guided || localGuided;
+  const review = useGuidedReviewSession({
+    userId: me.user.id,
+    mailboxId: actionMailboxId,
+    scope: reviewScope,
+    rows: senders,
+    reviewing,
+    scopeLoading,
+    refreshFailed,
+    onRestoreSelection: setSelected,
+    selectedIds: selected,
+  });
+  const session = review.session;
+  const startGuided = () => {
+    const scoped = selectedSenders.length > 0 || scopedReview;
+    if (scopeLoading || (scoped && resultsReadOnly)) return;
+    if (scoped)
+      review.start(
+        selectedSenders.length > 0 ? selectedSenders : senders,
+        selectedSenders.length > 0 ? 'selected' : hasNextPage ? 'loaded' : 'filtered',
+        selectedSenders.map((sender) => sender.id),
+      );
+    else {
+      review.clear();
+      setSuggestedVisited(true);
+    }
+    if (onStartGuided) onStartGuided();
+    else setLocalGuided(true);
+  };
+  const exitGuided = () => {
+    // Keep the completed entry's token in browser history. Returning to it
+    // must explain the ended session, rather than start a wider fresh queue.
+    review.exit();
+    setLocalGuided(false);
+    if (onExitGuided) onExitGuided();
+    else writeGuidedReviewToken(null);
+  };
+  useEffect(() => {
+    if (!guided || session !== null || review.token !== null || review.unavailable) return;
+    if (!scopedReview) {
+      setSuggestedVisited(true);
+      return;
+    }
+    if (scopeLoading || refreshFailed || senders.length === 0) return;
+    review.start(senders, hasNextPage ? 'loaded' : 'filtered');
+  }, [
+    guided,
+    session,
+    review.token,
+    review.unavailable,
+    review.start,
+    scopedReview,
+    scopeLoading,
+    refreshFailed,
+    senders,
+    hasNextPage,
+  ]);
+  const sessionLabel =
+    session?.kind === 'selected'
+      ? 'Selected senders'
+      : session?.kind === 'loaded'
+        ? 'Loaded senders matching this view'
+        : 'Senders matching this view';
+
   // Phone (≤480px): rows drop the primary verb button for the `⋯` menu
   // (plus swipe-right), and the selection bar becomes the FAB.
   const isPhone = useIsAtMost('xs');
@@ -1274,6 +1416,7 @@ function SendersScreenContent({
   const tightSplit = useIsAtMost('lg');
   const {
     senderId: urlSenderId,
+    detailSearch,
     open: openPane,
     close: closePane,
     navigateTo: openSenderPage,
@@ -1301,11 +1444,12 @@ function SendersScreenContent({
   // A `?sender=` link opened on a narrow screen has no pane to show it in.
   const strandedSenderId = canSplit ? null : urlSenderId;
   useEffect(() => {
-    if (strandedSenderId !== null) openSenderPage(strandedSenderId, 'replace');
-  }, [strandedSenderId, openSenderPage]);
+    if (active && !reviewing && strandedSenderId !== null)
+      openSenderPage(strandedSenderId, 'replace');
+  }, [strandedSenderId, openSenderPage, active, reviewing]);
   // Esc closes the pane — unless something above it owns the key.
   useEffect(() => {
-    if (paneSenderId === null) return;
+    if (!active || reviewing || paneSenderId === null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       // A layer above (the top-bar help popover) already took this press.
@@ -1317,7 +1461,7 @@ function SendersScreenContent({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [paneSenderId, closePane]);
+  }, [paneSenderId, closePane, active, reviewing]);
 
   // D52 — shift-click range selection. The
   // anchor is the last row whose checkbox was clicked; a shift-click
@@ -2838,6 +2982,9 @@ function SendersScreenContent({
     setSubmitting(false);
     setPendingAction(null);
   }, [cancelUnsubscribeCheck]);
+  useEffect(() => {
+    if (!active) closePending();
+  }, [active, closePending]);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
       if (pendingAction && !resultsReadOnly) {
@@ -2937,6 +3084,7 @@ function SendersScreenContent({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (selectedSenders.length === 0) return;
+      if (!active || reviewing) return;
       // With the pane open the user is looking at ONE sender — a verb key
       // acting on a checkbox selection elsewhere in the list would preview
       // something other than what is on screen.
@@ -2957,335 +3105,363 @@ function SendersScreenContent({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedSenders, requestBulkAction, showingStaleRows, paneSenderId]);
+  }, [selectedSenders, requestBulkAction, showingStaleRows, paneSenderId, active, reviewing]);
 
+  const reviewSender = session?.rows[session.index];
   return (
     <RowActivityProvider value={rowActivity}>
-      <div className={workspaceStyles.workspace} data-split={canSplit || undefined}>
-        <header className={workspaceStyles.heading}>
-          <div>
-            <EditorialKicker>Cleanup</EditorialKicker>
+      {active && (
+        <div
+          hidden={reviewing}
+          inert={reviewing ? true : undefined}
+          className={workspaceStyles.workspace}
+          data-split={canSplit || undefined}
+          style={reviewing ? { display: 'none' } : undefined}
+        >
+          <header className={`${workspaceStyles.heading} ${workspaceStyles.directoryHeader}`}>
             <h1 className={workspaceStyles.title}>Senders</h1>
-            <p className={workspaceStyles.subtitle}>
-              See the pattern. Decide what deserves a place.
-            </p>
+            <Button
+              onClick={startGuided}
+              disabled={
+                scopeLoading ||
+                ((selectedSenders.length > 0 || hasQuery || !isDefaultCompose(compose)) &&
+                  (resultsReadOnly || senders.length === 0))
+              }
+            >
+              {selectedSenders.length
+                ? `Review selected (${selectedSenders.length})`
+                : hasQuery || !isDefaultCompose(compose)
+                  ? 'Review these senders'
+                  : 'Start guided review'}
+            </Button>
+            {navigation}
+            {actionMailboxId && activeMailbox?.readiness === 'ready' ? (
+              <div className={workspaceStyles.reportBand}>
+                <InboxReportFirstLanding
+                  compact
+                  mailboxId={actionMailboxId}
+                  {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
+                  senderNames={reportSenderNames}
+                  onResolved={noteReportResolved}
+                  onReview={(ids) => {
+                    if (!actionMailboxId) return;
+                    // Report ids can be outside the loaded page or current filters.
+                    // Only navigation identity is snapshotted; GuidedSenderCard
+                    // re-reads current facts and the normal preview owns actions.
+                    review.start(
+                      ids.map(
+                        (id, index) =>
+                          senders.find((sender) => sender.id === id) ?? {
+                            id,
+                            name: `Sender ${index + 1}`,
+                            domain: '',
+                            brandMark: false,
+                          },
+                      ),
+                      'selected',
+                    );
+                    if (onStartGuided) onStartGuided();
+                    else setLocalGuided(true);
+                  }}
+                />
+              </div>
+            ) : null}
+          </header>
+          <div className={workspaceStyles.wideNotice}>
+            <AiInlinePrompt />
           </div>
-        </header>
-        <AiInlinePrompt />
-        {actionMailboxId && activeMailbox?.readiness === 'ready' ? (
-          <div className={workspaceStyles.reportBand}>
-            <InboxReportFirstLanding
-              mailboxId={actionMailboxId}
-              {...(activeMailbox.email ? { mailboxEmail: activeMailbox.email } : {})}
-              senderNames={reportSenderNames}
-              onResolved={noteReportResolved}
-            />
-          </div>
-        ) : null}
-        <div className={workspaceStyles.listColumn}>
-          <section
-            aria-label="Sender search and filters"
-            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
-          >
-            <div className={workspaceStyles.tools}>
-              <SenderSearch
-                value={query}
-                onChange={setQuery}
-                senders={senders}
-                onPick={onSearchPick}
+          <div className={workspaceStyles.listColumn}>
+            <section
+              aria-label="Sender search and filters"
+              style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+            >
+              <div className={workspaceStyles.tools}>
+                <SenderSearch
+                  value={query}
+                  onChange={setQuery}
+                  senders={senders}
+                  onPick={onSearchPick}
+                />
+                <button
+                  type="button"
+                  className={`${workspaceStyles.inboxFilter} dm-tap-44`}
+                  aria-pressed={compose.hasInboxMail === true}
+                  title="Show only senders with mail currently in Inbox. Turn off to see senders you may still want to unsubscribe."
+                  onClick={() =>
+                    setCompose({ ...compose, hasInboxMail: compose.hasInboxMail !== true })
+                  }
+                >
+                  Mail in Inbox
+                </button>
+                <FilterButton
+                  state={compose}
+                  updating={countsMayBeStale}
+                  counts={filterCounts}
+                  onChange={setCompose}
+                  onClear={clearCompose}
+                  domainSuggestions={topDomains(senders)}
+                  views={{
+                    names: savedViews.map((v) => v.name),
+                    onApply: applySavedView,
+                    onSave: saveCurrentView,
+                    onDelete: deleteSavedView,
+                    canSaveCurrent: hasAnyFilter(compose),
+                    capReached: savedViews.length >= SENDER_VIEWS_CAP,
+                    mutating: saveViews.isPending,
+                  }}
+                />
+                <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
+              </div>
+              {/* Mailbox-wide matching total; keep freshness and scope explicit. */}
+              {senders.length > 0 && (
+                <div className={workspaceStyles.summary}>
+                  <div data-testid="senders-hero" aria-busy={countsMayBeStale}>
+                    <span
+                      className={workspaceStyles.senderTotal}
+                      style={{
+                        opacity: countsMayBeStale ? 0.55 : 1,
+                        transition: `opacity ${motion.fast} ${motion.ease}`,
+                      }}
+                    >
+                      {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
+                    </span>{' '}
+                    <span
+                      style={{
+                        fontFamily: font.sans,
+                        fontSize: text.sm,
+                        color: color.fgMuted,
+                      }}
+                    >
+                      {isDefaultCompose(compose) && !hasQuery ? 'active ' : ''}
+                      {(totalMatching ?? serverSenders.length) === 1 ? 'sender' : 'senders'}
+                    </span>
+                  </div>
+                  {!showingStaleRows && (
+                    <BulkSelectButton
+                      // Busy rows cannot be individually deselected (their
+                      // checkbox is off) and any overlap refuses the WHOLE bulk
+                      // — so select-all must never put them in the selection.
+                      senders={senders.filter((row) => !isRowBusy(rowActivity.get(row.id)))}
+                      selected={selected}
+                      setSelected={setSelected}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Only when something is actually wrong with what is on screen. */}
+              <SenderResultsWarning
+                approximate={totalMatching === undefined && senders.length > 0}
+                rowsReadOnly={showingStaleRows}
+                // With no rows, the empty state below already says it.
+                stillSyncing={mailboxStillSyncing && senders.length > 0}
+                syncFailed={mailboxSyncFailed && senders.length > 0}
+                needsReconnect={mailboxNeedsReconnect}
               />
-              <button
-                type="button"
-                className={`${workspaceStyles.inboxFilter} dm-tap-44`}
-                aria-pressed={compose.hasInboxMail === true}
-                title="Show only senders with mail currently in Inbox. Turn off to see senders you may still want to unsubscribe."
-                onClick={() =>
-                  setCompose({ ...compose, hasInboxMail: compose.hasInboxMail !== true })
-                }
-              >
-                Mail in Inbox
-              </button>
-              <FilterButton
-                state={compose}
-                updating={countsMayBeStale}
-                counts={filterCounts}
-                onChange={setCompose}
-                onClear={clearCompose}
-                domainSuggestions={topDomains(senders)}
-                views={{
-                  names: savedViews.map((v) => v.name),
-                  onApply: applySavedView,
-                  onSave: saveCurrentView,
-                  onDelete: deleteSavedView,
-                  canSaveCurrent: hasAnyFilter(compose),
-                  capReached: savedViews.length >= SENDER_VIEWS_CAP,
-                  mutating: saveViews.isPending,
+
+              <LaunchFilterRow compact mailboxId={me.activeMailboxId} onApply={setCompose} />
+              <ActiveFilterChips state={compose} onChange={setCompose} onClear={clearCompose} />
+            </section>
+            {showIntro && active && !reviewing && (
+              <ScreenIntro
+                id="senders"
+                title="How Senders works"
+                body="Archive, Later and Delete change email you already have; Unsubscribe asks the sender to stop."
+                learnMore={{
+                  href: '/methodology#automation-method',
+                  label: 'Manual decisions vs automatic rules',
                 }}
               />
-              <SortMenu sort={sortCol} direction={sortDirection} onChange={setSort} />
-            </div>
-            {senders.some((row) => senderSizeCell(row.sizeBytes)) && (
-              <p
-                data-testid="sender-size-note"
-                style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}
-              >
-                {WS5_COPY['f2.note']} {WS5_COPY['f2.estimates']}
-              </p>
             )}
-
-            {/* Hero — the screen's one big number: senders matching the
-            active filters, mailbox-wide (BE-honest). On the untouched
-            default it says what that default is, because no chip does. */}
-            {senders.length > 0 && (
-              <div className={workspaceStyles.summary}>
-                <div data-testid="senders-hero" aria-busy={countsMayBeStale}>
-                  <span
-                    style={{
-                      ...tokens.typography.stat,
-                      color: color.fg,
-                      fontVariantNumeric: 'tabular-nums',
-                      // The count may be one response behind mid-refetch.
-                      opacity: countsMayBeStale ? 0.55 : 1,
-                      transition: `opacity ${motion.fast} ${motion.ease}`,
-                    }}
-                  >
-                    {(totalMatching ?? serverSenders.length).toLocaleString('en-US')}
-                  </span>{' '}
-                  <span
-                    style={{
-                      fontFamily: font.sans,
-                      fontSize: text.lg,
-                      color: color.fgMuted,
-                      marginLeft: 10,
-                    }}
-                  >
-                    {isDefaultCompose(compose) && !hasQuery ? 'active ' : ''}
-                    {(totalMatching ?? serverSenders.length) === 1 ? 'sender' : 'senders'}
-                  </span>
-                </div>
-                {!showingStaleRows && (
-                  <BulkSelectButton
-                    // Busy rows cannot be individually deselected (their
-                    // checkbox is off) and any overlap refuses the WHOLE bulk
-                    // — so select-all must never put them in the selection.
-                    senders={senders.filter((row) => !isRowBusy(rowActivity.get(row.id)))}
-                    selected={selected}
-                    setSelected={setSelected}
-                  />
-                )}
+            {refreshFailed && (
+              <div role="status" style={{ color: color.fgMuted, fontSize: text.sm }}>
+                {loadingMoreFailed ? 'Couldn’t load more senders.' : 'Couldn’t refresh Senders.'}{' '}
+                <Button tone="ghost" size="sm" disabled={retrying} onClick={onRetry}>
+                  Try again
+                </Button>
               </div>
             )}
 
-            {/* Only when something is actually wrong with what is on screen. */}
-            <SenderResultsWarning
-              approximate={totalMatching === undefined && senders.length > 0}
-              rowsReadOnly={showingStaleRows}
-              // With no rows, the empty state below already says it.
-              stillSyncing={mailboxStillSyncing && senders.length > 0}
-              syncFailed={mailboxSyncFailed && senders.length > 0}
-              needsReconnect={mailboxNeedsReconnect}
+            <FirstLandingSlot
+              candidates={[
+                {
+                  id: 'inbox_report',
+                  // The report is the card above this slot. A ready null node
+                  // would hide the first-cleanup nudge without rendering anything.
+                  ready: false,
+                  node: null,
+                },
+                {
+                  id: 'first_backlog_header',
+                  // The list payload has no exact backlog count paired with an
+                  // inbox share, so the sentence stays omitted.
+                  ready: firstBacklogHeader(null, null) !== null,
+                  node: null,
+                },
+                {
+                  id: 'first_cleanup_nudge',
+                  ready: showFirstCleanupNudge && senders[0] !== undefined,
+                  node: <FirstBacklogNudge detailSearch={detailSearch} />,
+                },
+              ]}
             />
 
-            <LaunchFilterRow mailboxId={me.activeMailboxId} onApply={setCompose} />
-            <ActiveFilterChips state={compose} onChange={setCompose} onClear={clearCompose} />
-          </section>
-          <ScreenIntro
-            id="senders"
-            title="How Senders works"
-            body="Archive, Later and Delete change email you already have; Unsubscribe asks the sender to stop."
-            learnMore={{
-              href: '/methodology#automation-method',
-              label: 'Manual decisions vs automatic rules',
-            }}
-          />
-          {refreshFailed && (
-            <div role="status" style={{ color: color.fgMuted, fontSize: text.sm }}>
-              {loadingMoreFailed ? 'Couldn’t load more senders.' : 'Couldn’t refresh Senders.'}{' '}
-              <Button tone="ghost" size="sm" disabled={retrying} onClick={onRetry}>
-                Try again
-              </Button>
-            </div>
-          )}
-
-          <FirstLandingSlot
-            candidates={[
-              {
-                id: 'inbox_report',
-                // The report is the card above this slot. A ready null node
-                // would hide the first-cleanup nudge without rendering anything.
-                ready: false,
-                node: null,
-              },
-              {
-                id: 'first_backlog_header',
-                // The list payload has no exact backlog count paired with an
-                // inbox share, so the sentence stays omitted.
-                ready: firstBacklogHeader(null, null) !== null,
-                node: null,
-              },
-              {
-                id: 'first_cleanup_nudge',
-                ready: showFirstCleanupNudge && senders[0] !== undefined,
-                node: <FirstBacklogNudge />,
-              },
-            ]}
-          />
-
-          {/* D248 — multi-sender unsubscribe result. Its own surface: three
+            {/* D248 — multi-sender unsubscribe result. Its own surface: three
             terminal outcomes, no Undo (a delivered request is one-way). */}
-          <UnsubBatchReceipt
-            receipt={unsubBatchReceipt}
-            onDismiss={() => setUnsubBatchReceipt(null)}
-          />
+            <UnsubBatchReceipt
+              receipt={unsubBatchReceipt}
+              onDismiss={() => setUnsubBatchReceipt(null)}
+            />
 
-          {/* D230 manual path — the post-confirm "finish in Gmail" step for
+            {/* D230 manual path — the post-confirm "finish in Gmail" step for
             a mailto sender. The user sends the opt-out; never auto-sent. */}
-          {mailtoFollowup && mailtoFollowup.mailboxId === actionMailboxId && (
-            <UnsubMailtoCallout
-              senderId={mailtoFollowup.senderId}
-              senderName={mailtoFollowup.senderName}
-              mailtoUrl={mailtoFollowup.mailtoUrl}
-              onDismiss={() => setMailtoFollowup(null)}
-            />
-          )}
-          {bulkMailtoFollowups.some((item) => item.mailboxId === actionMailboxId) && (
-            <UnsubMailtoChecklist
-              items={bulkMailtoFollowups}
-              onDismiss={() => setBulkMailtoFollowups([])}
-            />
-          )}
+            {mailtoFollowup && mailtoFollowup.mailboxId === actionMailboxId && (
+              <UnsubMailtoCallout
+                senderId={mailtoFollowup.senderId}
+                senderName={mailtoFollowup.senderName}
+                mailtoUrl={mailtoFollowup.mailtoUrl}
+                onDismiss={() => setMailtoFollowup(null)}
+              />
+            )}
+            {bulkMailtoFollowups.some((item) => item.mailboxId === actionMailboxId) && (
+              <UnsubMailtoChecklist
+                items={bulkMailtoFollowups}
+                onDismiss={() => setBulkMailtoFollowups([])}
+              />
+            )}
 
-          {/* F011 — the widened-search notice.
+            {/* F011 — the widened-search notice.
             Announced, never silent: the rows below are NOT what the
             filters ask for, and a user who set those filters deliberately
             is owed both that fact and a way back. The button returns the
             honest empty result rather than clearing anything, so the
             query survives either choice. ("Show … only", never "Keep … only"
             — Keep is a canonical verb on this screen.) */}
-          {widenedFrom !== null && (
-            <div
-              role="status"
-              data-testid="senders-widened-notice"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: 8,
-                fontSize: text.base,
-                color: color.fgSoft,
-              }}
-            >
-              {/* State the effective search scope. The count is total matches,
+            {widenedFrom !== null && (
+              <div
+                role="status"
+                data-testid="senders-widened-notice"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  fontSize: text.base,
+                  color: color.fgSoft,
+                }}
+              >
+                {/* State the effective search scope. The count is total matches,
                   not a claim that every result is rendered on this page. */}
-              <span>
-                {widenedFrom === 'filtered'
-                  ? 'Searching without your filters'
-                  : 'Searching across all activity levels'}{' '}
-                · {widenedCount.toLocaleString('en-US')} {widenedCount === 1 ? 'match' : 'matches'}{' '}
-                for &ldquo;{query}&rdquo;.
-              </span>
-              <Button tone="ghost" onClick={onKeepNarrow}>
-                {widenedFrom === 'filtered' ? 'Use my filters' : `Show ${widenedFrom} only`}
-              </Button>
-            </div>
-          )}
-
-          {/* List body. Search + filters narrow SERVER-side, so an empty
-            loaded set with an active query/filter means "no matches" —
-            not "not synced yet". */}
-          <fieldset
-            className={workspaceStyles.results}
-            data-testid="sender-results-region"
-            disabled={resultsReadOnly}
-            inert={resultsReadOnly ? true : undefined}
-            aria-busy={showingStaleRows}
-            aria-disabled={resultsReadOnly}
-            style={{
-              margin: 0,
-              minWidth: 0,
-              opacity: showingStaleRows ? 0.55 : 1,
-              pointerEvents: showingStaleRows ? 'none' : undefined,
-              transition: `opacity ${motion.fast} ${motion.ease}`,
-            }}
-          >
-            {senders.length === 0 && mailboxStillSyncing ? (
-              // An empty result while the mailbox is still `queued`/`syncing`
-              // is NOT "no active senders" or "no matches" — either asserts
-              // a finished conclusion the app has not earned, for the plain
-              // view and for a search alike. Checked BEFORE the filter- and
-              // query-specific branches.
-              <EmptyState
-                headingLevel={2}
-                title="Still scanning your Gmail"
-                body="Senders appear as the scan finishes."
-              />
-            ) : senders.length === 0 && mailboxSyncFailed ? (
-              // Same shape for the one readiness value that guard didn't
-              // cover — a search over a failed scan never really ran.
-              <EmptyState
-                headingLevel={2}
-                title="Scan failed"
-                body={failedScanStep(mailboxNeedsReconnect)}
-              />
-            ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
-              // First-visit default is active-only (launch-audit B2). A
-              // mailbox with nothing ACTIVE must not read as a filter
-              // mistake — name the default and offer the full list.
-              <EmptyState
-                headingLevel={2}
-                title="No active senders"
-                action={<Button onClick={clearSearchAndFilters}>Show all senders</Button>}
-              />
-            ) : senders.length === 0 && (hasQuery || hasAnyFilter(compose)) ? (
-              <EmptyState
-                headingLevel={2}
-                // F011 — say WHICH thing found nothing. `No senders match
-                // "X"` is a claim about the QUERY; when filters are on, the
-                // honest title names both.
-                title={
-                  hasQuery && hasAnyFilter(compose)
-                    ? `No senders match "${query}" under these filters`
-                    : hasQuery
-                      ? `No senders match "${query}"`
-                      : 'No senders match these filters'
-                }
-                action={
-                  // `matchesOutsideFilters` is `null` while the widening
-                  // probe has not answered — unknown must never offer
-                  // "matches" it has not seen. Widening keeps the query;
-                  // clearing throws it away, so lead with widening.
-                  hasQuery && matchesOutsideFilters !== null && matchesOutsideFilters > 0 ? (
-                    <Button onClick={onWiden}>
-                      Show {matchesOutsideFilters.toLocaleString('en-US')} without filters
-                    </Button>
-                  ) : hasQuery ? (
-                    <Button onClick={clearSearchAndFilters}>Clear search &amp; filters</Button>
-                  ) : (
-                    <Button onClick={clearCompose}>Clear filters</Button>
-                  )
-                }
-              />
-            ) : senders.length === 0 ? (
-              <EmptyState headingLevel={2} title="No senders yet" />
-            ) : (
-              // `senders` arrives already BE-filtered (D38); D51 brand
-              // rollup groups ≥3 senders sharing a registrable domain into
-              // one collapsible group row.
-              <SenderList
-                entries={listEntries}
-                selectedIds={selected}
-                onToggleSelect={toggleSenderSelection}
-                onAction={requestAction}
-                onOpen={openSender}
-                onIntent={previewSenderIntent}
-                activeId={paneSenderId}
-                compact={isPhone || (canSplit && tightSplit)}
-                followKeys={canSplit}
-              />
+                <span>
+                  {widenedFrom === 'filtered'
+                    ? 'Searching without your filters'
+                    : 'Searching across all activity levels'}{' '}
+                  · {widenedCount.toLocaleString('en-US')}{' '}
+                  {widenedCount === 1 ? 'match' : 'matches'} for &ldquo;{query}&rdquo;.
+                </span>
+                <Button tone="ghost" onClick={onKeepNarrow}>
+                  {widenedFrom === 'filtered' ? 'Use my filters' : `Show ${widenedFrom} only`}
+                </Button>
+              </div>
             )}
 
-            {/*
+            {/* List body. Search + filters narrow SERVER-side, so an empty
+            loaded set with an active query/filter means "no matches" —
+            not "not synced yet". */}
+            <fieldset
+              className={workspaceStyles.results}
+              data-testid="sender-results-region"
+              disabled={resultsReadOnly}
+              inert={resultsReadOnly ? true : undefined}
+              aria-busy={showingStaleRows}
+              aria-disabled={resultsReadOnly}
+              style={{
+                margin: 0,
+                minWidth: 0,
+                opacity: showingStaleRows ? 0.55 : 1,
+                pointerEvents: showingStaleRows ? 'none' : undefined,
+                transition: `opacity ${motion.fast} ${motion.ease}`,
+              }}
+            >
+              {senders.length === 0 && mailboxStillSyncing ? (
+                // An empty result while the mailbox is still `queued`/`syncing`
+                // is NOT "no active senders" or "no matches" — either asserts
+                // a finished conclusion the app has not earned, for the plain
+                // view and for a search alike. Checked BEFORE the filter- and
+                // query-specific branches.
+                <EmptyState
+                  headingLevel={2}
+                  title="Still scanning your Gmail"
+                  body="Senders appear as the scan finishes."
+                />
+              ) : senders.length === 0 && mailboxSyncFailed ? (
+                // Same shape for the one readiness value that guard didn't
+                // cover — a search over a failed scan never really ran.
+                <EmptyState
+                  headingLevel={2}
+                  title="Scan failed"
+                  body={failedScanStep(mailboxNeedsReconnect)}
+                />
+              ) : senders.length === 0 && !hasQuery && isDefaultCompose(compose) ? (
+                // First-visit default is active-only (launch-audit B2). A
+                // mailbox with nothing ACTIVE must not read as a filter
+                // mistake — name the default and offer the full list.
+                <EmptyState
+                  headingLevel={2}
+                  title="No active senders"
+                  action={<Button onClick={clearSearchAndFilters}>Show all senders</Button>}
+                />
+              ) : senders.length === 0 && (hasQuery || hasAnyFilter(compose)) ? (
+                <EmptyState
+                  headingLevel={2}
+                  // F011 — say WHICH thing found nothing. `No senders match
+                  // "X"` is a claim about the QUERY; when filters are on, the
+                  // honest title names both.
+                  title={
+                    hasQuery && hasAnyFilter(compose)
+                      ? `No senders match "${query}" under these filters`
+                      : hasQuery
+                        ? `No senders match "${query}"`
+                        : 'No senders match these filters'
+                  }
+                  action={
+                    // `matchesOutsideFilters` is `null` while the widening
+                    // probe has not answered — unknown must never offer
+                    // "matches" it has not seen. Widening keeps the query;
+                    // clearing throws it away, so lead with widening.
+                    hasQuery && matchesOutsideFilters !== null && matchesOutsideFilters > 0 ? (
+                      <Button onClick={onWiden}>
+                        Show {matchesOutsideFilters.toLocaleString('en-US')} without filters
+                      </Button>
+                    ) : hasQuery ? (
+                      <Button onClick={clearSearchAndFilters}>Clear search &amp; filters</Button>
+                    ) : (
+                      <Button onClick={clearCompose}>Clear filters</Button>
+                    )
+                  }
+                />
+              ) : senders.length === 0 ? (
+                <EmptyState headingLevel={2} title="No senders yet" />
+              ) : (
+                // `senders` arrives already BE-filtered (D38); D51 brand
+                // rollup groups ≥3 senders sharing a registrable domain into
+                // one collapsible group row.
+                <SenderList
+                  entries={listEntries}
+                  detailSearch={detailSearch}
+                  selectedIds={selected}
+                  onToggleSelect={toggleSenderSelection}
+                  onAction={requestAction}
+                  onOpen={openSender}
+                  onIntent={previewSenderIntent}
+                  activeId={paneSenderId}
+                  compact={isPhone || (canSplit && tightSplit)}
+                  followKeys={active && !reviewing && canSplit}
+                />
+              )}
+
+              {/*
           Load more (D202 cursor pagination). The list endpoint returns one
           page at a time; without this control a mailbox with more senders
           than a page silently truncated at the first page.
@@ -3295,97 +3471,200 @@ function SendersScreenContent({
           it is the keyboard/AT affordance and the no-IntersectionObserver
           fallback.
         */}
-            {hasNextPage && senders.length > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '16px 0 4px',
-                }}
-              >
-                {infiniteScrollEnabled && !refreshFailed && (
-                  <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
-                )}
-                <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
-                  {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
-                </Button>
-              </div>
-            )}
-          </fieldset>
+              {hasNextPage && senders.length > 0 && (
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '16px 0 4px',
+                  }}
+                >
+                  {infiniteScrollEnabled && !refreshFailed && (
+                    <LoadMoreSentinel onVisible={onLoadMore} busy={isFetchingNextPage} />
+                  )}
+                  <Button onClick={onLoadMore} disabled={isFetchingNextPage}>
+                    {isFetchingNextPage ? 'Loading…' : 'Load more senders'}
+                  </Button>
+                </div>
+              )}
+            </fieldset>
 
-          {selectedSenders.length > 0 &&
-            !showingStaleRows &&
-            (isPhone ? (
-              <SelectionFab
-                senders={selectedSenders}
-                onClear={() => setSelected(new Set())}
-                onAct={requestBulkAction}
-                tier={tier}
-                busy={enqueueBulk.isPending || refreshFailed}
-              />
-            ) : (
-              <SelectionBar
-                senders={selectedSenders}
-                onClear={() => setSelected(new Set())}
-                onAct={requestBulkAction}
-                tier={tier}
-                busy={enqueueBulk.isPending || refreshFailed}
-              />
-            ))}
+            {selectedSenders.length > 0 &&
+              !showingStaleRows &&
+              (isPhone ? (
+                <SelectionFab
+                  senders={selectedSenders}
+                  onClear={() => setSelected(new Set())}
+                  onAct={requestBulkAction}
+                  tier={tier}
+                  busy={enqueueBulk.isPending || refreshFailed}
+                />
+              ) : (
+                <SelectionBar
+                  senders={selectedSenders}
+                  onClear={() => setSelected(new Set())}
+                  onAct={requestBulkAction}
+                  tier={tier}
+                  busy={enqueueBulk.isPending || refreshFailed}
+                />
+              ))}
+          </div>
+
+          {canSplit && active && !reviewing && (
+            <div className={workspaceStyles.inspectorColumn}>
+              {paneSenderId !== null ? (
+                <SenderDetailPane
+                  key={paneSenderId}
+                  senderId={paneSenderId}
+                  onClose={closePane}
+                  onAction={requestAction}
+                />
+              ) : (
+                <aside className={workspaceStyles.emptyInspector} aria-label="Sender inspector">
+                  <div className={workspaceStyles.emptyIcon} aria-hidden="true">
+                    <svg
+                      width="24"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                    >
+                      <rect x="3" y="5" width="18" height="14" rx="2" />
+                      <path d="m3 6 9 7 9-7" />
+                    </svg>
+                  </div>
+                  <div className={workspaceStyles.eyebrow}>A little context goes a long way</div>
+                  <h2>A closer look.</h2>
+                  <p>
+                    Choose a sender to explore their mail, understand the pattern and make a
+                    considered decision.
+                  </p>
+                  <div className={workspaceStyles.inspectorSteps}>
+                    <span>
+                      <b>01</b> Review recent messages and history
+                    </span>
+                    <span>
+                      <b>02</b> Choose what to do and preview what changes
+                    </span>
+                    <span>
+                      <b>03</b> {WS2_COPY.senders.emptySteps.confirm}
+                    </span>
+                  </div>
+                </aside>
+              )}
+            </div>
+          )}
         </div>
+      )}
 
-        {canSplit && (
-          <div className={workspaceStyles.inspectorColumn}>
-            {paneSenderId !== null ? (
-              <SenderDetailPane
-                key={paneSenderId}
-                senderId={paneSenderId}
-                onClose={closePane}
+      {reviewing && session && !review.unavailable && (
+        <div className={workspaceStyles.workspace} inert={!active ? true : undefined}>
+          <GuidedReviewFrame
+            senders={session.rows}
+            index={session.index}
+            label={sessionLabel}
+            navigationDisabled={pendingAction !== null}
+            onExit={exitGuided}
+            onNavigate={review.navigate}
+          >
+            {reviewSender ? (
+              <GuidedSenderCard
+                key={reviewSender.id}
+                senderId={reviewSender.id}
                 onAction={requestAction}
+                active={active && reviewing}
+                reviewToken={session.token}
+                reviewSaved={session.saved}
+                onRetrySave={review.retrySave}
               />
             ) : (
-              <aside className={workspaceStyles.emptyInspector} aria-label="Sender inspector">
-                <div className={workspaceStyles.emptyIcon} aria-hidden="true">
-                  <svg
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.3"
-                  >
-                    <rect x="3" y="5" width="18" height="14" rx="2" />
-                    <path d="m3 6 9 7 9-7" />
-                  </svg>
-                </div>
-                <div className={workspaceStyles.eyebrow}>A little context goes a long way</div>
-                <h2>A closer look.</h2>
-                <p>
-                  Choose a sender to explore their mail, understand the pattern and make a
-                  considered decision.
-                </p>
-                <div className={workspaceStyles.inspectorSteps}>
-                  <span>
-                    <b>01</b> Review recent messages and history
-                  </span>
-                  <span>
-                    <b>02</b> Choose what to do and preview what changes
-                  </span>
-                  <span>
-                    <b>03</b> {WS2_COPY.senders.emptySteps.confirm}
-                  </span>
-                </div>
-              </aside>
+              <EmptyState headingLevel={2} title="No senders in this review" />
+            )}
+          </GuidedReviewFrame>
+        </div>
+      )}
+      {reviewing && review.unavailable && (
+        <div className={workspaceStyles.workspace}>
+          <header className={workspaceStyles.heading}>
+            <h1 className={workspaceStyles.title}>Guided Review</h1>
+          </header>
+          <RecoverableErrorState
+            headingLevel={2}
+            title="This review is no longer available"
+            description="It may have expired, or its sender filters or account changed. Return to Senders to start a new review."
+            onRetry={exitGuided}
+            retryLabel="Back to Senders"
+          />
+        </div>
+      )}
+      {reviewing &&
+        session === null &&
+        (scopedReview || review.token !== null) &&
+        !review.unavailable && (
+          <div className={workspaceStyles.workspace}>
+            <header className={workspaceStyles.heading}>
+              <Button tone="ghost" onClick={exitGuided}>
+                Back to Senders
+              </Button>
+              <h1 className={workspaceStyles.title}>Guided Review</h1>
+            </header>
+            {refreshFailed ? (
+              <RecoverableErrorState
+                headingLevel={2}
+                title="Couldn’t load this review"
+                description="Your sender filters are still saved. Try again to review the matching senders."
+                onRetry={onRetry}
+              />
+            ) : scopeLoading || review.token !== null ? (
+              <p role="status">Loading your review…</p>
+            ) : (
+              <EmptyState
+                headingLevel={2}
+                title="No senders in this review"
+                action={<Button onClick={exitGuided}>Back to Senders</Button>}
+              />
             )}
           </div>
         )}
-      </div>
+      {suggestedVisited && (
+        <div
+          hidden={
+            !reviewing ||
+            session !== null ||
+            scopedReview ||
+            review.token !== null ||
+            review.unavailable
+          }
+          style={
+            !reviewing ||
+            session !== null ||
+            scopedReview ||
+            review.token !== null ||
+            review.unavailable
+              ? { display: 'none' }
+              : undefined
+          }
+        >
+          <SuggestedGuidedReview
+            active={
+              active &&
+              reviewing &&
+              session === null &&
+              !scopedReview &&
+              review.token === null &&
+              !review.unavailable
+            }
+            onExit={exitGuided}
+          />
+        </div>
+      )}
 
       <ConfirmActionModal
         variant={isPhone ? 'sheet' : 'modal'}
-        request={resultsReadOnly ? null : pendingAction}
+        request={!active || resultsReadOnly ? null : pendingAction}
         onCancel={closePending}
         onConfirm={confirmPending}
         submitting={submitting}
@@ -3426,7 +3705,8 @@ function SendersScreenContent({
       />
 
       {/* `?` reveals the K/A/U/L shortcut reference (registry-sourced). */}
-      <KeyboardCheatsheet />
+      {active && !reviewing && <KeyboardCheatsheet />}
+      {active && reviewing && session !== null && <TriageKeyboardHelp guided />}
     </RowActivityProvider>
   );
 }

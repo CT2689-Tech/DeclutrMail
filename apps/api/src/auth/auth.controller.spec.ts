@@ -187,6 +187,18 @@ describe('AuthController me', () => {
     expect(h.sync.getMailboxHealth).not.toHaveBeenCalled();
   });
 
+  it('advertises survey channels supported by this API during rolling deploys', async () => {
+    const h = meHarness();
+    const pending = h.controller.me(h.principal);
+    h.release([]);
+    const { data } = await pending;
+    expect(data.signupAttribution.supportedChannels).toEqual(
+      expect.arrayContaining(['google', 'ai_assistant', 'youtube', 'instagram', 'tiktok']),
+    );
+    expect(data.signupAttribution.heardFrom).toBe('friend');
+    expect(data.signupAttribution.promptNeeded).toBe(false);
+  });
+
   it('returns no active mailbox for an empty mailbox list', async () => {
     const h = meHarness();
     const pending = h.controller.me(h.principal);

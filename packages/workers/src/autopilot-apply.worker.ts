@@ -19,7 +19,7 @@ import {
 } from '@declutrmail/db';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
-import { AUTOPILOT_PRESETS, type PresetInput } from './autopilot-presets.js';
+import { AUTOPILOT_PRESETS, matchConfiguredPreset, type PresetInput } from './autopilot-presets.js';
 import { materializeAutopilotSignals } from './autopilot-signals.js';
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { workerTuningOptions } from './queue.js';
@@ -267,6 +267,9 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       // Custom rules (presetKey=NULL) and any future preset keys the
       // worker doesn't know about yet — V2.1 territory; skip per D197.
       if (!isPresetKey(rule.presetKey)) continue;
+      // Delete is always an explicitly approved, frozen message batch.
+      // It never creates legacy automatic or sender-level approvals.
+      if (rule.actionKind === 'delete') continue;
       const def = AUTOPILOT_PRESETS[rule.presetKey];
 
       // numeric(3,2) → number. The schema stores a string; the matcher
@@ -316,7 +319,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         let matchesForRule: Array<{ senderKey: string; confidence: number; reason: string }> = [];
         for (const { senderKey, signals, decision, inboxCount, isUnsubscribed } of eligible) {
           const input: PresetInput = { signals, triageDecision: decision };
-          const result = def.match(input, threshold);
+          const result = matchConfiguredPreset(rule.presetKey, input, threshold, rule.conditions);
           if (!result.matched) continue;
           // Actionability gate (see the `activeSkippedNotActionable` /
           // `observeSkippedNotActionable` docstrings): skip the insert
@@ -329,7 +332,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           // Watch-first queue never offers a suggestion the Active sweep
           // and the turn-on preview would already have excluded (founder
           // decisions 2026-09-29, see the docstrings for the citations).
-          const actionable = def.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
+          const actionable = rule.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
           if (!actionable) {
             if (modeAtMatch === 'active') activeSkippedNotActionable += 1;
             else observeSkippedNotActionable += 1;
@@ -418,6 +421,23 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           const inserted = await this.deps.db.transaction(async (tx) => {
             await lockSenderIndex(tx, mailboxAccountId);
             if ((await this.senderIndexStamp(mailboxAccountId, tx)) !== indexStamp) return null;
+            const [current] = await tx
+              .select({
+                version: automationRules.version,
+                enabled: automationRules.enabled,
+                mode: automationRules.mode,
+              })
+              .from(automationRules)
+              .where(eq(automationRules.id, rule.id))
+              .for('share');
+            if (
+              !current ||
+              current.version !== rule.version ||
+              !current.enabled ||
+              current.mode !== rule.mode
+            )
+              return [];
+
             return tx
               .insert(ruleMatchLog)
               .values(
@@ -495,7 +515,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
             lastRunSenders: distinctSenders,
             updatedAt: sql`now()`,
           })
-          .where(eq(automationRules.id, rule.id));
+          .where(and(eq(automationRules.id, rule.id), eq(automationRules.version, rule.version)));
       } catch (err) {
         rulesFailed += 1;
         console.error(

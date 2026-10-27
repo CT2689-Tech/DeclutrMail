@@ -10,8 +10,9 @@ import { BILLING_SEED } from '../helpers/seed-billing';
 /**
  * Signed-in Unsubscribe + backlog through the real screens.
  * The synthetic fixture has no Gmail token and this lane has no worker,
- * so the spec asserts the preview, the request, and the toast, then
- * deletes the rows it enqueued.
+ * so the spec asserts preview, acceptance and progress without success,
+ * then injects a terminal fixture to verify the actual count and Undo.
+ * It deletes the rows it enqueued; no provider execution is claimed.
  */
 
 const MAILTO_SENDER = {
@@ -29,11 +30,6 @@ const NO_LINK_SENDER = {
 function confirmSheet(page: Page) {
   return page.getByRole('dialog').or(page.getByRole('alertdialog'));
 }
-
-const ARCHIVE_TOAST =
-  /Unsubscribe requested · Archived \d+ emails?|Archived \d+ emails? · Unsubscribe failed:/;
-const DELETE_TOAST =
-  /Unsubscribe requested · Deleted \d+ emails?|Deleted \d+ emails? · Unsubscribe failed:/;
 
 const api = new ApiClient();
 let sql: postgres.Sql;
@@ -129,6 +125,81 @@ test.afterAll(async () => {
   await api.dispose();
 });
 
+test('inline Triage Unsubscribe + Delete previews archived scope and cancels without writes', async ({
+  page,
+}) => {
+  const [before] = await sql`SELECT preferences FROM users WHERE id = ${BILLING_SEED.userId}`;
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      /\/api\/(actions(?:\/|$)|screener\/decide)/.test(new URL(request.url()).pathname)
+    )
+      writes.push(request.url());
+  });
+  try {
+    await sql`UPDATE users SET preferences = jsonb_set(COALESCE(preferences, '{}'::jsonb), '{actionSheetPrefs}', '{"archive":false,"unsubscribe":true,"later":false}'::jsonb, true) WHERE id = ${BILLING_SEED.userId}`;
+    await sql`INSERT INTO mail_messages (mailbox_account_id, provider_message_id, provider_thread_id, sender_key, internal_date, is_unread, label_ids)
+      VALUES (${mailboxId}, 'e2e-triage-inline-archived', 'e2e-triage-inline-archived-thread', ${BILLING_SEED.archiveSenderKey}, now(), false, ARRAY['Label_synthetic'])
+      ON CONFLICT (mailbox_account_id, provider_message_id) DO NOTHING`;
+    await page.goto('/triage');
+    await expectScreenMounted(page);
+    const consent = page.getByTestId('cookie-consent-banner');
+    await expect(consent).toBeVisible();
+    await consent.getByRole('button', { name: 'Essential only', exact: true }).click();
+    await expect(consent).toHaveCount(0);
+    await page
+      .getByRole('navigation', { name: 'Senders in this review' })
+      .getByRole('button', { name: BILLING_SEED.archiveSenderName, exact: true })
+      .click();
+    const toolbar = page.getByRole('toolbar', {
+      name: `Decide on ${BILLING_SEED.archiveSenderName}`,
+    });
+    if (!(await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).isVisible()))
+      await toolbar.getByText('More actions', { exact: true }).click();
+    await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).click();
+    const preview = page.getByRole('region', {
+      name: `Preview · Unsubscribe ${BILLING_SEED.archiveSenderName}`,
+    });
+    await expect(preview).toHaveAttribute('data-dm-preview-mode', 'inline');
+    await preview.getByRole('radio', { name: '+ Delete', exact: true }).click();
+    const archived = preview.getByRole('checkbox', { name: 'Include archived email' });
+    const age = preview.getByRole('combobox', { name: 'Email age' });
+    const impact = preview.getByRole('region', { name: 'What Delete will do' });
+    await expect(age).toHaveValue('all');
+    await expect(archived).not.toBeChecked();
+    await expect(impact).toContainText('2 emails will move to Gmail Trash.');
+    await archived.check();
+    await expect(impact).toContainText('3 emails will move to Gmail Trash.');
+    await expect(impact).toContainText('Inbox and archived email · Any age');
+    await age.selectOption('180');
+    await expect(archived).toBeChecked();
+    await expect(
+      preview.getByRole('button', { name: 'Unsubscribe + Delete', exact: true }),
+    ).toBeDisabled();
+    await expect(impact).toContainText('The age filter excludes these emails.');
+    await preview.getByRole('button', { name: 'Use Any age', exact: true }).click();
+    await expect(age).toHaveValue('all');
+    await expect(age).toBeFocused();
+    await expect(archived).toBeChecked();
+    await expect(impact).toContainText('3 emails will move to Gmail Trash.');
+    await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).click();
+    await preview.getByRole('radio', { name: '+ Delete', exact: true }).click();
+    await expect(age).toHaveValue('all');
+    await expect(archived).not.toBeChecked();
+    await expect(impact).toContainText('2 emails will move to Gmail Trash.');
+    await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+    expect(writes).toEqual([]);
+    const [remaining] =
+      await sql`SELECT count(*)::int AS n FROM mail_messages WHERE mailbox_account_id = ${mailboxId} AND sender_key = ${BILLING_SEED.archiveSenderKey} AND 'INBOX' = ANY(label_ids)`;
+    expect(remaining!.n).toBe(2);
+  } finally {
+    await sql`UPDATE users SET preferences = ${sql.json((before?.preferences ?? {}) as postgres.JSONValue)}::jsonb WHERE id = ${BILLING_SEED.userId}`;
+    await sql`DELETE FROM mail_messages WHERE mailbox_account_id = ${mailboxId} AND provider_message_id = 'e2e-triage-inline-archived'`;
+  }
+});
+
 test('Triage and Senders confirm unsubscribe with archive and delete', async ({ page }) => {
   test.setTimeout(180_000);
   const senderName = BILLING_SEED.archiveSenderName;
@@ -136,13 +207,20 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
 
   await page.goto('/triage');
   await expectScreenMounted(page);
-  await page.getByRole('button', { name: 'List', exact: true }).click();
-  const escaped = senderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const rowHeader = page.getByRole('button', {
-    name: new RegExp(`^${escaped} — (expand|collapse) triage detail$`),
-  });
+  // Resolve the first-visit banner through the real UI before exercising
+  // bottom-of-card actions, which can otherwise sit behind the cookie card.
+  const cookieBanner = page.getByTestId('cookie-consent-banner');
+  await expect(cookieBanner).toBeVisible();
+  await cookieBanner.getByRole('button', { name: 'Essential only', exact: true }).click();
+  await expect(cookieBanner).toBeHidden();
+  const queue = page.getByRole('navigation', { name: 'Senders in this review' });
+  const rowHeader = queue.getByRole('button', { name: senderName, exact: true });
   await expect(rowHeader).toBeVisible();
   await rowHeader.click();
+  const toolbar = page.getByRole('toolbar', { name: `Decide on ${senderName}` });
+  if (!(await toolbar.getByRole('button', { name: 'Unsubscribe (U)' }).isVisible())) {
+    await toolbar.getByText('More actions', { exact: true }).click();
+  }
   await page
     .getByRole('toolbar', { name: `Decide on ${senderName}` })
     .getByRole('button', { name: 'Unsubscribe (U)' })
@@ -183,7 +261,8 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   };
   expect(triageRequest).toMatchObject({ mode: 'archive', olderThanDays: null });
   expect(triageRequest.reach ?? null).toBeNull();
-  await expect(page.getByText(ARCHIVE_TOAST)).toBeVisible();
+  await expect(page.locator('[data-dm-tray-notice="working"]')).toContainText('Archiving');
+  await expect(page.getByText(/Archived \d+ emails?/)).toHaveCount(0);
 
   // The default lane has no Gmail worker, so the archive job stays queued
   // and no undo token is issued. Stamp the journal the worker would write,
@@ -200,7 +279,7 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   expect(job?.id).toBeTruthy();
   const payload = JSON.stringify({
     kind: 'archive',
-    messageIds: ['e2e-bill-m1', 'e2e-bill-m2'],
+    messageIds: ['e2e-bill-m1'],
     priorLabels: ['INBOX'],
   });
   const [issued] = await sql<{ token: string }[]>`
@@ -210,16 +289,24 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   `;
   const token = issued!.token;
   await sql`
-    UPDATE action_jobs SET undo_token = ${token}, status = 'done' WHERE id = ${job!.id}
+    UPDATE action_jobs SET undo_token = ${token}, status = 'done', affected_count = 1 WHERE id = ${job!.id}
   `;
   await sql`
     INSERT INTO activity_log (
       mailbox_account_id, sender_key, source, action, affected_count, undo_token, action_job_id
     )
     VALUES (
-      ${mailboxId}, ${BILLING_SEED.archiveSenderKey}, 'triage', 'archive', 2, ${token}, ${job!.id}
+      ${mailboxId}, ${BILLING_SEED.archiveSenderKey}, 'triage', 'archive', 1, ${token}, ${job!.id}
     )
   `;
+  // One affected email differs from the two requested: completion must use the result.
+  await expect(
+    page.getByRole('button', { name: 'Show 1 recent action — undo available' }),
+  ).toBeVisible();
+  await page.getByRole('button', { name: 'Show 1 recent action — undo available' }).click();
+  await expect(page.locator('[data-dm-undo-tray="open"]')).toContainText('1 email');
+  await expect(page.locator('[data-dm-undo-tray="open"]')).not.toContainText('2 emails');
+  await expect(page.getByRole('button', { name: `Undo Archive for ${senderName}` })).toBeVisible();
   await page.goto('/activity');
   await expectScreenMounted(page);
   const undoPost = page.waitForResponse(
@@ -243,6 +330,13 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
       AND 'INBOX' = ANY(label_ids)
   `;
   expect(stillInbox!.n).toBe(2);
+  // This lane has no worker. Complete the injected reverse state before the
+  // next decision so an earlier synthetic job does not own the sender lock.
+  await sql`
+    UPDATE action_jobs SET status = 'done', affected_count = 1
+    WHERE mailbox_account_id = ${mailboxId} AND direction = 'reverse' AND undo_token = ${token}
+  `;
+  await sql`UPDATE undo_journal SET reverted_at = now() WHERE token = ${token}`;
 
   await page.goto('/senders');
   await expectScreenMounted(page);
@@ -255,7 +349,11 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await expect(sendersSheet).toContainText('Whether their email stops is up to the sender.');
   await sendersSheet.getByRole('radio', { name: '+ Delete' }).click();
   const age = sendersSheet.getByRole('combobox', { name: 'Email age', exact: true });
-  await expect(age).toHaveValue('180');
+  await expect(age).toHaveValue('all');
+  await expect(sendersSheet.getByRole('region', { name: 'What Delete will do' })).toContainText(
+    '2 emails',
+  );
+  await age.selectOption('180');
   await expect(sendersSheet.getByRole('button', { name: 'Unsubscribe + Delete' })).toBeDisabled();
   await age.selectOption('all');
   await expect(sendersSheet.getByRole('region', { name: 'What Delete will do' })).toContainText(
@@ -279,7 +377,10 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
     mode: 'delete',
     olderThanDays: null,
   });
-  await expect(page.getByText(DELETE_TOAST)).toBeVisible();
+  await expect(
+    page.locator('[data-dm-tray-notice="working"]').filter({ hasText: 'Deleting' }),
+  ).toBeVisible();
+  await expect(page.getByText(/Deleted \d+ emails?/)).toHaveCount(0);
 });
 
 test('an email-only sender opens the mailto handoff and does not claim a draft', async ({

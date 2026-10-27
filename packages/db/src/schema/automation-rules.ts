@@ -21,12 +21,11 @@ import { mailboxAccounts } from './mailbox-accounts';
  *
  * One row is one Autopilot rule (preset or custom) for one mailbox.
  *
- * V2 launch ships ONLY preset rules (`is_preset = true`); the custom rule
- * builder UI is flag-disabled per D197, but the schema accepts
- * `is_preset = false` rows so the V2.1 unlock is a pure API + UI change
- * (no migration). D234 lives at the API layer.
+ * Presets retain their Observe/Active lifecycle. The founder-approved
+ * sender-list builder uses `is_preset = false` rows in Observe or Paused
+ * mode only; cleanup requires an explicit, versioned preview confirmation.
  *
- * Lifecycle (D10 + D101):
+ * Preset lifecycle (D10 + D101):
  *   1. New mailbox gets the 5 preset rows seeded with `enabled = false`,
  *      `mode = 'observe'`. The seed is an application-level concern —
  *      this migration creates only the empty table per the Atlas
@@ -54,8 +53,8 @@ import { mailboxAccounts } from './mailbox-accounts';
  * `conditions` and `action_payload` are jsonb. For presets, the matcher
  * logic lives in code (`packages/workers/src/autopilot-presets.ts` —
  * lands with the apply worker PR); the jsonb here mirrors the rule for
- * the read service / UI render. For custom rules (V2.1), the jsonb IS
- * the source of truth interpreted by the runtime matcher.
+ * the read service / UI render. Sender-list rules store bounded sender
+ * keys and age criteria; they use the reviewed label-action pipeline.
  *
  * `confidence_threshold` is non-null only for the two threshold-bearing
  * presets (#1, #2). It is a `numeric(3,2)` to match the engine's
@@ -78,8 +77,7 @@ import { mailboxAccounts } from './mailbox-accounts';
  *     apply worker's hot load path scans only enabled rules.
  *
  * CHECK invariant: `is_preset = true` IFF `preset_key IS NOT NULL`.
- * Custom rules MUST set `is_preset = false` AND `preset_key = NULL`;
- * the API layer additionally rejects `is_preset = false` at V2 (D234).
+ * Custom rules MUST set `is_preset = false` AND `preset_key = NULL`.
  */
 
 /** Lifecycle state for a rule. D10 + D101 + D105. */
@@ -101,6 +99,7 @@ export const autopilotActionKind = pgEnum('autopilot_action_kind', [
   'archive',
   'unsubscribe',
   'later',
+  'delete',
 ]);
 
 export const automationRules = pgTable(
@@ -117,12 +116,16 @@ export const automationRules = pgTable(
     presetKey: text('preset_key'),
     /**
      * D196/D197 + D234. `true` for the 5 system presets; `false` for
-     * future custom rules. The V2 launch API rejects `false` on writes;
-     * the column is here so V2.1 unlock is API-only.
+     * approval-first sender-list rules. Preset routes reject custom-rule
+     * writes; the reviewed sender-rule API owns their configuration.
      */
     isPreset: boolean('is_preset').notNull().default(true),
     /** Display label. For presets, defaults to the preset's canonical title. */
     name: text('name').notNull(),
+    /** Optimistic revision; approved sender cleanups bind to this version. */
+    version: integer('version').notNull().default(1),
+    /** Retirement stops new cleanups while preserving the rule's audit identity. */
+    retiredAt: timestamp('retired_at', { withTimezone: true, mode: 'date' }),
     /** D10 — Observe-first: rule does not fire until user enables. */
     enabled: boolean('enabled').notNull().default(false),
     /** D101 / D105 — observe → active → paused. */
@@ -191,6 +194,11 @@ export const automationRules = pgTable(
       .default(sql`now()`),
   },
   (table) => ({
+    versionPositive: check('automation_rules_version_positive', sql`${table.version} > 0`),
+    /** Bounded library reads and limit checks must not scan other mailboxes. */
+    customLibraryIdx: index('automation_rules_custom_library_idx')
+      .on(table.mailboxAccountId, table.createdAt, table.id)
+      .where(sql`${table.isPreset} = false AND ${table.retiredAt} IS NULL`),
     /** One preset of a given kind per mailbox. Custom rules (preset_key=NULL) bypass. */
     mailboxPresetUniq: uniqueIndex('automation_rules_mailbox_preset_uniq')
       .on(table.mailboxAccountId, table.presetKey)
@@ -201,9 +209,7 @@ export const automationRules = pgTable(
       .where(sql`${table.enabled} = true`),
     /**
      * Preset/custom invariant: `is_preset` and `preset_key IS NOT NULL`
-     * agree. The API layer additionally rejects `is_preset = false` at
-     * V2 (D234), but the schema enforces the structural invariant
-     * regardless of API version.
+     * agree, regardless of the API version.
      */
     presetKeyConsistent: check(
       'automation_rules_preset_key_consistent',

@@ -34,6 +34,8 @@ Status values: Proposed | Accepted | Superseded by ADR-NNNN.
 
 | [0046](./0046-sandbox-revocable-checkout-preparation.md) | Accepted for sandbox preparation only | Provider-revocable checkout preparation | D117, D118, D249 |
 
+| [0047](./0047-durable-checkout-attempts.md) | Accepted for implementation; activation pending sandbox evidence | Durable checkout attempt recovery | D249, ADR-0040, ADR-0044, ADR-0046 |
+
 ## Authoring an ADR
 
 1. Copy `0000-template.md` to `NNNN-kebab-title.md` using the next

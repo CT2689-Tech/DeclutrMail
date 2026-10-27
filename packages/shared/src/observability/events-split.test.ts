@@ -106,6 +106,7 @@ const APPENDED_AFTER_SPLIT = [
   'brief_ai_consent_decided',
   'brief_ai_consent_revoked',
   'provider_waitlist_joined',
+  'autopilot_sender_rule_changed',
 ] as const;
 
 describe('event registry domain split', () => {

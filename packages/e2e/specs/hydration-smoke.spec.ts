@@ -5,6 +5,7 @@ import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 import { BILLING_SEED } from '../helpers/seed-billing';
+import { expectScreenMounted } from '../helpers/screen-ready';
 
 test.use({ locale: 'de-DE', timezoneId: 'Asia/Kolkata' });
 
@@ -44,17 +45,119 @@ test.use({ locale: 'de-DE', timezoneId: 'Asia/Kolkata' });
 
 const api = new ApiClient();
 
+test('account navigation preserves desktop grouping, tablet access and section links', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 480 });
+  await page.goto('/settings');
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
+  const sidebar = page.getByRole('complementary', { name: 'Workspace navigation' });
+  expect((await sidebar.boundingBox())?.width).toBe(220);
+  await expect(sidebar.locator('.dm-sidebar-label').first()).toBeVisible();
+  await expect(
+    sidebar.getByRole('navigation', { name: 'Product navigation' }).getByRole('button'),
+  ).toHaveCount(5);
+  const account = sidebar.getByRole('navigation', { name: 'Account navigation' });
+  await expect(account.getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  const billing = account.getByRole('link', { name: 'Plan & billing' });
+  const footer = await billing.boundingBox();
+  expect(footer).not.toBeNull();
+  expect(footer!.y + footer!.height).toBeLessThanOrEqual(480);
+
+  await page
+    .getByRole('navigation', { name: 'On this page' })
+    .getByRole('link', { name: 'Privacy and data' })
+    .click();
+  await expect(page.locator('#more')).toBeFocused();
+  await expect(page.locator('#more')).toBeInViewport();
+  await billing.click();
+  await expect(page.getByRole('heading', { name: 'Plan & billing', exact: true })).toBeVisible();
+  await expect(billing).toHaveAttribute('aria-current', 'page');
+  await expect(page.locator('.dm-main-scroll')).toHaveJSProperty('scrollTop', 0);
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toHaveCount(0);
+  await page.locator('#change-plan').scrollIntoViewIfNeeded();
+  await expect(page.locator('#change-plan')).toBeInViewport();
+
+  await page.setViewportSize({ width: 900, height: 600 });
+  expect((await sidebar.boundingBox())?.width).toBe(72);
+  await expect(sidebar.locator('.dm-sidebar-label').first()).toBeHidden();
+  await expect(account.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
+  await expect(billing).toBeVisible();
+});
+
+test('phone account drawer reaches billing and keeps contextual help inside the viewport', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/settings');
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
+  for (const link of await page
+    .getByRole('navigation', { name: 'On this page' })
+    .getByRole('link')
+    .all()) {
+    const bounds = await link.boundingBox();
+    expect(bounds!.width).toBeGreaterThanOrEqual(44);
+    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  }
+  const banner = page.getByTestId('cookie-consent-banner');
+  await expect(banner).toBeVisible();
+  const menu = page.getByRole('button', { name: 'Open navigation menu' });
+  await menu.click();
+  const drawer = page.getByRole('dialog', { name: 'Navigation menu' });
+  await expect(drawer).toBeVisible();
+  await expect(banner).toBeVisible();
+  // A first-visit banner must stay available after the modal drawer closes,
+  // without covering the account destinations while the drawer is open.
+  await page.keyboard.press('Escape');
+  await expect(drawer).toBeHidden();
+  await expect(menu).toBeFocused();
+  await banner.getByRole('button', { name: 'Essential only', exact: true }).click({ trial: true });
+  await menu.click();
+  await drawer.getByRole('button', { name: 'Plan & billing', exact: true }).click();
+  await expect(drawer).toBeHidden();
+  await expect(page.getByRole('heading', { name: 'Plan & billing', exact: true })).toBeVisible();
+  await expect(page.locator('header').getByRole('link', { name: 'Compare plans' })).toHaveCount(0);
+  await banner.getByRole('button', { name: 'Essential only', exact: true }).click();
+  await expect(banner).toBeHidden();
+  await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('button')).toHaveCount(
+    5,
+  );
+  const help = page.getByRole('button', { name: 'About this screen' });
+  await help.click();
+  const popover = page.getByRole('dialog', { name: 'About Plan & billing' });
+  const bounds = await popover.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320);
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await expect(help).toBeFocused();
+  const features = page.getByRole('list', { name: 'Included features' });
+  await expect(features.getByText('Sender cleanup')).toBeVisible();
+  const accounts = page.getByRole('link', { name: 'Manage Gmail accounts' });
+  const accountBounds = await accounts.boundingBox();
+  expect(accountBounds!.height).toBeGreaterThanOrEqual(44);
+  await accounts.click();
+  await expect(page.locator('#mailboxes')).toBeFocused();
+});
+
 /** Static routes that must hydrate from the server tree without recovery. */
 const HYDRATED_ROUTES = [
   '/home',
   '/senders',
   '/triage',
+  '/senders?view=guided',
+  '/senders?view=first-review',
   '/activity',
   '/autopilot',
   '/billing',
   '/brief',
   '/followups',
   '/later',
+  '/autopilot/settings',
   '/quiet',
   '/screener',
   '/settings',
@@ -62,6 +165,7 @@ const HYDRATED_ROUTES = [
   '/settings/senders',
   '/onboarding',
   '/admin/security',
+  '/admin/acquisition',
 ] as const;
 
 test.beforeAll(async () => {
@@ -94,13 +198,30 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
   const response = await page.goto(route, { waitUntil: 'domcontentloaded' });
   await page.locator('body').waitFor({ state: 'visible' });
   if (route === '/autopilot') {
-    // A nonempty shell can precede the streamed sections and their diagnostics.
-    await expect(page.getByRole('heading', { name: 'Rules', exact: true })).toBeVisible();
+    // Free mounts the read-only preset preview; paid plans mount the library.
+    // The preview has no help registration or collapsible preset section.
+    const readOnlyPreview = page.getByTestId('autopilot-observe-preview');
+    const senderLibrary = page.getByTestId('sender-rule-library');
+    await expect(readOnlyPreview.or(senderLibrary)).toHaveCount(1);
+    const essential = page.getByRole('button', { name: 'Essential only', exact: true });
+    if (await essential.isVisible()) await essential.click();
+    if (await senderLibrary.count()) {
+      // A nonempty shell can precede the streamed sections and their diagnostics.
+      await expectScreenMounted(page);
+      await expect(
+        senderLibrary.getByRole('navigation', { name: 'Autopilot views' }),
+      ).toBeVisible();
+    } else {
+      await expect(readOnlyPreview).toBeVisible();
+      await expect(readOnlyPreview.getByRole('link', { name: /^Upgrade to / })).toBeVisible();
+    }
+    if (!(await senderLibrary.count()))
+      await expect(page.getByRole('heading', { name: 'Rules', exact: true })).toBeVisible();
     for (const label of [
       'Loading Autopilot rules',
       'Loading Autopilot suggestions',
       'Loading your preset rules…',
-      'Checking rule suggestions…',
+      'Checking new rule ideas…',
     ])
       await expect(page.getByText(label, { exact: true })).toHaveCount(0);
   }
@@ -227,78 +348,77 @@ function manifestPrice(tier: 'plus' | 'pro', cycle: 'monthly' | 'annual'): strin
 }
 
 /**
- * Live complimentary Pro, then a normal paid Plus plan. Both restore the
- * synthetic workspace. The grant and the paid row belong to this spec.
+ * Free, complimentary Pro, and paid Plus fixtures restore the synthetic
+ * workspace. The grant and the paid row belong to this spec.
  */
 async function withBillingFixture(
-  setup: 'complimentary-pro' | 'paid-plus',
+  setup: 'free' | 'complimentary-pro' | 'paid-plus',
   run: () => Promise<void>,
 ): Promise<void> {
   const sql = dbConnect();
-  const [workspace] = await sql<{ tier: string }[]>`
-    SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
-  `;
-  const [grant] = await sql<
-    {
-      tier: string;
-      reason: string;
-      granted_by: string;
-      expires_at: Date | null;
-      revoked_at: Date | null;
-    }[]
-  >`
-    SELECT tier, reason, granted_by, expires_at, revoked_at
-    FROM entitlement_grants
-    WHERE email = ${BILLING_SEED.email}
-  `;
   try {
-    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}`;
-    if (setup === 'complimentary-pro') {
-      await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
-      // Comp uniqueness is partial on source = 'comp'. A bare
-      // ON CONFLICT (email) does not match that index.
-      await sql`
-        INSERT INTO entitlement_grants (email, tier, reason, granted_by, source)
-        VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e', 'comp')
-        ON CONFLICT (email) WHERE source = 'comp' DO UPDATE
-        SET tier = 'pro', reason = 'hydration smoke', granted_by = 'e2e',
-            expires_at = NULL, revoked_at = NULL, updated_at = now()
-      `;
-    } else {
-      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
-      await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
-      await sql`
-        INSERT INTO subscriptions (
-          workspace_id, provider, provider_subscription_id, tier, status,
-          provider_price_id, billing_cycle, current_period_end
-        ) VALUES (
-          ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
-          'pri_e2e_hydration', 'monthly', now() + interval '30 days'
-        )
-      `;
-    }
-    await run();
-  } finally {
-    await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId} AND provider_subscription_id = 'sub_e2e_hydration_paid'`;
-    if (workspace) {
+    const [workspace] = await sql<{ tier: string }[]>`
+      SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
+    `;
+    const grants = await sql<{ id: string }[]>`
+      SELECT id FROM entitlement_grants WHERE email = ${BILLING_SEED.email}
+    `;
+    const subscriptions = await sql<{ id: string }[]>`
+      SELECT id FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId}
+    `;
+    if (!workspace) throw new Error('Hydration fixture requires its seeded synthetic workspace.');
+    // Fail before any write or teardown if the disposable seed has billing state.
+    expect(grants, 'Hydration fixture requires an empty grant baseline').toHaveLength(0);
+    expect(subscriptions, 'Hydration fixture requires an empty subscription baseline').toHaveLength(
+      0,
+    );
+
+    try {
+      if (setup === 'complimentary-pro') {
+        await sql`UPDATE workspaces SET tier = 'pro' WHERE id = ${BILLING_SEED.workspaceId}`;
+        await sql`
+          INSERT INTO entitlement_grants (email, tier, reason, granted_by, source)
+          VALUES (${BILLING_SEED.email}, 'pro', 'hydration smoke', 'e2e', 'comp')
+        `;
+      } else if (setup === 'free') {
+        await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${BILLING_SEED.workspaceId}`;
+      } else {
+        await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
+        await sql`
+          INSERT INTO subscriptions (
+            workspace_id, provider, provider_subscription_id, tier, status,
+            provider_price_id, billing_cycle, current_period_end
+          ) VALUES (
+            ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
+            'pri_e2e_hydration', 'monthly', now() + interval '30 days'
+          )
+        `;
+      }
+      await run();
+    } finally {
+      await sql`DELETE FROM subscriptions WHERE workspace_id = ${BILLING_SEED.workspaceId} AND provider_subscription_id = 'sub_e2e_hydration_paid'`;
       await sql`UPDATE workspaces SET tier = ${workspace.tier} WHERE id = ${BILLING_SEED.workspaceId}`;
-    }
-    if (grant) {
       await sql`
-        UPDATE entitlement_grants
-        SET tier = ${grant.tier},
-            reason = ${grant.reason},
-            granted_by = ${grant.granted_by},
-            expires_at = ${grant.expires_at},
-            revoked_at = ${grant.revoked_at}
-        WHERE email = ${BILLING_SEED.email}
+        DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}
+          AND source = 'comp' AND reason = 'hydration smoke' AND granted_by = 'e2e'
       `;
-    } else {
-      await sql`DELETE FROM entitlement_grants WHERE email = ${BILLING_SEED.email}`;
     }
+  } finally {
     await sql.end();
   }
 }
+
+test('cold paid-account billing fragments reach payment and invoice sections', async ({ page }) => {
+  await withBillingFixture('paid-plus', async () => {
+    for (const id of ['payment', 'invoices']) {
+      await page.goto(`/billing#${id}`);
+      const section = page.locator(`#${id}`);
+      await expect(section).toBeVisible();
+      await expect(section).toBeFocused();
+      await expect(section).toBeInViewport();
+    }
+  });
+});
 
 test('live Pro complimentary billing hydrates on annual across repeated loads', async ({
   page,
@@ -309,9 +429,19 @@ test('live Pro complimentary billing hydrates on annual across repeated loads', 
       await expect(page.getByTestId('complimentary-note')).toContainText(
         'Pro is complimentary on this account',
       );
+      const purchaseOptions = page
+        .locator('#change-plan summary')
+        .filter({ hasText: 'View purchase options' });
+      await expect(purchaseOptions).toBeVisible();
+      await expect(purchaseOptions).toHaveText('View purchase options');
+      await purchaseOptions.click();
       await expect(page.getByRole('button', { name: /^Annual/, pressed: true })).toBeVisible();
       await expect(page.getByText(manifestPrice('plus', 'annual')).first()).toBeVisible();
-      await expect(page.getByText(manifestPrice('pro', 'annual')).first()).toBeVisible();
+      const pro = page.getByTestId('plan-option-pro');
+      await expect(pro).toContainText('Current access');
+      await expect(pro).toContainText('Complimentary');
+      await expect(pro).not.toContainText(manifestPrice('pro', 'annual'));
+      await expect(page.getByRole('button', { name: 'Buy Plus separately' })).toBeVisible();
     });
   });
 });
@@ -339,6 +469,22 @@ test('a normal paid plan hydrates across repeated loads', async ({ page }) => {
       await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
       await expect(page.getByTestId('current-plan-card')).toContainText('Plus');
     });
+  });
+});
+
+test('paid Autopilot library hydrates with its preset review section', async ({ page }) => {
+  await withBillingFixture('paid-plus', async () => {
+    await expectRouteHydrates(page, '/autopilot');
+    await expect(page.getByTestId('sender-rule-library')).toBeVisible();
+    await expect(page.getByTestId('autopilot-observe-preview')).toHaveCount(0);
+  });
+});
+
+test('Free Autopilot read-only preview hydrates with its upgrade link', async ({ page }) => {
+  await withBillingFixture('free', async () => {
+    await expectRouteHydrates(page, '/autopilot');
+    await expect(page.getByTestId('autopilot-observe-preview')).toBeVisible();
+    await expect(page.getByTestId('sender-rule-library')).toHaveCount(0);
   });
 });
 

@@ -2,162 +2,455 @@
 
 import Link from 'next/link';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { ErrorState, Skeleton } from '@declutrmail/shared';
-import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
-import { planName, type TierId } from '@declutrmail/shared/entitlements';
-import { InboxReportCard } from '@/features/inbox-report/card';
+import { Avatar, ErrorState } from '@declutrmail/shared';
+import type { CleanupSummaryDto, SnoozedSenderRow } from '@declutrmail/shared/contracts';
+import { hasCapability, type TierId } from '@declutrmail/shared/entitlements';
+import {
+  formatReportSize,
+  reportHeadline,
+  reportWindow,
+  type InboxReportDto,
+} from '@declutrmail/shared/inbox-report';
 import { QuotaChipSlot } from '@/features/shell/quota-chip-slot';
 import { loadErrorDescription } from '@/lib/load-error-copy';
 import { track } from '@/lib/posthog';
-
-import { fillDeck, formatCount, HOME_DECK } from './home-deck-copy';
+import { HOME_DECK } from './home-deck-copy';
 import { HomeLoadingSlots } from './home-loading-shell';
 import type { HomePreviewReport } from './home-preview-report';
 import { HomeFixDialog } from './home-fix-dialog';
-import {
-  homeCalmTemplate,
-  homeFixCopy,
-  homeReportCopy,
-  homeReportNamesSenders,
-  homeTileCopy,
-} from './home-ws5-copy';
 import { HomeScanFailedCopy, HomeScanRecovery } from './home-scan-recovery';
-import {
-  homeV1Mode,
-  isRetiredReviewCta,
-  rankHomeNextSteps,
-  type HomeFixCandidate,
-  type HomeV1Mode,
-} from './home-next-steps';
+import { homeV1Mode, rankHomeNextSteps, type HomeFixCandidate } from './home-next-steps';
 import { SYNC_FAILED_ACTION, type HomeAction, type HomeState } from './home-state';
+import type { HomePriority } from './home-orientation';
+import type { HomeOverview, HomeRead } from './api/use-home-overview';
+import type { HomeSummary } from './api/use-home-summary';
 import styles from './home-view.module.css';
 
-const BILLING_HREF = '/billing?from=%2Fhome';
-
-function canPreviewFix(step: HomeFixCandidate): boolean {
-  return (
-    step.kind === 'unsub_archive' &&
-    step.senderIds.length > 0 &&
-    step.emailCount !== undefined &&
-    Number.isFinite(step.emailCount) &&
-    step.emailCount > 0
-  );
+export interface HomeViewProps {
+  state: HomeState;
+  tier?: TierId;
+  visitSummary?: ReactNode;
+  statusLine?: string;
+  priority?: HomePriority | null;
+  noSuggestions?: boolean;
+  summary?: CleanupSummaryDto | null;
+  nextSteps?: readonly HomeFixCandidate[];
+  senderSizeView?: boolean;
+  reportSizeLabel?: string | null;
+  indexedEmailCount?: number | null;
+  mailboxId?: string;
+  mailboxEmail?: string | null;
+  previewReport?: HomePreviewReport | null;
+  reportLead?: string | null;
+  supportText?: string | null;
+  onConfirmFix?: (step: HomeFixCandidate) => void;
+  overview?: HomeOverview | undefined;
+  report?: InboxReportDto | null;
+  reportStatus?: 'loading' | 'ready' | 'error';
+  newSenders?: HomeRead<number>;
+  later?: HomeRead<{ due: number; troubled: number; nextAt: string | null }>;
+  timeZone?: string;
+  onRefresh?: () => void;
 }
 
-function homeNextStepEventKind(
-  kind: HomeFixCandidate['kind'],
-): 'unsubscribe_archive' | 'largest_senders' | 'later_due' {
-  switch (kind) {
-    case 'unsub_archive':
-      return 'unsubscribe_archive';
-    case 'largest':
-      return 'largest_senders';
-    case 'later_due':
-      return 'later_due';
-    default: {
-      const unreachable: never = kind;
-      return unreachable;
-    }
-  }
-}
-
-/** Home v1: report, suggested next steps, progress. No promo and no auto-confirm. */
+/** An action-led overview. Each section keeps its own unknown/error state. */
 export function HomeView({
   state,
   tier = 'free',
   visitSummary,
+  statusLine,
+  priority = null,
+  noSuggestions = false,
   summary = null,
   nextSteps = [],
   senderSizeView = false,
-  reportSizeLabel = null,
-  indexedEmailCount = null,
   mailboxId = '',
   mailboxEmail = null,
   previewReport = null,
   reportLead = null,
   supportText = null,
   onConfirmFix,
-}: {
-  state: HomeState;
-  visitSummary?: ReactNode;
-  tier?: TierId;
-  summary?: CleanupSummaryDto | null;
-  nextSteps?: readonly HomeFixCandidate[];
-  /** F2 size view. Largest is dropped by the ranker before it arrives here. */
-  senderSizeView?: boolean;
-  /** Total Gmail size label, already formatted (for example "7.7 GB"). Never an amount freed. */
-  reportSizeLabel?: string | null;
-  indexedEmailCount?: number | null;
-  /** Passed through to `InboxReportCard`. Empty until a mailbox is in scope. */
-  mailboxId?: string;
-  mailboxEmail?: string | null;
-  /** Preview route only. Production Home leaves this null. */
-  previewReport?: HomePreviewReport | null;
-  /** Filled report headline. Preview uses `previewReport.headline` instead. */
-  reportLead?: string | null;
-  /** Filled mostly-unread support. Preview uses its own deck sample. */
-  supportText?: string | null;
-  onConfirmFix?: (step: HomeFixCandidate) => void;
-}) {
+  overview,
+  report = null,
+  reportStatus = 'ready',
+  newSenders,
+  later,
+  timeZone = 'UTC',
+  onRefresh,
+}: HomeViewProps) {
   const steps = rankHomeNextSteps(nextSteps, { senderSizeView });
-  const mode = homeV1Mode(state.kind, state.kind === 'ready' ? steps.length : 0);
+  const primary = steps.find((step) => step.kind === 'unsub_archive');
+  const mode = homeV1Mode(state.kind, steps.length);
   const [pendingFix, setPendingFix] = useState<HomeFixCandidate | null>(null);
-  const fixCopy = previewReport?.fix ?? homeFixCopy();
-  const namesSenders = previewReport !== null || homeReportNamesSenders();
-  const fixReady = fixCopy !== null && namesSenders && steps.some(canPreviewFix);
-  useHomeSurfaceEvents(mode);
-  const openFix = (step: HomeFixCandidate) => {
-    void track('home_next_step_clicked', { kind: homeNextStepEventKind(step.kind) });
-    if (step.kind === 'unsub_archive') setPendingFix(step);
-  };
-
+  const [period, setPeriod] = useState<'7d' | 'all'>(overview ? '7d' : 'all');
+  const labelId = useId();
+  const caughtUp = useRef(false);
+  const reviewOnly = priority?.action?.href === '/senders?view=first-review';
+  const scanning = state.kind === 'empty' && state.syncing;
+  const urgent = reviewOnly || (scanning && !priority?.action) ? null : priority;
+  const canPreview =
+    !!primary &&
+    primary.senderIds.length > 0 &&
+    typeof primary.emailCount === 'number' &&
+    Number.isFinite(primary.emailCount) &&
+    primary.emailCount > 0 &&
+    !urgent &&
+    !scanning;
+  useEffect(() => {
+    if (mode === 'fallback' && !caughtUp.current) {
+      caughtUp.current = true;
+      void track('caught_up_viewed', { surface: 'home' });
+    }
+  }, [mode]);
+  function openPreview(step: HomeFixCandidate) {
+    void track('home_next_step_clicked', { kind: 'unsubscribe_archive' });
+    setPendingFix(step);
+  }
   return (
     <div
       className={styles.page}
       data-home-mode={mode}
+      data-home-priority={canPreview ? 'review' : 'intro'}
+      data-home-fix-expected={canPreview ? 'true' : 'false'}
       data-sender-size-view={senderSizeView ? 'on' : 'off'}
-      data-home-priority={mode === 'full' ? 'review' : 'intro'}
-      data-home-fix-expected={fixReady ? 'true' : 'false'}
     >
       <header className={styles.header}>
         <div>
-          <h1>{HOME_DECK.homeTitle}</h1>
+          <h1>Home</h1>
           {mailboxEmail && <p className={styles.mailboxIdentity}>{mailboxEmail}</p>}
         </div>
-        <div className={styles.headerTools}>
-          <Link href="/senders" className={styles.reportLink}>
-            {HOME_DECK.focus.report}
-          </Link>
-          <div className={styles.planLine} data-home-slot="plan">
-            <QuotaChipSlot summary={summary} />
-            <span>
-              <PlanLabel tier={tier} />
-              <Link href={BILLING_HREF} className="dm-external-link dm-tap-target">
-                {HOME_DECK.compare}
-              </Link>
-            </span>
-          </div>
+        <div className={styles.planLine} data-home-slot="quota">
+          <QuotaChipSlot summary={summary} />
         </div>
       </header>
-      <HomeBody
-        state={state}
-        mode={mode}
-        steps={steps}
-        visitSummary={visitSummary}
-        reportSizeLabel={reportSizeLabel}
-        indexedEmailCount={indexedEmailCount}
-        mailboxId={mailboxId}
-        previewReport={previewReport}
-        reportLead={reportLead}
-        supportText={previewReport === null ? supportText : null}
-        onOpenFix={openFix}
-      />
-      {pendingFix !== null && (
+      {statusLine && (
+        <p className={styles.statusLine} role="status">
+          {statusLine}
+        </p>
+      )}
+      {state.kind === 'loading' ? (
+        <HomeLoadingSlots labelId={labelId} />
+      ) : state.kind === 'sync-failed' ? (
+        <section className={styles.primaryCard} aria-label="Mailbox needs attention">
+          <h2>{HOME_DECK.failedTitle}</h2>
+          {state.mailboxId ? (
+            <HomeScanRecovery mailboxId={state.mailboxId} needsReconnect={state.needsReconnect} />
+          ) : state.needsReconnect ? (
+            <>
+              <p>Reconnect it in Settings → Gmail accounts.</p>
+              <PrimaryLink action={SYNC_FAILED_ACTION} />
+            </>
+          ) : (
+            <HomeScanFailedCopy />
+          )}
+        </section>
+      ) : (
+        <>
+          <div className={styles.visitSlot} data-home-slot="visit">
+            {visitSummary}
+          </div>
+          <div className={styles.overviewGrid}>
+            <section
+              className={styles.primaryCard}
+              aria-label="Suggested next steps"
+              data-home-slot="primary"
+            >
+              {urgent ? (
+                <>
+                  <h2>{urgent.title}</h2>
+                  {urgent.body && <p>{urgent.body}</p>}
+                  {urgent.action && <PrimaryLink action={urgent.action} />}
+                </>
+              ) : scanning ? (
+                <>
+                  <h2>{state.queued ? HOME_DECK.queuedTitle : HOME_DECK.syncingTitle}</h2>
+                  <p>
+                    {state.queued
+                      ? HOME_DECK.queuedBody
+                      : (state.stageSentence ?? HOME_DECK.syncingBody)}
+                  </p>
+                </>
+              ) : primary ? (
+                <>
+                  <p className={styles.sectionLabel}>Suggested cleanup</p>
+                  <h2>
+                    Start with {format(primary.senderCount)}{' '}
+                    {primary.senderCount === 1 ? 'sender' : 'senders'}.
+                  </h2>
+                  {typeof primary.emailCount === 'number' &&
+                    Number.isFinite(primary.emailCount) &&
+                    primary.emailCount > 0 && (
+                      <p className={styles.impact} data-home-impact="">
+                        <strong>
+                          {format(primary.emailCount)}{' '}
+                          {primary.emailCount === 1 ? 'email' : 'emails'} in your Inbox.
+                        </strong>{' '}
+                        Review Unsubscribe + Archive.
+                      </p>
+                    )}
+                  <SenderRows step={primary} />
+                  <div className={styles.previewActions}>
+                    {canPreview ? (
+                      <PreviewButton onClick={() => openPreview(primary)} />
+                    ) : (
+                      <PrimaryLink action={{ label: 'Review senders', href: '/senders' }} />
+                    )}
+                    <p className={styles.footnote}>Review the exact scope before confirming.</p>
+                  </div>
+                  {report && report.fix.sendersCount > primary.senderCount && (
+                    <Link href="/senders#inbox-report" className={styles.textLink}>
+                      View {format(report.fix.sendersCount)} suggested senders
+                    </Link>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className={styles.sectionLabel}>Suggested cleanup</p>
+                  <h2>
+                    {reportStatus === 'loading'
+                      ? 'Finding a place to start…'
+                      : reportStatus === 'error'
+                        ? 'Cleanup suggestions unavailable.'
+                        : noSuggestions && state.kind !== 'empty'
+                          ? 'No suggested cleanup right now.'
+                          : state.kind === 'empty'
+                            ? 'Start your first cleanup.'
+                            : 'Explore your senders.'}
+                  </h2>
+                  <p>Explore your senders and decide what still belongs.</p>
+                  <PrimaryLink action={{ label: 'Review senders', href: '/senders' }} />
+                  {reportStatus === 'error' && onRefresh && (
+                    <button className={styles.textButton} onClick={onRefresh}>
+                      Try again
+                    </button>
+                  )}
+                </>
+              )}
+            </section>
+            <section className={styles.attention} aria-label="Needs your attention">
+              <h2>Needs your attention</h2>
+              {hasCapability(tier, 'screener') && (
+                <Attention
+                  href="/senders?view=first-review"
+                  title="New senders"
+                  detail="Awaiting a first decision"
+                  read={newSenders}
+                />
+              )}
+              {hasCapability(tier, 'snoozed') && (
+                <Attention
+                  href="/later"
+                  title="Later"
+                  detail={
+                    later?.data?.troubled
+                      ? `${format(later.data.troubled)} returns need attention`
+                      : later?.data?.nextAt
+                        ? `Next return ${date(later.data.nextAt, timeZone)}`
+                        : 'Sender returns due'
+                  }
+                  read={
+                    later
+                      ? { status: later.status, data: later.data?.due ?? null }
+                      : steps.some((step) => step.kind === 'later_due')
+                        ? {
+                            status: 'ready',
+                            data: steps.find((step) => step.kind === 'later_due')!.senderCount,
+                          }
+                        : undefined
+                  }
+                />
+              )}
+              {overview && hasCapability(tier, 'followups') && (
+                <Attention
+                  href="/followups"
+                  title="Follow-ups"
+                  detail="Conversations awaiting a reply"
+                  read={overview.followups}
+                />
+              )}
+              {overview &&
+                hasCapability(tier, 'brief') &&
+                overview.brief.data &&
+                !overview.brief.data.opened && (
+                  <Link className={styles.briefLink} href="/brief">
+                    Your Daily Brief is ready
+                  </Link>
+                )}
+              {overview && hasCapability(tier, 'autopilot') && (
+                <div className={styles.automation}>
+                  <h3>Automations</h3>
+                  {overview.rules.data ? (
+                    <p>
+                      {format(overview.rules.data.active)} active ·{' '}
+                      {format(overview.rules.data.watching)} watching ·{' '}
+                      {format(overview.rules.data.paused)} paused
+                    </p>
+                  ) : (
+                    <p>{readLabel(overview.rules)}</p>
+                  )}
+                  <p>
+                    {overview.suggestions.data === null
+                      ? readLabel(overview.suggestions)
+                      : `${format(overview.suggestions.data)} preset suggestions awaiting approval`}
+                  </p>
+                  <Link href="/autopilot" className={styles.textLink}>
+                    Review automations
+                  </Link>
+                </div>
+              )}
+            </section>
+          </div>
+          <div className={styles.lowerGrid}>
+            <section className={styles.results} aria-label="Your results" data-home-slot="progress">
+              <div className={styles.sectionHeading}>
+                <h2>Your results</h2>
+                {overview && (
+                  <div className={styles.periods} role="group" aria-label="Results period">
+                    <button aria-pressed={period === '7d'} onClick={() => setPeriod('7d')}>
+                      Past 7 days
+                    </button>
+                    <button aria-pressed={period === 'all'} onClick={() => setPeriod('all')}>
+                      All time
+                    </button>
+                  </div>
+                )}
+              </div>
+              {state.kind === 'error' ? (
+                <ErrorState
+                  headingLevel={3}
+                  title="We couldn’t load Home results"
+                  description={loadErrorDescription(state.error)}
+                  onRetry={() => {
+                    state.retry();
+                    onRefresh?.();
+                  }}
+                />
+              ) : period === '7d' && overview && state.kind !== 'empty' ? (
+                <SummaryNumbers summary={overview.week} />
+              ) : state.kind === 'ready' ? (
+                <>
+                  <p className={styles.progressSentence}>
+                    <strong data-testid="home-hero">{format(state.hero.value)}</strong>{' '}
+                    {state.hero.label}
+                    <span className={styles.period}>All time</span>
+                  </p>
+                  <dl className={styles.progressDetails}>
+                    {state.secondary.map((stat) => (
+                      <div key={stat.label}>
+                        <dt>{stat.label}</dt>
+                        <dd>{format(stat.value)}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </>
+              ) : (
+                <p className={styles.muted}>Your confirmed cleanup results will appear here.</p>
+              )}
+              {overview?.recent.data && (
+                <div className={styles.receipt}>
+                  <h3>Recent completed cleanup</h3>
+                  <p>
+                    {format(overview.recent.data.affectedCount)} emails{' '}
+                    {overview.recent.data.action === 'archive' ? 'archived' : 'moved to Trash'}
+                  </p>
+                  <p className={styles.footnote}>
+                    {date(overview.recent.data.occurredAt, timeZone)}
+                  </p>
+                </div>
+              )}
+              <Link href={`/activity?window=${period}`} className={styles.textLink}>
+                See your activity & Undo
+              </Link>
+              <p className={styles.footnote}>Archive + Delete outcomes. Undone actions excluded.</p>
+            </section>
+            <section
+              className={styles.insights}
+              aria-label="Your Inbox Report"
+              data-home-slot="report"
+            >
+              <h2>Worth a look</h2>
+              {report?.insights.length ? (
+                report.insights.slice(0, 2).map((insight) => (
+                  <div className={styles.insight} key={insight.id}>
+                    <h3>{insightTitle(insight.id)}</h3>
+                    <p>{reportHeadline(insight).sentence}</p>
+                    <small>{reportWindow(insight)}</small>
+                  </div>
+                ))
+              ) : previewReport?.headline || reportLead ? (
+                <div className={styles.insight}>
+                  <p>{previewReport?.headline ?? reportLead}</p>
+                  {supportText && <p className={styles.footnote}>{supportText}</p>}
+                </div>
+              ) : (
+                <p className={styles.muted}>
+                  {reportStatus === 'error'
+                    ? 'Inbox Report unavailable.'
+                    : reportStatus === 'loading'
+                      ? 'Loading mailbox insights…'
+                      : 'Open your report to explore the scanned mail.'}
+                </p>
+              )}
+              <Link href="/senders#inbox-report" className={styles.textLink}>
+                Open Inbox Report
+              </Link>
+            </section>
+          </div>
+          {overview && (
+            <section className={styles.snapshot} aria-label="Mailbox snapshot">
+              {overview.snapshot.data ? (
+                <>
+                  <div>
+                    <strong>{format(overview.snapshot.data.inboxCount)}</strong>
+                    <span>Scanned Inbox emails</span>
+                    <small>{format(overview.snapshot.data.unreadInboxCount)} unread</small>
+                  </div>
+                  <div>
+                    <strong>{format(overview.snapshot.data.receivedCount)}</strong>
+                    <span>Scanned received emails</span>
+                    <small>Including archived and Trash</small>
+                  </div>
+                  <div>
+                    <strong>
+                      {overview.snapshot.data.totalBytes === null
+                        ? 'Unavailable'
+                        : `≈${formatReportSize(overview.snapshot.data.totalBytes)}`}
+                    </strong>
+                    <span>Scanned mail estimate</span>
+                    <small>
+                      {overview.snapshot.data.sizeKnownCount < overview.snapshot.data.receivedCount
+                        ? 'Size estimates are incomplete'
+                        : 'Based on Gmail size estimates'}
+                    </small>
+                  </div>
+                  <p className={styles.snapshotNote}>
+                    Scanned inbound metadata · Updated {date(overview.snapshot.data.asOf, timeZone)}
+                    <br />
+                    Gmail storage quota is separate.
+                  </p>
+                </>
+              ) : (
+                <p className={styles.muted}>
+                  {overview.snapshot.status === 'loading'
+                    ? 'Loading mailbox snapshot…'
+                    : 'Mailbox snapshot unavailable.'}
+                  {onRefresh && overview.snapshot.status === 'error' && (
+                    <button className={styles.textButton} onClick={onRefresh}>
+                      Try again
+                    </button>
+                  )}
+                </p>
+              )}
+            </section>
+          )}
+        </>
+      )}
+      {pendingFix && (
         <HomeFixDialog
           step={pendingFix}
+          mailboxId={previewReport === null ? mailboxId || undefined : undefined}
           onCancel={() => setPendingFix(null)}
-          onConfirm={() => {
-            const step = pendingFix;
+          onConfirm={(step) => {
             setPendingFix(null);
             onConfirmFix?.(step);
           }}
@@ -167,597 +460,175 @@ export function HomeView({
   );
 }
 
-function useHomeSurfaceEvents(mode: HomeV1Mode) {
-  const caughtUp = useRef(false);
-  useEffect(() => {
-    if (mode !== 'fallback' || caughtUp.current) return;
-    caughtUp.current = true;
-    void track('caught_up_viewed', { surface: 'home' });
-  }, [mode]);
-}
-
-function PlanLabel({ tier }: { tier: TierId }) {
-  const name = planName(tier);
-  if (!name) return null;
-  return (
-    <>
-      {name}
-      {' · '}
-    </>
-  );
-}
-
-function HomeBody({
-  state,
-  mode,
-  steps,
-  visitSummary,
-  reportSizeLabel,
-  indexedEmailCount,
-  mailboxId,
-  previewReport,
-  reportLead,
-  supportText,
-  onOpenFix,
-}: {
-  state: HomeState;
-  mode: HomeV1Mode;
-  steps: readonly HomeFixCandidate[];
-  visitSummary?: ReactNode;
-  reportSizeLabel: string | null;
-  indexedEmailCount: number | null;
-  mailboxId: string;
-  previewReport: HomePreviewReport | null;
-  reportLead: string | null;
-  supportText: string | null;
-  onOpenFix: (step: HomeFixCandidate) => void;
-}) {
-  const [primary, ...secondary] =
-    state.kind === 'ready' || (state.kind === 'empty' && !state.syncing) ? steps : [];
-  const visit = (
-    <div className={styles.visitSlot} data-home-slot="visit">
-      {visitSummary}
-    </div>
-  );
-  const report = (
-    <ReportCard
-      mode={mode}
-      reportSizeLabel={reportSizeLabel}
-      indexedEmailCount={indexedEmailCount}
-      mailboxId={mailboxId}
-      previewReport={previewReport}
-      reportLead={reportLead}
-      supportText={previewReport?.fix.supportOther ?? supportText}
-    />
-  );
-  switch (state.kind) {
-    case 'loading':
-      return <HomeSkeleton visitSummary={visitSummary} />;
-    case 'error':
-      return (
-        <ErrorState
-          headingLevel={2}
-          title="We couldn’t load Home"
-          description={loadErrorDescription(state.error)}
-          onRetry={state.retry}
-        />
-      );
-    case 'empty':
-      if (!state.syncing && primary) {
-        return (
-          <>
-            <div className={styles.focusGrid}>
-              <div className={styles.focusLead}>
-                <NextSteps
-                  primary={primary}
-                  secondary={[]}
-                  previewReport={previewReport}
-                  supportText={supportText}
-                  onOpenFix={onOpenFix}
-                />
-              </div>
-              <section className={styles.progressLine} aria-label="Progress">
-                <h2 className={styles.progressHeading}>{HOME_DECK.focus.progress}</h2>
-                <p className={styles.firstProgress}>{HOME_DECK.emptyTitle}</p>
-                <Link href="/activity?window=all" className="dm-external-link dm-tap-target">
-                  {HOME_DECK.activityLink}
-                </Link>
-              </section>
-            </div>
-            {visit}
-            {report}
-          </>
-        );
-      }
-      return (
-        <>
-          <EmptyCopy state={state} />
-          {visit}
-          {report}
-        </>
-      );
-    case 'sync-failed':
-      return (
-        <>
-          {visit}
-          <section className={styles.beginning} aria-label={HOME_DECK.failedEyebrow}>
-            <span className={styles.eyebrow}>{HOME_DECK.failedEyebrow}</span>
-            <h2>{HOME_DECK.failedTitle}</h2>
-            {state.mailboxId ? (
-              <HomeScanRecovery mailboxId={state.mailboxId} needsReconnect={state.needsReconnect} />
-            ) : state.needsReconnect ? (
-              <>
-                <p>Reconnect it in Settings → Gmail accounts.</p>
-                <PrimaryLink action={SYNC_FAILED_ACTION} />
-              </>
-            ) : (
-              <HomeScanFailedCopy />
+function SenderRows({ step }: { step: HomeFixCandidate }) {
+  return step.senders?.length ? (
+    <ul className={styles.senderPreview} aria-label="Some senders to review">
+      {step.senders
+        .filter((sender) => step.senderIds.includes(sender.id))
+        .slice(0, 3)
+        .map((sender) => (
+          <li key={sender.id}>
+            <Avatar
+              name={sender.name}
+              domain={sender.domain}
+              hasMark={sender.brandMark === true}
+              size={32}
+            />
+            <Link
+              href={`/senders?sender=${encodeURIComponent(sender.id)}`}
+              className={styles.senderIdentity}
+            >
+              <strong>{sender.name}</strong>
+              <small>
+                {typeof sender.readRate === 'number'
+                  ? `${Math.round(sender.readRate * 100)}% marked read · 90 days`
+                  : sender.domain}
+              </small>
+            </Link>
+            {typeof sender.inboxCount === 'number' && (
+              <span className={styles.senderCount}>
+                {format(sender.inboxCount)}
+                <small>in Inbox</small>
+              </span>
             )}
-          </section>
-          <TrustLine />
-        </>
-      );
-    case 'ready':
-      return (
-        <>
-          <div className={styles.focusGrid}>
-            <div className={styles.focusLead}>
-              {primary ? (
-                <NextSteps
-                  primary={primary}
-                  secondary={[]}
-                  previewReport={previewReport}
-                  supportText={supportText}
-                  onOpenFix={onOpenFix}
-                />
-              ) : (
-                <section aria-label="Your next step" className={styles.calmStart}>
-                  <h2>{HOME_DECK.focus.calmTitle}</h2>
-                  <p>{HOME_DECK.focus.calmBody}</p>
-                  <PrimaryLink action={state.action} />
-                </section>
-              )}
-            </div>
-            <Progress state={state} />
-          </div>
-          <section className={styles.contextSection} aria-label={HOME_DECK.focus.context}>
-            <div className={styles.contextHeading}>
-              <h2>{HOME_DECK.focus.context}</h2>
-              {visit}
-            </div>
-            {secondary.length > 0 && (
-              <div className={styles.secondarySteps}>
-                {secondary.map((step) => (
-                  <FixCard
-                    key={step.kind}
-                    step={step}
-                    primary={false}
-                    previewReport={previewReport}
-                    supportText={supportText}
-                    onOpenFix={onOpenFix}
-                  />
-                ))}
-              </div>
-            )}
-            {report}
-          </section>
-        </>
-      );
-    default: {
-      const unreachable: never = state;
-      return unreachable;
-    }
-  }
-}
-
-function EmptyCopy({ state }: { state: Extract<HomeState, { kind: 'empty' }> }) {
-  if (state.syncing) {
-    const title = state.queued ? HOME_DECK.queuedTitle : HOME_DECK.syncingTitle;
-    const status = state.queued
-      ? HOME_DECK.queuedBody
-      : (state.stageSentence ?? HOME_DECK.syncingBody);
-    return (
-      <section className={styles.beginning} aria-label={title}>
-        <h2>{title}</h2>
-        <p>{status}</p>
-        <div className={styles.scanBar} data-testid="home-scan-bar" aria-hidden="true">
-          <span />
-        </div>
-      </section>
-    );
-  }
-  return (
-    <section className={styles.beginning} aria-label="Your next step">
-      <h2>{HOME_DECK.emptyTitle}</h2>
-      <p>{HOME_DECK.emptyBody}</p>
-      {!isRetiredReviewCta(state.action.label) && <PrimaryLink action={state.action} />}
-    </section>
-  );
-}
-
-function ReportCard({
-  mode,
-  reportSizeLabel,
-  indexedEmailCount,
-  mailboxId,
-  previewReport,
-  reportLead,
-  supportText,
-}: {
-  mode: HomeV1Mode;
-  reportSizeLabel: string | null;
-  indexedEmailCount: number | null;
-  mailboxId: string;
-  previewReport: HomePreviewReport | null;
-  reportLead: string | null;
-  supportText: string | null;
-}) {
-  const deck = homeReportCopy();
-  const copy = previewReport ?? deck;
-  const calmTemplate = homeCalmTemplate();
-  const calm =
-    previewReport !== null
-      ? previewReport.calm
-      : copy !== null &&
-          calmTemplate !== null &&
-          mode === 'fallback' &&
-          indexedEmailCount !== null &&
-          indexedEmailCount > 0
-        ? fillDeck(calmTemplate, { total: formatCount(indexedEmailCount) })
-        : null;
-  const tileCopy = homeTileCopy();
-  const deckTile =
-    previewReport === null &&
-    copy !== null &&
-    tileCopy !== null &&
-    reportSizeLabel !== null &&
-    reportSizeLabel !== ''
-      ? {
-          value: fillDeck(tileCopy.value, { size: reportSizeLabel }),
-          label: tileCopy.label,
-          note: tileCopy.note,
-        }
-      : null;
-  const tile =
-    previewReport !== null && previewReport.tileValue !== null && previewReport.tileLabel !== null
-      ? {
-          value: previewReport.tileValue,
-          label: previewReport.tileLabel,
-          note: previewReport.tileNote,
-        }
-      : deckTile;
-  const trust = previewReport?.trust ?? deck?.trust ?? null;
-  const trustLink = previewReport?.trustLink ?? deck?.trustLink ?? null;
-  const headline = previewReport?.headline ?? reportLead;
-  const lead =
-    headline !== null && headline !== '' ? (
-      <>
-        <LeadLine headline={headline} />
-        {supportText && <p className={styles.reportSupport}>{supportText}</p>}
-      </>
-    ) : null;
-  if (copy === null) {
-    return (
-      <div hidden>
-        <InboxReportCard surface="home" mailboxId={mailboxId} lead={lead} />
-      </div>
-    );
-  }
-  return (
-    <section className={styles.report} aria-label={copy.title} data-home-slot="report">
-      <div className={`${styles.reportCard} dm-home-report-card`} data-home-report-card="">
-        <InboxReportCard surface="home" mailboxId={mailboxId} lead={lead} />
-      </div>
-      <div
-        className={styles.reportFacts}
-        data-report-facts=""
-        {...(lead !== null ? { 'data-inbox-report': '' } : {})}
-      >
-        {calm !== null && <p data-testid="home-calm">{calm}</p>}
-        {tile !== null && (
-          <div className={styles.storageTile} data-report-tile="">
-            <strong>{tile.value}</strong>
-            <span>{tile.label}</span>
-            {tile.note !== null && <small>{tile.note}</small>}
-          </div>
-        )}
-        {trust !== null && (
-          <p className={styles.trust} data-report-trust="">
-            {trust}{' '}
-            {trustLink !== null && (
-              <Link
-                href="/settings/privacy#what-we-store"
-                className="dm-external-link dm-tap-target"
-              >
-                {trustLink}
-                <span aria-hidden="true"> →</span>
-              </Link>
-            )}
-          </p>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/** A template that still has `{n}` is not a sentence. Preview copy is already filled. */
-function supportLine(template: string, filled: string | null): string | null {
-  if (filled !== null && filled !== '') return filled;
-  if (template.includes('{')) return null;
-  return template;
-}
-
-function LeadLine({ headline }: { headline: string }) {
-  const match = /^(\d+%)\s+([\s\S]+)$/.exec(headline);
-  if (match === null) {
-    return <div data-report-lead="">{headline}</div>;
-  }
-  return (
-    <div className={styles.lead} data-report-lead="">
-      <strong className={styles.leadFigure}>{match[1]}</strong>
-      <span>{match[2]}</span>
-    </div>
-  );
-}
-
-function TrustLine() {
-  const copy = homeReportCopy();
-  if (copy === null) return null;
-  return (
-    <p className={styles.trust}>
-      {copy.trust}{' '}
-      {copy.trustLink !== null && (
-        <Link href="/settings/privacy#what-we-store" className="dm-external-link dm-tap-target">
-          {copy.trustLink}
-          <span aria-hidden="true"> →</span>
-        </Link>
-      )}
-    </p>
-  );
-}
-
-function NextSteps({
-  primary,
-  secondary,
-  previewReport,
-  supportText,
-  onOpenFix,
-}: {
-  primary: HomeFixCandidate;
-  secondary: readonly HomeFixCandidate[];
-  previewReport: HomePreviewReport | null;
-  supportText: string | null;
-  onOpenFix: (step: HomeFixCandidate) => void;
-}) {
-  return (
-    <section className={styles.steps} aria-label={HOME_DECK.nextSteps} data-home-slot="primary">
-      <h2 className={styles.srOnly}>{HOME_DECK.nextSteps}</h2>
-      <div className={styles.stepGrid}>
-        <FixCard
-          step={primary}
-          primary
-          previewReport={previewReport}
-          supportText={supportText}
-          onOpenFix={onOpenFix}
-        />
-        {secondary.map((step) => (
-          <FixCard
-            key={step.kind}
-            step={step}
-            primary={false}
-            previewReport={previewReport}
-            supportText={supportText}
-            onOpenFix={onOpenFix}
-          />
+          </li>
         ))}
-      </div>
-    </section>
-  );
+    </ul>
+  ) : null;
 }
-
-function FixCard({
-  step,
-  primary,
-  previewReport,
-  supportText,
-  onOpenFix,
+function Attention({
+  href,
+  title,
+  detail,
+  read,
 }: {
-  step: HomeFixCandidate;
-  primary: boolean;
-  previewReport: HomePreviewReport | null;
-  supportText: string | null;
-  onOpenFix: (step: HomeFixCandidate) => void;
+  href: string;
+  title: string;
+  detail: string;
+  read: HomeRead<number> | undefined;
 }) {
-  if (step.kind === 'unsub_archive') {
-    const copy = previewReport?.fix ?? homeFixCopy();
-    const namesSenders = previewReport !== null || homeReportNamesSenders();
-    if (copy === null || !namesSenders) return null;
-    const heading =
-      step.senderCount === 1
-        ? copy.headingOne
-        : fillDeck(copy.headingOther, { n: formatCount(step.senderCount) });
-    const label =
-      step.senderCount === 1
-        ? copy.primaryOne
-        : fillDeck(copy.primaryOther, { n: formatCount(step.senderCount) });
-    const supportTemplate = step.senderCount === 1 ? copy.supportOne : copy.supportOther;
-    const support = supportLine(supportTemplate, supportText);
-    if (heading === null || label === null) return null;
-    return (
-      <article className={primary ? styles.fixCard : styles.secondaryCard} data-step={step.kind}>
-        {primary ? (
-          <>
-            <p className={styles.cleanupAction}>
-              {HOME_DECK.focus.nextCleanup}
-              <span aria-hidden="true"> · </span>
-              {HOME_DECK.focus.action}
-            </p>
-            <h3 className={styles.focusTitle}>
-              {HOME_DECK.focus.title}
-              <br />
-              {fillDeck(
-                step.senderCount === 1
-                  ? HOME_DECK.focus.senders.one
-                  : HOME_DECK.focus.senders.other,
-                { n: formatCount(step.senderCount) },
-              )}
-            </h3>
-            {canPreviewFix(step) && (
-              <p className={styles.focusImpact} data-home-impact="">
-                {fillDeck(
-                  step.emailCount === 1 ? HOME_DECK.focus.impact.one : HOME_DECK.focus.impact.other,
-                  { n: formatCount(step.emailCount!) },
-                )}
-              </p>
-            )}
-          </>
-        ) : (
-          <>
-            <h3>{heading}</h3>
-            {support !== null && <p>{support}</p>}
-          </>
-        )}
-        {primary ? (
-          <div className={styles.fixActions}>
-            {canPreviewFix(step) ? (
-              <button
-                type="button"
-                data-dm-button=""
-                className={`dm-button-link ${styles.primaryAction}`}
-                onClick={() => onOpenFix(step)}
-              >
-                {HOME_DECK.focus.preview}
-              </button>
-            ) : (
-              <PrimaryLink action={{ label: HOME_DECK.focus.review, href: '/senders' }} />
-            )}
-            {canPreviewFix(step) && (
-              <Link href="/senders" className="dm-external-link dm-tap-target">
-                {HOME_DECK.focus.review}
-              </Link>
-            )}
-          </div>
-        ) : (
-          <button type="button" className={styles.textButton} onClick={() => onOpenFix(step)}>
-            {label}
-          </button>
-        )}
-        {primary && <p className={styles.reviewNote}>{HOME_DECK.focus.safety}</p>}
-      </article>
-    );
-  }
-  if (step.kind === 'largest') {
-    const title =
-      step.senderCount === 1
-        ? HOME_DECK.largestTitleOne
-        : fillDeck(HOME_DECK.largestTitleOther, { k: formatCount(step.senderCount) });
-    const body =
-      step.sizeLabel !== undefined && step.sizeLabel !== ''
-        ? fillDeck(HOME_DECK.largestBody, { size: step.sizeLabel })
-        : null;
-    if (title === null) return null;
-    return (
-      <article className={styles.secondaryCard} data-step={step.kind}>
-        <h3>{title}</h3>
-        {body !== null && <p>{body}</p>}
-        <Link href="/senders" className="dm-external-link">
-          {HOME_DECK.largestCta}
-        </Link>
-      </article>
-    );
-  }
-  if (step.kind === 'later_due') {
-    return <LaterCard step={step} />;
-  }
-  const unreachable: never = step.kind;
-  return unreachable;
-}
-
-/** Same clock as the Later row in the shell. The count key is held, so the card shows none. */
-const LATER_ICON = 'M12 6v6l4 2M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z';
-
-function LaterCard({ step }: { step: HomeFixCandidate }) {
   return (
-    <article className={styles.secondaryCard} data-step={step.kind}>
-      <div className={styles.cardTitle}>
-        <svg
-          className={styles.cardIcon}
-          width={20}
-          height={20}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d={LATER_ICON} />
-        </svg>
-        <h3>{HOME_DECK.laterTitle}</h3>
-      </div>
-      <p>{HOME_DECK.laterBody}</p>
-      <Link
-        href="/later"
-        className={`dm-external-link ${styles.cardAction}`}
-        onClick={() => {
-          void track('home_next_step_clicked', { kind: homeNextStepEventKind('later_due') });
-        }}
-      >
-        {HOME_DECK.laterCta}
-      </Link>
-    </article>
-  );
-}
-
-function Progress({ state }: { state: Extract<HomeState, { kind: 'ready' }> }) {
-  return (
-    <section className={styles.progressLine} aria-label="Progress">
-      <h2 className={styles.progressHeading}>{HOME_DECK.focus.progress}</h2>
-      <p className={styles.progressSentence}>
-        <strong data-testid="home-hero">{state.hero.value.toLocaleString('en-US')}</strong>{' '}
-        <span>{state.hero.label}</span>
-        <span className={styles.period}>{HOME_DECK.focus.allTime}</span>
-      </p>
-      {state.secondary.length > 0 && (
-        <dl className={styles.progressDetails}>
-          {state.secondary.map((stat) => (
-            <div key={stat.label}>
-              <dt>{stat.label}</dt>
-              <dd>{formatCount(stat.value)}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-      <Link href="/activity?window=all" className="dm-external-link dm-tap-target">
-        {HOME_DECK.activityLink}
-      </Link>
-    </section>
-  );
-}
-
-function PrimaryLink({ action }: { action: HomeAction }) {
-  if (action.loading) {
-    return (
-      <span role="status" aria-live="polite" className={styles.loadingAction}>
-        <Skeleton variant="rect" width={16} height={16} />
-        {action.label}
+    <Link href={href} className={styles.attentionLink}>
+      <span>
+        <strong>{title}</strong>
+        <small>{detail}</small>
       </span>
-    );
-  }
+      <span className={styles.attentionCount}>
+        {read?.status === 'ready' && read.data !== null
+          ? format(read.data)
+          : read?.status === 'loading'
+            ? '…'
+            : 'Unavailable'}
+      </span>
+    </Link>
+  );
+}
+function SummaryNumbers({ summary }: { summary: HomeRead<HomeSummary> }) {
+  if (!summary.data) return <p className={styles.muted}>{readLabel(summary)}</p>;
+  const archive = summary.data.emailsByVerb?.archive;
+  const deleted = summary.data.emailsByVerb?.delete;
+  if (archive === undefined || deleted === undefined)
+    return <p className={styles.muted}>Email totals unavailable.</p>;
   return (
-    <Link href={action.href} data-dm-button="" className={`dm-button-link ${styles.primaryAction}`}>
+    <div aria-live="polite">
+      <p className={styles.progressSentence}>
+        <strong data-testid="home-hero">{format(archive + deleted)}</strong> emails cleared
+      </p>
+      <dl className={styles.progressDetails}>
+        <div>
+          <dt>Emails archived</dt>
+          <dd>{format(archive)}</dd>
+        </div>
+        <div>
+          <dt>Emails moved to Trash</dt>
+          <dd>{format(deleted)}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+function PreviewButton({ onClick }: { onClick: () => void }) {
+  const [interactive, setInteractive] = useState(false);
+  useEffect(() => setInteractive(true), []);
+  return (
+    <button
+      type="button"
+      data-dm-button=""
+      disabled={!interactive}
+      className={`dm-button-link ${styles.primaryAction}`}
+      onClick={onClick}
+    >
+      Preview cleanup
+    </button>
+  );
+}
+function PrimaryLink({ action }: { action: HomeAction }) {
+  return action.loading ? (
+    <span role="status">{action.label}</span>
+  ) : (
+    <Link href={action.href} className={`dm-button-link ${styles.primaryAction}`} data-dm-button="">
       {action.label}
     </Link>
   );
 }
-
-function HomeSkeleton({ visitSummary }: { visitSummary?: ReactNode }) {
-  const labelId = useId();
+function format(value: number) {
+  return new Intl.NumberFormat('en-US').format(value);
+}
+function date(value: string, timeZone: string) {
+  const instant = new Date(value);
+  return Number.isNaN(instant.getTime())
+    ? 'Time unavailable'
+    : new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZone,
+      }).format(instant);
+}
+function readLabel(read: HomeRead<unknown>) {
+  return read.status === 'loading'
+    ? 'Loading…'
+    : read.status === 'locked'
+      ? 'Not available on this plan'
+      : 'Unavailable';
+}
+function insightTitle(id: string) {
   return (
-    <HomeLoadingSlots
-      labelId={labelId}
-      visitSlot={visitSummary ?? <Skeleton variant="text" width={220} />}
-    />
+    (
+      {
+        mostly_unread_share: 'Mostly unread senders',
+        large_mail: 'Large messages',
+        third_party_labels: 'Mail under other-app labels',
+        people_share: 'People you write to',
+        years_deep: 'Older mail',
+        top10_share: 'Your busiest senders',
+        trash_bytes: 'Mail in Trash',
+      } as Record<string, string>
+    )[id] ?? 'Mailbox insight'
   );
+}
+
+/** Due means the return time has passed; future timers keep their own next-return label. */
+export function homeLaterOverview(
+  rows: readonly Pick<SnoozedSenderRow, 'senderId' | 'returnStatus' | 'snoozedUntil'>[],
+  now: number | null,
+) {
+  const troubled = rows.filter(
+    (row) => row.returnStatus === 'missed' || row.returnStatus === 'retrying',
+  ).length;
+  const due = rows.filter(
+    (row) =>
+      row.returnStatus === 'missed' ||
+      row.returnStatus === 'retrying' ||
+      (now !== null && Date.parse(row.snoozedUntil) <= now),
+  ).length;
+  const next =
+    now === null
+      ? []
+      : rows
+          .filter((row) => row.returnStatus === 'scheduled' && Date.parse(row.snoozedUntil) > now)
+          .map((row) => row.snoozedUntil)
+          .sort((a, b) => Date.parse(a) - Date.parse(b));
+  return { due, troubled, nextAt: next[0] ?? null };
 }

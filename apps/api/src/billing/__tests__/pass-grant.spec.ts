@@ -350,4 +350,119 @@ describe('Backlog Pass grants', () => {
     expect(row?.revokedAt).toBeNull();
     expect(row?.provider).toBeNull();
   });
+
+  it.each(['refund', 'chargeback'] as const)(
+    'rolls back a failed %s projection and recovers on retry',
+    async (action) => {
+      const transactionId = `txn_recover_${action}`;
+      const purchase = completed(transactionId);
+      await service.process('paddle', paddle.mapWebhookEvent(purchase), purchase);
+      vi.spyOn(
+        service as unknown as {
+          recomputeWorkspaceTier(db: DrizzleDb, workspaceId: string): Promise<void>;
+        },
+        'recomputeWorkspaceTier',
+      ).mockRejectedValueOnce(new Error('tier refresh temporarily unavailable'));
+      const refund = paddleAdjustmentCreated({
+        eventId: `evt_recover_${action}`,
+        action,
+        status: 'approved',
+        subscriptionId: null,
+        adjustmentType: 'full',
+        transactionId,
+      });
+      const event = paddle.mapWebhookEvent(refund);
+      await expect(service.process('paddle', event, refund)).rejects.toThrow(
+        'tier refresh temporarily unavailable',
+      );
+      const [grant] = await db.select().from(entitlementGrants);
+      expect(grant!.revokedAt).toBeNull();
+      const [unprocessed] = await db
+        .select()
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.providerEventId, `evt_recover_${action}`));
+      expect(unprocessed!.processedAt).toBeNull();
+
+      expect(await service.process('paddle', event, refund)).toEqual({
+        kind: 'processed',
+        effect: `pass_revoked:${action}`,
+      });
+      const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+      expect(workspace!.tier).toBe('free');
+      const [retained] = await db.select().from(entitlementGrants);
+      expect(retained!.revokedAt).not.toBeNull();
+      expect(retained!.providerTransactionId).toBe(transactionId);
+      const [processed] = await db
+        .select()
+        .from(subscriptionEvents)
+        .where(eq(subscriptionEvents.providerEventId, `evt_recover_${action}`));
+      expect(processed!.processedAt).not.toBeNull();
+    },
+  );
+
+  it('retries the same refund event after its purchase arrives later', async () => {
+    const transactionId = 'txn_refund_delivered_first';
+    const refund = paddleAdjustmentCreated({
+      eventId: 'evt_refund_delivered_first',
+      action: 'refund',
+      status: 'approved',
+      subscriptionId: null,
+      adjustmentType: 'full',
+      transactionId,
+    });
+    const event = paddle.mapWebhookEvent(refund);
+    expect(await service.process('paddle', event, refund)).toEqual({
+      kind: 'unresolved',
+      reason: 'unattributable',
+    });
+    expect((await db.select().from(subscriptionEvents))[0]!.processedAt).toBeNull();
+    const purchase = completed(transactionId);
+    await service.process('paddle', paddle.mapWebhookEvent(purchase), purchase);
+    expect(await service.process('paddle', event, refund)).toMatchObject({
+      kind: 'processed',
+      effect: 'pass_revoked:refund',
+    });
+    expect((await db.select().from(workspaces))[0]!.tier).toBe('free');
+    expect((await db.select().from(entitlementGrants))[0]!.revokedAt).not.toBeNull();
+  });
+  it('retries a refund when its purchase grant arrives after the revocation update', async () => {
+    const transactionId = 'txn_late_purchase_grant';
+    const purchase = completed(transactionId);
+    // Force UPDATE to see no grant, then commit the purchase before the
+    // fallback SELECT. An unrevoked row is not proof a refund was applied.
+    vi.spyOn(db, 'update').mockImplementationOnce(
+      () =>
+        ({
+          set: () => ({
+            where: () => ({
+              returning: async () => {
+                await service.process('paddle', paddle.mapWebhookEvent(purchase), purchase);
+                return [];
+              },
+            }),
+          }),
+        }) as unknown as ReturnType<DrizzleDb['update']>,
+    );
+    const refund = paddleAdjustmentCreated({
+      eventId: 'evt_refund_before_grant',
+      action: 'refund',
+      status: 'approved',
+      subscriptionId: null,
+      adjustmentType: 'full',
+      transactionId,
+    });
+    const event = paddle.mapWebhookEvent(refund);
+    expect(await revokePassByTransaction(db, transactionId)).toEqual({ status: 'missing' });
+    const [grant] = await db.select().from(entitlementGrants);
+    expect(grant!.revokedAt).toBeNull();
+
+    expect(await service.process('paddle', event, refund)).toEqual({
+      kind: 'processed',
+      effect: 'pass_revoked:refund',
+    });
+    const [workspace] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
+    expect(workspace!.tier).toBe('free');
+    const [revoked] = await db.select().from(entitlementGrants);
+    expect(revoked!.revokedAt).not.toBeNull();
+  });
 });

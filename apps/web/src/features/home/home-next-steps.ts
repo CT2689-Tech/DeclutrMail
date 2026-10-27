@@ -1,4 +1,5 @@
 import { getFixSet } from '@declutrmail/shared/inbox-report';
+import type { SnoozedSenderRow } from '@declutrmail/shared/contracts';
 
 import type { HomeState } from './home-state';
 
@@ -7,6 +8,35 @@ export const HOME_NEXT_STEP_KINDS = ['unsub_archive', 'largest', 'later_due'] as
 
 export type HomeNextStepKind = (typeof HOME_NEXT_STEP_KINDS)[number];
 
+export interface HomeSenderIdentity {
+  id: string;
+  name: string;
+  domain: string;
+  brandMark?: boolean;
+  inboxCount?: number | null;
+  readRate?: number | null;
+}
+
+/** The displayed shortlist and the preview always address the same verified senders. */
+export function homeShortlist(senders: readonly HomeSenderIdentity[]): HomeFixCandidate | null {
+  const current = senders
+    .filter(
+      (sender) =>
+        typeof sender.inboxCount === 'number' &&
+        Number.isFinite(sender.inboxCount) &&
+        sender.inboxCount > 0,
+    )
+    .slice(0, 3);
+  if (current.length === 0) return null;
+  return {
+    kind: 'unsub_archive',
+    senderCount: current.length,
+    senderIds: current.map((sender) => sender.id),
+    emailCount: current.reduce((total, sender) => total + sender.inboxCount!, 0),
+    senders: current,
+  };
+}
+
 export interface HomeFixCandidate {
   kind: HomeNextStepKind;
   senderCount: number;
@@ -14,6 +44,7 @@ export interface HomeFixCandidate {
   sizeLabel?: string;
   senderIds: readonly string[];
   senderName?: string;
+  senders?: readonly HomeSenderIdentity[];
 }
 
 export type HomeV1Mode = 'full' | 'fallback' | 'empty' | 'sync-failed' | 'loading' | 'error';
@@ -38,13 +69,22 @@ export function rankHomeNextSteps(
     .slice(0, 3);
 }
 
-/** Later card from the Later list. Empty means no card. The report does not carry Later. */
-export function homeLaterCandidate(rows: readonly { senderId: string }[]): HomeFixCandidate | null {
-  if (!Array.isArray(rows) || rows.length === 0) return null;
+/** Only due or troubled timers, never future scheduled mail. A missing clock is unknown. */
+export function homeLaterCandidate(
+  rows: readonly Pick<SnoozedSenderRow, 'senderId' | 'snoozedUntil' | 'returnStatus'>[],
+  now: number | null,
+): HomeFixCandidate | null {
+  const due = rows.filter(
+    (row) =>
+      row.returnStatus === 'missed' ||
+      row.returnStatus === 'retrying' ||
+      (now !== null && Date.parse(row.snoozedUntil) <= now),
+  );
+  if (due.length === 0) return null;
   return {
     kind: 'later_due',
-    senderCount: rows.length,
-    senderIds: rows.map((row) => row.senderId),
+    senderCount: due.length,
+    senderIds: due.map((row) => row.senderId),
   };
 }
 

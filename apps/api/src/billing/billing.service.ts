@@ -23,8 +23,10 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { and, desc, eq, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm';
 import {
+  billingCheckoutAttempts,
   accountDeletionRequests,
   billingCustomers,
+  entitlementGrants,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   pendingCheckouts,
@@ -48,6 +50,15 @@ import type {
   PlanChangeRequest,
 } from '@declutrmail/shared/contracts';
 
+import { selectPaddleCheckoutPrice } from '@declutrmail/shared/entitlements';
+import {
+  assertNoLegacyCheckout,
+  checkoutAttemptView,
+  checkoutCancellationEnabled,
+  durableCheckoutEnabled,
+  findCheckoutAttempt,
+  lockCheckoutWorkspace,
+} from './checkout-attempts.js';
 import { AppException } from '../common/app-exception.js';
 import { highestLiveGrantForWorkspace } from '../common/entitlements/entitlement-grants.js';
 import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
@@ -65,13 +76,14 @@ import {
 
 import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import type { BillingProvider } from './billing-provider.interface.js';
+import type { BillingProvider, ProviderInvoicePage } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
 import { foundingRedemptionCount } from './founding-redemptions.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { GRANTING_STATUSES, lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
 import { RazorpayAdapter } from './razorpay.adapter.js';
+import { runWithBillingReadSignal } from './provider-signal.js';
 import { hasUnresolvedUpgrade } from './upgrade-intents.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
 import { INR_CHECKOUT_PAUSED_MESSAGE, inrNewPurchasePaused } from '@declutrmail/shared/contracts';
@@ -92,6 +104,10 @@ const PAUSE_DAYS = 30;
  * so the cap can only ever drop the oldest.
  */
 const MAX_INVOICE_SUBSCRIPTIONS = 10;
+const MAX_INVOICE_PASSES = 10;
+// Leave room for database/network overhead within the 2s hydration deadline.
+// Slower requests can still recover client-side; the transport itself allows 3s.
+const INVOICE_READ_TIMEOUT_MS = 1_500;
 
 @Injectable()
 export class BillingService {
@@ -112,6 +128,68 @@ export class BillingService {
 
   private adapterFor(provider: 'paddle' | 'razorpay'): BillingProvider {
     return provider === 'paddle' ? this.paddle : this.razorpay;
+  }
+
+  private async assertCheckoutEligible(
+    workspaceId: string,
+    pass: boolean,
+    executor: Pick<DrizzleDb, 'select'> = this.db,
+  ): Promise<void> {
+    const [existing] = await executor
+      .select({
+        id: subscriptions.id,
+        status: subscriptions.status,
+        cancelSource: subscriptions.cancelSource,
+        // Compared in SQL rather than JS: `entitlement_ends_at` is written
+        // with the DATABASE's `now()` on a refund, so an app/DB clock skew
+        // would read a just-lapsed row as still granting.
+        entitlementLapsed: sql<boolean>`${subscriptions.entitlementEndsAt} is not null and ${subscriptions.entitlementEndsAt} <= now()`,
+      })
+      .from(subscriptions)
+      .where(
+        and(
+          eq(subscriptions.workspaceId, workspaceId),
+          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
+        ),
+      )
+      // Deterministic pick: a live row outranks a paused one, so the message
+      // names the stronger blocker when both exist.
+      .orderBy(sql`CASE WHEN ${subscriptions.status} = 'paused' THEN 1 ELSE 0 END`)
+      .limit(1);
+    if (existing && pass) {
+      const granting =
+        (existing.status === 'active' || existing.status === 'past_due') &&
+        !existing.entitlementLapsed;
+      if (granting) {
+        throw new AppException({
+          code: 'PASS_INCLUDED_IN_PLUS',
+          message: fillStory(WS1_COPY['picker.pass.includedInPlus']),
+        });
+      }
+    } else if (existing) {
+      // D253 — the settling window. A row ended by a REFUND whose entitlement
+      // has ALREADY lapsed is not a live subscription: it is a dead row still
+      // sitting in the slot until the provider confirms the refund settled,
+      // at which point it flips to `canceled` and the slot frees. The
+      // customer holds nothing, so `SUBSCRIPTION_EXISTS` here is a lie —
+      // it points them at a subscription to manage that no longer grants
+      // anything. Say what is actually true, and that it resolves itself.
+      //
+      // CHARGEBACKS are deliberately NOT in this branch (founder decision
+      // 2026-08-13): that customer stays blocked until the period ends
+      // naturally, and the unchanged refusal is what tells them so.
+      const refundSettling =
+        (existing.status === 'active' || existing.status === 'past_due') &&
+        existing.cancelSource === 'refund' &&
+        existing.entitlementLapsed;
+      throw new AppException({
+        code: refundSettling
+          ? 'SUBSCRIPTION_REFUND_SETTLING'
+          : existing.status === 'paused'
+            ? 'SUBSCRIPTION_PAUSED_BLOCKS_NEW'
+            : 'SUBSCRIPTION_EXISTS',
+      });
+    }
   }
 
   async createCheckout(
@@ -154,61 +232,7 @@ export class BillingService {
     // adapter fully supports — so the fix is to SAY so rather than to loosen
     // the guard. Loosening it would let a second live subscription start
     // while the provider could still resume the paused one.
-    const [existing] = await this.db
-      .select({
-        id: subscriptions.id,
-        status: subscriptions.status,
-        cancelSource: subscriptions.cancelSource,
-        // Compared in SQL rather than JS: `entitlement_ends_at` is written
-        // with the DATABASE's `now()` on a refund, so an app/DB clock skew
-        // would read a just-lapsed row as still granting.
-        entitlementLapsed: sql<boolean>`${subscriptions.entitlementEndsAt} is not null and ${subscriptions.entitlementEndsAt} <= now()`,
-      })
-      .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.workspaceId, principal.workspaceId),
-          inArray(subscriptions.status, ['active', 'past_due', 'paused']),
-        ),
-      )
-      // Deterministic pick: a live row outranks a paused one, so the message
-      // names the stronger blocker when both exist.
-      .orderBy(sql`CASE WHEN ${subscriptions.status} = 'paused' THEN 1 ELSE 0 END`)
-      .limit(1);
-    if (existing && pass) {
-      const granting =
-        (existing.status === 'active' || existing.status === 'past_due') &&
-        !existing.entitlementLapsed;
-      if (granting) {
-        throw new AppException({
-          code: 'PASS_INCLUDED_IN_PLUS',
-          message: fillStory(WS1_COPY['picker.pass.includedInPlus']),
-        });
-      }
-    } else if (existing) {
-      // D253 — the settling window. A row ended by a REFUND whose entitlement
-      // has ALREADY lapsed is not a live subscription: it is a dead row still
-      // sitting in the slot until the provider confirms the refund settled,
-      // at which point it flips to `canceled` and the slot frees. The
-      // customer holds nothing, so `SUBSCRIPTION_EXISTS` here is a lie —
-      // it points them at a subscription to manage that no longer grants
-      // anything. Say what is actually true, and that it resolves itself.
-      //
-      // CHARGEBACKS are deliberately NOT in this branch (founder decision
-      // 2026-08-13): that customer stays blocked until the period ends
-      // naturally, and the unchanged refusal is what tells them so.
-      const refundSettling =
-        (existing.status === 'active' || existing.status === 'past_due') &&
-        existing.cancelSource === 'refund' &&
-        existing.entitlementLapsed;
-      throw new AppException({
-        code: refundSettling
-          ? 'SUBSCRIPTION_REFUND_SETTLING'
-          : existing.status === 'paused'
-            ? 'SUBSCRIPTION_PAUSED_BLOCKS_NEW'
-            : 'SUBSCRIPTION_EXISTS',
-      });
-    }
+    await this.assertCheckoutEligible(principal.workspaceId, pass);
 
     // Razorpay stays closed for new purchases. Paddle's currency is
     // chosen in the adapter from `trustedCountry`, which is the verified
@@ -249,17 +273,13 @@ export class BillingService {
       throw new AppException({ code: 'UNAUTHORIZED' });
     }
 
-    // ATOMIC cross-device claim (Codex stop-review 2026-07-29). The
-    // SELECT-then-throw above closes the subscription-exists case but
-    // not the in-flight one: two devices opening checkout inside the
-    // read window both used to reach the provider, and both could
-    // complete — the 0051 index then made the second charge LOUD, not
-    // prevented. This upsert claims the workspace's single pending slot
-    // in one statement: it wins iff no row exists (INSERT) or the
-    // existing row is expired (the conditional DO UPDATE). Zero rows
-    // back = someone else's unexpired claim → refuse BEFORE any
-    // provider session exists. The claim precedes the provider call on
-    // purpose; a provider failure releases it below.
+    if (durableCheckoutEnabled() && dto.provider === 'paddle') {
+      return this.createDurableCheckout(principal, dto, priceId, user.email, trustedCountry);
+    }
+
+    // Legacy checkout retains one workspace slot before the provider call.
+    // Neither expiry nor a customer assertion proves that an external artifact
+    // stopped accepting payment, so an existing unresolved slot is never reclaimed.
     const attemptId = `local_checkout_${randomUUID()}`;
     const claimed = await this.db.transaction(async (tx) => {
       await tx
@@ -268,6 +288,9 @@ export class BillingService {
         .where(eq(workspaces.id, principal.workspaceId))
         .for('update');
       await this.assertNoDeletion(principal.workspaceId, tx);
+      await this.assertCheckoutEligible(principal.workspaceId, pass, tx);
+      if (await findCheckoutAttempt(tx, principal.workspaceId))
+        throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
       if (!(await this.checkoutSetupComplete(principal.workspaceId, principal.userId, tx))) {
         throw new AppException({ code: 'CHECKOUT_SETUP_REQUIRED' });
       }
@@ -299,9 +322,18 @@ export class BillingService {
             createdAt: new Date(),
             expiresAt: new Date(Date.now() + PENDING_CHECKOUT_TTL_MS),
           },
-          setWhere: sql`${pendingCheckouts.expiresAt} < now()`,
+          setWhere: sql`false`,
         })
-        .returning({ workspaceId: pendingCheckouts.workspaceId });
+        .returning({
+          workspaceId: pendingCheckouts.workspaceId,
+          // Epoch seconds as text, not a Date and not a timestamp's own text:
+          // the insert path stamps microseconds, which a JS Date would round
+          // to milliseconds, and a timestamptz's text form follows the
+          // session time zone, which two connections need not share. Epoch
+          // text is exact and zone-free. Identifies THIS claim for the
+          // stash below.
+          claimStamp: sql<string>`extract(epoch from ${pendingCheckouts.createdAt})::text`,
+        });
       if (claim.length > 0)
         await tx.insert(subscriptionEvents).values({
           provider: dto.provider,
@@ -360,13 +392,10 @@ export class BillingService {
       // PAYABLE from the provider's own emailed authorization link —
       // outside our FE entirely. Auto-releasing on that ambiguity
       // reopened checkout for attempt #2 while #1 could still be paid:
-      // the exact double-charge this claim exists to prevent. The two
-      // honest reopeners are the 30-minute TTL and the user's explicit
-      // "I checked — no charge" assertion (DELETE /billing/checkout/
-      // pending) — a human or a horizon, never an inference from an
-      // unknown outcome.
+      // the exact double-charge this claim exists to prevent. Keep the
+      // unresolved legacy claim until provider-backed recovery resolves it.
       this.logger.error(
-        `billing.checkout.create_failed workspace=${principal.workspaceId} provider=${dto.provider} claim_held=true — claim reopens via TTL or user release only`,
+        `billing.checkout.create_failed workspace=${principal.workspaceId} provider=${dto.provider} claim_held=true`,
       );
       throw err;
     }
@@ -402,6 +431,32 @@ export class BillingService {
       }
     }
 
+    // A Paddle checkout is a transaction the server has already created
+    // (`session.transactionId`). Naming it on the claim lets
+    // reconciliation ask Paddle about THIS checkout exactly instead of
+    // searching by email. Claim row only — no ledger event, so account
+    // deletion's artifact guard is unchanged. Written only onto the claim
+    // this call created, so a released-and-reclaimed slot can never carry
+    // an earlier attempt's transaction. Best-effort: a failed write only
+    // means reconciliation falls back to what it did before.
+    if (session.provider === 'paddle' && session.transactionId) {
+      try {
+        await this.db
+          .update(pendingCheckouts)
+          .set({ providerRef: session.transactionId })
+          .where(
+            and(
+              eq(pendingCheckouts.workspaceId, principal.workspaceId),
+              sql`extract(epoch from ${pendingCheckouts.createdAt})::text = ${claimed[0]!.claimStamp}`,
+            ),
+          );
+      } catch (err) {
+        this.logger.warn(
+          `billing.checkout.provider_ref_stash_failed workspace=${principal.workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     this.logger.log(
       `billing.checkout_created workspace=${principal.workspaceId} provider=${dto.provider} tier=${dto.tierId} cycle=${dto.cycle} founding=${founding}`,
     );
@@ -414,14 +469,280 @@ export class BillingService {
     return session;
   }
 
-  /**
-   * User-asserted release of the pending-checkout claim ("I checked —
-   * no charge went through"), mirroring the FE's local-lock release.
-   * Idempotent; also the recovery path when CHECKOUT_IN_FLIGHT blocks a
-   * retry after an abandoned session. If a payment DID complete
-   * despite the assertion, the webhook grant still lands — the claim
-   * gates checkout opening, never payment processing.
-   */
+  private async createDurableCheckout(
+    principal: { userId: string; workspaceId: string },
+    dto: CheckoutRequest,
+    priceId: string,
+    email: string,
+    trustedCountry: string | null,
+  ): Promise<CheckoutSession> {
+    const id = dto.attemptId ?? randomUUID();
+    const country =
+      trustedCountry === 'IN' && !indiaPaddlePricesConfigured() ? null : trustedCountry;
+    const checkoutCode: PaddleCheckoutCode =
+      dto.offer === 'pass_onetime'
+        ? 'pass_onetime'
+        : isPricingV2() && dto.tierId === 'plus' && dto.cycle === 'annual'
+          ? 'plus_annual'
+          : 'other';
+    const selected = selectPaddleCheckoutPrice(process.env, {
+      usdPriceId: priceId,
+      code: checkoutCode,
+      trustedCountry: country,
+    });
+    const reserved = await this.db.transaction(async (tx) => {
+      await lockCheckoutWorkspace(tx, principal.workspaceId);
+      await this.assertNoDeletion(principal.workspaceId, tx);
+      await this.assertCheckoutEligible(principal.workspaceId, dto.offer === 'pass_onetime', tx);
+      if (!(await this.checkoutSetupComplete(principal.workspaceId, principal.userId, tx)))
+        throw new AppException({ code: 'CHECKOUT_SETUP_REQUIRED' });
+      const same = await findCheckoutAttempt(tx, principal.workspaceId, id);
+      if (same) {
+        if (
+          same.providerPriceId !== selected.priceId ||
+          same.currencyCode !== selected.currency ||
+          same.offer !== (dto.offer ?? null) ||
+          same.state !== 'open'
+        )
+          throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+        return { row: same, created: false };
+      }
+      if (await findCheckoutAttempt(tx, principal.workspaceId))
+        throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+      await assertNoLegacyCheckout(tx, principal.workspaceId);
+      const [row] = await tx
+        .insert(billingCheckoutAttempts)
+        .values({
+          id,
+          workspaceId: principal.workspaceId,
+          tier: dto.tierId,
+          cycle: dto.cycle,
+          offer: dto.offer ?? null,
+          providerPriceId: selected.priceId,
+          currencyCode: selected.currency,
+        })
+        .returning();
+      await tx.insert(subscriptionEvents).values({
+        provider: 'paddle',
+        providerEventId: `local_checkout_${id}`,
+        eventType: 'local.checkout_attempted',
+        payload: { workspaceId: principal.workspaceId },
+        processedAt: new Date(),
+      });
+      await tx
+        .update(users)
+        .set({ billingRegion: 'international' })
+        .where(eq(users.id, principal.userId));
+      return { row: row!, created: true };
+    });
+    if (!reserved.created)
+      return this.resumeCheckoutAttempt(principal.workspaceId, id, reserved.row.version);
+    try {
+      const session = await this.paddle.createCheckout({
+        workspaceId: principal.workspaceId,
+        userEmail: email,
+        tierId: dto.tierId,
+        cycle: dto.cycle,
+        providerPriceId: priceId,
+        trustedCountry: country,
+        checkoutCode,
+        checkoutAttemptId: id,
+        ...(dto.offer ? { checkoutOffer: dto.offer } : {}),
+      });
+      if (
+        session.provider !== 'paddle' ||
+        !session.transactionId ||
+        session.priceId ||
+        session.customData
+      )
+        throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+      const boundState = await this.db.transaction(async (tx) => {
+        await lockCheckoutWorkspace(tx, principal.workspaceId);
+        const row = await findCheckoutAttempt(tx, principal.workspaceId, id);
+        if (
+          !row ||
+          (row.providerTransactionId && row.providerTransactionId !== session.transactionId)
+        )
+          throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+        const other = await tx
+          .select({ id: billingCheckoutAttempts.id })
+          .from(billingCheckoutAttempts)
+          .where(
+            and(
+              eq(billingCheckoutAttempts.workspaceId, principal.workspaceId),
+              sql`${billingCheckoutAttempts.id} <> ${id}::uuid`,
+              inArray(billingCheckoutAttempts.state, [
+                'creating',
+                'open',
+                'payment_in_progress',
+                'stopping',
+                'paid',
+                'unknown',
+              ]),
+            ),
+          )
+          .limit(1);
+        const nextState =
+          row.providerTransactionId ||
+          row.paidAt ||
+          (row.state !== 'creating' && row.state !== 'unknown')
+            ? row.state
+            : other.length
+              ? 'unknown'
+              : 'open';
+        await tx
+          .update(billingCheckoutAttempts)
+          .set({
+            providerTransactionId: session.transactionId,
+            state: nextState,
+            updatedAt: new Date(),
+            version: row.version + 1,
+          })
+          .where(
+            and(
+              eq(billingCheckoutAttempts.id, id),
+              eq(billingCheckoutAttempts.version, row.version),
+            ),
+          );
+        return nextState;
+      });
+      if (boundState !== 'open') throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+      return { ...session, attemptId: id };
+    } catch (error) {
+      await this.db
+        .update(billingCheckoutAttempts)
+        .set({
+          state: 'unknown',
+          updatedAt: new Date(),
+          version: sql`${billingCheckoutAttempts.version} + 1`,
+        })
+        .where(
+          and(eq(billingCheckoutAttempts.id, id), eq(billingCheckoutAttempts.state, 'creating')),
+        );
+      throw error;
+    }
+  }
+
+  async getCheckoutAttempt(workspaceId: string, id: string) {
+    if (!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id))
+      throw new AppException({ code: 'BAD_REQUEST' });
+    const row = await findCheckoutAttempt(this.db, workspaceId, id);
+    if (!row) throw new AppException({ code: 'NOT_FOUND' });
+    return checkoutAttemptView(row);
+  }
+
+  async resumeCheckoutAttempt(
+    workspaceId: string,
+    id: string,
+    version: number,
+  ): Promise<CheckoutSession> {
+    if (!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id))
+      throw new AppException({ code: 'BAD_REQUEST' });
+    const row = await findCheckoutAttempt(this.db, workspaceId, id);
+    if (!row) throw new AppException({ code: 'NOT_FOUND' });
+    if (row.version !== version || row.state !== 'open' || row.paidAt || !row.providerTransactionId)
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    const facts = await this.paddle.readCheckoutAttempt(row.providerTransactionId, row);
+    if (!facts || facts.state !== 'unpaid') throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    await this.db.transaction(async (tx) => {
+      await lockCheckoutWorkspace(tx, workspaceId);
+      await this.assertNoDeletion(workspaceId, tx);
+      await this.assertCheckoutEligible(workspaceId, row.offer === 'pass_onetime', tx);
+      const latest = await findCheckoutAttempt(tx, workspaceId, id);
+      const others = await tx
+        .select({ id: billingCheckoutAttempts.id })
+        .from(billingCheckoutAttempts)
+        .where(
+          and(
+            eq(billingCheckoutAttempts.workspaceId, workspaceId),
+            sql`${billingCheckoutAttempts.id} <> ${id}::uuid`,
+            inArray(billingCheckoutAttempts.state, [
+              'creating',
+              'open',
+              'payment_in_progress',
+              'stopping',
+              'paid',
+              'unknown',
+            ]),
+          ),
+        )
+        .limit(1);
+      if (
+        !latest ||
+        latest.version !== version ||
+        latest.paidAt ||
+        latest.state !== 'open' ||
+        others.length
+      )
+        throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    });
+    if (!process.env.PADDLE_CLIENT_TOKEN)
+      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    return {
+      provider: 'paddle',
+      kind: 'overlay',
+      attemptId: id,
+      transactionId: row.providerTransactionId,
+      clientToken: process.env.PADDLE_CLIENT_TOKEN,
+      environment: process.env.PADDLE_ENV === 'production' ? 'production' : 'sandbox',
+    };
+  }
+
+  async cancelCheckoutAttempt(workspaceId: string, id: string, version: number) {
+    if (!checkoutCancellationEnabled()) throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+    if (!/^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i.test(id))
+      throw new AppException({ code: 'BAD_REQUEST' });
+    const row = await findCheckoutAttempt(this.db, workspaceId, id);
+    if (!row) throw new AppException({ code: 'NOT_FOUND' });
+    if (
+      row.version !== version ||
+      row.paidAt ||
+      (row.state !== 'open' && row.state !== 'stopping') ||
+      !row.providerTransactionId
+    )
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    const facts = await this.paddle.readCheckoutAttempt(row.providerTransactionId, row);
+    if (!facts || facts.state !== 'unpaid') throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    const claimed = await this.db.transaction(async (tx) => {
+      await lockCheckoutWorkspace(tx, workspaceId);
+      return tx
+        .update(billingCheckoutAttempts)
+        .set({ state: 'stopping', version: version + 1, updatedAt: new Date() })
+        .where(
+          and(
+            eq(billingCheckoutAttempts.id, id),
+            eq(billingCheckoutAttempts.workspaceId, workspaceId),
+            eq(billingCheckoutAttempts.version, version),
+            inArray(billingCheckoutAttempts.state, ['open', 'stopping']),
+            sql`${billingCheckoutAttempts.paidAt} is null`,
+          ),
+        )
+        .returning();
+    });
+    if (!claimed.length) throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    await this.paddle.stopCheckoutAttempt(row.providerTransactionId);
+    const stopped = await this.paddle.readCheckoutAttempt(row.providerTransactionId, row);
+    if (!stopped || stopped.state !== 'stopped')
+      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+    const [confirmed] = await this.db
+      .update(billingCheckoutAttempts)
+      .set({ state: 'stopped', stoppedAt: new Date(), updatedAt: new Date(), version: version + 2 })
+      .where(
+        and(
+          eq(billingCheckoutAttempts.id, id),
+          eq(billingCheckoutAttempts.version, version + 1),
+          sql`${billingCheckoutAttempts.paidAt} is null`,
+        ),
+      )
+      .returning();
+    if (!confirmed) {
+      const latest = await findCheckoutAttempt(this.db, workspaceId, id);
+      if (latest?.state === 'stopped' && !latest.paidAt) return checkoutAttemptView(latest);
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    }
+    return checkoutAttemptView(confirmed);
+  }
+
   private async assertNoDeletion(
     workspaceId: string,
     db: Pick<DrizzleDb, 'select'> = this.db,
@@ -440,8 +761,21 @@ export class BillingService {
     if (deletion) throw new AppException({ code: 'CHECKOUT_DELETION_PENDING' });
   }
 
-  async releasePendingCheckout(workspaceId: string): Promise<void> {
-    await this.db.delete(pendingCheckouts).where(eq(pendingCheckouts.workspaceId, workspaceId));
+  async releasePendingCheckout(
+    workspaceId: string,
+    attemptId?: string,
+    version?: number,
+  ): Promise<void> {
+    // A customer assertion or elapsed timeout cannot revoke a payable provider artifact.
+    if (!attemptId) throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    const attempt = await findCheckoutAttempt(this.db, workspaceId, attemptId);
+    if (
+      !attempt ||
+      attempt.version !== version ||
+      (attempt.state !== 'stopped' && attempt.state !== 'fulfilled')
+    )
+      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+    // The retained attempt is the receipt; there is no workspace-wide DELETE.
   }
 
   async getSubscription(workspaceId: string): Promise<BillingSubscription> {
@@ -476,10 +810,8 @@ export class BillingService {
       .orderBy(desc(subscriptions.updatedAt));
     const sub = rows.find((r) => r.status === 'active' || r.status === 'past_due') ?? rows[0];
 
-    // 0051 cross-device pending checkout: serve only while unexpired
-    // AND no granting subscription exists — once the webhook grants,
-    // the row is deleted, but the guard here means a race can never
-    // show "payment in flight" beside an active plan.
+    // Legacy claims remain visible after their original display horizon.
+    // An unrelated complimentary grant does not prove purchase completion.
     const [pending] = await this.db
       .select()
       .from(pendingCheckouts)
@@ -487,15 +819,15 @@ export class BillingService {
       .limit(1);
     const hasGranting = rows.some((r) => r.status === 'active' || r.status === 'past_due');
     const pendingCheckout =
-      pending &&
-      !hasGranting &&
-      pending.expiresAt.getTime() > Date.now() &&
-      (pending.tier === 'plus' || pending.tier === 'pro')
+      pending && !hasGranting && (pending.tier === 'plus' || pending.tier === 'pro')
         ? {
             provider: pending.provider,
             tier: pending.tier,
             cycle: pending.billingCycle,
             expiresAt: pending.expiresAt.toISOString(),
+            legacyUnresolved: true,
+            ...(pending.offer === 'pass_onetime' ? { offer: pending.offer as 'pass_onetime' } : {}),
+            createdAt: pending.createdAt.toISOString(),
           }
         : null;
 
@@ -520,7 +852,17 @@ export class BillingService {
     const indiaPlusId =
       sub?.provider === 'paddle' ? indiaPaddlePriceId(process.env, 'plus_annual') : null;
     const chargedInIndia = indiaPlusId != null && sub?.providerPriceId === indiaPlusId;
+    const latestAttempt = await this.db
+      .select()
+      .from(billingCheckoutAttempts)
+      .where(eq(billingCheckoutAttempts.workspaceId, workspaceId))
+      .orderBy(desc(billingCheckoutAttempts.createdAt))
+      .limit(1)
+      .then(([row]) => row ?? null);
     return {
+      ...(durableCheckoutEnabled() || latestAttempt
+        ? { checkoutAttempt: latestAttempt ? checkoutAttemptView(latestAttempt) : null }
+        : {}),
       checkoutSetupComplete: await this.checkoutSetupComplete(workspaceId),
       ...(billingReviewPending ? { billingReviewPending: true } : {}),
       tier: ws.tier,
@@ -1493,7 +1835,8 @@ export class BillingService {
    * D119 / ADR-0035 — the workspace's billing documents, proxied on
    * read from every rail it has ever paid on.
    *
-   * Reads EVERY subscription row, not just the granting one. A
+   * Reads owned customer mappings plus bounded historical subscriptions and
+   * paid Pass grants, not just the granting subscription. A
    * customer who cancelled still needs last year's invoices — the tax
    * need outlives the subscription — and a workspace that switched
    * region holds rows under both providers (`billing_customers` is
@@ -1507,46 +1850,126 @@ export class BillingService {
    * the list is partial.
    */
   async listInvoices(workspaceId: string): Promise<BillingInvoiceList> {
-    const rows = await this.db
-      .select({
-        provider: subscriptions.provider,
-        providerSubscriptionId: subscriptions.providerSubscriptionId,
-      })
-      .from(subscriptions)
-      .where(eq(subscriptions.workspaceId, workspaceId))
-      .orderBy(desc(subscriptions.updatedAt))
-      // One past the bound: an extra row proves the cap actually cut
-      // something, so `truncated` can report it — the silent-cap shape
-      // the contract forbids (gate network 2026-08-16). The walk itself
-      // still covers only the bound.
-      .limit(MAX_INVOICE_SUBSCRIPTIONS + 1);
+    const [customers, rows, passes] = await Promise.all([
+      this.db
+        .select({
+          provider: billingCustomers.provider,
+          providerCustomerId: billingCustomers.providerCustomerId,
+        })
+        .from(billingCustomers)
+        .where(eq(billingCustomers.workspaceId, workspaceId)),
+      this.db
+        .select({
+          provider: subscriptions.provider,
+          providerSubscriptionId: subscriptions.providerSubscriptionId,
+        })
+        .from(subscriptions)
+        .where(eq(subscriptions.workspaceId, workspaceId))
+        .orderBy(desc(subscriptions.updatedAt))
+        // One past the bound: an extra row proves the cap actually cut
+        // something, so `truncated` can report it — the silent-cap shape
+        // the contract forbids (gate network 2026-08-16). The walk itself
+        // still covers only the bound.
+        .limit(MAX_INVOICE_SUBSCRIPTIONS + 1),
+      this.db
+        .select({
+          provider: entitlementGrants.provider,
+          transactionId: entitlementGrants.providerTransactionId,
+        })
+        .from(entitlementGrants)
+        .innerJoin(users, eq(users.email, entitlementGrants.email))
+        .where(
+          and(
+            eq(users.workspaceId, workspaceId),
+            eq(entitlementGrants.source, 'pass'),
+            isNotNull(entitlementGrants.provider),
+            isNotNull(entitlementGrants.providerTransactionId),
+          ),
+        )
+        .orderBy(desc(entitlementGrants.createdAt))
+        .limit(MAX_INVOICE_PASSES + 1),
+    ]);
     const capped = rows.length > MAX_INVOICE_SUBSCRIPTIONS;
     const walked = capped ? rows.slice(0, MAX_INVOICE_SUBSCRIPTIONS) : rows;
 
-    const invoices: BillingInvoice[] = [];
+    const invoices = new Map<string, BillingInvoice>();
     const unavailable = new Set<BillingProviderId>();
-    let truncated = capped;
+    let truncated = capped || passes.length > MAX_INVOICE_PASSES;
     let omittedRows = 0;
-    for (const row of walked) {
+    const signal = AbortSignal.timeout(INVOICE_READ_TIMEOUT_MS);
+    const reads = new Map<BillingProviderId, Array<() => Promise<ProviderInvoicePage>>>();
+    const enqueue = (provider: BillingProviderId, read: () => Promise<ProviderInvoicePage>) => {
+      const queue = reads.get(provider) ?? [];
+      queue.push(read);
+      reads.set(provider, queue);
+    };
+    const collect = async (
+      provider: BillingProviderId,
+      read: () => Promise<ProviderInvoicePage>,
+    ) => {
+      let stop!: () => void;
+      const stopped = new Promise<never>((_, reject) => {
+        stop = () => reject(signal.reason);
+        signal.addEventListener('abort', stop, { once: true });
+      });
       try {
-        const page = await this.adapterFor(row.provider).listInvoices(row.providerSubscriptionId);
+        signal.throwIfAborted();
+        const page = await Promise.race([runWithBillingReadSignal(signal, read), stopped]);
         truncated = truncated || page.truncated;
         omittedRows += page.omitted;
         for (const invoice of page.invoices) {
-          invoices.push({ ...invoice, provider: row.provider });
+          invoices.set(`${provider}:${invoice.id}`, { ...invoice, provider });
         }
       } catch (err) {
         // One rail failing must not fail the whole read: the other
         // rail's invoices are still true, and a 500 here would hide
         // them behind an error state.
         this.logger.error(
-          `billing.invoices.provider_unavailable workspace=${workspaceId} provider=${row.provider} err=${err instanceof Error ? err.message : String(err)}`,
+          `billing.invoices.provider_unavailable workspace=${workspaceId} provider=${provider} err=${err instanceof Error ? err.message : String(err)}`,
         );
-        unavailable.add(row.provider);
+        unavailable.add(provider);
+      } finally {
+        signal.removeEventListener('abort', stop);
+      }
+    };
+    // At most one customer per workspace/provider; IDs come only from this tenant.
+    for (const row of customers) {
+      enqueue(row.provider, () =>
+        this.adapterFor(row.provider).listCustomerInvoices(row.providerCustomerId),
+      );
+    }
+    // Retain legacy/replaced customer mappings and every historical subscription.
+    for (const row of walked) {
+      enqueue(row.provider, () =>
+        this.adapterFor(row.provider).listInvoices(row.providerSubscriptionId),
+      );
+    }
+    // Expired/revoked paid grants retain their receipts. Manual grants have no payment ID.
+    for (const row of passes.slice(0, MAX_INVOICE_PASSES)) {
+      const transactionId = row.transactionId;
+      if (row.provider === 'paddle' && transactionId) {
+        enqueue('paddle', () => this.paddle.invoiceTransaction(transactionId));
+      } else {
+        omittedRows += 1;
       }
     }
-    invoices.sort((a, b) => Date.parse(b.issuedAt) - Date.parse(a.issuedAt));
-    return { invoices, unavailableProviders: [...unavailable], truncated, omittedRows };
+    // One worker per rail (at most two). A stalled rail cannot block the other;
+    // the shared deadline aborts HTTP/body reads and stops unstarted scopes.
+    await Promise.all(
+      [...reads].map(async ([provider, queue]) => {
+        for (const read of queue) {
+          if (signal.aborted) {
+            unavailable.add(provider);
+            break;
+          }
+          await collect(provider, read);
+        }
+      }),
+    );
+    const sorted = [...invoices.values()].sort(
+      (a, b) => Date.parse(b.issuedAt) - Date.parse(a.issuedAt),
+    );
+    return { invoices: sorted, unavailableProviders: [...unavailable], truncated, omittedRows };
   }
 
   /**
@@ -1564,7 +1987,8 @@ export class BillingService {
    * ownership set is a stale authorization decision.
    */
   async invoiceDocument(workspaceId: string, invoiceId: string): Promise<BillingInvoiceDocument> {
-    const { invoices, unavailableProviders } = await this.listInvoices(workspaceId);
+    const { invoices, unavailableProviders, truncated, omittedRows } =
+      await this.listInvoices(workspaceId);
     const owned = invoices.find((i) => i.id === invoiceId);
     if (!owned) {
       // Absent from an INCOMPLETE listing proves nothing: with a rail
@@ -1572,7 +1996,7 @@ export class BillingService {
       // read, and NOT_FOUND would tell the customer their invoice does
       // not exist during a provider blip (gate network 2026-08-16).
       // Only a complete listing may answer "not yours".
-      if (unavailableProviders.length > 0) {
+      if (unavailableProviders.length > 0 || truncated || omittedRows > 0) {
         throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
       }
       throw new AppException({ code: 'NOT_FOUND' });

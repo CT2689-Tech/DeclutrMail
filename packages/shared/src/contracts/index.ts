@@ -238,6 +238,7 @@ export {
   SIGNUP_ATTRIBUTION_REFS,
   SIGNUP_HEARD_DETAIL_MAX,
   SIGNUP_HEARD_FROM_VALUES,
+  SIGNUP_HEARD_FROM_CHOICES,
   SIGNUP_REF_COOKIE,
   SignupHeardFromPatchSchema,
 } from './signup-attribution';
@@ -449,3 +450,11 @@ export {
 export { EXPLAIN_BATCH_MAX } from './triage-explain';
 
 export type { AutopilotPendingMeta } from './autopilot';
+export * from './autopilot-sender-rules';
+export * from './autopilot-rule-configuration';
+
+export { CheckoutAttemptSchema, CheckoutAttemptCommandSchema } from './billing';
+export type { CheckoutAttempt } from './billing';
+
+export { SignupAttributionReportSchema } from './signup-attribution-report';
+export type { SignupAttributionReport } from './signup-attribution-report';

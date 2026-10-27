@@ -23,6 +23,7 @@ export const AUTO_ARCHIVE_LOW_ENGAGEMENT: AutopilotRuleDto = {
   id: '00000000-0000-0000-0000-000000000001',
   presetKey: 'auto_archive_low_engagement',
   isPreset: true,
+  version: 1,
   name: 'Auto-archive low-engagement',
   enabled: true,
   mode: 'observe',
@@ -47,6 +48,7 @@ export const AUTO_UNSUBSCRIBE_NOISY: AutopilotRuleDto = {
   id: '00000000-0000-0000-0000-000000000004',
   presetKey: 'auto_unsubscribe_noisy',
   isPreset: true,
+  version: 1,
   name: 'Auto-unsubscribe noisy senders',
   enabled: true,
   mode: 'observe',
@@ -70,6 +72,7 @@ export const NEWSLETTER_GRAVEYARD: AutopilotRuleDto = {
   id: '00000000-0000-0000-0000-000000000002',
   presetKey: 'newsletter_graveyard',
   isPreset: true,
+  version: 1,
   name: 'Newsletter graveyard',
   enabled: true,
   mode: 'observe',
@@ -93,6 +96,7 @@ export const LONG_DORMANT_UNSUBSCRIBE: AutopilotRuleDto = {
   id: '00000000-0000-0000-0000-000000000005',
   presetKey: 'long_dormant_unsubscribe',
   isPreset: true,
+  version: 1,
   name: 'Long-dormant unsubscribe',
   enabled: false,
   mode: 'observe',
@@ -116,6 +120,7 @@ export const SCREEN_NEW_SENDERS: AutopilotRuleDto = {
   id: '00000000-0000-0000-0000-000000000003',
   presetKey: 'auto_screen_new_senders',
   isPreset: true,
+  version: 1,
   // Mirrors the BE seed (D101 #3) which ships with the banned "Screen"
   // word in its default-name. The UI substitutes the canonical Later
   // label via `presetDisplayName` so D227 stays clean without an

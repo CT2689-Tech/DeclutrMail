@@ -23,7 +23,11 @@ const CATEGORY_ROWS: ReadonlyArray<{
     label: 'Inbox ready email',
     detail: 'One email when we finish scanning a Gmail account you connect.',
   },
-  { wire: 'reminders', label: 'Reminder emails' },
+  {
+    wire: 'reminders',
+    label: 'Reminder emails',
+    detail: 'Reminders to review your email after a scan or time away.',
+  },
   {
     wire: 'briefReady',
     label: 'Daily Brief ready email',
@@ -31,8 +35,8 @@ const CATEGORY_ROWS: ReadonlyArray<{
   },
   {
     wire: 'weeklyReceipt',
-    label: 'Weekly value receipt',
-    detail: 'Plus and Pro: new senders in Screener.',
+    label: 'Weekly activity summary',
+    detail: 'Plus and Pro: your weekly cleanup activity and senders awaiting review.',
   },
 ];
 
@@ -73,7 +77,7 @@ export function EmailPrefsCard({
   return (
     <SettingsGroup
       id="notifications"
-      title="Notifications"
+      title="Email notifications"
       footer={
         saveFailed && state.kind === 'ready' ? (
           <SettingsSaveError>Could not save the preference. Try again.</SettingsSaveError>

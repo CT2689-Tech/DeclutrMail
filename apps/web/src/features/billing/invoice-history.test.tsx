@@ -27,6 +27,8 @@ vi.mock('@/lib/api/client', async () => {
 });
 
 import { InvoiceHistory } from './invoice-history';
+import { BillingInvoiceHistoryGate } from './billing-invoice-history-gate';
+import { billingKeys } from './api/query-keys';
 import { PaymentMethodCard } from './payment-method-card';
 
 function wrap(ui: ReactNode) {
@@ -53,6 +55,100 @@ beforeEach(() => {
 });
 
 describe('InvoiceHistory', () => {
+  it('compacts only a verified empty history and keeps its section target', async () => {
+    apiGet.mockResolvedValue({
+      data: { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 },
+    });
+    wrap(<InvoiceHistory />);
+    expect(await screen.findByText('No invoices yet')).toBeInTheDocument();
+    const section = screen.getByRole('region', { name: 'Payment history' });
+    expect(section).toHaveAttribute('id', 'invoices');
+    expect(section).toHaveAttribute('tabindex', '-1');
+    expect(
+      screen.queryByText('Payments and invoices from past subscriptions and one-time purchases.'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  it('keeps a one-unit difference in large refund totals', async () => {
+    apiGet.mockResolvedValue({
+      data: {
+        invoices: [{ ...PAID_ROW, amount: '9007199254740993', refundedAmount: '9007199254740992' }],
+        unavailableProviders: [],
+        truncated: false,
+        omittedRows: 0,
+      },
+    });
+    wrap(<InvoiceHistory />);
+    expect(await screen.findByText('Partially refunded')).toBeInTheDocument();
+    expect(screen.queryByText('Refunded', { exact: true })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['1900', 'Refunded'],
+    ['500', 'Partially refunded'],
+  ])(
+    'shows a confirmed refund of %s and keeps the invoice download',
+    async (refundedAmount, label) => {
+      apiGet.mockResolvedValue({
+        data: {
+          invoices: [
+            { ...PAID_ROW, refundedAmount },
+            { ...PAID_ROW, id: 'txn_unreturned' },
+          ],
+          unavailableProviders: [],
+          truncated: false,
+          omittedRows: 0,
+        },
+      });
+      wrap(<InvoiceHistory />);
+      expect(await screen.findByText(label)).toBeInTheDocument();
+      expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(2);
+      fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
+        target: { value: refundedAmount === '1900' ? 'refunded' : 'partially_refunded' },
+      });
+      expect(screen.getByRole('status')).toHaveTextContent('1 of 2 loaded invoices');
+      expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(1);
+      expect(screen.queryByText('Paid', { exact: true })).not.toBeInTheDocument();
+      expect(screen.getByRole('listitem')).toHaveAccessibleName(
+        new RegExp(`status ${label}, refunded \\$${refundedAmount === '1900' ? '19.00' : '5.00'}`),
+      );
+    },
+  );
+
+  it.each(['complimentary Pro', 'Free', 'Pass'])(
+    'loads past invoices for %s without a current subscription',
+    async (state) => {
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+      });
+      client.setQueryData(billingKeys.subscription(), {
+        tier: state === 'Free' ? 'free' : state === 'Pass' ? 'plus' : 'pro',
+        complimentary:
+          state === 'Free'
+            ? null
+            : {
+                tier: state === 'Pass' ? 'plus' : 'pro',
+                expiresAt: null,
+                source: state === 'Pass' ? 'pass' : 'comp',
+              },
+        subscription: null,
+        pendingCheckout: null,
+        foundingMember: false,
+      });
+      apiGet.mockResolvedValue({
+        data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: false, omittedRows: 0 },
+      });
+      render(
+        <QueryClientProvider client={client}>
+          <BillingInvoiceHistoryGate />
+        </QueryClientProvider>,
+      );
+      expect(await screen.findByText('$19.00')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    },
+  );
+
   it('filters only loaded invoice history by status and inclusive date, with recovery and older-history help', async () => {
     apiGet.mockResolvedValue({
       data: {
@@ -90,6 +186,53 @@ describe('InvoiceHistory', () => {
     expect(await screen.findByText('$19.00')).toBeInTheDocument();
     expect(screen.getByText('Paid')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument();
+  });
+
+  it('requests fresh owned documents per click without retaining signed URLs in query or mutation data', async () => {
+    const navigate = vi.spyOn(window.location, 'assign').mockImplementation(() => {});
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    apiGet.mockImplementation((path: string) =>
+      Promise.resolve({
+        data: path.endsWith('/document')
+          ? { provider: 'paddle', url: 'https://paddle.example/invoice.pdf' }
+          : { invoices: [PAID_ROW], unavailableProviders: [], truncated: false, omittedRows: 0 },
+      }),
+    );
+    try {
+      render(
+        <QueryClientProvider client={client}>
+          <InvoiceHistory />
+        </QueryClientProvider>,
+      );
+      const download = await screen.findByRole('button', { name: 'Download' });
+      expect(apiGet.mock.calls.some((call) => String(call[0]).endsWith('/document'))).toBe(false);
+      fireEvent.click(download);
+      await waitFor(() =>
+        expect(navigate).toHaveBeenCalledWith('https://paddle.example/invoice.pdf'),
+      );
+      expect(apiGet).toHaveBeenCalledWith('/api/billing/invoices/txn_1/document');
+      expect(
+        client
+          .getQueryCache()
+          .getAll()
+          .some((query) => JSON.stringify(query.state.data ?? null).includes('invoice.pdf')),
+      ).toBe(false);
+      expect(
+        client
+          .getMutationCache()
+          .getAll()
+          .map((mutation) => mutation.state.data),
+      ).toEqual([undefined]);
+      await waitFor(() => expect(download).not.toBeDisabled());
+      fireEvent.click(download);
+      await waitFor(() => expect(navigate).toHaveBeenCalledTimes(2));
+      expect(
+        apiGet.mock.calls.filter((call) => String(call[0]).endsWith('/document')),
+      ).toHaveLength(2);
+    } finally {
+      navigate.mockRestore();
+      client.clear();
+    }
   });
 
   it('shows a real error state — never an empty list — when the read fails', async () => {
@@ -186,7 +329,17 @@ describe('InvoiceHistory', () => {
       data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: true, omittedRows: 0 },
     });
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/most recent invoices/i)).toBeInTheDocument();
+    expect(await screen.findByText(/limited invoice history/i)).toBeInTheDocument();
+  });
+
+  it('never treats an empty capped history as proof that no invoices exist', async () => {
+    apiGet.mockResolvedValue({
+      data: { invoices: [], unavailableProviders: [], truncated: true, omittedRows: 0 },
+    });
+    wrap(<InvoiceHistory />);
+    expect(await screen.findByText('No invoices in this limited history')).toBeInTheDocument();
+    expect(screen.queryByText('No invoices yet')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Request older invoices' })).toBeInTheDocument();
   });
 
   it('never claims "no invoices yet" when rows exist but none were renderable', async () => {
@@ -197,7 +350,7 @@ describe('InvoiceHistory', () => {
       data: { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 4 },
     });
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/your invoices exist/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn’t display this billing history/i)).toBeInTheDocument();
     expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
   });
 
@@ -207,7 +360,7 @@ describe('InvoiceHistory', () => {
     });
     wrap(<InvoiceHistory />);
     await screen.findByText('$19.00');
-    expect(screen.getByText(/2 invoices couldn’t\s+be displayed/i)).toBeInTheDocument();
+    expect(screen.getByText(/Some invoices couldn’t\s+be displayed/i)).toBeInTheDocument();
   });
 
   it('names each field in the row accessible name, so a due invoice never reads as a bare "Due"', async () => {

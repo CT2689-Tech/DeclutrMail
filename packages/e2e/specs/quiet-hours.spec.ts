@@ -10,6 +10,7 @@ import { BILLING_SEED } from '../helpers/seed-billing';
 /** Synthetic real API/UI configuration flow; no Gmail credentials or worker. */
 const api = new ApiClient();
 const MARKER = '__e2e_quiet_journey';
+const hydrationErrors: string[] = [];
 let sql: postgres.Sql;
 let mailboxId: string;
 let original: Record<string, unknown> = {};
@@ -82,6 +83,14 @@ test.afterAll(async () => {
 test('Quiet hours save, rejected save, retry and disable survive real API reads and reload', async ({
   page,
 }) => {
+  page.on('pageerror', (error) => {
+    if (/hydration|Minified React error #418/i.test(error.message))
+      hydrationErrors.push(error.message);
+  });
+  page.on('console', (message) => {
+    if (message.type() === 'error' && /hydration|Minified React error #418/i.test(message.text()))
+      hydrationErrors.push(message.text());
+  });
   const path = `/api/mailboxes/${mailboxId}/quiet-hours`;
   const pattern = `**${path}`;
   const config: QuietHoursConfig = {
@@ -90,13 +99,14 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
     endLocal: '07:00',
     timezone: 'America/Los_Angeles',
   };
-  const toggle = page.getByRole('switch', { name: 'Enable quiet hours', exact: true });
+  const toggle = page.getByRole('switch', { name: 'Use a daily pause window', exact: true });
   const expectQuietReady = async () => {
-    await expect(page.getByRole('heading', { level: 1, name: 'Quiet hours' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Autopilot settings' })).toBeVisible();
     await expectScreenMounted(page);
     await expect(toggle).toBeEnabled();
   };
   await page.goto('/quiet');
+  await expect(page).toHaveURL(/\/autopilot\/settings$/);
   await expectQuietReady();
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   const consent = page.getByRole('button', { name: 'Essential only', exact: true });
@@ -113,13 +123,13 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
     await expect(prompt).toBeHidden();
   }
   await toggle.click();
-  await page.getByLabel('Quiet window start').fill(config.startLocal);
-  await page.getByLabel('Quiet window end').fill(config.endLocal);
-  const timezone = page.getByRole('combobox', { name: 'Quiet window timezone' });
+  await page.getByLabel('Pause window start').fill(config.startLocal);
+  await page.getByLabel('Pause window end').fill(config.endLocal);
+  const timezone = page.getByRole('combobox', { name: 'Schedule timezone' });
   await timezone.focus();
   await timezone.selectOption(config.timezone);
   await expect(page.getByText('Ends at 7:00 AM the next day.')).toBeVisible();
-  const save = page.getByRole('button', { name: 'Save quiet hours', exact: true });
+  const save = page.getByRole('button', { name: 'Save Schedule', exact: true });
   const firstWrite = page.waitForResponse(
     (response) => response.url().endsWith(path) && response.request().method() === 'PUT',
   );
@@ -131,12 +141,16 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
     SELECT quiet_state FROM mailbox_accounts WHERE id = ${mailboxId}
   `;
   expect(firstStored[0]!.quiet_state[MARKER]).toBe('synthetic co-tenancy evidence');
+  const darkMode = page.getByRole('button', { name: 'Switch to dark mode', exact: true });
+  if (await darkMode.isVisible()) await darkMode.click();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await page.reload();
   await expectQuietReady();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
   await expect(timezone).toHaveValue(config.timezone);
-  await expect(page.getByLabel('Quiet window start')).toHaveValue(config.startLocal);
-  await expect(page.getByLabel('Quiet window end')).toHaveValue(config.endLocal);
+  await expect(page.getByLabel('Pause window start')).toHaveValue(config.startLocal);
+  await expect(page.getByLabel('Pause window end')).toHaveValue(config.endLocal);
 
   // A controlled transport failure must not overwrite the stored schedule.
   const rejectWrite = async (route: Route) => {
@@ -152,16 +166,14 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   await page.route(pattern, rejectWrite);
   // Exercise the native time control with a real hour increment. Direct
   // temporal fill can leave the DOM value ahead of the controlled form draft.
-  const end = page.getByLabel('Quiet window end');
+  const end = page.getByLabel('Pause window end');
   await end.focus();
   await end.press('ArrowUp');
   await expect(end).toHaveValue('08:00');
   await expect(page.getByText('Ends at 8:00 AM the next day.')).toBeVisible();
   await expect(save).toBeEnabled();
   await save.click();
-  await expect(
-    page.getByText('Couldn’t save quiet hours. Try again.', { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText('Couldn’t save Schedule. Try again.', { exact: true })).toBeVisible();
   expect((await api.get<QuietHoursState>(path)).config).toEqual(config);
   const afterFailure = await sql<{ quiet_state: Record<string, unknown> }[]>`
     SELECT quiet_state FROM mailbox_accounts WHERE id = ${mailboxId}
@@ -170,7 +182,7 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
   await page.unroute(pattern, rejectWrite);
   await page.reload();
   await expectQuietReady();
-  await expect(page.getByLabel('Quiet window end')).toHaveValue('07:00');
+  await expect(page.getByLabel('Pause window end')).toHaveValue('07:00');
   await end.focus();
   await end.press('ArrowUp');
   await expect(end).toHaveValue('08:00');
@@ -197,4 +209,5 @@ test('Quiet hours save, rejected save, retry and disable survive real API reads 
     enabled: false,
     endLocal: '08:00',
   });
+  expect(hydrationErrors).toEqual([]);
 });

@@ -31,6 +31,16 @@ function renderList(props: Partial<SenderListProps> = {}, senders = solo) {
 }
 
 describe('<SenderList /> — domain groups (D51)', () => {
+  it('builds contextual full-page links for ordinary and grouped senders', () => {
+    renderList({ detailSearch: 'q=weekly&sort=name&sender=old' }, [...solo, ...brand]);
+    fireEvent.click(screen.getByTestId('domain-group-brand.com'));
+    for (const name of ['Solo a', 'Brand g1']) {
+      const href = screen.getByRole('link', { name }).getAttribute('href')!;
+      expect(new URL(href, 'http://localhost').searchParams.get('returnTo')).toBe(
+        '/senders?q=weekly&sort=name',
+      );
+    }
+  });
   it('collapses ≥3 senders of one domain into a header, members hidden until expanded', () => {
     renderList({}, [...brand, ...solo]);
     expect(screen.queryByText('Brand g1')).not.toBeInTheDocument();

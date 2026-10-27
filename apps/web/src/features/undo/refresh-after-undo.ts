@@ -35,6 +35,8 @@ const UNDO_SURFACES: readonly QueryKey[] = [
   undoKeys.all,
   sendersKeys.all,
   snoozedKeys.all,
+  ['autopilot-sender-rules'],
+  ['autopilot', 'delete-review'],
   TRIAGE_BOOTSTRAP_KEY,
   SCREENER_ALL_KEY,
 ];

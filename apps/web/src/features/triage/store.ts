@@ -52,7 +52,7 @@ export type SheetableVerb = Extract<ActionVerb, 'Archive' | 'Unsubscribe' | 'Lat
 export type RememberableVerb = Exclude<SheetableVerb, 'Delete'>;
 
 export interface PendingAction {
-  /** Preview-only age. Delete starts at 180 days; Archive at Any age. */
+  /** Preview-only age. Manual actions start at Any age. */
   olderThanDays?: number | null;
   /** Delete reach (including Unsubscribe cleanup), scoped to this preview. */
   reach?: ActionReach;

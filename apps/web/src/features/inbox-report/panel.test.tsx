@@ -41,46 +41,103 @@ const calm: InboxReportDto = {
 afterEach(() => resetFetchStub());
 
 describe('InboxReportPanel', () => {
-  it('opens the archive-prefilled dialog and does not confirm it', () => {
-    const onFixConfirmed = vi.fn();
+  it('leads with a short dated summary and sender review, with data and cleanup collapsed', async () => {
+    const review = vi.fn();
+    const confirm = vi.fn();
     render(
       <InboxReportPanel
         report={full}
-        mailboxEmail="a@example.com"
-        resetDate="Nov 1"
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        onFixConfirmed={onFixConfirmed}
+        mailboxEmail="a@example.test"
+        onDismiss={vi.fn()}
+        onReopen={vi.fn()}
+        onReview={review}
+        onFixConfirmed={confirm}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Close Inbox Report' })).toHaveClass('dm-tap-44');
-    expect(screen.getByRole('link', { name: 'What we store and share' })).toHaveClass(
-      'dm-tap-target',
+    expect(screen.getByRole('heading', { name: 'Inbox snapshot' })).toBeVisible();
+    expect(screen.getByText('2 senders worth reviewing.')).toBeVisible();
+    await waitFor(() =>
+      expect(document.querySelector('time')).toHaveAttribute('dateTime', full.generatedAt),
     );
-    expect(screen.getByText('91%')).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'of the email you got in the last 90 days came from 2 senders you mostly leave unread.',
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getAllByText(/91%/).length).toBe(1);
-    expect(screen.getByText('Last 90 days')).toBeInTheDocument();
-    expect(screen.getByText('Based on 1,139 emails in a@example.com')).toBeInTheDocument();
-    expect(screen.getByText('Sizes are Gmail’s estimates.')).toBeInTheDocument();
-    expect(screen.queryByText('about 9 in 10')).not.toBeInTheDocument();
-    expect(screen.getByText(/Each of those 2 senders had less than 10%/)).toBeInTheDocument();
-    const glyphs = document.querySelector('[data-report-glyphs]');
-    expect(glyphs).toHaveAttribute('aria-hidden', 'true');
-    expect(glyphs).not.toHaveAttribute('aria-label');
-    expect(document.querySelector('.dm-report-grid')).not.toBeNull();
-    expect(document.querySelector('.dm-report-rule')).not.toBeNull();
-    expect(document.querySelectorAll('[data-report-glyphs] svg')).toHaveLength(10);
-    expect(screen.queryByRole('button', { name: 'Make a share card' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from 2 senders?');
-    expect(onFixConfirmed).not.toHaveBeenCalled();
+    const details = document.querySelector('details')!;
+    expect(details).not.toHaveAttribute('open');
+    expect(details).toContainElement(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
+    expect(screen.queryByText('91%')).toBeNull();
+    expect(document.querySelector('[data-report-glyphs]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Review senders' }));
+    expect(review).toHaveBeenCalledOnce();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByText('Details'));
+    expect(details).toHaveAttribute('open');
+    expect(screen.getByText('Last 90 days')).toBeVisible();
+    expect(screen.getByText('All scanned email')).toBeVisible();
+    expect(screen.getByText(/1,139 scanned emails/)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
+    expect(screen.getByRole('dialog')).toBeVisible();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+  it('keeps recent, historical and Trash scopes in Details', () => {
+    render(
+      <InboxReportPanel
+        report={{
+          ...full,
+          insights: [
+            { id: 'years_deep', oldestYear: 2012, olderPct: 70 },
+            full.insights[0]!,
+            { id: 'trash_bytes', bytes: 300_000_000, count: 80 },
+          ],
+        }}
+        onDismiss={vi.fn()}
+        onReopen={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText('All scanned email')).toBeVisible();
+    expect(screen.getByText('Last 90 days')).toBeVisible();
+    expect(screen.getByText('In Gmail Trash at snapshot time')).toBeVisible();
+  });
+  it('uses the actual capped sender set in fallback and keeps review primary', () => {
+    const review = vi.fn();
+    render(
+      <InboxReportPanel
+        report={{ ...full, variant: 'fallback', fallbackSenderCount: 72 }}
+        onReview={review}
+        onDismiss={vi.fn()}
+        onReopen={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('2 senders worth reviewing.')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Review senders' }));
+    expect(review).toHaveBeenCalledOnce();
+    expect(screen.queryByText(/72 senders|good shape/)).toBeNull();
+  });
+  it('keeps an empty snapshot neutral without a same-page review link', () => {
+    render(<InboxReportPanel report={calm} onDismiss={vi.fn()} onReopen={vi.fn()} />);
+    expect(screen.getByText(/No sender suggestions/)).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Review senders' })).toBeNull();
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.queryByRole('button', { name: 'Preview bulk cleanup' })).toBeNull();
+    expect(screen.queryByText(/good shape|Archived/)).toBeNull();
   });
 
+  it('keeps a single qualifying fallback insight available in Details', () => {
+    render(
+      <InboxReportPanel
+        report={{ ...calm, insights: [{ id: 'trash_bytes', bytes: 300_000_000, count: 80 }] }}
+        onDismiss={vi.fn()}
+        onReopen={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText('Details'));
+    expect(screen.getByText('In Gmail Trash at snapshot time')).toBeVisible();
+  });
+  it('collapses to the reopen strip', () => {
+    const reopen = vi.fn();
+    render(<InboxReportPanel report={full} dismissed onDismiss={vi.fn()} onReopen={reopen} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Reopen' }));
+    expect(reopen).toHaveBeenCalledOnce();
+  });
   it('keeps Archive disabled until the live preview count resolves', async () => {
     let releasePreview: (response: Response) => void = () => {};
     const preview = new Promise<Response>((resolve) => {
@@ -95,10 +152,17 @@ describe('InboxReportPanel', () => {
     ]);
     render(
       <QueryWrapper client={createTestQueryClient()}>
-        <InboxReportPanel report={full} mailboxId="mb-1" onDismiss={() => {}} onReopen={() => {}} />
+        <InboxReportPanel
+          report={full}
+          mailboxId="mb-1"
+          onDismiss={() => {}}
+          onReopen={() => {}}
+          onFixConfirmed={vi.fn()}
+        />
       </QueryWrapper>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    fireEvent.click(screen.getByText('Details'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
     const archive = screen.getByRole('radio', { name: '+ Archive' });
     expect(archive).toBeDisabled();
     expect(screen.getByRole('radio', { name: '+ Delete' })).toBeDisabled();
@@ -144,246 +208,6 @@ describe('InboxReportPanel', () => {
     expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from 2 senders?');
     expect(screen.getByRole('radio', { name: '+ Archive' })).toBeChecked();
   });
-
-  it('uses the calm fallback without a fix, a share card, or a celebration', () => {
-    render(
-      <InboxReportPanel
-        report={calm}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 4, senders: 1 }}
-      />,
-    );
-    expect(screen.getByText(/nothing stands out yet/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Unsubscribe/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Make a share card' })).toBeNull();
-    expect(screen.queryByText(/Archived/)).toBeNull();
-  });
-
-  it('states the archive result without a size', () => {
-    render(
-      <InboxReportPanel
-        report={full}
-        resetDate="Nov 1"
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 10, senders: 2 }}
-      />,
-    );
-    const note = screen.getByText('Archived 10 emails from 2 senders.');
-    expect(document.querySelector('[data-report-check] svg')).not.toBeNull();
-    expect(note.closest('[data-celebration]')?.textContent ?? '').not.toMatch(
-      /\d+(\.\d+)? (MB|GB)/,
-    );
-    expect(screen.queryByRole('button', { name: 'Unsubscribe + archive 2 senders' })).toBeNull();
-    expect(screen.getByText(/your storage doesn’t change/)).toBeInTheDocument();
-    expect(screen.getByText(/Unsubscribe stays free and unlimited/)).toBeInTheDocument();
-  });
-
-  it('groups a large archive result', () => {
-    render(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 1139, senders: 12 }}
-      />,
-    );
-    expect(screen.getByText('Archived 1,139 emails from 12 senders.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
-  });
-
-  it('uses the singular archive sentence for one email', () => {
-    render(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 1, senders: 2 }}
-      />,
-    );
-    expect(screen.getByText('Archived 1 email from 1 sender.')).toBeInTheDocument();
-    expect(screen.queryByText(/1 emails/)).toBeNull();
-  });
-
-  it('uses the singular-sender archive sentence only when that sender has 2 or more emails', () => {
-    render(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 2, senders: 1 }}
-      />,
-    );
-    expect(screen.getByText('Archived 2 emails from 1 sender.')).toBeInTheDocument();
-    expect(screen.queryByText('Archived 1 email from 1 sender.')).toBeNull();
-  });
-
-  it('uses the singular delete sentence when one email is deleted', () => {
-    render(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 1, senders: 1, verb: 'delete', bytes: 1_500_000 }}
-      />,
-    );
-    expect(screen.getByText('Moved 1 email (about 1.5 MB) to Gmail Trash.')).toBeInTheDocument();
-    expect(screen.queryByText(/1 emails/)).toBeNull();
-    expect(screen.getByText(WS5_COPY['report.celebrate.delete.note'])).toBeInTheDocument();
-  });
-
-  it('says a Delete moved mail to Trash and does not say it was archived', () => {
-    const { rerender } = render(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 4, senders: 1, verb: 'delete' }}
-      />,
-    );
-    expect(screen.queryByText(/Archived/)).toBeNull();
-    expect(screen.queryByText(/Moved/)).toBeNull();
-    expect(screen.queryByText(WS5_COPY['report.celebrate.delete.note'])).toBeNull();
-    expect(screen.queryByText(/your storage doesn’t change/)).toBeNull();
-    rerender(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 4, senders: 1, verb: 'delete', bytes: 1_500_000 }}
-      />,
-    );
-    expect(screen.getByText('Moved 4 emails (about 1.5 MB) to Gmail Trash.')).toBeInTheDocument();
-    expect(screen.getByText(WS5_COPY['report.celebrate.delete.note'])).toBeInTheDocument();
-    expect(screen.queryByText(/Archived/)).toBeNull();
-    expect(screen.queryByText(/your storage doesn’t change/)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
-    expect(screen.queryByText(WS5_COPY['report.celebrate.undo'])).toBeNull();
-  });
-
-  it('replaces the previous done state', () => {
-    const { rerender } = render(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 10, senders: 2, verb: 'archive' }}
-      />,
-    );
-    expect(screen.getByText('Archived 10 emails from 2 senders.')).toBeInTheDocument();
-    rerender(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 4, senders: 1, verb: 'delete', bytes: 1_500_000 }}
-      />,
-    );
-    expect(screen.queryByText('Archived 10 emails from 2 senders.')).toBeNull();
-    expect(screen.getByText('Moved 4 emails (about 1.5 MB) to Gmail Trash.')).toBeInTheDocument();
-  });
-
-  it('turns the Undo sentence into a button when an Activity token exists', () => {
-    const onUndo = vi.fn();
-    render(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 10, senders: 2, verb: 'archive' }}
-        undoToken="undo-1"
-        onUndo={onUndo}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: WS5_COPY['report.celebrate.undo.button'] }));
-    expect(onUndo).toHaveBeenCalledOnce();
-    expect(screen.getByText(WS5_COPY['report.celebrate.undo'])).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Undo' })).toHaveAccessibleName('Undo');
-  });
-
-  it('titles a named one-sender fix without the sender name', () => {
-    render(
-      <InboxReportPanel
-        report={{ ...full, fix: { senderKeys: ['s1'], sendersCount: 1, inboxEmailCount: 4 } }}
-        senderNames={{ s1: { name: 'Acme' } }}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(
-      screen.getByRole('heading', { name: 'Unsubscribe from this sender?' }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('heading')).not.toHaveTextContent('Acme');
-    expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
-  });
-
-  it('uses the singular bulk title when a one-sender fix has no name', () => {
-    render(
-      <InboxReportPanel
-        report={{ ...full, fix: { senderKeys: ['s1'], sendersCount: 1, inboxEmailCount: 4 } }}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-      />,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(screen.getByRole('dialog')).toHaveTextContent('Unsubscribe from this sender?');
-    expect(screen.getByRole('dialog')).not.toHaveTextContent('1 senders');
-  });
-
-  it('states the unsubscribe requests and the emails still to send', () => {
-    const { rerender } = render(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 0, senders: 1, verb: 'unsub_only', requested: 1, manual: 1 }}
-      />,
-    );
-    expect(
-      screen.getByText('Unsubscribe requested from 1 sender · 1 needs you to send an email'),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Unsubscribe \+ archive/ })).toBeNull();
-    expect(screen.queryByText(/Undo restores/)).toBeNull();
-    rerender(
-      <InboxReportPanel
-        report={full}
-        onDismiss={() => {}}
-        onReopen={() => {}}
-        celebration={{ archived: 0, senders: 3, verb: 'unsub_only', requested: 2, manual: 3 }}
-      />,
-    );
-    expect(
-      screen.getByText('Unsubscribe requested from 2 senders · 3 need you to send an email'),
-    ).toBeInTheDocument();
-  });
-
-  it('marks the primary action and keeps the review link inside the report card', () => {
-    render(
-      <InboxReportPanel
-        report={full}
-        mailboxEmail="a@example.com"
-        onDismiss={() => {}}
-        onReopen={() => {}}
-      />,
-    );
-    const report = document.querySelector('.dm-report');
-    const fix = screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' });
-    const review = screen.getByRole('link', { name: 'Review them first' });
-    expect(report).not.toBeNull();
-    expect(fix).toHaveAttribute('data-report-fix');
-    expect(report).toContainElement(fix);
-    expect(report).toContainElement(review);
-    expect(review).toHaveAttribute('href', '/senders?fix=s1,s2');
-  });
-
-  it('collapses to the reopen strip', () => {
-    const onReopen = vi.fn();
-    render(<InboxReportPanel report={full} dismissed onDismiss={() => {}} onReopen={onReopen} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Reopen' }));
-    expect(onReopen).toHaveBeenCalledOnce();
-  });
 });
 
 describe('InboxReportCard', () => {
@@ -393,7 +217,7 @@ describe('InboxReportCard', () => {
     expect(card).toHaveAttribute('data-mailbox', 'mb');
     expect(card?.tagName).toBe('DIV');
     const action = screen.getByRole('link', { name: 'Open report' });
-    expect(action).toHaveAttribute('href', '/senders');
+    expect(action).toHaveAttribute('href', '/senders#inbox-report');
     expect(action).not.toHaveAttribute('data-dm-button');
     expect(action).toHaveClass('dm-home-report-cta', 'dm-external-link', 'dm-tap-target');
     expect(action).not.toHaveClass('dm-button-link');
@@ -419,6 +243,23 @@ describe('InboxReportCard', () => {
 });
 
 describe('Inbox Report action preview recovery', () => {
+  it('keeps the compact dismissed report entry wired to the existing reopen owner', () => {
+    const onReopen = vi.fn();
+    const view = render(
+      <InboxReportPanel report={full} compact dismissed onDismiss={() => {}} onReopen={onReopen} />,
+    );
+    const report = screen.getByRole('region', { name: 'Your Inbox Report' });
+    expect(report).toHaveAttribute('data-compact', 'true');
+    fireEvent.click(report.querySelector('button')!);
+    expect(onReopen).toHaveBeenCalledTimes(1);
+    view.rerender(
+      <InboxReportPanel report={full} compact onDismiss={() => {}} onReopen={onReopen} />,
+    );
+    expect(screen.getByRole('button', { name: 'Close Inbox Report' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Your Inbox Report' })).not.toHaveAttribute(
+      'data-compact',
+    );
+  });
   it('blocks a disappeared sender and offers a working route to review senders', async () => {
     const onFixConfirmed = vi.fn();
     installFetchStub([
@@ -440,8 +281,9 @@ describe('Inbox Report action preview recovery', () => {
         />
       </QueryWrapper>,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 1 sender' }));
-    expect(await screen.findByRole('link', { name: 'Review senders' })).toHaveAttribute(
+    fireEvent.click(screen.getByText('Details'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
+    expect((await screen.findAllByRole('link', { name: 'Review senders' })).at(-1)).toHaveAttribute(
       'href',
       '/senders',
     );
@@ -464,7 +306,8 @@ describe('Inbox Report action preview recovery', () => {
         onFixConfirmed={onFixConfirmed}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' }));
+    fireEvent.click(screen.getByText('Details'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview bulk cleanup' }));
     const confirm = screen.getByRole('button', { name: 'Unsubscribe + Archive' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);
@@ -479,6 +322,6 @@ describe('Inbox Report action preview recovery', () => {
         onFixConfirmed={onFixConfirmed}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Unsubscribe + archive 2 senders' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Preview bulk cleanup' })).toBeDisabled();
   });
 });

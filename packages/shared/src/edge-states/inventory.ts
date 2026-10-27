@@ -92,6 +92,7 @@ export type ScreenId =
   | 'sender-detail'
   | 'activity'
   | 'autopilot'
+  | 'autopilot-settings'
   | 'brief'
   | 'followups'
   | 'later'
@@ -100,6 +101,7 @@ export type ScreenId =
   | 'settings-privacy'
   | 'settings-help'
   | 'admin-security'
+  | 'admin-acquisition'
   | 'quiet'
   // Graduated from `RoutePlaceholder` stubs: billing in #219 (D119/
   // D120), screener in #220 (D71–D77).
@@ -111,20 +113,22 @@ export type ScreenId =
   | 'app-global-error';
 
 /**
- * Screen → route dir under `apps/web/src/app/(app)`, or `null` for
+ * Screen → route dir under `apps/web/src/app/(app)`, including query-selected
+ * views that share a route, or `null` for
  * surfaces that are not (app) routes (the App Router error
  * boundaries live at `apps/web/src/app/*`). The inventory test
  * enumerates `page.tsx` route dirs on disk and asserts exact parity
- * with the non-null values here — adding a route without an
+ * with the unique non-null route paths here — adding a route without an
  * inventory row (or keeping a row for a deleted route) fails CI.
  */
 export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   home: 'home',
-  triage: 'triage',
+  triage: 'senders?view=guided',
   senders: 'senders',
   'sender-detail': 'senders/[id]',
   activity: 'activity',
   autopilot: 'autopilot',
+  'autopilot-settings': 'autopilot/settings',
   brief: 'brief',
   followups: 'followups',
   'settings-senders': 'settings/senders',
@@ -132,9 +136,10 @@ export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   'settings-privacy': 'settings/privacy',
   'settings-help': 'settings/help',
   'admin-security': 'admin/security',
+  'admin-acquisition': 'admin/acquisition',
   billing: 'billing',
   quiet: 'quiet',
-  screener: 'screener',
+  screener: 'senders?view=first-review',
   later: 'later',
   'app-error-boundary': null,
   'app-not-found': null,
@@ -612,6 +617,43 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     placeholder: { required: false, status: 'n/a' },
   },
 
+  // Aggregate source answers share the existing admin-only 404 boundary.
+  'admin-acquisition': {
+    loading: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    'partial-error': {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
   // Billing (D119/D120 — #219). Graduated from a RoutePlaceholder
   // stub. Screen-level loading + full-screen error(+retry) branches
   // ship in `billing-screen.tsx` (no dedicated story exports — hence
@@ -667,9 +709,26 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     placeholder: { required: false, status: 'n/a' },
   },
 
-  // Quiet hours config (U18 — D92/D95). Per-mailbox cards, each with
-  // its own loading/error branch; `empty` = no connected mailboxes.
+  // The legacy route redirects before rendering a feature screen.
   quiet: {
+    loading: { required: false, status: 'n/a' },
+    empty: { required: false, status: 'n/a' },
+    error: { required: false, status: 'n/a' },
+    'partial-error': { required: false, status: 'n/a' },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: { required: false, status: 'n/a' },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Schedule config (U18 — D92/D95). Per-mailbox cards, each with
+  // its own loading/error branch; `empty` = no connected mailboxes.
+  'autopilot-settings': {
     loading: {
       required: true,
       storybook: 'apps/web/src/features/quiet/quiet-hours-card.stories.tsx',

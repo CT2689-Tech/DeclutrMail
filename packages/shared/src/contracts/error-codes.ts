@@ -278,7 +278,7 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message:
-      'A checkout for this account is already in progress — finish it there, or use "I didn\u2019t complete a payment" to release it.',
+      'A checkout for this account is unresolved. Resume it or check payment status in Plan & billing. Contact support@declutrmail.com if needed.',
   },
   /**
    * No subscription this route can act on. The message names no verb:
@@ -588,6 +588,73 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'This preview expired. Refresh to see current matches.',
   },
+  AUTOPILOT_RULE_CHANGED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This rule changed. Refresh it and review the current matches.',
+  },
+  AUTOPILOT_RULE_APPROVED_WORK_PENDING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'This rule has approved work waiting or running. Review the approved batch, then save your changes.',
+  },
+  AUTOPILOT_RULE_SAVE_BUSY: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'This rule is busy. Try saving again.',
+  },
+  AUTOPILOT_RULE_PAUSED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This rule is paused. Resume it before reviewing a cleanup.',
+  },
+  AUTOPILOT_PREVIEW_CHANGED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'These matches changed. Refresh the preview before confirming.',
+  },
+  AUTOPILOT_PREVIEW_EMPTY: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'No eligible emails remain in this preview. Refresh to check again.',
+  },
+  AUTOPILOT_RULE_LIMIT: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'You can save up to 50 rules. Retire a rule before creating another.',
+  },
+  AUTOPILOT_RULE_INACTIVE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This rule was paused or retired before the cleanup started.',
+  },
+  AUTOPILOT_RULE_INVALID: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This rule needs another review before a cleanup can start.',
+  },
+  AUTOPILOT_NOT_ENTITLED: {
+    status: 403,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Your current plan no longer includes Autopilot. No cleanup started.',
+  },
+  AUTOPILOT_MAILBOX_INACTIVE: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This mailbox disconnected before the cleanup started. Reconnect it to continue.',
+  },
   // Later (D82, D232)
   LATER_TIMER_NOT_FOUND: {
     status: 409,
@@ -795,6 +862,12 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: true,
     message: 'That service is temporarily unavailable. Try again in a moment.',
+  },
+  SIGNUP_ATTRIBUTION_REPORT_UNAVAILABLE: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Source answers are unavailable. Try again.',
   },
   // lifecycle limits
   GONE: {

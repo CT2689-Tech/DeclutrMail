@@ -1,0 +1,19 @@
+-- Refuse rollback after any new choice is saved: do not discard or relabel answers.
+BEGIN;
+SET LOCAL lock_timeout = '3s';
+LOCK TABLE users, subscriptions IN ACCESS EXCLUSIVE MODE;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM users WHERE signup_attribution_heard_from IN ('google', 'ai_assistant', 'youtube', 'instagram', 'tiktok'))
+     OR EXISTS (SELECT 1 FROM subscriptions WHERE signup_attribution_heard_from IN ('google', 'ai_assistant', 'youtube', 'instagram', 'tiktok')) THEN
+    RAISE EXCEPTION 'Retained new source answers require a reviewed forward recovery';
+  END IF;
+END $$;
+ALTER TABLE users
+  DROP CONSTRAINT users_signup_attribution_heard_from_chk,
+  ADD CONSTRAINT users_signup_attribution_heard_from_chk
+    CHECK (signup_attribution_heard_from IS NULL OR signup_attribution_heard_from IN ('hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin', 'friend', 'other', 'skipped'));
+ALTER TABLE subscriptions
+  DROP CONSTRAINT subscriptions_signup_attribution_heard_from_chk,
+  ADD CONSTRAINT subscriptions_signup_attribution_heard_from_chk
+    CHECK (signup_attribution_heard_from IS NULL OR signup_attribution_heard_from IN ('hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin', 'friend', 'other', 'skipped'));
+COMMIT;

@@ -57,18 +57,27 @@ test('malformed cost data cannot turn into a free day', () => {
 
 test('Vercel charges preserve USD and reject missing amount/currency instead of reporting zero', async () => {
   const original = globalThis.fetch;
+  const originalTeam = process.env.VERCEL_TEAM_ID;
+  process.env.VERCEL_TEAM_ID = 'team_fixture';
+  let charges =
+    '{"BilledCost":"1.25","BillingCurrency":"USD"}\n{"BilledCost":"-0.25","BillingCurrency":"USD"}';
+  globalThis.fetch = async (input) => {
+    const path = new URL(input).pathname;
+    if (path === '/v1/budgets') return Response.json({ data: [] });
+    if (path === '/teams/team_fixture/spend') return Response.json({ data: { currentSpend: 0 } });
+    assert.equal(path, '/v1/billing/charges');
+    return new Response(charges);
+  };
   try {
-    globalThis.fetch = async () =>
-      new Response(
-        '{"BilledCost":"1.25","BillingCurrency":"USD"}\n{"BilledCost":"-0.25","BillingCurrency":"USD"}',
-      );
     assert.equal((await checkVercel()).costMtdUsd, 1);
-    globalThis.fetch = async () => new Response('{"BilledCost":null,"BillingCurrency":"USD"}');
+    charges = '{"BilledCost":null,"BillingCurrency":"USD"}';
     await assert.rejects(checkVercel, /Missing/);
-    globalThis.fetch = async () => new Response('{"BilledCost":"1.25","BillingCurrency":"EUR"}');
+    charges = '{"BilledCost":"1.25","BillingCurrency":"EUR"}';
     await assert.rejects(checkVercel, /currency/);
   } finally {
     globalThis.fetch = original;
+    if (originalTeam === undefined) delete process.env.VERCEL_TEAM_ID;
+    else process.env.VERCEL_TEAM_ID = originalTeam;
   }
 });
 

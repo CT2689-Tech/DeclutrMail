@@ -7,6 +7,7 @@
 // Variants: full, fallback, empty, sync-failed, no-F2, loading, error.
 
 import { HomeView } from './home-view';
+import { overviewFixture, reportFixture } from './home-view.fixture';
 
 type StoryMeta<C extends (...args: never) => unknown> = {
   title: string;
@@ -51,14 +52,48 @@ const summary = {
 };
 
 const steps = [
-  { kind: 'unsub_archive' as const, senderCount: 158, emailCount: 2400, senderIds: ['a'] },
+  {
+    kind: 'unsub_archive' as const,
+    senderCount: 3,
+    emailCount: 2400,
+    senderIds: ['a', 'b', 'c'],
+    senders: [
+      {
+        inboxCount: 900,
+        readRate: 0.02,
+        id: 'a',
+        name: 'Fresh Finds Weekly',
+        domain: 'freshfinds.synthetic.test',
+      },
+      {
+        inboxCount: 800,
+        readRate: 0.02,
+        id: 'b',
+        name: 'Meadow Lane Dispatch',
+        domain: 'meadow.synthetic.test',
+      },
+      {
+        inboxCount: 700,
+        readRate: 0.02,
+        id: 'c',
+        name: 'North Letter',
+        domain: 'north.synthetic.test',
+      },
+    ],
+  },
   { kind: 'largest' as const, senderCount: 10, sizeLabel: '2.1 GB', senderIds: ['b'] },
   { kind: 'later_due' as const, senderCount: 3, senderIds: ['c'] },
 ];
 
+/** Overview sections remain visible across desktop and phone widths. */
 export const Full: Story<typeof HomeView> = {
   args: {
     state: ready,
+    overview: overviewFixture,
+    report: reportFixture,
+    newSenders: { status: 'ready', data: 12 },
+    later: { status: 'ready', data: { due: 3, troubled: 0, nextAt: null } },
+    tier: 'pro',
     summary,
     nextSteps: steps,
     senderSizeView: true,
@@ -69,6 +104,11 @@ export const Full: Story<typeof HomeView> = {
 export const NoSizeView: Story<typeof HomeView> = {
   args: {
     state: ready,
+    overview: overviewFixture,
+    report: reportFixture,
+    newSenders: { status: 'ready', data: 12 },
+    later: { status: 'ready', data: { due: 3, troubled: 0, nextAt: null } },
+    tier: 'pro',
     summary,
     nextSteps: steps,
     senderSizeView: false,
@@ -99,7 +139,36 @@ export const FirstCleanup: Story<typeof HomeView> = {
 export const UnknownImpact: Story<typeof HomeView> = {
   args: {
     state: ready,
-    nextSteps: [{ kind: 'unsub_archive', senderCount: 5, senderIds: ['a'] }],
+    nextSteps: [
+      {
+        kind: 'unsub_archive',
+        senderCount: 5,
+        senderIds: ['a', 'b', 'c'],
+        senders: [
+          {
+            inboxCount: 900,
+            readRate: 0.02,
+            id: 'a',
+            name: 'Fresh Finds Weekly',
+            domain: 'freshfinds.synthetic.test',
+          },
+          {
+            inboxCount: 800,
+            readRate: 0.02,
+            id: 'b',
+            name: 'Meadow Lane Dispatch',
+            domain: 'meadow.synthetic.test',
+          },
+          {
+            inboxCount: 700,
+            readRate: 0.02,
+            id: 'c',
+            name: 'North Letter',
+            domain: 'north.synthetic.test',
+          },
+        ],
+      },
+    ],
   },
 };
 
@@ -125,4 +194,72 @@ export const Loading: Story<typeof HomeView> = {
 
 export const LoadError: Story<typeof HomeView> = {
   args: { state: { kind: 'error', error: new Error('offline'), retry: () => {} } },
+};
+
+export const LaterOnly: Story<typeof HomeView> = { args: { state: ready, nextSteps: [steps[2]!] } };
+
+export const Returning: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    nextSteps: steps,
+    statusLine: 'Gmail connected · Last scanned 5m ago',
+    visitSummary: <p>Since your last visit: 24 new emails scanned · 3 new senders</p>,
+    priority: {
+      title: '3 new senders need review.',
+      action: { label: 'Review new senders', href: '/senders?view=first-review' },
+    },
+  },
+};
+
+export const CleanupRunning: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    nextSteps: steps,
+    statusLine: 'Gmail connected · Last scanned just now',
+    priority: {
+      title: 'Your cleanup is in progress.',
+      action: { label: 'Open Activity', href: '/activity' },
+    },
+  },
+};
+
+export const NoSuggestions: Story<typeof HomeView> = {
+  args: { state: ready, statusLine: 'Gmail connected · Last scanned 5m ago', noSuggestions: true },
+};
+
+export const ReconnectWhileReady: Story<typeof HomeView> = {
+  args: {
+    state: ready,
+    nextSteps: steps,
+    statusLine: 'Gmail needs reconnect',
+    priority: {
+      title: 'Reconnect Gmail to continue.',
+      action: { label: 'Open Settings', href: '/settings#mailboxes' },
+    },
+  },
+};
+
+/** Exercises wrapping without changing the source or meaning of any metric. */
+export const LongSenderNames: Story<typeof HomeView> = {
+  args: {
+    ...Full.args,
+    mailboxEmail: 'alex.with.a.long.account.name@synthetic.test',
+    nextSteps: [
+      {
+        kind: 'unsub_archive',
+        senderCount: 1,
+        emailCount: 2400,
+        senderIds: ['a'],
+        senders: [
+          {
+            id: 'a',
+            name: 'The exceptionally long weekly product and community newsletter',
+            domain: 'newsletter.synthetic.test',
+            inboxCount: 2400,
+            readRate: 0.02,
+          },
+        ],
+      },
+    ],
+  },
 };

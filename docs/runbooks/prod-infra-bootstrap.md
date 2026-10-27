@@ -410,13 +410,10 @@ EXPOSE 8080
 CMD ["node", "apps/api/dist/main.js"]
 ```
 
-`apps/api/Dockerfile.worker`:
-
-```dockerfile
-# Same base; CMD swaps to worker.ts entrypoint
-FROM declutrmail-api-base:latest
-CMD ["node", "apps/api/dist/worker.js"]
-```
+The worker has no Dockerfile of its own. `deploy-cloud-run.yml` builds the
+single `apps/api/Dockerfile` image and deploys it twice: the API with the
+image `CMD`, and `declutrmail-worker` with `--command="node"
+--args="src/worker.ts"` overriding the entrypoint.
 
 (Adjust paths if your build output differs — verify locally first with
 `pnpm --filter @declutrmail/api build && ls apps/api/dist/`.)

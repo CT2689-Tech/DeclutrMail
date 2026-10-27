@@ -1,0 +1,1107 @@
+openapi: 3.1.0
+info:
+  title: DeclutrMail reviewed Autopilot sender rules
+  version: 1.0.0
+  description: >-
+    Contract for the seven sender-list rule operations. Preset rules and their display-only previews
+    remain separate; see [the preset preview contract](autopilot-preview-contract.md). This document
+    does not redefine /api/autopilot/rules or its preview paging routes.
+
+
+    All operations require a valid dm_access session cookie, an owned active Gmail mailbox, and the
+    autopilot capability. Do not infer entitlement from a named plan; the capability manifest is
+    authoritative. Send optional X-Active-Mailbox-Id to select an owned mailbox. Otherwise the saved
+    active-mailbox preference or first active mailbox is used.
+
+
+    All POST and PATCH operations, including preview, also require the dm_csrf cookie and matching
+    X-CSRF-Token header. GET operations do not require CSRF. The triage-load rate-limit bucket is
+    shared with other routes using that bucket.
+
+
+    Rules are account-scoped, explicit sender lists: at most 50 non-retired rules per mailbox and
+    100 senders per rule. New rules are enabled in observe mode. Only observe and paused are
+    exposed; every cleanup requires its own preview and explicit approval. No Active promotion or
+    unattended custom-rule execution is provided.
+
+
+    Reads and previews use the stored metadata mirror, without Gmail or LLM calls. Protected
+    senders, outbound messages, and TRASH/SPAM/DRAFT/CHAT labels are excluded from cleanup. Archive
+    is inbox-only; Delete may also reach archived inbound mail. Names, addresses and counts are
+    metadata; message bodies are not part of this contract.
+
+
+    Every success is {data: ...}, with no meta field from these handlers. Search carries nextCursor
+    inside data. Errors are {error: ...} and contain no data. POST handlers retain NestJS default
+    HTTP 201, including preview and asynchronous execute; PATCH and GET return 200.
+servers:
+  - url: /
+tags:
+  - name: Reviewed sender rules
+security:
+  - SessionCookie: []
+x-source-of-truth:
+  - packages/shared/src/contracts/autopilot-sender-rules.ts
+  - packages/shared/src/contracts/envelope.ts
+  - packages/shared/src/contracts/paginate.ts
+  - packages/shared/src/contracts/error-envelope.ts
+  - packages/shared/src/contracts/error-codes.ts
+  - apps/api/src/autopilot/sender-rules.controller.ts
+  - apps/api/src/autopilot/sender-rules.service.ts
+  - apps/api/src/actions/actions.service.ts
+  - apps/api/src/auth/jwt.guard.ts
+  - apps/api/src/auth/csrf.guard.ts
+  - apps/api/src/mailboxes/current-mailbox.guard.ts
+  - apps/api/src/common/all-exceptions.filter.ts
+paths:
+  /api/autopilot/sender-rules:
+    parameters:
+      - $ref: '#/components/parameters/ActiveMailbox'
+    get:
+      operationId: listAutopilotSenderRules
+      tags:
+        - Reviewed sender rules
+      summary: List the reviewed sender-rule library
+      description:
+        Returns at most 50 non-retired sender-list rules for the active mailbox, ordered by
+        creation time then ID. Presets are excluded. This bounded library has no cursor or
+        total-count metadata. Scope/age counts are freshly checked against mirror metadata; matching
+        counts exclude Protected senders. Selected sender metadata may include Protected senders.
+      x-required-capability: autopilot
+      x-rate-limit-bucket: triage-load
+      responses:
+        '200':
+          description: The bounded rule library and fresh scoped counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/CapabilityOrCapacityRequired'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-conflict-codes: &a2
+        - MAILBOX_NOT_OWNED
+        - NO_ACTIVE_MAILBOX
+    post:
+      operationId: createAutopilotSenderRule
+      tags:
+        - Reviewed sender rules
+      summary: Save an approval-first sender rule
+      description: >-
+        The request contains the complete definition. Sender hashes must exist in the active
+        mailbox. The server trims name, saves enabled=true and mode=observe, and returns version=1
+        for a new rule. Saving never queues a cleanup.
+
+
+        Idempotency-Key creates a durable mailbox-scoped rule identity. A valid retry with the same
+        key returns the existing non-retired authoritative rule, even if the submitted draft
+        differs; compare the returned definition before claiming a revised draft was saved. Counts
+        and checkedAt are fresh, not a cached byte-for-byte response. Normal body and known-sender
+        validation still apply. A key belonging to a retired rule returns IDEMPOTENCY_KEY_CONFLICT
+        and cannot resurrect it. Use a fresh key for a genuinely new rule.
+      x-required-capability: autopilot
+      x-rate-limit-bucket: triage-load
+      security: &a1
+        - SessionCookie: []
+          CsrfCookie: []
+          CsrfHeader: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRule'
+      responses:
+        '201':
+          description: The new or replayed saved rule.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/CapabilityOrCapacityRequired'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-conflict-codes:
+        - MAILBOX_NOT_OWNED
+        - NO_ACTIVE_MAILBOX
+        - AUTOPILOT_RULE_LIMIT
+        - IDEMPOTENCY_KEY_CONFLICT
+  /api/autopilot/sender-rules/{id}:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+      - $ref: '#/components/parameters/ActiveMailbox'
+    patch:
+      operationId: patchAutopilotSenderRule
+      tags:
+        - Reviewed sender rules
+      summary: Edit or pause/resume a sender rule
+      description: >-
+        Accepts either the complete editable definition plus current version and optional mode, or
+        exactly {version, mode}. Other partial-definition shapes, enabled, unknown fields and Active
+        mode are rejected. Sender hashes must remain known to the active mailbox.
+
+
+        This is optimistic compare-and-swap, not Idempotency-Key replay: a successful write
+        increments version, including a mode-only write, and invalidates unaccepted previews. A
+        repeat with the old version returns AUTOPILOT_RULE_CHANGED; refetch before retrying.
+        Unknown, cross-mailbox, preset and retired rule IDs return 404. Pause/resume saves rule
+        state without executing mail changes.
+      x-required-capability: autopilot
+      x-rate-limit-bucket: triage-load
+      security: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchRule'
+      responses:
+        '200':
+          description: The current saved definition with incremented version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/CapabilityOrCapacityRequired'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-conflict-codes:
+        - MAILBOX_NOT_OWNED
+        - NO_ACTIVE_MAILBOX
+        - AUTOPILOT_RULE_CHANGED
+  /api/autopilot/sender-rules/{id}/retire:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+      - $ref: '#/components/parameters/ActiveMailbox'
+    post:
+      operationId: retireAutopilotSenderRule
+      tags:
+        - Reviewed sender rules
+      summary: Retire a sender rule
+      description: >-
+        Requires the current version. The server disables and pauses the rule, records retirement,
+        and increments version. The rule disappears from this library; Activity attribution may
+        still resolve its retained identity. No mail is changed.
+
+
+        Retirement uses compare-and-swap, not replay: a concurrent edit returns
+        AUTOPILOT_RULE_CHANGED, and retrying an already retired ID returns 404. Refetch the library
+        after a lost response. Previously accepted batches keep their durable handles; an original
+        job that has not begun provider work rechecks rule state before starting.
+      x-required-capability: autopilot
+      x-rate-limit-bucket: triage-load
+      security: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetireRule'
+      responses:
+        '201':
+          description: The retirement acknowledgment and incremented version.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetireEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/CapabilityOrCapacityRequired'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-conflict-codes:
+        - MAILBOX_NOT_OWNED
+        - NO_ACTIVE_MAILBOX
+        - AUTOPILOT_RULE_CHANGED
+  /api/autopilot/senders:
+    parameters:
+      - $ref: '#/components/parameters/ActiveMailbox'
+    get:
+      operationId: searchAutopilotRuleSenders
+      tags:
+        - Reviewed sender rules
+      summary: Search known senders in the active mailbox
+      description: >-
+        Case-insensitive literal substring search over saved sender name and email. Whitespace is
+        trimmed; % and _ are treated literally. Empty q browses known senders. Protected status is
+        returned for selection context.
+
+
+        The fixed page size is 25, ordered by sender hash with an opaque keyset cursor. Pass
+        data.nextCursor back unchanged with the same q and mailbox; null means the end. There is no
+        page number, offset, configurable limit, total count, or meta.pagination block.
+      x-required-capability: autopilot
+      x-rate-limit-bucket: triage-load
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Name/email substring; at most 100 characters before trimming.
+          schema:
+            type: string
+            maxLength: 100
+            default: ''
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque data.nextCursor from the preceding page; do not construct or decode it.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 512
+            pattern: ^[A-Za-z0-9_-]+$
+      responses:
+        '200':
+          description: At most 25 known senders and the next cursor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SenderSearchEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/CapabilityOrCapacityRequired'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-conflict-codes: *a2
+  /api/autopilot/sender-rules/{id}/preview:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+      - $ref: '#/components/parameters/ActiveMailbox'
+    post:
+      operationId: previewAutopilotSenderRule
+      tags:
+        - Reviewed sender rules
+      summary: Freeze a bounded approval preview
+      description: >-
+        Requires the saved version. Optional action, reach and olderThanDays override this batch
+        only; omitted fields inherit the saved definition, while olderThanDays=null explicitly
+        removes the age filter. Archive with an effective all_mail reach is invalid. Excluded sender
+        hashes must belong to the saved rule; the server deduplicates exclusions. A paused rule can
+        be previewed, but a new approval requires observe mode.
+
+
+        The server freezes at most 5,000 eligible provider IDs grouped across at most 100 senders,
+        scoped to mailbox, rule, version, action, reach and age. The response exposes sender
+        metadata and counts, never the frozen provider IDs. messageCount is the frozen batch;
+        totalEligibleCount and hasMore disclose remaining eligible mail beyond the cap. Protected
+        senders are excluded and counted separately. No Gmail mutation or action job is produced.
+
+
+        The snapshot expires after 300 seconds and is subject to bounded preview-cache eviction.
+        Preview ID is the approval token for these sender-rule routes. This differs from the preset
+        preview display cache documented separately. Cache outages fail closed; requesting a fresh
+        preview does not widen an already accepted batch.
+      x-required-capability: autopilot
+      x-rate-limit-bucket: triage-load
+      security: *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PreviewRequest'
+      responses:
+        '201':
+          description: The immutable approval scope and expiry.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PreviewEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/CapabilityOrCapacityRequired'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      x-conflict-codes:
+        - MAILBOX_NOT_OWNED
+        - NO_ACTIVE_MAILBOX
+        - AUTOPILOT_RULE_CHANGED
+  /api/autopilot/sender-rules/{id}/execute:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+      - $ref: '#/components/parameters/ActiveMailbox'
+    post:
+      operationId: executeAutopilotSenderRule
+      tags:
+        - Reviewed sender rules
+      summary: Approve exactly a frozen sender-rule batch
+      description: >-
+        Accepts only previewId; clients cannot supply provider IDs, sender IDs, a replacement
+        verb/scope, or Protected overrides. Requires Idempotency-Key, but preview identity is the
+        authoritative deduplication key: different header values for the same accepted preview still
+        return the same batch/action IDs. A genuinely different preview is a different approval.
+
+
+        Before first acceptance, the cache must be available and unexpired, the owned rule must be
+        enabled in observe with the same version, and sender ownership, protection, frozen message
+        eligibility, in-flight conflicts and cleanup capacity are rechecked. Changed scope returns a
+        conflict rather than silently reducing the approved requested count. New arrivals are never
+        added. A missing snapshot for a live rule returns AUTOPILOT_PREVIEW_EXPIRED; an
+        unknown/retired rule with no accepted batch returns 404.
+
+
+        Once accepted, current-mailbox durable original action rows are checked before the
+        cache/live rule. Replay can therefore recover the same batch/action IDs after cache expiry,
+        rule edits or retirement without inserting new work; authentication, capability and
+        active-mailbox guards still apply. Existing queued identities may be republished safely.
+        requestedCount describes the original accepted scope; enqueueFailedCount is the currently
+        observed count of original rows failed specifically at queue publication.
+
+
+        HTTP 201 acknowledges durable asynchronous work, not Gmail completion. Every sender gets an
+        existing label-action job grouped by batchId. All queue publishes are attempted; partial or
+        complete publication failure still returns the real action handles and nonzero
+        enqueueFailedCount. Poll /api/actions/batch/{batchId} and use the existing Activity
+        review/Undo flow. Quiet defers provider work. Before original execution starts the worker
+        rechecks rule/version, entitlement, mailbox and protection; later protection may stop or
+        skip work truthfully. In-flight retries finish their frozen IDs; a new reviewed recovery is
+        a separate existing workflow. This response is never proof of a completed cleanup.
+      x-required-capability: autopilot
+      x-rate-limit-bucket: triage-load
+      security: *a1
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteRequest'
+      responses:
+        '201':
+          description: The accepted or durably replayed action batch, including publication failure counts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecuteEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/CapabilityOrCapacityRequired'
+        '403':
+          $ref: '#/components/responses/CsrfRejected'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          $ref: '#/components/responses/PreviewExpired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+      x-conflict-codes:
+        - MAILBOX_NOT_OWNED
+        - NO_ACTIVE_MAILBOX
+        - AUTOPILOT_RULE_CHANGED
+        - AUTOPILOT_RULE_PAUSED
+        - AUTOPILOT_PREVIEW_CHANGED
+        - AUTOPILOT_PREVIEW_EMPTY
+        - SENDER_ACTION_IN_PROGRESS
+      x-asynchronous-outcome-codes:
+        - AUTOPILOT_RULE_CHANGED
+        - AUTOPILOT_RULE_INACTIVE
+        - AUTOPILOT_RULE_INVALID
+        - AUTOPILOT_NOT_ENTITLED
+        - AUTOPILOT_MAILBOX_INACTIVE
+        - ENQUEUE_FAILED
+        - LABEL_SENDER_PROTECTED
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: dm_access
+      description:
+        Access JWT in the session cookie; signature, expiry and active-session revocation are
+        checked.
+    CsrfCookie:
+      type: apiKey
+      in: cookie
+      name: dm_csrf
+      description: Readable double-submit token. Mutating requests require the matching X-CSRF-Token value.
+    CsrfHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: Must equal the dm_csrf cookie on every POST/PATCH, including preview.
+  parameters:
+    ActiveMailbox:
+      name: X-Active-Mailbox-Id
+      in: header
+      required: false
+      description:
+        Optional owned active-mailbox override. Otherwise use saved preference or the first
+        active mailbox. No mailbox ID is accepted in JSON request bodies.
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    RuleId:
+      name: id
+      in: path
+      required: true
+      description:
+        Owned non-preset sender-list rule ID. An accepted execute replay may still resolve
+        after this rule is retired.
+      schema:
+        $ref: '#/components/schemas/Uuid'
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description:
+        Stable per Save or approval click; retain for network retries. Create binds it to a
+        mailbox-scoped rule; Execute deduplicates by preview identity instead.
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 200
+        pattern: ^[A-Za-z0-9_-]+$
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+    SenderKey:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+      description: Known sender SHA-256 key, never a client-supplied provider message ID.
+    SenderKeys:
+      type: array
+      items:
+        $ref: '#/components/schemas/SenderKey'
+      maxItems: 100
+      minItems: 1
+      uniqueItems: true
+    RuleNameInput:
+      type: string
+      pattern: ^\s*\S(?:[\s\S]{0,78}\S)?\s*$
+      description:
+        The server trims surrounding whitespace, then requires 1-80 characters. The pattern
+        permits padding accepted by the shared Zod trim transform.
+      x-normalization: trim
+    Action:
+      type: string
+      enum:
+        - archive
+        - delete
+    Reach:
+      type: string
+      enum:
+        - inbox_only
+        - all_mail
+      description: all_mail is valid only with Delete; it includes eligible archived inbound mail.
+    Age:
+      type:
+        - integer
+        - 'null'
+      enum:
+        - null
+        - 30
+        - 90
+        - 180
+      description: Gmail internal date must be at least this many days old; null means no age restriction.
+    Mode:
+      type: string
+      enum:
+        - observe
+        - paused
+    Version:
+      type: integer
+      minimum: 1
+    ArchiveReachInvariant:
+      if:
+        properties:
+          action:
+            const: archive
+        required:
+          - action
+      then:
+        properties:
+          reach:
+            const: inbox_only
+    CreateRule:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - senderKeys
+        - action
+        - reach
+        - olderThanDays
+      properties:
+        name: &a3
+          $ref: '#/components/schemas/RuleNameInput'
+        senderKeys: &a4
+          $ref: '#/components/schemas/SenderKeys'
+        action: &a5
+          $ref: '#/components/schemas/Action'
+        reach: &a6
+          $ref: '#/components/schemas/Reach'
+        olderThanDays: &a7
+          $ref: '#/components/schemas/Age'
+      allOf:
+        - $ref: '#/components/schemas/ArchiveReachInvariant'
+    UpdateRule:
+      type: object
+      additionalProperties: false
+      required:
+        - name
+        - senderKeys
+        - action
+        - reach
+        - olderThanDays
+        - version
+      properties:
+        name: *a3
+        senderKeys: *a4
+        action: *a5
+        reach: *a6
+        olderThanDays: *a7
+        version:
+          $ref: '#/components/schemas/Version'
+        mode:
+          $ref: '#/components/schemas/Mode'
+      allOf:
+        - $ref: '#/components/schemas/ArchiveReachInvariant'
+    RuleModeChange:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+        - mode
+      properties:
+        version:
+          $ref: '#/components/schemas/Version'
+        mode:
+          $ref: '#/components/schemas/Mode'
+    PatchRule:
+      oneOf:
+        - $ref: '#/components/schemas/UpdateRule'
+        - $ref: '#/components/schemas/RuleModeChange'
+    RetireRule:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+      properties:
+        version:
+          $ref: '#/components/schemas/Version'
+    PreviewRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - version
+      properties:
+        version:
+          $ref: '#/components/schemas/Version'
+        action:
+          $ref: '#/components/schemas/Action'
+        reach:
+          $ref: '#/components/schemas/Reach'
+        olderThanDays:
+          $ref: '#/components/schemas/Age'
+        excludedSenderKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/SenderKey'
+          maxItems: 100
+      description:
+        Override fields are optional; the effective definition is validated after inheriting
+        omitted fields from the saved rule. Exclusions must be members of its sender list.
+    ExecuteRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - previewId
+      properties:
+        previewId:
+          $ref: '#/components/schemas/Uuid'
+    RuleSender:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - senderKey
+        - name
+        - email
+        - protected
+      properties:
+        id: &a8
+          $ref: '#/components/schemas/Uuid'
+        senderKey: &a9
+          $ref: '#/components/schemas/SenderKey'
+        name: &a10
+          type:
+            - string
+            - 'null'
+        email: &a11
+          type:
+            - string
+            - 'null'
+        protected: &a12
+          type: boolean
+    SenderRule:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - version
+        - enabled
+        - mode
+        - action
+        - reach
+        - olderThanDays
+        - senderKeys
+        - senders
+        - matchingMessageCount
+        - matchingSenderCount
+        - protectedSenderCount
+        - checkedAt
+        - updatedAt
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        version:
+          $ref: '#/components/schemas/Version'
+        enabled:
+          type: boolean
+        mode:
+          $ref: '#/components/schemas/Mode'
+        action:
+          $ref: '#/components/schemas/Action'
+        reach:
+          $ref: '#/components/schemas/Reach'
+        olderThanDays:
+          $ref: '#/components/schemas/Age'
+        senderKeys:
+          $ref: '#/components/schemas/SenderKeys'
+        senders:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleSender'
+          maxItems: 100
+        matchingMessageCount:
+          type: integer
+          minimum: 0
+        matchingSenderCount:
+          type: integer
+          minimum: 0
+          maximum: 100
+        protectedSenderCount:
+          type: integer
+          minimum: 0
+          maximum: 100
+        checkedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      allOf:
+        - $ref: '#/components/schemas/ArchiveReachInvariant'
+    SenderSearchPage:
+      type: object
+      additionalProperties: false
+      required:
+        - senders
+        - nextCursor
+      properties:
+        senders:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleSender'
+          maxItems: 25
+        nextCursor:
+          type:
+            - string
+            - 'null'
+          description: Opaque continuation in data; null when no next page exists.
+    PreviewSender:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - senderKey
+        - name
+        - email
+        - protected
+        - messageCount
+      properties:
+        id: *a8
+        senderKey: *a9
+        name: *a10
+        email: *a11
+        protected: *a12
+        messageCount:
+          type: integer
+          minimum: 1
+          maximum: 5000
+    SenderRulePreview:
+      type: object
+      additionalProperties: false
+      required:
+        - previewId
+        - ruleId
+        - version
+        - expiresAt
+        - checkedAt
+        - action
+        - reach
+        - olderThanDays
+        - messageCount
+        - totalEligibleCount
+        - hasMore
+        - protectedSenderCount
+        - senders
+        - excludedSenderKeys
+      properties:
+        previewId:
+          $ref: '#/components/schemas/Uuid'
+        ruleId:
+          $ref: '#/components/schemas/Uuid'
+        version:
+          $ref: '#/components/schemas/Version'
+        expiresAt:
+          type: string
+          format: date-time
+        checkedAt:
+          type: string
+          format: date-time
+        action:
+          $ref: '#/components/schemas/Action'
+        reach:
+          $ref: '#/components/schemas/Reach'
+        olderThanDays:
+          $ref: '#/components/schemas/Age'
+        messageCount:
+          type: integer
+          minimum: 0
+          maximum: 5000
+        totalEligibleCount:
+          type: integer
+          minimum: 0
+        hasMore:
+          type: boolean
+        protectedSenderCount:
+          type: integer
+          minimum: 0
+          maximum: 100
+        senders:
+          type: array
+          items:
+            $ref: '#/components/schemas/PreviewSender'
+          maxItems: 100
+        excludedSenderKeys:
+          type: array
+          items:
+            $ref: '#/components/schemas/SenderKey'
+          maxItems: 100
+          uniqueItems: true
+      allOf:
+        - $ref: '#/components/schemas/ArchiveReachInvariant'
+    RetireResult:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - version
+        - retired
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        version:
+          $ref: '#/components/schemas/Version'
+        retired:
+          const: true
+    ExecuteResult:
+      type: object
+      additionalProperties: false
+      required:
+        - previewId
+        - batchId
+        - actionIds
+        - requestedCount
+        - enqueueFailedCount
+      properties:
+        previewId:
+          $ref: '#/components/schemas/Uuid'
+        batchId:
+          $ref: '#/components/schemas/Uuid'
+        actionIds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Uuid'
+          maxItems: 100
+          minItems: 1
+          uniqueItems: true
+        requestedCount:
+          type: integer
+          minimum: 1
+          maximum: 5000
+        enqueueFailedCount:
+          type: integer
+          minimum: 0
+          maximum: 100
+    RuleListEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SenderRule'
+          maxItems: 50
+      description: The ok(data) envelope. These operations omit meta; search continuation is data.nextCursor.
+    RuleEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/SenderRule'
+      description: The ok(data) envelope. These operations omit meta; search continuation is data.nextCursor.
+    SenderSearchEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/SenderSearchPage'
+      description: The ok(data) envelope. These operations omit meta; search continuation is data.nextCursor.
+    PreviewEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/SenderRulePreview'
+      description: The ok(data) envelope. These operations omit meta; search continuation is data.nextCursor.
+    RetireEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/RetireResult'
+      description: The ok(data) envelope. These operations omit meta; search continuation is data.nextCursor.
+    ExecuteEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/ExecuteResult'
+      description: The ok(data) envelope. These operations omit meta; search continuation is data.nextCursor.
+    ApiError:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlationId
+        - traceId
+        - displayId
+        - retryable
+        - severityTier
+      properties:
+        code:
+          type: string
+          description: Registered domain code or status-derived generic code; not a raw provider exception.
+        message:
+          type: string
+        correlationId:
+          type: string
+        traceId:
+          type:
+            - string
+            - 'null'
+        displayId:
+          type: string
+        retryable:
+          type: boolean
+        severityTier:
+          type: string
+          enum:
+            - silent_transient
+            - inline_recoverable
+            - critical_trust
+        details:
+          type: object
+          additionalProperties:
+            type:
+              - string
+              - number
+              - boolean
+              - 'null'
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/ApiError'
+  responses:
+    BadRequest:
+      description:
+        'BAD_REQUEST: malformed/unknown JSON fields, invalid UUID, name/sender/age/action/reach
+        values, query/cursor, or missing/invalid Idempotency-Key. Preview exclusions must belong to
+        the rule; effective Archive reach must be inbox_only.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unauthenticated:
+      description: 'UNAUTHORIZED: missing, expired, invalid or revoked dm_access session.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    CapabilityOrCapacityRequired:
+      description: PRO_FEATURE_REQUIRED when the workspace lacks autopilot. A first acceptance also
+        enforces cleanup capacity and may return FREE_CAP_REACHED if the entitlement configuration
+        imposes a cap.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    CsrfRejected:
+      description: 'FORBIDDEN: dm_csrf and X-CSRF-Token are missing or do not match.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: 'NOT_FOUND: no accessible current sender rule (unknown, cross-mailbox, preset or
+        retired). An already accepted execute replay is resolved from owned durable action rows
+        first.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: MAILBOX_NOT_OWNED / NO_ACTIVE_MAILBOX for active-mailbox selection, or the
+        operation-specific domain conflict listed under x-conflict-codes. Refetch or refresh the
+        preview as indicated; CAS writes are not blindly replayed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    PreviewExpired:
+      description:
+        'AUTOPILOT_PREVIEW_EXPIRED: an unaccepted snapshot is expired, evicted, missing or
+        outside this mailbox/rule. Create and review a new preview. Already accepted batches use
+        durable replay first.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    RateLimited:
+      description: 'RATE_LIMITED: shared triage-load bucket exceeded. Honor Retry-After.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+      headers:
+        Retry-After:
+          description: Seconds before retrying.
+          schema:
+            type: integer
+            minimum: 1
+    InternalError:
+      description:
+        'INTERNAL_ERROR: unexpected server failure. The message is safe to display; retain
+        correlationId/displayId for support.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Unavailable:
+      description:
+        QUEUE_UNAVAILABLE for first acceptance without the action queue, or INTERNAL_ERROR for
+        unavailable preview-cache infrastructure. No process-local fallback is used during Redis
+        failures. Already persisted publication failures are reported with accepted handles in the
+        success result instead.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'

@@ -2402,6 +2402,86 @@ describe('ActionsService', () => {
       return { batchId: res.batchId, sender2Id };
     }
 
+    it('rediscovers day-old custom approvals and reports only confirmed whole-batch Schedule waits', async () => {
+      const due = Date.now() + 60 * 60_000;
+      const selector = {
+        type: 'sender' as const,
+        senderId,
+        senderKey: SENDER_KEY,
+        autopilot: {
+          ruleId: 'approved-rule',
+          ruleVersion: 1,
+          previewId: 'approved-preview',
+          ruleName: 'Evening cleanup',
+        },
+        quietDeferredUntilMs: due,
+      };
+      const [anchor] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'archive',
+          selector,
+          requestedCount: 2,
+          resolvedMessageIds: ['approved-1', 'approved-2'],
+          idempotencyKey: 'sender-rule-delayed',
+          createdAt: daysAgo(2),
+        })
+        .returning();
+      const expected = {
+        ruleId: 'approved-rule',
+        ruleName: 'Evening cleanup',
+        waitingUntil: new Date(due).toISOString(),
+      };
+      expect(await svc.listInFlight(mailboxId)).toMatchObject([
+        { groupId: anchor!.id, running: true, autopilot: expected },
+      ]);
+      expect(await svc.getBatchStatus(anchor!.id, mailboxId)).toMatchObject({
+        status: 'queued',
+        requestedCount: 2,
+        affectedCount: 0,
+        autopilot: expected,
+      });
+      await expect(
+        svc.getBatchStatus(anchor!.id, '00000000-0000-4000-8000-000000000099'),
+      ).rejects.toThrow();
+      const [sibling] = await db
+        .insert(actionJobs)
+        .values({
+          mailboxAccountId: mailboxId,
+          verb: 'archive',
+          selector: {
+            type: selector.type,
+            senderId,
+            senderKey: SENDER_KEY,
+            autopilot: selector.autopilot,
+          },
+          requestedCount: 1,
+          idempotencyKey: 'sender-rule-not-deferred',
+          compositeId: anchor!.id,
+        })
+        .returning();
+      expect((await svc.listInFlight(mailboxId))[0]!.autopilot?.waitingUntil).toBeNull();
+      expect((await svc.getBatchStatus(anchor!.id, mailboxId)).autopilot?.waitingUntil).toBeNull();
+      await db
+        .update(actionJobs)
+        .set({ selector, status: 'executing' })
+        .where(eq(actionJobs.id, sibling!.id));
+      expect((await svc.listInFlight(mailboxId))[0]!.autopilot?.waitingUntil).toBeNull();
+      await db
+        .update(actionJobs)
+        .set({ status: 'done', affectedCount: 1 })
+        .where(eq(actionJobs.id, sibling!.id));
+      expect((await svc.listInFlight(mailboxId))[0]!.autopilot).toEqual(expected);
+      expect((await svc.getBatchStatus(anchor!.id, mailboxId)).autopilot).toEqual(expected);
+      await db
+        .update(actionJobs)
+        .set({ selector: { ...selector, quietDeferredUntilMs: Date.now() - 60_000 } })
+        .where(eq(actionJobs.id, anchor!.id));
+      expect((await svc.listInFlight(mailboxId))[0]!.autopilot?.waitingUntil).toBeNull();
+      expect((await svc.getBatchStatus(anchor!.id, mailboxId)).autopilot?.waitingUntil).toBeNull();
+    });
+
     it('is one line per decision, counted across every job of it', async () => {
       const { batchId, sender2Id } = await seedBulk();
       let live = await svc.listInFlight(mailboxId);

@@ -1,0 +1,63 @@
+/* Product previews share the app language, including portals outside the
+   content scope. Public demos keep the shared primitive's original appearance. */
+html:has(#dm-app-theme) [data-dm-preview-sheet] .dm-sheet-panel {
+  --dm-font-display: var(--dm-font-sans);
+  border: 1px solid var(--dm-border);
+  border-top: 3px solid var(--dm-primary);
+  border-radius: 12px;
+}
+html:has(#dm-app-theme) [data-dm-preview-sheet] .dm-sheet-panel :is(h1, h2, h3) {
+  font-family: var(--dm-font-sans) !important;
+  font-weight: 600 !important;
+}
+html:has(#dm-app-theme)
+  [data-dm-preview-sheet]
+  .dm-sheet-panel:not(.dm-sheet-review)
+  .dm-sheet-body {
+  padding: 24px 24px 16px !important;
+}
+html:has(#dm-app-theme) [data-dm-preview-sheet] .dm-sheet-panel .dm-sheet-footer {
+  border-top: 1px solid var(--dm-border);
+}
+html:has(#dm-app-theme)
+  [data-dm-preview-sheet]
+  .dm-sheet-panel:not(.dm-sheet-review)
+  .dm-sheet-footer {
+  padding-inline: 24px !important;
+}
+html:has(#dm-app-theme)
+  :is([data-dm-preview-sheet], [data-dm-preview-mode='inline'])
+  .dm-sheet-segment-group {
+  border: 1px solid var(--dm-border);
+  border-radius: 10px;
+}
+html:has(#dm-app-theme)
+  :is([data-dm-preview-sheet], [data-dm-preview-mode='inline'])
+  .dm-sheet-segment-option {
+  border-radius: 8px !important;
+}
+html:has(#dm-app-theme) [data-dm-preview-mode='inline'] {
+  --dm-font-display: var(--dm-font-sans);
+  min-width: 0;
+  background: var(--dm-card) !important;
+  border: 1px solid var(--dm-border);
+  border-top: 3px solid var(--dm-primary);
+  border-radius: 12px !important;
+}
+@media (max-width: 520px) {
+  html:has(#dm-app-theme) [data-dm-preview-sheet] .dm-sheet-panel {
+    border-radius: 16px 16px 0 0;
+  }
+  html:has(#dm-app-theme)
+    [data-dm-preview-sheet]
+    .dm-sheet-panel:not(.dm-sheet-review)
+    .dm-sheet-body {
+    padding: 20px 16px 12px !important;
+  }
+  html:has(#dm-app-theme)
+    [data-dm-preview-sheet]
+    .dm-sheet-panel:not(.dm-sheet-review)
+    .dm-sheet-footer {
+    padding-inline: 16px !important;
+  }
+}

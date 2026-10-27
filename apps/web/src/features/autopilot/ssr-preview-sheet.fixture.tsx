@@ -46,7 +46,7 @@ process.stdout.write(
         />
       }
     >
-      <p>50 senders actionable now</p>
+      <p>50 senders eligible for Unsubscribe</p>
     </PreviewSheet>,
   ),
 );

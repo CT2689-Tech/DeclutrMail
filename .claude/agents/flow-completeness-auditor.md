@@ -1,6 +1,6 @@
 ---
 name: flow-completeness-auditor
-description: Advisory reviewer that catches the defect class structural gates miss — incomplete user FLOWS and state machines. For features with a lifecycle (mailbox connect/disconnect/switch/reconnect, sync queued→syncing→ready→failed, active-scope=null), it enumerates every state + transition and flags any that lacks UI, cache handling, or a test, plus the two invariants this codebase keeps relearning (scope-change cache reset; guard-4xx-as-designed-state). Use on PRs touching apps/web/features/** or apps/api flows with lifecycle state. Reports findings; never refactors. Advisory tier — non-blocking.
+description: Advisory reviewer that catches the defect class structural gates miss — incomplete user FLOWS and state machines. For features with a lifecycle (mailbox connect/disconnect/switch/reconnect, sync, action → undo, unsubscribe, Later, Autopilot matches, billing, account deletion, active-scope=null), it enumerates every state + transition and flags any that lacks UI, cache handling, or a test, plus the two invariants this codebase keeps relearning (scope-change cache reset; guard-4xx-as-designed-state). Use on PRs touching apps/web/src/features/** or apps/api flows with lifecycle state. Reports findings; never refactors. Advisory tier — non-blocking.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -34,8 +34,28 @@ behavior.
 
 - Mailbox lifecycle: connect · connect-second · disconnect · reconnect ·
   switch-active · no active mailbox (`activeMailboxId === null`).
-- Sync lifecycle: `queued → syncing → ready → failed` (+ transient/
-  superseded failures, + reconnect re-enqueue).
+- Sync lifecycle: `provider_sync_state.readiness` —
+  `queued → syncing → ready | failed | needs_reconnect` (`failed` is
+  retried; `needs_reconnect` is terminal until a reconnect), plus the
+  `sync_stage` progress steps and reconnect re-enqueue.
+- Action lifecycle: `action_jobs.status` `queued → executing → done |
+  failed`, then undo as its own `reverse` job inside the 30-day window
+  (`undo_journal`). Include the in-flight state, a failed reverse, and an
+  undo attempted after the window.
+- Unsubscribe lifecycle: `sender_policies` unsub status — `requested →
+  endpoint_accepted | unconfirmed | action_required | unavailable`, and the
+  manual mailto path `draft_opened → user_marked_sent` (D230). A surface
+  must never say "Unsubscribed" before the request resolves.
+- Later: a Later job waking mail back into the inbox at
+  `action_jobs.wake_at`.
+- Autopilot: rule `observe | active | paused`; match `pending → approved |
+  dismissed` (reasons `user | protected | entitlement | superseded`); a
+  batch deferred by Quiet hours; a downgrade that removes Autopilot.
+- Billing: `subscriptions.status` `active | past_due | paused | canceled`.
+  Terminal states stay terminal; same-second provider events must not
+  reorder them (CLAUDE.md §2.6).
+- Account deletion: `pending → cancelled | executing → completed`, never
+  executing before the latest undo window closes (D232).
 - Any TanStack query whose result depends on a server-resolved scope
   (active mailbox) — the cache is NOT partitioned by that scope.
 - Onboarding / gate flows that auto-advance or trap.
@@ -59,7 +79,7 @@ behavior.
 - **Scope change ⇒ reset scoped cache.** Any mutation that changes a
   server-resolved scope (active mailbox: switch, disconnect, reconnect)
   MUST reset the scoped client cache (`resetMailboxScopedCache` in
-  `apps/web/src/features/mailboxes/api/`), not merely invalidate `me`.
+  `apps/web/src/features/mailboxes/api/reset-mailbox-cache.ts`), not merely invalidate `me`.
   Feature query keys are NOT partitioned by mailbox, so stale data
   survives otherwise. Flag any scope-changing mutation whose `onSuccess`
   does not route through the shared reset.

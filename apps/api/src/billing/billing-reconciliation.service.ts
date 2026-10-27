@@ -1,3 +1,4 @@
+import { reconcileCheckoutAttempt } from './checkout-attempts.js';
 // apps/api/src/billing/billing-reconciliation.service.ts — D249
 // provider-truth reconciliation.
 //
@@ -38,14 +39,22 @@
 import { createHash } from 'node:crypto';
 
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, asc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
-import { pendingCheckouts, subscriptions, subscriptionEvents, users } from '@declutrmail/db';
+import { and, asc, eq, gt, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm';
+import {
+  billingCheckoutAttempts,
+  entitlementGrants,
+  pendingCheckouts,
+  subscriptions,
+  subscriptionEvents,
+  users,
+} from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import {
   CancellationFactsCache,
   type BillingProvider,
+  type CheckoutHold,
   type NormalizedBillingEvent,
   type NormalizedSubscription,
   type ProviderCancellationFacts,
@@ -85,6 +94,9 @@ export interface ReconcileHint {
   tier?: 'plus' | 'pro' | undefined;
   cycle?: 'monthly' | 'annual' | undefined;
   startedAt?: string | undefined;
+  /** A Backlog Pass is a one-time purchase the subscription search cannot
+   *  see; the claim's own `offer` outranks this when a claim exists. */
+  offer?: 'pass_onetime' | undefined;
 }
 
 export interface DriftSweepResult {
@@ -95,6 +107,17 @@ export interface DriftSweepResult {
   subscriptionsUnreadable: number;
   providerErrors: number;
 }
+
+export interface PassRefundSweepResult {
+  checked: number;
+  recovered: number;
+  unchanged: number;
+  unreadable: number;
+  failed: number;
+  capped: boolean;
+}
+
+export const PASS_REFUND_SWEEP_MAX_ROWS = 100;
 
 /**
  * Counters for the verdict pass, which is no longer part of the drift
@@ -386,6 +409,10 @@ export class BillingReconciliationService {
    * On-demand: reconcile a workspace's open pending checkout against
    * provider truth. Resolution ladder, strictest first:
    *
+   *   0. Paddle: `provider_ref` is the checkout's own transaction →
+   *      fetchCheckoutHold (exact, read-only). It can only add
+   *      `payment_in_progress` or mark a `none_found` exact. A Pass has
+   *      no other witness.
    *   1. `provider_ref` on the claim → fetchSubscription (Razorpay —
    *      the server minted the subscription, so the id is exact).
    *   2. searchSubscriptionsByEmail(owner email), filtered to the
@@ -401,11 +428,128 @@ export class BillingReconciliationService {
     workspaceId: string,
     hint?: ReconcileHint,
   ): Promise<PendingReconcileOutcome> {
+    return (await this.reconcilePendingCheckoutDetailed(workspaceId, hint)).outcome;
+  }
+
+  /** Bounded recovery also works after the browser has gone away. */
+  async reconcileCheckoutAttempts() {
+    const rows = await this.db
+      .select()
+      .from(billingCheckoutAttempts)
+      .where(
+        inArray(billingCheckoutAttempts.state, [
+          'creating',
+          'open',
+          'payment_in_progress',
+          'stopping',
+          'paid',
+          'unknown',
+        ]),
+      )
+      .orderBy(asc(billingCheckoutAttempts.updatedAt))
+      .limit(25);
+    let recovered = 0;
+    let unavailable = 0;
+    for (const row of rows) {
+      try {
+        const result = await this.reconcileDurableCheckout(row.workspaceId, row.id);
+        if (result.attempt.state === 'fulfilled' || result.attempt.state === 'stopped') recovered++;
+      } catch {
+        unavailable++;
+      }
+    }
+    return { checked: rows.length, recovered, unavailable, capped: rows.length === 25 };
+  }
+
+  async reconcileDurableCheckout(workspaceId: string, attemptId: string) {
+    const attempt = await reconcileCheckoutAttempt(
+      this.db,
+      this.paddle,
+      this.webhookService,
+      workspaceId,
+      attemptId,
+    );
+    const outcome =
+      attempt.state === 'fulfilled'
+        ? 'granted'
+        : attempt.state === 'stopped'
+          ? 'none_found'
+          : attempt.state === 'unknown' || attempt.state === 'creating'
+            ? 'provider_unavailable'
+            : 'payment_in_progress';
+    return {
+      outcome: outcome as PendingReconcileOutcome,
+      exact: attempt.state === 'stopped',
+      attempt,
+    };
+  }
+
+  /**
+   * Same answer as `reconcilePendingCheckout`, plus whether a `none_found`
+   * is EXACT: Paddle's own record of the one transaction this checkout
+   * created says it is unpaid or canceled. Only an exact `none_found` is
+   * evidence a caller may act on without the customer's assertion; every
+   * other `none_found` is "a search came back empty", which is not the
+   * same thing (a payer may type a different email, and a charge still
+   * settling has no subscription yet). `exact` is never true for any
+   * other outcome.
+   */
+  async reconcilePendingCheckoutDetailed(
+    workspaceId: string,
+    hint?: ReconcileHint,
+  ): Promise<{ outcome: PendingReconcileOutcome; exact: boolean }> {
+    const evidence = { exact: false };
+    const outcome = await this.reconcileClaim(workspaceId, hint, evidence);
+    return { outcome, exact: outcome === 'none_found' && evidence.exact };
+  }
+
+  private async reconcileClaim(
+    workspaceId: string,
+    hint: ReconcileHint | undefined,
+    evidence: { exact: boolean },
+  ): Promise<PendingReconcileOutcome> {
     const [claim] = await this.db
       .select()
       .from(pendingCheckouts)
       .where(eq(pendingCheckouts.workspaceId, workspaceId))
       .limit(1);
+
+    // The exact read: Paddle's record of the ONE transaction the server
+    // created for this checkout. Strictly additive — it can only turn a
+    // would-be `none_found` into `payment_in_progress`, or mark a
+    // `none_found` exact; it never removes a lock and never writes.
+    // The server's own claim is the truth about what it opened; the hint
+    // speaks only when the claim has been swept.
+    const isPass = (claim ? claim.offer : hint?.offer) === 'pass_onetime';
+    let hold: CheckoutHold | 'read_failed' | null = null;
+    if (claim?.provider === 'paddle' && claim.providerRef) {
+      try {
+        hold =
+          (await this.adapterFor('paddle').fetchCheckoutHold?.(claim.providerRef, workspaceId)) ??
+          null;
+      } catch (err) {
+        hold = 'read_failed';
+        this.logger.warn(
+          `billing.reconcile.checkout_hold_unavailable workspace=${workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      if (hold !== null) {
+        this.logger.log(`billing.reconcile.checkout_hold workspace=${workspaceId} hold=${hold}`);
+      }
+    }
+
+    // A one-time Pass has no subscription for the search below to find,
+    // so for a Pass the exact read is the ONLY witness. Without it —
+    // a claim that predates the stash, a swept claim, an unreadable or
+    // unclassifiable transaction — nothing can be asserted either way.
+    if (isPass) {
+      if (hold === 'paid' || hold === 'in_flight') return 'payment_in_progress';
+      if (hold === 'unpaid' || hold === 'stopped') {
+        evidence.exact = true;
+        return 'none_found';
+      }
+      return 'provider_unavailable';
+    }
 
     // What the search must match, and since when. The server claim is
     // authoritative when present; a stale local lock (claim already
@@ -443,7 +587,9 @@ export class BillingReconciliationService {
       // claim pointing at attempt #2 while attempt #1 carried the
       // money, must not conclude none_found from the ref alone. The
       // search below always runs when the ref produced no candidate.
-      if (claim?.providerRef) {
+      // Razorpay only: its ref names a SUBSCRIPTION. Paddle's ref names a
+      // transaction and is read above, never fed to a subscription GET.
+      if (claim?.providerRef && claim.provider !== 'paddle') {
         const result = await this.adapterFor(claim.provider).fetchSubscription(claim.providerRef);
         if (result.kind === 'found_unmapped') {
           // The checkout's own artifact EXISTS pre-grant (Razorpay
@@ -454,7 +600,10 @@ export class BillingReconciliationService {
           );
           return 'payment_in_progress';
         }
-        if (result.kind === 'found') {
+        if (
+          result.kind === 'found' &&
+          (!result.subscription.workspaceId || result.subscription.workspaceId === workspaceId)
+        ) {
           candidates.push({ provider: claim.provider, sub: result.subscription });
         }
       }
@@ -485,7 +634,9 @@ export class BillingReconciliationService {
             createdAfter,
           });
           inProgress += found.inProgress;
-          for (const sub of found.subscriptions) candidates.push({ provider, sub });
+          for (const sub of found.subscriptions) {
+            if (sub.workspaceId === workspaceId) candidates.push({ provider, sub });
+          }
         }
       }
     } catch (err) {
@@ -498,6 +649,14 @@ export class BillingReconciliationService {
     const matches = this.filterMatches(candidates, target, searchFloorMs);
 
     if (matches.length === 0) {
+      // Paddle says the transaction is paid or still moving, so an empty
+      // subscription search only means the grant has not landed yet.
+      if (hold === 'paid' || hold === 'in_flight') {
+        this.logger.log(
+          `billing.reconcile.pending_in_progress workspace=${workspaceId} via=exact_hold hold=${hold}`,
+        );
+        return 'payment_in_progress';
+      }
       if (inProgress > 0) {
         // Nothing granting YET, but the provider holds matching
         // pre-grant activity — the release must stay locked.
@@ -507,8 +666,11 @@ export class BillingReconciliationService {
         return 'payment_in_progress';
       }
       this.logger.log(
-        `billing.reconcile.pending_none_found workspace=${workspaceId} via=${claim ? 'claim' : 'hint'} candidates=${candidates.length}`,
+        `billing.reconcile.pending_none_found workspace=${workspaceId} via=${claim ? 'claim' : 'hint'} candidates=${candidates.length} exact=${hold === 'unpaid' || hold === 'stopped'}`,
       );
+      // Exact only when the search came back empty AND Paddle's own
+      // record of this checkout's transaction is unpaid or canceled.
+      evidence.exact = hold === 'unpaid' || hold === 'stopped';
       return 'none_found';
     }
     if (matches.length > 1) {
@@ -528,13 +690,90 @@ export class BillingReconciliationService {
       match.provider,
       // Server-derived attribution: the claim (or the authed
       // workspace's own email search) IS the workspace link.
-      { ...match.sub, workspaceId },
+      { ...match.sub, workspaceId: match.sub.workspaceId ?? workspaceId },
       observedAt,
     );
     this.logger.log(
       `billing.reconcile.pending_resolved workspace=${workspaceId} provider=${match.provider} sub=${match.sub.providerSubscriptionId} outcome=${outcome}`,
     );
     return outcome;
+  }
+
+  /** Boot/six-hour safety net for missed approved one-time Pass refunds.
+   * Provider reads precede the existing atomic projector. Unreadable evidence
+   * never removes access; an unfinished projection keeps its candidate live.
+   */
+  async reconcilePassRefunds(): Promise<PassRefundSweepResult> {
+    const observedAt = new Date();
+    const rows = await this.db
+      .select({ transactionId: entitlementGrants.providerTransactionId })
+      .from(entitlementGrants)
+      .where(
+        and(
+          eq(entitlementGrants.source, 'pass'),
+          eq(entitlementGrants.provider, 'paddle'),
+          isNotNull(entitlementGrants.providerTransactionId),
+          isNull(entitlementGrants.revokedAt),
+          or(isNull(entitlementGrants.expiresAt), gt(entitlementGrants.expiresAt, observedAt)),
+        ),
+      )
+      // Unchanged grants never update: oldest-first would permanently starve
+      // everything behind the cap. Random selection gives eventual coverage.
+      .orderBy(RANDOM_ROW_ORDER)
+      .limit(PASS_REFUND_SWEEP_MAX_ROWS);
+    const result: PassRefundSweepResult = {
+      checked: 0,
+      recovered: 0,
+      unchanged: 0,
+      unreadable: 0,
+      failed: 0,
+      capped: rows.length >= PASS_REFUND_SWEEP_MAX_ROWS,
+    };
+    if (result.capped) this.logger.warn('billing.reconcile.pass_refunds_capped');
+    let consecutiveFailures = 0;
+    for (const row of rows) {
+      if (consecutiveFailures >= DRIFT_SWEEP_TRIP_AFTER) break;
+      try {
+        const fact = await this.paddle.readPassRefund(row.transactionId!);
+        result.checked++;
+        if (fact.kind === 'unreadable') {
+          result.unreadable++;
+          consecutiveFailures++;
+          continue;
+        }
+        if (fact.kind === 'unchanged') {
+          consecutiveFailures = 0;
+          result.unchanged++;
+          continue;
+        }
+        const outcome = await this.webhookService.process(
+          'paddle',
+          {
+            kind: 'pass_revoked',
+            providerEventId: `recon-pass-refund:${row.transactionId}:${fact.adjustmentId}`,
+            eventType: 'reconciliation.pass_refund',
+            providerTransactionId: row.transactionId!,
+            reason: 'refund',
+          },
+          { occurred_at: observedAt.toISOString() },
+        );
+        if (outcome.kind === 'processed' || outcome.kind === 'duplicate') {
+          result.recovered++;
+          consecutiveFailures = 0;
+        } else {
+          result.failed++;
+          consecutiveFailures++;
+        }
+      } catch (err) {
+        result.failed++;
+        consecutiveFailures++;
+        this.logger.error(
+          `billing.reconcile.pass_refund_failed txn=${row.transactionId} err=${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    this.logger.log(`billing.reconcile.pass_refunds ${JSON.stringify(result)}`);
+    return result;
   }
 
   /**

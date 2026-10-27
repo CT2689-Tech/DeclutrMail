@@ -41,10 +41,10 @@ Heuristic: files where the diff includes type definitions, interfaces,
 discriminated unions, or string-literal union types. Particularly:
 
 - `packages/events/**` (event payload shapes)
-- `apps/api/**/{dto,types,contracts}/**`
-- `apps/web/**/{types,domain}/**`
+- `packages/shared/src/contracts/**` (the API wire contracts — Zod schemas + types)
+- `packages/shared/src/actions/**` (verb registry, action semantics)
 - `packages/workers/**` (worker policy types)
-- Files with `'keep' | 'archive' | 'unsubscribe' | 'later'` etc.
+- Files with `'keep' | 'archive' | 'unsubscribe' | 'later' | 'delete'` etc.
 - Files defining undo tokens, action intents, triage decisions
 
 Skip if the diff has no type-heavy surface.
@@ -108,8 +108,9 @@ the policy is passed as raw string:
 git diff -- '*.ts' | rg -n "policy:\s*['\"](webhook|perMailbox|batch|cron|admin)Policy['\"]"
 ```
 
-Suggest using a typed enum or a `WorkerPolicy` literal-union type that
-the BaseDeclutrWorker class can constrain.
+The `WorkerPolicy` union already exists
+(`packages/workers/src/worker-policies.ts`, `keyof typeof WORKER_POLICIES`);
+suggest typing the value with it instead of `string`.
 
 ### Step 5: Action intent + undo token coupling
 

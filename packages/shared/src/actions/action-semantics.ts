@@ -131,20 +131,12 @@ export const ACTION_SEMANTICS: ActionSemanticsRegistry = {
     },
     futureMail: {
       effect: 'remember-keep',
-      // Names the ONE consequence Keep actually has. The previous line —
-      // "DeclutrMail remembers Keep as your decision for this sender." —
-      // stated a memory without a consequence, and a reader reasonably
-      // heard "this sender is safe now".
-      //
-      // What Keep really writes (traced live on the dev mailbox
-      // 2026-08-27): an `activity_log` row with `affected_count = 0`,
-      // which is what drops the sender out of the Triage queue, and
-      // `sender_policies.policy_type='keep'`, which NO reader anywhere
-      // filters on. It does NOT rewrite `triage_decisions.verdict` —
-      // that row still read `verdict='unsubscribe'` immediately after a
-      // Keep — so even the verdict-gated Autopilot presets keep matching.
-      summary: 'This sender stops coming up in Triage.',
-      inPreview: true,
+      // Shared across suggested and manually assembled reviews. Daily queue
+      // suppression comes from recent review history, so a kept sender can
+      // appear again. State the mail effect without promising permanent
+      // exclusion or protection from automatic cleanup.
+      summary: 'Leaves your email where it is.',
+      inPreview: false,
     },
     unchanged: [
       {

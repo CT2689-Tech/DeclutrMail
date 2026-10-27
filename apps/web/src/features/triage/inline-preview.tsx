@@ -1,7 +1,9 @@
 'use client';
 
+import type { DeleteEmptyContext } from '@/components/delete-empty-state';
 import { LaterReturnControl, useFutureReturnTime } from '@/components/later-return-control';
 import { buildActionPresentation } from '@declutrmail/shared/actions';
+import type { ActionReach } from '@declutrmail/shared/contracts';
 import { Button, Disclosure, SheetFactList, tokens } from '@declutrmail/shared';
 import { WS2_COPY, WS5_COPY } from '@declutrmail/shared/copy/launch';
 import type { ReactNode } from 'react';
@@ -39,7 +41,11 @@ const { color, radius, space, text } = tokens;
  * row or the focus card.
  */
 export interface InlinePreview {
+  deleteEmptyContext?: DeleteEmptyContext | undefined;
   ageControl?: CleanupAgeControl | undefined;
+  /** Authenticated caller supplies the Delete-only scope control without adding it to demo bundles. */
+  reachControlSlot?: ReactNode | undefined;
+  reach?: ActionReach | undefined;
   verb: ActionVerb;
   archiveHistoric: boolean;
   /** Skip-sheet unsubscribe choice. Archive is the default when the inbox count is above zero. */
@@ -162,6 +168,7 @@ export function InlinePreviewBlock({
         ? (preview.ageControl?.olderThanDays ?? null)
         : null,
     verb: preview.verb,
+    reach: preview.reach ?? 'inbox_only',
     row,
     archiveHistoric: preview.archiveHistoric || backlogMode === 'archive',
     ...(preview.verb === 'Unsubscribe' ? { backlogMode } : {}),
@@ -286,7 +293,7 @@ export function InlinePreviewBlock({
             onWindowChange={preview.ageControl.onChange}
             showWindow
           >
-            {null}
+            {preview.reachControlSlot ?? null}
           </CleanupPreview>
         )}
       {preview.verb === 'Later' && preview.onWakeAtChange && (
@@ -326,8 +333,9 @@ export function InlinePreviewBlock({
             action={
               preview.verb === 'Delete' ? 'Delete' : preview.verb === 'Later' ? 'Later' : 'Archive'
             }
+            emptyContext={preview.deleteEmptyContext}
             count={countKnown}
-            includesArchived={false}
+            includesArchived={preview.verb === 'Delete' && preview.reach === 'all_mail'}
             olderThanDays={preview.ageControl?.olderThanDays ?? null}
             note={
               facts.nothingToMove
@@ -343,6 +351,8 @@ export function InlinePreviewBlock({
         <div style={{ marginTop: space[3] }}>
           <UnsubscribeImpact
             mode={backlogMode}
+            includesArchived={backlogMode === 'delete' && preview.reach === 'all_mail'}
+            emptyContext={preview.deleteEmptyContext}
             count={countKnown}
             olderThanDays={preview.ageControl?.olderThanDays ?? null}
             note={

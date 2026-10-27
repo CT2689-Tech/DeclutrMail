@@ -113,6 +113,19 @@ test('the §7 gates for copy and for type-heavy files are routed', async () => {
   assert.ok(types.result.gatesRun.includes('type-design-analyzer'));
 });
 
+test('gate routes cover the paths the agents name as their scope', async () => {
+  for (const [file, gate] of [
+    ['apps/api/src/sync/initial-sync-reconciler.ts', 'privacy-auditor'],
+    ['packages/shared/src/contracts/gmail-data-inventory.ts', 'privacy-auditor'],
+    ['apps/api/src/billing/paddle.adapter.ts', 'webhook-security-auditor'],
+    ['apps/api/src/webhooks/billing-razorpay.controller.ts', 'webhook-security-auditor'],
+    ['packages/shared/src/contracts/activity.ts', 'type-design-analyzer'],
+  ]) {
+    const { result } = await gateRun([file], () => reviewed);
+    assert.ok(result.gatesRun.includes(gate), `${file} -> ${gate}`);
+  }
+});
+
 test('a run in which every gate declined the diff reviewed nothing', async () => {
   const { result, logs } = await gateRun(['scripts/check-vendor-limits.mjs'], () => declined);
   assert.equal(result.verdict, 'NO_GATES_IN_SCOPE');

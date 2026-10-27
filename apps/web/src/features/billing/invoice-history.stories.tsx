@@ -137,6 +137,22 @@ export const NoInvoicesYet: Story<typeof InvoiceHistory> = {
   ),
 };
 
+/** A capped empty result cannot establish that the account never paid. */
+export const LimitedEmptyHistory: Story<typeof InvoiceHistory> = {
+  render: () => (
+    <Frame
+      client={clientWith({
+        invoices: [],
+        unavailableProviders: [],
+        truncated: true,
+        omittedRows: 0,
+      })}
+    >
+      <InvoiceHistory />
+    </Frame>
+  ),
+};
+
 /** In flight — the D211 loading skeleton, no layout shift on settle. */
 export const Loading: Story<typeof InvoiceHistory> = {
   render: () => {
@@ -231,6 +247,25 @@ export const UnknownStatus: Story<typeof InvoiceHistory> = {
 
 const emptyClient = () =>
   clientWith({ invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 });
+
+/** Original invoices remain available after full and partial refunds. */
+export const RefundedPayments: Story<typeof InvoiceHistory> = {
+  render: () => (
+    <Frame
+      client={clientWith({
+        invoices: [
+          { ...PAID, refundedAmount: '1900' },
+          { ...PAID, id: 'txn_partial', refundedAmount: '500' },
+        ],
+        unavailableProviders: [],
+        truncated: false,
+        omittedRows: 0,
+      })}
+    >
+      <InvoiceHistory />
+    </Frame>
+  ),
+};
 
 export const PaymentMethodPaddle: Story<typeof PaymentMethodCard> = {
   render: () => (

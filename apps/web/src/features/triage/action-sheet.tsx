@@ -28,7 +28,7 @@ import {
   actionMovesMail,
   type ActionPreviewDetail,
 } from './action-preview-detail';
-import { PREVIEW_DETAILS } from '@declutrmail/shared/copy';
+import { ENGINE_ABSTENTION_COPY, PREVIEW_DETAILS } from '@declutrmail/shared/copy';
 import {
   PreviewReasoning,
   buildPreviewFacts,
@@ -357,7 +357,13 @@ export function ActionSheet({
       detail={detail !== undefined && movesMail ? detail : undefined}
       leadFacts={facts.disclosures}
       trailingFacts={[
-        { label: PREVIEW_DETAILS.whySuggested.label, value: <PreviewReasoning row={row} /> },
+        {
+          label:
+            row.verdict === 'later'
+              ? ENGINE_ABSTENTION_COPY.context
+              : PREVIEW_DETAILS.whySuggested.label,
+          value: <PreviewReasoning row={row} />,
+        },
         ...(verb === 'Delete'
           ? []
           : [
@@ -372,6 +378,20 @@ export function ActionSheet({
 
   // Why confirm is unavailable — and the way out, where one exists. A zero
   // count needs no line: the title already says nothing is there.
+  const chooseBacklogMode = (mode: 'unsub_only' | 'archive' | 'delete') => {
+    setBacklogMode(mode);
+    setChosenActionKey(actionKey);
+    onBacklogModeChange?.(mode);
+    (onReachChange ?? detail?.reachControl?.onChange)?.('inbox_only');
+  };
+  const deleteEmptyContext = {
+    inboxTotal: detail?.inboxTotal,
+    allMailTotal: detail?.allMailTotal,
+    allMailWindowCount: detail?.reachControl?.allMailCount,
+    onAnyAge: ageControl ? () => ageControl.onChange(null) : undefined,
+    onIncludeArchived: reachControl ? () => reachControl.onChange('all_mail') : undefined,
+    onUnsubscribeOnly: () => chooseBacklogMode('unsub_only'),
+  };
   const status: ReactNode = previewSenderGone ? (
     <StatusWithAction
       message={WS2_COPY.simplify.senders.gone}
@@ -393,7 +413,9 @@ export function ActionSheet({
   ) : archivedUncounted ? (
     WS5_COPY['f1.preview.archived.unavailable']
   ) : verb === 'Unsubscribe' && requiresLivePreview && inboxCount === 0 ? (
-    WS5_COPY['preview.zero.unsubHint']
+    effectiveMode === 'delete' ? null : (
+      WS5_COPY['preview.zero.unsubHint']
+    )
   ) : confirmDisabled ? (
     WS5_COPY['f1.preview.backlog.loading']
   ) : null;
@@ -453,6 +475,7 @@ export function ActionSheet({
           verb === 'Unsubscribe' ? (
             <UnsubscribeImpact
               mode={effectiveMode}
+              emptyContext={deleteEmptyContext}
               count={archivedUncounted || previewSenderGone ? null : countKnown}
               olderThanDays={olderThanDays}
               includesArchived={effectiveMode === 'delete' && reach === 'all_mail'}
@@ -469,6 +492,7 @@ export function ActionSheet({
           ) : cleanupEffect ? (
             <CleanupImpact
               action={verb === 'Archive' ? 'Archive' : verb === 'Later' ? 'Later' : 'Delete'}
+              emptyContext={{ ...deleteEmptyContext, onUnsubscribeOnly: undefined }}
               count={archivedUncounted || previewSenderGone ? null : countKnown}
               includesArchived={verb === 'Delete' && reach === 'all_mail'}
               olderThanDays={olderThanDays}
@@ -541,12 +565,7 @@ export function ActionSheet({
               <div className="dm-unsub-choice">
                 <UnsubscribeChoices
                   value={effectiveMode}
-                  onChange={(mode) => {
-                    setBacklogMode(mode);
-                    setChosenActionKey(actionKey);
-                    onBacklogModeChange?.(mode);
-                    (onReachChange ?? detail?.reachControl?.onChange)?.('inbox_only');
-                  }}
+                  onChange={chooseBacklogMode}
                   archiveDisabled={countKnown === null}
                   deleteDisabled={countKnown === null}
                 />

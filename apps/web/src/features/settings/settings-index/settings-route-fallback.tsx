@@ -16,13 +16,6 @@ export function SettingsRouteFallback({
   label?: string;
 } = {}) {
   return (
-    <RouteLoading
-      gap={32}
-      kicker="Settings"
-      title="Settings"
-      label={label}
-      rows={5}
-      rowHeight={56}
-    />
+    <RouteLoading gap={28} maxWidth={1120} title="Settings" label={label} rows={5} rowHeight={64} />
   );
 }

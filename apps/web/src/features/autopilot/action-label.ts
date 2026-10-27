@@ -9,6 +9,8 @@ import type { AutopilotActionKind } from '@/lib/api/autopilot';
 /** "would archive" / "would unsubscribe" / "would move to Later". */
 export function describeWouldAction(kind: AutopilotActionKind): string {
   switch (kind) {
+    case 'delete':
+      return 'would delete';
     case 'archive':
       return 'would archive';
     case 'unsubscribe':

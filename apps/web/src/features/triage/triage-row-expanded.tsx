@@ -1,7 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { confidenceBand, scoredAgeLabel } from '@declutrmail/shared/copy';
+import { confidenceBand, ENGINE_ABSTENTION_COPY, scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
 import { fmtCompact, lastSeenLabel, type TriageDecisionRow } from './data';
 import { verdictToVerb } from './types';
@@ -26,6 +26,7 @@ const { color, font, text } = tokens;
 export function TriageRowExpanded({
   row,
   timeZone = 'UTC',
+  showSuggestion = true,
 }: {
   row: TriageDecisionRow;
   /**
@@ -35,6 +36,8 @@ export function TriageRowExpanded({
    * `useUserTimeZone()`.
    */
   timeZone?: string;
+  /** Hide an inapplicable suggestion while retaining its historical evidence and stats. */
+  showSuggestion?: boolean;
 }) {
   // `useNow`, not an ambient `new Date()`: this queue is server-rendered
   // and hydrated (`server-triage-boundary.tsx`), so a clock read during
@@ -83,10 +86,14 @@ export function TriageRowExpanded({
             color: color.fgMuted,
           }}
         >
-          <span data-dm-verdict-band>
-            Suggested: {verdictToVerb(row.verdict)}
-            {band !== null && <> · {band}</>}
-          </span>
+          {showSuggestion && (
+            <span data-dm-verdict-band>
+              {row.verdict === 'later'
+                ? ENGINE_ABSTENTION_COPY.label
+                : `Suggested: ${verdictToVerb(row.verdict)}`}
+              {band !== null && <> · {band}</>}
+            </span>
+          )}
           {/* The sentence below and the STATISTICS come from different
               moments: reasoning is stored (when the read was scored, or
               when it was first opened — D24 on demand), the stats are

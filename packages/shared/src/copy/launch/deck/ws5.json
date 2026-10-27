@@ -173,10 +173,10 @@
     "other": "Unsubscribe requested · Deleted {n} emails"
   },
   "report.eyebrow": "Your Inbox Report",
-  "report.basis": "Based on {total} emails in {mailboxEmail}",
+  "report.basis": "Based on {total} scanned emails in {mailboxEmail}",
   "report.window.90d": "Last 90 days",
-  "report.window.all": "All your email",
-  "report.window.trash": "In Gmail Trash now",
+  "report.window.all": "All scanned email",
+  "report.window.trash": "In Gmail Trash at snapshot time",
   "report.mostlyUnread.headline": {
     "one": "{pct}% of the email you got in the last 90 days came from 1 sender you mostly leave unread.",
     "other": "{pct}% of the email you got in the last 90 days came from {n} senders you mostly leave unread."
@@ -206,13 +206,13 @@
   "report.thirdParty.detail": "Another app created these labels. The email is still in your Gmail and still counts toward your Google storage. Email that app marked read isn’t counted as read in this report.",
   "report.thirdParty.recent": "{recent} arrived in the last 90 days.",
   "report.yearsDeep": "Your email goes back to {year}. {pct}% of it is more than 3 years old.",
-  "report.top10": "{pct}% of your email comes from just 10 senders.",
+  "report.top10": "{pct}% of your scanned email comes from up to 10 senders.",
   "report.trash": "About {size} is in Gmail Trash. It still counts toward your Google storage until it leaves Trash: Gmail deletes it for good after 30 days, or sooner if you empty Trash.",
   "report.fallback": {
-    "one": "Your inbox is in good shape. {total} emails, and 1 sender that might be worth a look.",
-    "other": "Your inbox is in good shape. {total} emails, and {k} senders that might be worth a look."
+    "one": "{total} scanned emails. 1 sender might be worth reviewing.",
+    "other": "{total} scanned emails. {k} senders might be worth reviewing."
   },
-  "report.fallback.zero": "Your inbox is in good shape. {total} emails, and nothing stands out yet.",
+  "report.fallback.zero": "{total} scanned emails. No sender suggestions from this snapshot.",
   "report.fallback.cta": {
     "one": "Show that sender",
     "other": "Show those {k} senders"
@@ -220,8 +220,8 @@
   "report.trust": "This report uses only the sender, date, size, labels and read/unread status of your email, plus who you’ve emailed. We never fetch or store full email contents.",
   "report.trust.link": "What we store and share",
   "report.fix.heading": {
-    "one": "1 of these senders includes an unsubscribe link.",
-    "other": "{n} of these senders include an unsubscribe link."
+    "one": "1 sender with an unsubscribe option had less than 10% marked read in the last 90 days.",
+    "other": "{n} senders with an unsubscribe option had less than 10% marked read in the last 90 days."
   },
   "report.fix.primary": {
     "one": "Unsubscribe + archive 1 sender",
@@ -374,5 +374,18 @@
   "preview.selection.included": "{k} selected · {m} included",
   "preview.selection.checking": "{k} selected · Checking which ones are included…",
   "preview.selection.unavailable": "{k} selected · Couldn’t check which ones are included",
-  "preview.later.bulkReturn": "All of them share that one return."
+  "preview.later.bulkReturn": "All of them share that one return.",
+  "preview.empty.noSenders": "No senders included.",
+  "preview.empty.selection": "Cancel to change your selection.",
+  "preview.empty.mailbox": "No current Inbox or archived email to delete.",
+  "preview.empty.included": "No Inbox or archived email from included senders.",
+  "preview.empty.cancel": "Cancel to choose another action.",
+  "preview.empty.age": "The age filter excludes these emails.",
+  "preview.empty.anyAge": "Use Any age",
+  "preview.empty.archived": "Archived email is outside this scope.",
+  "preview.empty.includeArchived": "Include archived",
+  "preview.empty.filters": "The filters exclude these emails.",
+  "preview.empty.showAll": "Show all email",
+  "preview.empty.changeFilters": "Change the filters or cancel this preview.",
+  "preview.empty.unsubOnly": "Choose Unsubscribe only"
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { scoredAgeLabel } from '@declutrmail/shared/copy';
+import { ENGINE_ABSTENTION_COPY, scoredAgeLabel } from '@declutrmail/shared/copy';
 import { useNow } from '@/lib/use-now';
 import type { Recommendation, Verdict } from './types';
 
@@ -55,6 +55,7 @@ export function RecommendationBanner({
   const now = useNow();
   if (recommendation == null) return null;
   const { verdict, reasoning, signals, scoredAt } = recommendation;
+  const abstention = verdict === 'later';
   const verbLabel = VERDICT_LABEL[verdict];
   // QA-sender-detail-20260902-08: this surface used to build its own
   // " · scored X" string from the lower-level `scoredAge`, while Triage
@@ -66,7 +67,7 @@ export function RecommendationBanner({
   return (
     <details
       className="dm-disclosure"
-      aria-label={`Optional suggestion: ${verbLabel}`}
+      aria-label={abstention ? ENGINE_ABSTENTION_COPY.context : `Optional suggestion: ${verbLabel}`}
       style={{ color: color.fg, fontFamily: font.sans }}
     >
       {/* The suggestion has its own source, reasoning and freshness. */}
@@ -78,7 +79,13 @@ export function RecommendationBanner({
         }}
       >
         <span>
-          Suggested: <span style={{ color: color.fgSoft, fontWeight: 600 }}>{verbLabel}</span>
+          {abstention ? (
+            ENGINE_ABSTENTION_COPY.label
+          ) : (
+            <>
+              Suggested: <span style={{ color: color.fgSoft, fontWeight: 600 }}>{verbLabel}</span>
+            </>
+          )}
           {age && <> · {age}</>}
         </span>
       </summary>

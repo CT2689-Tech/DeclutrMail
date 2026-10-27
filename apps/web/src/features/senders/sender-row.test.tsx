@@ -198,6 +198,18 @@ describe('<SenderRow /> — opening vs. acting', () => {
     expect(screen.getByRole('link', { name: s.name })).toHaveAttribute('href', '/senders/abc');
   });
 
+  it('retains its contextual URL when opening the sender in a new tab', () => {
+    const onOpen = vi.fn();
+    const detailHref = '/senders/abc?returnTo=%2Fsenders%3Fq%3Dweekly';
+    const s = renderRow({ id: 'abc' }, { onOpen, detailHref });
+    const link = screen.getByRole('link', { name: s.name });
+    // Observe the modified-click contract without asking Happy DOM to fetch a page.
+    link.addEventListener('click', (event) => event.preventDefault(), { once: true });
+    fireEvent.click(link, { ctrlKey: true });
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(link).toHaveAttribute('href', detailHref);
+  });
+
   it('does NOT open from the checkbox, a verb button or the ⋯ menu', () => {
     const onOpen = vi.fn();
     const onToggleSelect = vi.fn();
@@ -332,7 +344,7 @@ describe('<DomainGroupRow />', () => {
 
 it('shows a previously saved Keep decision after a compact row is revisited', () => {
   renderRow({ policyType: 'keep' }, { compact: true });
-  expect(screen.getByText('Skipped in Triage')).toBeInTheDocument();
+  expect(screen.getByText('Kept')).toBeInTheDocument();
 });
 
 it('keeps the compact Protected state below the sender identity so the name has room', () => {

@@ -119,13 +119,14 @@ for (const viewport of [
           await opener.click();
           await dialog.getByRole('radio', { name: '+ Delete', exact: true }).click();
           const age = dialog.getByRole('combobox', { name: 'Email age', exact: true });
-          await expect(age).toHaveValue('180');
+          await expect(age).toHaveValue('all');
           await expect(age.getByRole('option', { name: 'Any age', exact: true })).toHaveAttribute(
             'value',
             'all',
           );
           const archived = dialog.getByRole('checkbox', { name: 'Include archived email' });
           await expect(archived).not.toBeChecked();
+          if (days !== null) await age.selectOption(String(days));
           if (days === null) {
             await age.selectOption('all');
             await archived.check();
@@ -159,6 +160,67 @@ for (const viewport of [
         JSON.stringify({ mode: 'archive', emailCount: 12, senderIds: ['fixture-sender'] }),
       );
     });
+    test('first-review Delete keeps archived scope through an empty age window', async ({
+      page,
+    }) => {
+      await page.goto(`${url}?surface=screener&scenario=archived-only`);
+      const opener = page.getByRole('button', { name: 'Review screener', exact: true });
+      await opener.click();
+      const preview = page.getByRole('region', { name: /^Preview · Delete / });
+      const archived = preview.getByRole('checkbox', { name: 'Include archived email' });
+      const confirm = preview.getByRole('button', { name: /^Delete for/ });
+      await expect(archived).toBeEnabled();
+      await expect(archived).not.toBeChecked();
+      await expect(confirm).toBeDisabled();
+      await preview.getByRole('combobox', { name: 'Email age' }).selectOption('180');
+      await archived.check();
+      await expect(archived).toBeChecked();
+      await expect(confirm).toBeDisabled();
+      await preview.getByRole('combobox', { name: 'Email age' }).selectOption('all');
+      await expect(preview.getByRole('region', { name: 'What Delete will do' })).toContainText(
+        '2 emails will move to Gmail Trash.',
+      );
+      await expect(preview.getByRole('region', { name: 'What Delete will do' })).toContainText(
+        'Inbox and archived email · Any age',
+      );
+      await expect(confirm).toBeEnabled();
+      await preview.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(page.getByTestId('accepted')).toBeEmpty();
+      await opener.click();
+      await expect(archived).not.toBeChecked();
+      await expect(preview.getByRole('combobox', { name: 'Email age' })).toHaveValue('all');
+      await archived.check();
+      await preview.getByRole('combobox', { name: 'Email age' }).selectOption('all');
+      await confirm.click();
+      await expect(page.getByTestId('accepted')).toHaveText(
+        JSON.stringify({ olderThanDays: null, reach: 'all_mail' }),
+      );
+    });
+    for (const scenario of ['empty', 'unavailable']) {
+      test(`first-review Delete ${scenario} keeps confirmation blocked`, async ({ page }) => {
+        await page.goto(`${url}?surface=screener&scenario=${scenario}`);
+        await page.getByRole('button', { name: 'Review screener', exact: true }).click();
+        const preview = page.getByRole('region', { name: /^Preview · Delete / });
+        const archived = preview.getByRole('checkbox', { name: 'Include archived email' });
+        await expect(archived).not.toBeChecked();
+        if (scenario === 'empty') await archived.check();
+        else await expect(archived).toBeDisabled();
+        await preview.getByRole('combobox', { name: 'Email age' }).selectOption('all');
+        if (scenario === 'empty') {
+          await expect(preview).toContainText('This sender is still awaiting its first review.');
+          await expect(preview.getByRole('button', { name: /^Delete for/ })).toHaveCount(0);
+          await preview.getByRole('button', { name: 'Keep', exact: true }).click();
+          const keep = page.getByRole('region', { name: /^Preview · Keep / });
+          await expect(keep).toContainText('Keep marks this sender reviewed.');
+          await expect(page.getByTestId('accepted')).toBeEmpty();
+          await keep.getByRole('button', { name: /^Keep for/ }).click();
+          await expect(page.getByTestId('accepted')).toHaveText(JSON.stringify({ verb: 'keep' }));
+          return;
+        }
+        await expect(preview.getByRole('button', { name: /^Delete for/ })).toBeDisabled();
+        await expect(page.getByTestId('accepted')).toBeEmpty();
+      });
+    }
     test('native Tab leaves inline Screener Delete without cancelling it', async ({ page }) => {
       await page.goto(`${url}?surface=screener`);
       await page.getByRole('button', { name: 'Review screener', exact: true }).click();

@@ -1,11 +1,13 @@
 'use client';
 
+import { CleanupSelect } from '@/components/cleanup-select';
 import { editorialTitleStyle } from '@/features/editorial/page';
 
 import type { CSSProperties, ReactNode, SelectHTMLAttributes } from 'react';
 import Link from 'next/link';
 import { Button, tokens } from '@declutrmail/shared';
 import { SwitchTrack } from './switch';
+import styles from './settings-list.module.css';
 
 const { color, font, text, motion, radius } = tokens;
 
@@ -91,7 +93,7 @@ export function GroupTitle({
     <Tag
       tabIndex={tabIndex}
       style={{
-        margin: '0 0 8px',
+        margin: '0 0 14px',
         paddingLeft: inset ? ROW_INSET : 0,
         ...tokens.typography.sectionTitle,
         color: color.fg,
@@ -126,25 +128,15 @@ export function SettingsGroup({
   return (
     <section
       id={id}
-      tabIndex={focusable ? -1 : undefined}
+      tabIndex={focusable || id ? -1 : undefined}
       aria-label={title}
-      style={{ scrollMarginTop: 24, fontFamily: font.sans, ...style }}
+      style={{ scrollMarginTop: 24, fontFamily: font.sans, minWidth: 0, ...style }}
     >
-      <GroupTitle inset {...(headingTabIndex !== undefined ? { tabIndex: headingTabIndex } : {})}>
+      <GroupTitle {...(headingTabIndex !== undefined ? { tabIndex: headingTabIndex } : {})}>
         {title}
       </GroupTitle>
       <style>{GROUP_CSS}</style>
-      <div
-        className="dm-settings-rows"
-        style={{
-          background: color.card,
-          border: `1px solid ${color.border}`,
-          borderRadius: radius.xl,
-          overflow: 'hidden',
-        }}
-      >
-        {children}
-      </div>
+      <div className={`dm-settings-rows ${styles.rows}`}>{children}</div>
       {footer != null && <div style={{ padding: `0 ${ROW_INSET}px` }}>{footer}</div>}
     </section>
   );
@@ -168,8 +160,8 @@ const rowStyle = {
   justifyContent: 'space-between',
   flexWrap: 'wrap',
   gap: 12,
-  minHeight: 56,
-  padding: `0 ${ROW_INSET}px`,
+  minHeight: 64,
+  padding: `2px ${ROW_INSET}px`,
   boxSizing: 'border-box',
 } as const;
 
@@ -188,14 +180,24 @@ export function SettingsRow({
 }) {
   return (
     <div className="dm-settings-row" style={{ ...rowStyle, ...style }}>
-      <div style={{ minWidth: 0, flex: '1 1 200px', padding: '10px 0' }}>
-        <div style={{ fontSize: text.md, fontWeight: 500, color: color.fg }}>{label}</div>
+      <div style={{ minWidth: 0, flex: '1 1 200px', padding: '10px 0', overflowWrap: 'anywhere' }}>
+        <div style={{ fontSize: text.md, fontWeight: 600, color: color.fg }}>{label}</div>
         {detail != null && (
           <div style={{ fontSize: text.sm, color: color.fgMuted, marginTop: 2 }}>{detail}</div>
         )}
       </div>
       {children != null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: 8,
+            minWidth: 0,
+            maxWidth: '100%',
+            overflowWrap: 'anywhere',
+          }}
+        >
           {children}
         </div>
       )}
@@ -219,7 +221,7 @@ export function DrillRow({
       className="dm-settings-row dm-settings-drill"
       style={{ ...rowStyle, flexWrap: 'nowrap', textDecoration: 'none', color: color.fg }}
     >
-      <span style={{ fontSize: text.md, fontWeight: 500, minWidth: 0 }}>{label}</span>
+      <span style={{ fontSize: text.md, fontWeight: 600, minWidth: 0 }}>{label}</span>
       <span
         style={{
           display: 'inline-flex',
@@ -228,6 +230,8 @@ export function DrillRow({
           fontSize: text.md,
           color: color.fgMuted,
           minWidth: 0,
+          textAlign: 'right',
+          overflowWrap: 'anywhere',
         }}
       >
         {value}
@@ -355,24 +359,14 @@ export function SelectWell({
   ...props
 }: SelectHTMLAttributes<HTMLSelectElement> & { style?: CSSProperties }) {
   return (
-    <span
-      style={{
-        position: 'relative',
-        display: 'inline-flex',
-        alignItems: 'center',
-        maxWidth: '100%',
-        minWidth: 0,
-      }}
-    >
+    <>
       <style>{`.dm-select-well { transition: background ${motion.fast} ${motion.ease}; }
 .dm-select-well:hover:not(:disabled) { background: ${color.fillHover}; }
 .dm-select-well:focus-visible { outline: 2px solid ${color.primary}; outline-offset: 2px; }`}</style>
-      <select
+      <CleanupSelect
         {...props}
-        className={`dm-field dm-select-well${className ? ` ${className}` : ''}`}
+        className={`dm-select-well${className ? ` ${className}` : ''}`}
         style={{
-          appearance: 'none',
-          WebkitAppearance: 'none',
           ...tokens.field,
           fontVariantNumeric: 'tabular-nums',
           padding: '0 36px 0 12px',
@@ -384,20 +378,7 @@ export function SelectWell({
         }}
       >
         {children}
-      </select>
-      <span
-        aria-hidden="true"
-        style={{
-          position: 'absolute',
-          right: 12,
-          display: 'inline-flex',
-          color: color.fgMuted,
-          pointerEvents: 'none',
-          transform: 'rotate(90deg)',
-        }}
-      >
-        <Chevron size={12} />
-      </span>
-    </span>
+      </CleanupSelect>
+    </>
   );
 }

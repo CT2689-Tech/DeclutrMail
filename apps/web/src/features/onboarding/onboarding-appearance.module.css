@@ -1,0 +1,140 @@
+.page {
+  --dm-font-display: var(--dm-font-sans);
+  --dm-type-page-title: clamp(28px, 3vw, 34px);
+  padding: 48px 20px;
+}
+.panel {
+  width: 100%;
+  padding: clamp(24px, 4vw, 36px);
+  background: var(--dm-card);
+  border: 1px solid var(--dm-border);
+  border-top: 3px solid var(--dm-primary);
+  border-radius: 12px;
+}
+.page h1 {
+  font-family: var(--dm-font-sans);
+  font-weight: 600 !important;
+  letter-spacing: -0.025em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+.panel :global(.dm-onboarding-choice) {
+  --dm-onboarding-choice-shadow: inset 0 0 0 1px var(--dm-border);
+  border-radius: 12px !important;
+}
+.panel :global(.dm-onboarding-choice):is([aria-checked='true'], [aria-pressed='true']) {
+  --dm-onboarding-choice-shadow: 0 0 0 2px var(--dm-primary);
+}
+.description {
+  margin: 0 0 24px;
+  max-width: 460px;
+  color: var(--dm-fg-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.consent {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+.senderExample {
+  width: 100%;
+  margin: 0 0 24px;
+  text-align: left;
+}
+.exampleSender {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  border-block: 1px solid var(--dm-line-soft);
+  color: var(--dm-fg);
+  font-size: 14px;
+}
+.senderMonogram {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--dm-primary-soft);
+  color: var(--dm-primary-deep);
+  font-size: 20px;
+  font-weight: 600;
+}
+.senderContext {
+  display: block;
+  margin-top: 3px;
+  color: var(--dm-fg-muted);
+  font-size: 13px;
+}
+.senderCount {
+  margin-left: auto;
+  color: var(--dm-primary-deep);
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+.senderExample figcaption {
+  margin-top: 8px;
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.promisePrivacy {
+  width: 100%;
+  margin: 0 0 20px;
+  text-align: left;
+}
+.promisePrivacy h2 {
+  margin: 0;
+  color: var(--dm-primary-deep);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.promisePrivacy summary {
+  display: list-item;
+  width: fit-content;
+  padding-block: 10px;
+  color: var(--dm-fg-soft);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.5;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.promisePrivacy summary:focus-visible {
+  outline: 2px solid var(--dm-primary);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+.connectNext {
+  margin: 12px 0 0;
+  max-width: 360px;
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.promiseLegal {
+  margin: 16px 0 0;
+  color: var(--dm-fg-muted);
+  font-size: 12px;
+}
+.promiseLegal a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+@media (max-width: 520px) {
+  .consent > li {
+    padding-inline: 0 !important;
+    background-size: calc(100% - 40px) 1px !important;
+  }
+  .page {
+    padding: 32px 16px;
+  }
+  .panel {
+    padding: 24px 20px;
+  }
+}

@@ -2,14 +2,15 @@
 
 import {
   editorialColumnStyle,
-  EditorialKicker,
+  EditorialDescription,
   EditorialContents,
 } from '@/features/editorial/page';
 
 import { useEffect, useRef, useState } from 'react';
-import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
+import Link from 'next/link';
+import { Button, ScreenIntro, toast, tokens } from '@declutrmail/shared';
 import { SETTINGS_PREVIEWS_TITLE } from '@declutrmail/shared/copy/screen-decisions';
-import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { hasCapability } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
@@ -35,6 +36,7 @@ import {
   isBillingDisabledError,
   useBillingSubscription,
 } from '@/features/billing/api/use-billing-subscription';
+import { currentPlanTitle, deriveBillingViewState } from '@/features/billing/billing-model';
 import { reportPassSecondAccountGate } from '@/lib/entitlements/upgrade-gate';
 import { track } from '@/lib/posthog';
 import { replaceUrl } from '@/lib/replace-url';
@@ -45,13 +47,7 @@ import {
   useUpdateEmailPrefs,
 } from '../api/use-me-settings';
 import { useMailboxesHealth, type MailboxHealth } from '../api/use-mailbox-health';
-import {
-  DrillRow,
-  PageHeader,
-  SettingsGroup,
-  SettingsRow,
-  SettingsRowStatus,
-} from '../settings-list';
+import { DrillRow, PageHeader, SettingsGroup, SettingsRow } from '../settings-list';
 import { VerbTourDialog } from '@/features/tour/verb-tour';
 import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-sheet-prefs-card';
 import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
@@ -60,8 +56,11 @@ import { MailboxesCard } from './mailboxes-card';
 import { SettingsRouteFallback } from './settings-route-fallback';
 import { VerbTourCard } from './verb-tour-card';
 import { AiSettingsSection } from '@/features/ai-consent/ai-settings-section';
+import styles from './settings-screen.module.css';
 
 const { color, font, text, radius, motion } = tokens;
+
+const SECTION_IDS = new Set(['mailboxes', 'actions', 'notifications', 'ai', 'more', 'account']);
 
 const MAILBOX_HASH = /^#mailbox-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
 
@@ -78,10 +77,12 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
  *   1. Gmail accounts — health + reconnect (D115)          #mailboxes
  *   2. Actions        — D34 preview placement + D38 tour    #actions
  *   3. Notifications  — D165 email toggles + D64 Brief hour #notifications
- *   4. More           — drill-ins with no sidebar entry: protected
- *                       senders, privacy & data (which also holds the
- *                       D147 cookie choice), help, plan & billing
- *   5. Account        — signed-in row + the D216 deletion rows #account
+ *   4. AI             — consent controls when available     #ai
+ *   5. Privacy & data — protected senders, privacy, help     #more
+ *   6. Account        — signed-in row + deletion last        #account
+ *
+ * The quiet plan rail uses the existing billing read and stays independent
+ * of preference errors. The header always links to Plan & billing.
  *
  * The group ids are deep-link targets (OAuth returns, notification
  * emails, the no-active-mailbox gate) — renaming one breaks a link
@@ -131,6 +132,7 @@ export function SettingsScreen({
   const billingView = mounted ? billing : null;
   const layoutSettled = mounted && !settings.isPending && !billing.isPending;
   const [highlightAccount, setHighlightAccount] = useState(false);
+  const didInitialHashScroll = useRef(false);
   useEffect(() => {
     if (!layoutSettled || didDeepLinkScroll.current) return;
     if (new URLSearchParams(window.location.search).get('cancelDeletion') !== '1') return;
@@ -203,6 +205,47 @@ export function SettingsScreen({
     return () => window.clearTimeout(timeout);
   }, [highlightMailboxId]);
 
+  // The streamed fallback has no sections. Resolve ordinary deep links only
+  // after the real groups settle, so a late preference/plan read cannot move
+  // the target out of view. Native anchors retain their URL and keyboard use.
+  useEffect(() => {
+    if (!layoutSettled) return;
+    const focusHashTarget = (event?: HashChangeEvent) => {
+      // Ignore stale queued events and the OAuth effect's own URL scrub.
+      if (event?.newURL && event.newURL !== window.location.href) return;
+      if (event?.oldURL) {
+        const previous = new URL(event.oldURL);
+        if (
+          previous.searchParams.has('reconnect_result') ||
+          previous.searchParams.has('connect_start_result')
+        )
+          return;
+      }
+      const hash = window.location.hash;
+      const id = hash.slice(1);
+      if (!SECTION_IDS.has(id) && !reconnectMailboxIdFromHash(hash)) return;
+      const target = document.getElementById(id);
+      if (!target) return;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView({ block: 'start' });
+    };
+    if (!didInitialHashScroll.current) {
+      didInitialHashScroll.current = true;
+      // These return flows own their focus, highlights and URL cleanup.
+      const params = new URLSearchParams(window.location.search);
+      if (
+        !didHandleReconnectResult.current &&
+        !params.has('reconnect_result') &&
+        !params.has('connect_start_result') &&
+        params.get('cancelDeletion') !== '1'
+      ) {
+        focusHashTarget();
+      }
+    }
+    window.addEventListener('hashchange', focusHashTarget);
+    return () => window.removeEventListener('hashchange', focusHashTarget);
+  }, [layoutSettled]);
+
   useEffect(() => {
     void track('page_viewed', { page: 'settings', mailbox_id: null });
   }, []);
@@ -240,8 +283,6 @@ export function SettingsScreen({
           // whole screen with it (the 2026-07-09 whole-screen class).
           { kind: 'ready', prefs: settingsView.data.briefPrefs ?? DEFAULT_BRIEF_PREFS };
 
-  const tier = billingView?.data?.tier ?? null;
-  const manifestTier = tier && tier in TIER_MANIFEST ? TIER_MANIFEST[tier] : null;
   // The card configures a Brief this workspace only receives on an
   // entitled tier. Under-tier settings would be a control with no
   // effect; /brief already carries the upgrade path, so nothing is
@@ -260,6 +301,18 @@ export function SettingsScreen({
     atInboxLimit,
   } = useTier();
   const briefUnlocked = hasCapability(entitledTier, 'brief');
+  // A Backlog Pass can grant a Plus entitlement without being a Plus
+  // subscription. Reuse Billing's plan projection so both pages name the
+  // same access, including a paid subscription overlapping a Pass.
+  const planView = deriveBillingViewState({
+    isLoading: billingView == null || billingView.isPending,
+    isError: billingView?.isError ?? false,
+    error: billingView?.error,
+    data: billingView?.data,
+    meTier: entitledTier,
+    pending: null,
+  });
+  const planName = planView.kind === 'plan' ? currentPlanTitle(planView) : null;
 
   function connectMailbox(reconnectMailboxId?: string) {
     if (inboxLimitReason === 'pass' && atInboxLimit && !reconnectMailboxId) {
@@ -283,12 +336,13 @@ export function SettingsScreen({
 
   return (
     <div
-      className="dm-settings-page"
+      className={`dm-settings-page ${styles.page}`}
       style={{
         ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
-        gap: 32,
+        gap: 28,
+        maxWidth: 1120,
       }}
     >
       <div
@@ -309,157 +363,172 @@ export function SettingsScreen({
       >
         {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
       </div>
-      <EditorialKicker>Settings</EditorialKicker>
-      <PageHeader title="Settings" />
-      <EditorialContents
-        items={[
-          { href: '#mailboxes', label: 'Gmail accounts' },
-          { href: '#actions', label: SETTINGS_PREVIEWS_TITLE },
-          { href: '#notifications', label: 'Notifications' },
-          ...(settingsView?.data?.aiConsent ? [{ href: '#ai', label: 'AI' }] : []),
-          { href: '#more', label: 'Policies and help' },
-          { href: '#account', label: 'Account' },
-        ]}
-      />
+      <div className={styles.header}>
+        <PageHeader title="Settings">
+          <Link className={styles.billingLink} href="/billing">
+            Plan &amp; billing
+          </Link>
+        </PageHeader>
+        <EditorialDescription>
+          Gmail accounts, cleanup previews and email preferences.
+        </EditorialDescription>
+      </div>
       <ScreenIntro
         id="settings"
         title="Settings"
         body="Gmail accounts, previews, emails, privacy and your plan."
       />
 
-      <MailboxesCard
-        mailboxes={me.mailboxes}
-        activeMailboxId={me.activeMailboxId}
-        inboxLimit={inboxLimit}
-        {...(inboxLimitReason === 'pass' ? { inboxLimitReason: 'pass' as const } : {})}
-        healthById={healthById}
-        highlightMailboxId={highlightMailboxId}
-        onConnect={connectMailbox}
-        onReactivate={reactivateMailbox}
-      />
-
-      <ActionSheetPrefsCard
-        state={sheetPrefsState}
-        pendingWire={pendingWire}
-        saveFailed={updateSheetPrefs.isError}
-        onToggle={(wire, next) => {
-          setPendingWire(wire);
-          updateSheetPrefs.mutate({ [wire]: next }, { onSettled: () => setPendingWire(null) });
-        }}
-      >
-        <VerbTourCard onReplay={() => setTourOpen(true)} />
-      </ActionSheetPrefsCard>
-      {tourOpen && <VerbTourDialog onClose={() => setTourOpen(false)} />}
-
-      <EmailPrefsCard
-        state={emailPrefsState}
-        pendingWire={pendingEmailWire}
-        saveFailed={updateEmailPrefs.isError}
-        onToggle={(wire, next) => {
-          setPendingEmailWire(wire);
-          updateEmailPrefs.mutate({ [wire]: next }, { onSettled: () => setPendingEmailWire(null) });
-        }}
-      >
-        {/* The group's own row already reports a loading / failed read;
-            the Brief row joins only once there is an hour to show. */}
-        {briefUnlocked && briefPrefsState.kind === 'ready' && (
-          <BriefPrefsCard
-            state={briefPrefsState}
-            timezone={me.user.timezone}
-            pending={updateBriefPrefs.isPending}
-            saveFailed={updateBriefPrefs.isError}
-            onChange={(hour) => updateBriefPrefs.mutate({ hour })}
+      <div className={styles.layout}>
+        <div className={styles.preferences}>
+          <EditorialContents
+            items={[
+              { href: '#mailboxes', label: 'Gmail accounts' },
+              { href: '#actions', label: SETTINGS_PREVIEWS_TITLE },
+              { href: '#notifications', label: 'Email notifications' },
+              ...(settingsView?.data?.aiConsent ? [{ href: '#ai', label: 'AI' }] : []),
+              { href: '#more', label: 'Privacy and data' },
+              { href: '#account', label: 'Your account' },
+            ]}
           />
-        )}
-      </EmailPrefsCard>
+          <MailboxesCard
+            mailboxes={me.mailboxes}
+            activeMailboxId={me.activeMailboxId}
+            inboxLimit={inboxLimit}
+            {...(inboxLimitReason === 'pass' ? { inboxLimitReason: 'pass' as const } : {})}
+            healthById={healthById}
+            highlightMailboxId={highlightMailboxId}
+            onConnect={connectMailbox}
+            onReactivate={reactivateMailbox}
+          />
 
-      {settingsView?.data?.aiConsent && (
-        <AiSettingsSection view={settingsView.data.aiConsent} briefCapable={briefUnlocked} />
-      )}
+          <ActionSheetPrefsCard
+            state={sheetPrefsState}
+            pendingWire={pendingWire}
+            saveFailed={updateSheetPrefs.isError}
+            onToggle={(wire, next) => {
+              setPendingWire(wire);
+              updateSheetPrefs.mutate({ [wire]: next }, { onSettled: () => setPendingWire(null) });
+            }}
+          >
+            <VerbTourCard onReplay={() => setTourOpen(true)} />
+          </ActionSheetPrefsCard>
+          {tourOpen && <VerbTourDialog onClose={() => setTourOpen(false)} />}
 
-      {/* Autopilot and Quiet hours live in the sidebar; these are the
-          destinations that have no other way in. */}
-      <SettingsGroup id="more" title="Policies and help">
-        <DrillRow href="/settings/senders" label="Protected senders" />
-        <DrillRow href="/settings/privacy" label="Privacy & data" />
-        <DrillRow href="/settings/help" label="Help & glossary" />
-        <PlanRow
+          <EmailPrefsCard
+            state={emailPrefsState}
+            pendingWire={pendingEmailWire}
+            saveFailed={updateEmailPrefs.isError}
+            onToggle={(wire, next) => {
+              setPendingEmailWire(wire);
+              updateEmailPrefs.mutate(
+                { [wire]: next },
+                { onSettled: () => setPendingEmailWire(null) },
+              );
+            }}
+          >
+            {/* The group's own row already reports a loading / failed read;
+            the Brief row joins only once there is an hour to show. */}
+            {briefUnlocked && briefPrefsState.kind === 'ready' && (
+              <BriefPrefsCard
+                state={briefPrefsState}
+                timezone={me.user.timezone}
+                pending={updateBriefPrefs.isPending}
+                saveFailed={updateBriefPrefs.isError}
+                onChange={(hour) => updateBriefPrefs.mutate({ hour })}
+              />
+            )}
+          </EmailPrefsCard>
+
+          {settingsView?.data?.aiConsent && (
+            <AiSettingsSection view={settingsView.data.aiConsent} briefCapable={briefUnlocked} />
+          )}
+
+          <SettingsGroup id="more" title="Privacy and data">
+            <DrillRow href="/settings/senders" label="Protected senders" />
+            <DrillRow href="/settings/privacy" label="Privacy & data" />
+            <DrillRow href="/settings/help" label="Help & glossary" />
+          </SettingsGroup>
+        </div>
+        <PlanSummary
           state={
             billingView == null || billingView.isPending
               ? { kind: 'loading' }
               : billingView.isError
-                ? // Only the BILLING_DISABLED envelope code means the flag is
-                  // off. A bare 503 also covers BILLING_NOT_PROVISIONED and
-                  // any upstream outage — those are failures, and retryable.
-                  isBillingDisabledError(billingView.error)
+                ? isBillingDisabledError(billingView.error)
                   ? { kind: 'disabled' }
                   : { kind: 'error', onRetry: () => void billing.refetch() }
-                : {
-                    kind: 'ready',
-                    planName: manifestTier?.name ?? billingView.data.tier,
-                    foundingMember: billingView.data.foundingMember,
-                  }
+                : planName === null
+                  ? { kind: 'error', onRetry: () => void billing.refetch() }
+                  : {
+                      kind: 'ready',
+                      planName,
+                      foundingMember: billingView.data.foundingMember,
+                    }
           }
         />
-      </SettingsGroup>
 
-      <div
-        ref={accountRef}
-        id="account"
-        data-testid="settings-account-section"
-        style={{
-          scrollMarginTop: 24,
-          borderRadius: radius.xl,
-          outline: highlightAccount ? `2px solid ${color.danger}` : 'none',
-          outlineOffset: 6,
-          transition: `outline-color ${motion.base} ${motion.ease}`,
-        }}
-      >
-        <SettingsGroup title="Account">
-          <SettingsRow label="Signed in as">
-            <span style={{ fontFamily: font.sans, fontSize: text.md, color: color.fgMuted }}>
-              {me.user.email}
-            </span>
-          </SettingsRow>
-          <AccountDeletionSection />
-        </SettingsGroup>
+        <div
+          ref={accountRef}
+          id="account"
+          tabIndex={-1}
+          className={styles.account}
+          data-testid="settings-account-section"
+          style={{
+            scrollMarginTop: 24,
+            borderRadius: radius.xl,
+            outline: highlightAccount ? `2px solid ${color.danger}` : undefined,
+            outlineOffset: 6,
+            transition: `outline-color ${motion.base} ${motion.ease}`,
+          }}
+        >
+          <SettingsGroup title="Your account">
+            <SettingsRow label="Signed in as">
+              <span style={{ fontFamily: font.sans, fontSize: text.md, color: color.fgMuted }}>
+                {me.user.email}
+              </span>
+            </SettingsRow>
+            <AccountDeletionSection />
+          </SettingsGroup>
+        </div>
       </div>
     </div>
   );
 }
 
-type PlanRowState =
+type PlanSummaryState =
   | { kind: 'loading' }
   /** 503 BILLING_DISABLED — the flag is off. Deterministic, so no retry. */
   | { kind: 'disabled' }
   | { kind: 'error'; onRetry: () => void }
   | { kind: 'ready'; planName: string; foundingMember: boolean };
 
-/**
- * Billing drill-in — the only way to /billing once it leaves the
- * sidebar, so the link renders in EVERY state; a failed read adds a
- * retry row under it instead of replacing it.
- */
-function PlanRow({ state }: { state: PlanRowState }) {
+/** A scoped readout; billing failure never replaces account controls. */
+function PlanSummary({ state }: { state: PlanSummaryState }) {
   return (
-    <>
-      <DrillRow
-        href="/billing"
-        label="Billing"
-        value={
-          state.kind === 'loading' ? (
-            <span role="status">Loading plan…</span>
-          ) : state.kind === 'disabled' ? (
-            'Not enabled'
-          ) : state.kind === 'ready' ? (
-            `${state.planName}${state.foundingMember ? ' · Founding member' : ''}`
-          ) : null
-        }
-      />
-      {state.kind === 'error' && (
-        <SettingsRowStatus state={state} loadingLabel="" errorLabel="Could not load your plan." />
+    <aside className={styles.plan} aria-labelledby="settings-plan-title">
+      <h2 id="settings-plan-title">Your plan</h2>
+      {state.kind === 'loading' ? (
+        <p role="status">Loading plan…</p>
+      ) : state.kind === 'disabled' ? (
+        <p>Not enabled</p>
+      ) : state.kind === 'ready' ? (
+        <>
+          <strong className={styles.planName}>{state.planName}</strong>
+          {state.foundingMember ? <p>Founding member</p> : null}
+        </>
+      ) : (
+        <>
+          <p role="alert">Could not load your plan.</p>
+          <Button tone="default" onClick={state.onRetry} style={{ marginTop: 12, minHeight: 44 }}>
+            Retry
+          </Button>
+        </>
       )}
-    </>
+      <Link className={styles.planLink} href="/billing">
+        View plan &amp; billing
+      </Link>
+    </aside>
   );
 }
 

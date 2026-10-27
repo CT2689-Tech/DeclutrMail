@@ -8,6 +8,138 @@ const now = new Date('2026-10-03T00:00:00Z');
 const at = (seconds: number) => new Date(now.getTime() - seconds * 1000);
 
 describe('durable action outcome observations', () => {
+  it.each(['archive', 'delete'] as const)(
+    'allows a published Quiet resume deadline plus grace for %s, without masking other work',
+    async (verb) => {
+      const db = await freshTestDb();
+      const [workspace] = await db.insert(workspaces).values({ name: 'Quiet test' }).returning();
+      const [user] = await db
+        .insert(users)
+        .values({ workspaceId: workspace!.id, email: 'quiet@example.test' })
+        .returning();
+      const [mailbox] = await db
+        .insert(mailboxAccounts)
+        .values({
+          workspaceId: workspace!.id,
+          userId: user!.id,
+          provider: 'gmail',
+          providerAccountId: 'quiet-provider',
+          status: 'active',
+        })
+        .returning();
+      let sequence = 0;
+      const resumeAt = new Date(now.getTime() + 3600_000);
+      const selector = {
+        type: 'sender' as const,
+        senderId: 'synthetic',
+        senderKey: 'synthetic',
+        autopilot: { ruleId: 'synthetic-rule', ruleVersion: 1, previewId: 'synthetic-preview' },
+        quietDeferredUntilMs: resumeAt.getTime(),
+      };
+      const insert = async (extra: Partial<typeof actionJobs.$inferInsert> = {}) => {
+        const [row] = await db
+          .insert(actionJobs)
+          .values({
+            mailboxAccountId: mailbox!.id,
+            verb,
+            selector,
+            status: 'queued',
+            idempotencyKey: `quiet-${sequence++}`,
+            createdAt: at(3600),
+            updatedAt: at(3600),
+            ...extra,
+          })
+          .returning();
+        return row!;
+      };
+      await insert(); // Only this untouched root may wait until the published callback is due.
+      await insert({ status: 'executing' });
+      await insert({ direction: 'reverse' });
+      await insert({ selector: { type: 'messages', quietDeferredUntilMs: resumeAt.getTime() } });
+      await insert({
+        selector: { ...selector, autopilot: { ...selector.autopilot, ruleVersion: 0 } },
+      });
+      const invalidHints = ['invalid', null, true, -1, 1e100, {}, undefined];
+      for (const hint of invalidHints)
+        await insert({ selector: { ...selector, quietDeferredUntilMs: hint as never } });
+      const root = await insert({ status: 'failed' });
+      const child = await insert({
+        rootActionId: root.id,
+        retryOfActionId: root.id,
+        recoveryAttempt: 1,
+        selectionFrozenAt: at(3600),
+      });
+      const observe = async (time = now) =>
+        (await readActionOutcomes(db as never, time)).filter((r) => r.verb === verb);
+      const result = await observe();
+      expect(
+        result.find((r) => r.kind === 'ops.action_pending' && r.direction === 'forward'),
+      ).toMatchObject({
+        pending: 5 + invalidHints.length,
+        overdue: 4 + invalidHints.length,
+        oldestPendingSeconds: 3600,
+      });
+      expect(
+        result.find(
+          (r) =>
+            r.kind === 'ops.action_outcome' && r.direction === 'forward' && r.outcome === 'queued',
+        ),
+      ).toMatchObject({
+        operations: 4 + invalidHints.length,
+        overdue: 3 + invalidHints.length,
+        oldestPendingSeconds: 3600,
+      });
+      expect(
+        result.find((r) => r.kind === 'ops.action_pending' && r.direction === 'reverse'),
+      ).toMatchObject({ pending: 1, overdue: 1 });
+      // Quiet ending cannot create an overdue sample which lingers in the alert lookback.
+      for (const seconds of [0, 1799]) {
+        const duringGrace = await observe(new Date(resumeAt.getTime() + seconds * 1000));
+        expect(
+          duringGrace.find((r) => r.kind === 'ops.action_pending' && r.direction === 'forward')
+            ?.overdue,
+        ).toBe(4 + invalidHints.length);
+      }
+      // A lost resume callback is detected even if the mailbox remains in Quiet.
+      const overdue = await observe(new Date(resumeAt.getTime() + 1800_000));
+      expect(
+        overdue.find((r) => r.kind === 'ops.action_pending' && r.direction === 'forward'),
+      ).toMatchObject({ pending: 5 + invalidHints.length, overdue: 5 + invalidHints.length });
+      expect(
+        overdue.find(
+          (r) =>
+            r.kind === 'ops.action_outcome' && r.direction === 'forward' && r.outcome === 'queued',
+        )?.overdue,
+      ).toBe(4 + invalidHints.length);
+      // A new recovery attempt gets its own overdue clock, never the old root's hint/age.
+      await insert({
+        rootActionId: root.id,
+        retryOfActionId: child.id,
+        recoveryAttempt: 2,
+        selectionFrozenAt: at(60),
+        createdAt: at(60),
+      });
+      const recovered = await observe();
+      expect(
+        recovered.find(
+          (r) =>
+            r.kind === 'ops.action_outcome' && r.direction === 'forward' && r.outcome === 'queued',
+        )?.overdue,
+      ).toBe(2 + invalidHints.length);
+      await insert({ status: 'executing', updatedAt: at(60) });
+      const executingOverdue = async (time: Date) =>
+        (await observe(time)).find(
+          (r) =>
+            r.kind === 'ops.action_outcome' &&
+            r.direction === 'forward' &&
+            r.outcome === 'executing',
+        )?.overdue;
+      expect(await executingOverdue(now)).toBe(1);
+      // Provider start gets normal grace, but the inherited future Quiet hint cannot extend it.
+      expect(await executingOverdue(new Date(now.getTime() + 1740_000))).toBe(2);
+    },
+  );
+
   it('binds ISO timestamps, never raw Dates, in both postgres.js queries', () => {
     for (const query of [actionOutcomeQuery(now), actionPendingQuery(now)]) {
       const params = new PgDialect().sqlToQuery(query).params;

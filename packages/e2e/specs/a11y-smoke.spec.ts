@@ -108,6 +108,20 @@ for (const route of ROUTES) {
             });
     await expect(ready).toBeVisible({ timeout: 60_000 });
 
+    if (route.path === '/senders') {
+      // Exercise the real layout and self-hosted fonts, not just the isolated
+      // CSS fixture. Both desktop and mobile must restore light after a flip.
+      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(247, 246, 249)');
+      await expect(page.getByRole('heading', { name: 'Senders', exact: true })).toHaveCSS(
+        'font-family',
+        /Geist/,
+      );
+      await page.getByRole('button', { name: 'Switch to dark mode', exact: true }).click();
+      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(30, 26, 33)');
+      await page.getByRole('button', { name: 'Switch to light mode', exact: true }).click();
+      await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(247, 246, 249)');
+    }
+
     await expectCriticalControlsHaveNames(page, testInfo.project.name === MOBILE_PROJECT);
     await expectNoViewportOverflow(page);
     await expectNoBlockingAxeViolations(page);

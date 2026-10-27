@@ -58,6 +58,7 @@ export type PurchasableTier = z.infer<typeof PurchasableTierSchema>;
 export const CheckoutRequestSchema = z
   .object({
     tierId: PurchasableTierSchema,
+    attemptId: z.uuid().optional(),
     cycle: BillingCycleSchema,
     provider: BillingProviderIdSchema,
     promo: z.literal('foundingPro').optional(),
@@ -105,6 +106,7 @@ export type CheckoutRequest = z.infer<typeof CheckoutRequestSchema>;
 export const PaddleCheckoutSessionSchema = z.object({
   provider: z.literal('paddle'),
   kind: z.literal('overlay'),
+  attemptId: z.uuid().optional(),
   /** Omitted while the session is a currency-locked transaction. */
   priceId: z.string().min(1).optional(),
   /** Server-created transaction. Opening it does not send `items`. */
@@ -159,6 +161,30 @@ export const CheckoutSessionSchema = z.discriminatedUnion('provider', [
 ]);
 export type CheckoutSession = z.infer<typeof CheckoutSessionSchema>;
 
+/** A server-owned purchase, separate from the account's entitlement. */
+export const CheckoutAttemptSchema = z.object({
+  id: z.uuid(),
+  version: z.number().int().nonnegative(),
+  state: z.enum([
+    'creating',
+    'open',
+    'payment_in_progress',
+    'stopping',
+    'paid',
+    'fulfilled',
+    'stopped',
+    'unknown',
+  ]),
+  tier: PurchasableTierSchema,
+  cycle: BillingCycleSchema,
+  offer: z.literal('pass_onetime').nullable(),
+  createdAt: z.iso.datetime(),
+  canResume: z.boolean(),
+  canCancel: z.boolean(),
+});
+export type CheckoutAttempt = z.infer<typeof CheckoutAttemptSchema>;
+export const CheckoutAttemptCommandSchema = z.object({ version: z.number().int().nonnegative() });
+
 /**
  * GET /api/billing/subscription response `data`.
  *
@@ -169,6 +195,7 @@ export type CheckoutSession = z.infer<typeof CheckoutSessionSchema>;
  * cancellation).
  */
 export const BillingSubscriptionSchema = z.object({
+  checkoutAttempt: CheckoutAttemptSchema.nullable().optional(),
   /** New checkout needs an onboarded owner and an active, ready mailbox. */
   checkoutSetupComplete: z.boolean().optional(),
   /** Durable provider verification/support barrier; optional during rolling deploys. */
@@ -245,6 +272,9 @@ export const BillingSubscriptionSchema = z.object({
       tier: PurchasableTierSchema,
       cycle: BillingCycleSchema,
       expiresAt: z.iso.datetime(),
+      legacyUnresolved: z.boolean().optional(),
+      offer: z.literal('pass_onetime').optional(),
+      createdAt: z.iso.datetime().optional(),
     })
     .nullable(),
   /**
@@ -355,6 +385,7 @@ export type BillingReconcileOutcome = z.infer<typeof BillingReconcileOutcomeSche
  * still projects through the fully-guarded webhook path.
  */
 export const BillingReconcileRequestSchema = z.object({
+  attemptId: z.uuid().optional(),
   toTier: PurchasableTierSchema.optional(),
   cycle: BillingCycleSchema.optional(),
   startedAt: z.iso.datetime().optional(),
@@ -376,11 +407,27 @@ export const BillingReconcileRequestSchema = z.object({
    * tell those opposite truths apart and stays neutral.
    */
   kind: z.enum(['checkout', 'change']).optional(),
+  /**
+   * The wait is a Backlog Pass: a one-time purchase the subscription
+   * search cannot see. The server's own claim outranks this when it still
+   * exists; this covers a swept claim. A Pass is answered only from the
+   * exact transaction, never from the search.
+   */
+  offer: z.literal('pass_onetime').optional(),
 });
 export type BillingReconcileRequest = z.infer<typeof BillingReconcileRequestSchema>;
 
 export const BillingReconcileResponseSchema = z.object({
+  attempt: CheckoutAttemptSchema.nullable().optional(),
   outcome: BillingReconcileOutcomeSchema,
+  /**
+   * `true` only on a `none_found` that rests on Paddle's own record of
+   * the one transaction this checkout created (unpaid or canceled), not
+   * on an empty search. Absent from an older API, which a caller must
+   * read as `false`. A caller may act on a `none_found` without the
+   * customer's assertion only when this is `true`.
+   */
+  exact: z.boolean().optional(),
 });
 export type BillingReconcileResponse = z.infer<typeof BillingReconcileResponseSchema>;
 
@@ -442,6 +489,8 @@ export const BillingInvoiceSchema = z.object({
   amount: z.string().min(1),
   currencyCode: z.string().min(1),
   status: z.enum(['paid', 'due', 'canceled', 'unknown']),
+  /** Confirmed refunds in the original currency's lowest unit; absent on older APIs/other rails. */
+  refundedAmount: z.string().regex(/^\d+$/).optional(),
   /** Provider-hosted invoice page, when the rail exposes a stable one. */
   hostedUrl: z.url().nullable(),
   /** Whether `GET /invoices/:id/document` can mint a document URL. */

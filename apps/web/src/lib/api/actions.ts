@@ -894,6 +894,9 @@ export type BulkSkipReason =
  * (ADR-0020 cascade-undo walks the `composite_id` siblings).
  */
 export interface BatchStatusResult {
+  /** Frozen approval identity and confirmed Schedule deferral, absent on older builds. */
+  autopilot?: { ruleId: string; ruleName: string | null; waitingUntil: string | null };
+
   /** Execution-only combined feedback; absent on older API builds. */
   feedbackVersion?: 2;
   batchId: string;
@@ -901,6 +904,8 @@ export interface BatchStatusResult {
   total: number;
   done: number;
   failed: number;
+  /** Known failure codes only; older API builds may omit them. */
+  failureCodes?: string[];
   requestedCount: number;
   affectedCount: number;
   /**
@@ -1045,6 +1050,9 @@ function withRequiredLaterWakeAt(primary: {
 /** Poll a batch's aggregate status. Mailbox-scoped → 404 if not owned. */
 /** One user decision still running — `GET /api/actions/active`. */
 export interface InFlightActionGroup {
+  /** Frozen approval identity and confirmed Schedule deferral, absent on older builds. */
+  autopilot?: { ruleId: string; ruleName: string | null; waitingUntil: string | null };
+
   /** Pollable at `GET /api/actions/batch/:id` for the outcome. */
   groupId: string;
   verb: 'archive' | 'later' | 'delete' | 'unsubscribe';

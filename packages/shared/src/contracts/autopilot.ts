@@ -74,6 +74,7 @@ export const AutopilotApproveAllRequestSchema = z.union([
   z
     .object({
       matchedBefore: z.string().datetime(),
+      ruleVersion: z.number().int().positive().optional(),
     })
     .strict(),
 ]);
@@ -125,6 +126,8 @@ export const AutopilotPreviewSampleSchema = z
     inboxCount: z.number().int().nonnegative().optional(),
     /** Matcher's human-readable branch label ("Read rate 2%, last seen 120d ago"). */
     reason: z.string(),
+    /** Standing Unsubscribe policy excludes this historical match from a new rule request. */
+    ineligibleReason: z.literal('unsubscribe_policy_recorded').optional(),
   })
   .strict();
 export type AutopilotPreviewSample = z.infer<typeof AutopilotPreviewSampleSchema>;
@@ -170,6 +173,7 @@ export const AutopilotRulePreviewResultSchema = z
     actionableSenderCount: z.number().int().nonnegative(),
     /** Current INBOX messages belonging to those actionable senders. */
     actionableMessageCount: z.number().int().nonnegative(),
+    reach: z.enum(['inbox_only', 'all_mail']).optional(),
     /** Matching senders excluded because they are Protected. */
     protectedWouldMatchCount: z.number().int().nonnegative(),
     /** Senders evaluated (post protect-filter). */

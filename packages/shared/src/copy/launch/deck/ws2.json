@@ -287,7 +287,17 @@
         "other": "{n} emails in your inbox."
       },
       "preview": "Preview cleanup",
-      "review": "Review the senders",
+      "review": "Review senders",
+      "reviewTitle": {
+        "one": "1 sender worth reviewing.",
+        "other": "{n} senders worth reviewing."
+      },
+      "details": "Details",
+      "senderPreview": "Some senders to review",
+      "privacy": "What we store",
+      "previewLoading": "Checking current inbox emails…",
+      "previewError": "Couldn’t refresh this cleanup. Try again.",
+      "previewEmpty": "This cleanup is no longer available.",
       "safety": "You choose what happens before any email moves.",
       "progress": "Your progress",
       "allTime": "All time",
@@ -771,7 +781,7 @@
     "autopilot": {
       "covered": "This rule handles them. They leave your suggestions.",
       "stay": "They stay in your suggestions. Approve or skip each one.",
-      "matchVerdict": "Matched: the suggestion was {verdict}, and this rule acts on those."
+      "matchVerdict": "Matched: this rule looks for {verdict} suggestions."
     },
     "reconnect": {
       "banner": "DeclutrMail lost access to {mailboxEmail}. Reconnect and allow Gmail access."

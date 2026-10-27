@@ -55,15 +55,12 @@ describe('AppShell interactions', () => {
       </AppShell>,
     );
 
-    const triage = within(screen.getByRole('navigation', { name: 'Cleanup views' })).getByRole(
-      'button',
-      { name: 'Triage' },
-    );
+    const triage = within(sidebar()).getByRole('button', { name: 'Automations' });
     fireEvent.mouseEnter(triage);
     fireEvent.focus(triage);
     fireEvent.touchStart(triage);
 
-    expect(onNavigateIntent.mock.calls).toEqual([['triage'], ['triage'], ['triage']]);
+    expect(onNavigateIntent.mock.calls).toEqual([['autopilot'], ['autopilot'], ['autopilot']]);
     expect(onNavigate).not.toHaveBeenCalled();
 
     fireEvent.mouseEnter(within(sidebar()).getByRole('button', { name: 'Cleanup' }));
@@ -71,11 +68,11 @@ describe('AppShell interactions', () => {
   });
 });
 
-describe('AppShell — fixed workspace rail', () => {
-  it('ignores old expansion preference and always renders five icon groups', () => {
+describe('AppShell — responsive workspace navigation', () => {
+  it('ignores old expansion preference and keeps five workspace groups', () => {
     window.localStorage.setItem('dm.sidebar.collapsed', 'false');
     render(
-      <AppShell active="quiet" onNavigate={vi.fn()}>
+      <AppShell active="autopilot" onNavigate={vi.fn()}>
         <div>Page content</div>
       </AppShell>,
     );
@@ -87,7 +84,7 @@ describe('AppShell — fixed workspace rail', () => {
     expect(screen.queryByRole('button', { name: /Expand sidebar|Collapse sidebar/ })).toBeNull();
     expect(window.localStorage.getItem('dm.sidebar.collapsed')).toBe('false');
   });
-  it('routes brand and workspace settings controls', () => {
+  it('routes brand and settings controls', () => {
     const onNavigate = vi.fn();
     render(
       <AppShell active="senders" onNavigate={onNavigate}>
@@ -95,9 +92,28 @@ describe('AppShell — fixed workspace rail', () => {
       </AppShell>,
     );
     fireEvent.click(screen.getByRole('button', { name: 'DeclutrMail Home' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Workspace settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(onNavigate.mock.calls).toEqual([['home'], ['settings']]);
   });
+  it('preserves real account URLs and modified clicks while using host routing normally', () => {
+    const onNavigate = vi.fn();
+    render(
+      <AppShell active="billing" onNavigate={onNavigate} hrefFor={(id) => `/${id}`}>
+        <div>Billing</div>
+      </AppShell>,
+    );
+    const account = within(screen.getByRole('navigation', { name: 'Account navigation' }));
+    const settings = account.getByRole('link', { name: 'Settings' });
+    const billing = account.getByRole('link', { name: 'Plan & billing' });
+    expect(settings).toHaveAttribute('href', '/settings');
+    expect(billing).toHaveAttribute('href', '/billing');
+    expect(billing).toHaveAttribute('aria-current', 'page');
+    expect(fireEvent.click(settings, { ctrlKey: true })).toBe(true);
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(fireEvent.click(settings)).toBe(false);
+    expect(onNavigate).toHaveBeenCalledWith('settings');
+  });
+
   it('offers account utilities without duplicating the primary routes and closes after navigation', () => {
     const onNavigate = vi.fn();
     render(
@@ -147,7 +163,7 @@ describe('AppShell — fixed workspace rail', () => {
     const onNavigate = vi.fn();
     const onNavigateIntent = vi.fn();
     render(
-      <AppShell active="quiet" onNavigate={onNavigate} onNavigateIntent={onNavigateIntent}>
+      <AppShell active="autopilot" onNavigate={onNavigate} onNavigateIntent={onNavigateIntent}>
         <div>Page content</div>
       </AppShell>,
     );
@@ -165,29 +181,29 @@ describe('AppShell — fixed workspace rail', () => {
     const onNavigate = vi.fn();
     render(
       <AppShell
-        active="senders"
+        active="brief"
         onNavigate={onNavigate}
-        counts={{ screener: { text: 3, label: '3 new senders' } }}
-        locks={{ screener: 'Pro' }}
+        counts={{ followups: { text: 3, label: '3 follow-ups' } }}
+        locks={{ followups: 'Pro' }}
       >
         <div>Page content</div>
       </AppShell>,
     );
-    const child = within(screen.getByRole('navigation', { name: 'Cleanup views' })).getByRole(
+    const child = within(screen.getByRole('navigation', { name: 'Catch up views' })).getByRole(
       'button',
-      { name: /Screener/ },
+      { name: /Follow-ups/ },
     );
-    expect(within(child).getByLabelText('3 new senders')).toBeInTheDocument();
+    expect(within(child).getByLabelText('3 follow-ups')).toBeInTheDocument();
     expect(within(child).getByLabelText('Pro feature')).toBeInTheDocument();
     fireEvent.click(child);
-    expect(onNavigate).toHaveBeenCalledWith('screener');
+    expect(onNavigate).toHaveBeenCalledWith('followups');
   });
 });
 
 describe('AppShell — mobile workspace navigation', () => {
   it.each([
     ['triage', 'Cleanup'],
-    ['quiet', 'Automations'],
+    ['autopilot', 'Automations'],
     ['followups', 'Catch up'],
     ['snoozed', 'Catch up'],
     ['home', 'Home'],

@@ -10,16 +10,17 @@ const files = [
   ['sender-policy', 1],
   ['protection-review', 1],
   ['followups-dismiss', 1],
-  ['autopilot-pages', 1],
+  ['autopilot-pages', 2],
   ['later-recovery', 1],
   ['quiet-hours', 1],
   ['brief-preview', 1],
   ['senders-search-typing', 3],
-  ['public-journeys', 2],
+  ['public-journeys', 3],
   ['cookie-consent', 2],
   ['journey-recovery', 4],
   ['unsubscribe-backlog', 4],
   ['home-next-step', 1],
+  ['manual-delete-previews', 4],
 ];
 function report() {
   return {
@@ -48,6 +49,14 @@ function check(body) {
   }
 }
 test('complete journey report passes', () => assert.equal(check(report()), 0));
+test('missing the existing-rule editor journey fails despite the other Autopilot journey passing', () => {
+  const body = report();
+  const index = body.suites[0].specs.findIndex((spec) =>
+    spec.file.endsWith('/autopilot-pages.spec.ts'),
+  );
+  body.suites[0].specs.splice(index, 1);
+  assert.notEqual(check(body), 0);
+});
 test('one missing required journey fails despite eleven passing tests', () => {
   const body = report();
   body.suites[0].specs.shift();
@@ -61,5 +70,22 @@ test('skipped journey cannot make a green report', () => {
 test('flaky retry cannot hide a failed journey', () => {
   const body = report();
   body.suites[0].specs[0].tests[0].status = 'flaky';
+  assert.notEqual(check(body), 0);
+});
+
+test('missing the manual Delete preview matrix cannot pass the journey gate', () => {
+  const body = report();
+  body.suites[0].specs = body.suites[0].specs.filter(
+    (spec) => !spec.file.endsWith('/manual-delete-previews.spec.ts'),
+  );
+  assert.notEqual(check(body), 0);
+});
+
+test('missing either genuinely empty Triage presentation cannot pass the journey gate', () => {
+  const body = report();
+  const index = body.suites[0].specs.findIndex((spec) =>
+    spec.file.endsWith('/manual-delete-previews.spec.ts'),
+  );
+  body.suites[0].specs.splice(index, 1);
   assert.notEqual(check(body), 0);
 });

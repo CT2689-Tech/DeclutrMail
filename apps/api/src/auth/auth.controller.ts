@@ -12,7 +12,12 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-import { ok, type Envelope, type SyncReadiness } from '@declutrmail/shared/contracts';
+import {
+  ok,
+  SIGNUP_HEARD_FROM_VALUES,
+  type Envelope,
+  type SyncReadiness,
+} from '@declutrmail/shared/contracts';
 import {
   isBillingPassEnabled,
   isMeterV2,
@@ -102,6 +107,7 @@ export interface MeEnvelope {
     ref: string | null;
     heardFrom: string | null;
     promptNeeded: boolean;
+    supportedChannels: readonly string[];
   };
 }
 
@@ -209,6 +215,7 @@ export class AuthController {
         ref: user.signupAttributionRef,
         heardFrom: user.signupAttributionHeardFrom,
         promptNeeded: user.signupAttributionHeardFrom === null,
+        supportedChannels: SIGNUP_HEARD_FROM_VALUES,
       },
     });
   }

@@ -186,16 +186,17 @@ export function StepFirstTriage({
       <header
         style={{
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: 16,
+          flexWrap: 'wrap',
           maxWidth: 1180,
           margin: '0 auto',
           padding: '20px 24px 0',
           fontFamily: font.sans,
         }}
       >
-        <div>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <OnboardingPhase phase="review" />
           <h1
             style={{
@@ -221,7 +222,7 @@ export function StepFirstTriage({
             {GOAL_FRAMING[goal]}
           </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
           {/* Ends onboarding for good — `finish` writes `onboarded_at`
               and there is no way back into this step. It was briefly
               labelled "Go to Senders", which is what the

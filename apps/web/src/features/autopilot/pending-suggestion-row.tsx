@@ -2,48 +2,11 @@
 
 import { Button, tokens } from '@declutrmail/shared';
 import type { AutopilotMatchDto, AutopilotRuleDto } from '@/lib/api/autopilot';
-import { describeWouldAction } from './action-label';
 import { resolveSenderIdentity, SENDER_SYNCING_LABEL } from './sender-label';
 import { MatchReasonCopy } from './match-reason-copy';
+import styles from './review-queue.module.css';
 
-const { color, font, motion, radius, text } = tokens;
-
-/** Flat list on desktop; a readable, stacked decision on narrow screens. */
-const SUGGESTION_ROW_CSS = `.dm-suggestion-row {
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  margin: 0 -12px;
-  transition: background ${motion.fast} ${motion.ease};
-}
-.dm-suggestion-heading { align-items: baseline; }
-.dm-suggestion-metadata { align-items: center; }
-.dm-suggestion-name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-suggestion-email { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dm-suggestion-row + .dm-suggestion-row::before { content: ''; position: absolute; top: 0; left: 42px; right: 12px; height: 1px; background: ${color.lineSoft}; }
-.dm-suggestion-row:hover { background: ${color.fill}; }
-.dm-suggestion-row[data-selected='true'] { background: ${color.primarySoft}; }
-.dm-suggestion-row:hover::before, .dm-suggestion-row:hover + .dm-suggestion-row::before,
-.dm-suggestion-row[data-selected='true']::before, .dm-suggestion-row[data-selected='true'] + .dm-suggestion-row::before { opacity: 0; }
-@media (max-width: 600px) {
-  .dm-suggestion-row { grid-template-columns: 18px minmax(0, 1fr); align-items: start; margin: 0; }
-  .dm-suggestion-content { min-width: 0; }
-  .dm-suggestion-heading, .dm-suggestion-metadata { flex-direction: column; align-items: flex-start; }
-  .dm-suggestion-name, .dm-suggestion-email {
-    min-width: 0;
-    max-width: 100%;
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-  .dm-suggestion-email { width: 100%; }
-  .dm-suggestion-separator { display: none; }
-  .dm-suggestion-reason { overflow-wrap: anywhere; }
-  .dm-suggestion-skip { grid-column: 2; width: 100%; }
-  .dm-suggestion-skip button { width: 100%; }
-}`;
+const { color, font, text } = tokens;
 
 /**
  * One row in a D104 "Pending Autopilot suggestions" group.
@@ -64,7 +27,7 @@ const SUGGESTION_ROW_CSS = `.dm-suggestion-row {
  */
 export function PendingSuggestionRow({
   match,
-  rule,
+  rule: _rule,
   selected,
   onToggleSelect,
   onDismiss,
@@ -77,25 +40,22 @@ export function PendingSuggestionRow({
   onDismiss: (matchId: string) => void;
   isDismissing: boolean;
 }) {
-  const wouldVerb = rule ? describeWouldAction(rule.actionKind) : 'would act';
   const identity = resolveSenderIdentity(match);
   const senderLabel = identity.label;
   const isIdentified = identity.source !== 'unknown';
 
   return (
     <li
-      className="dm-suggestion-row"
+      className={styles.row}
       data-selected={selected ? 'true' : undefined}
       style={{
         position: 'relative',
         minHeight: 68,
         boxSizing: 'border-box',
-        padding: '12px',
-        borderRadius: radius.lg,
+        padding: '16px 0',
         fontFamily: font.sans,
       }}
     >
-      <style>{SUGGESTION_ROW_CSS}</style>
       <input
         type="checkbox"
         checked={selected}
@@ -103,9 +63,9 @@ export function PendingSuggestionRow({
         aria-label={`Select suggestion for ${senderLabel}`}
         style={{ accentColor: color.primary, width: 18, height: 18, flexShrink: 0, margin: 0 }}
       />
-      <div className="dm-suggestion-content" style={{ minWidth: 0 }}>
+      <div className={styles.identity} style={{ minWidth: 0 }}>
         <div
-          className="dm-suggestion-heading"
+          className={styles.identityHeading}
           style={{
             display: 'flex',
             gap: 8,
@@ -114,7 +74,7 @@ export function PendingSuggestionRow({
         >
           {isIdentified ? (
             <span
-              className="dm-suggestion-name"
+              className={styles.name}
               style={{
                 fontSize: text.md,
                 fontWeight: 600,
@@ -132,21 +92,21 @@ export function PendingSuggestionRow({
                 color: color.fgSoft,
                 padding: '2px 8px',
                 background: color.fill,
-                borderRadius: radius.pill,
+                borderRadius: 8,
               }}
               title={SENDER_SYNCING_LABEL}
             >
               {SENDER_SYNCING_LABEL}
             </span>
           )}
-          <span style={{ fontSize: text.md, color: color.fg, fontWeight: 500 }}>{wouldVerb}</span>
         </div>
         <div
-          className="dm-suggestion-metadata"
+          className={styles.metadata}
           style={{
             display: 'flex',
-            gap: 8,
-            marginTop: 2,
+            flexDirection: 'column',
+            gap: 5,
+            marginTop: 4,
             fontSize: text.sm,
             color: color.fgMuted,
             fontVariantNumeric: 'tabular-nums',
@@ -155,20 +115,17 @@ export function PendingSuggestionRow({
           {identity.source === 'name' && match.senderEmail != null && (
             <>
               <span
-                className="dm-suggestion-email"
+                className={styles.email}
                 style={{
                   fontFamily: font.sans,
                 }}
               >
                 {match.senderEmail}
               </span>
-              <span className="dm-suggestion-separator" aria-hidden="true">
-                ·
-              </span>
             </>
           )}
-          <div className="dm-suggestion-reason">
-            <MatchReasonCopy reason={match.reason} prefix="Why suggested: " />
+          <div className={styles.evidence}>
+            <MatchReasonCopy reason={match.reason} />
           </div>
           {Number.isFinite(Date.parse(match.matchedAt)) && (
             <time dateTime={match.matchedAt}>
@@ -177,7 +134,7 @@ export function PendingSuggestionRow({
           )}
         </div>
       </div>
-      <div className="dm-suggestion-skip">
+      <div className={styles.skip}>
         <Button
           tone="ghost"
           size="sm"
@@ -185,7 +142,7 @@ export function PendingSuggestionRow({
           disabled={isDismissing}
           ariaLabel={`Skip suggestion for ${senderLabel} without changing Gmail`}
         >
-          {isDismissing ? 'Skipping…' : 'Skip suggestion'}
+          {isDismissing ? 'Skipping…' : 'Skip'}
         </Button>
       </div>
     </li>

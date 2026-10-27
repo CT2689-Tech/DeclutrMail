@@ -149,7 +149,7 @@ export function MailboxesCard({
                   boxSizing: 'border-box',
                   scrollMarginTop: 24,
                   background: reconnectHighlighted ? color.primarySoft : 'transparent',
-                  outline: reconnectHighlighted ? `2px solid ${color.primary}` : 'none',
+                  outline: reconnectHighlighted ? `2px solid ${color.primary}` : undefined,
                   outlineOffset: -2,
                   transition: `background-color ${motion.base} ${motion.ease}, outline-color ${motion.base} ${motion.ease}`,
                 }}
@@ -160,7 +160,7 @@ export function MailboxesCard({
                     m.status === 'disconnected' ? 'muted' : needsReconnect ? 'danger' : 'primary'
                   }
                 />
-                <span style={{ flex: '1 1 200px', minWidth: 140 }}>
+                <span style={{ flex: '1 1 180px', minWidth: 0 }}>
                   <span
                     style={{
                       display: 'block',

@@ -393,7 +393,15 @@ describe('ActivityScreen — edge states', () => {
         respond: () => {
           requests += 1;
           return jsonOk({
-            data: [row({})],
+            data: [
+              row({
+                undoState: {
+                  kind: 'available',
+                  token: 'filter-test',
+                  expiresAt: '2099-01-01T00:00:00Z',
+                },
+              }),
+            ],
             meta: { ...META_BASE, source: 'manual' },
           });
         },
@@ -3058,10 +3066,12 @@ describe('ActivityScreen — B7 multi-select + bulk undo', () => {
     const boxes = await screen.findAllByRole('checkbox', { name: /Select activity row/ });
     await userEvent.click(boxes[0]!);
     await userEvent.click(boxes[1]!);
-    await userEvent.click(screen.getByRole('button', { name: 'Undo 2' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Undo 2 actions' }));
     await waitFor(() => expect(finish.size).toBe(2));
     expect(posts.sort()).toEqual(['one', 'two']);
     expect(screen.getAllByRole('button', { name: /Undoing/ })).toHaveLength(3);
+    expect(boxes[2]).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Clear' })).toBeDisabled();
     completed.add('one');
     await act(async () =>
       finish.get('one')!(
@@ -3069,7 +3079,7 @@ describe('ActivityScreen — B7 multi-select + bulk undo', () => {
       ),
     );
     await screen.findByText(/^Undone$/);
-    expect(screen.getByText('2 rows')).toBeInTheDocument();
+    expect(screen.getByText('2 actions selected')).toBeInTheDocument();
     await act(async () =>
       finish.get('two')!(jsonOk({ data: { status: 'failed', affectedCount: 0 } })),
     );
@@ -3077,6 +3087,90 @@ describe('ActivityScreen — B7 multi-select + bulk undo', () => {
     expect(screen.getByText(/1 of 2 undos completed/)).toBeInTheDocument();
     expect(screen.getAllByText(/^Undone$/)).toHaveLength(1);
     expect(posts).not.toContain('three');
+    expect(boxes[2]).toBeEnabled();
+  });
+
+  it('offers selection only for actions with an available, unexpired Undo', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                id: 'eligible',
+                undoState: {
+                  kind: 'available',
+                  token: 'eligible',
+                  expiresAt: '2099-01-01T00:00:00Z',
+                },
+              }),
+              row({
+                id: 'undone',
+                undoState: { kind: 'executed', executedAt: new Date(NOW).toISOString() },
+              }),
+              row({
+                id: 'expired',
+                undoState: { kind: 'expired', expiredAt: new Date(NOW).toISOString() },
+              }),
+              row({
+                id: 'stale-available',
+                undoState: { kind: 'available', token: 'past', expiresAt: '2000-01-01T00:00:00Z' },
+              }),
+              row({ id: 'unavailable' }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() =>
+      expect(screen.getAllByRole('checkbox', { name: /select activity row/i })).toHaveLength(1),
+    );
+    expect(screen.getByText('Select actions to undo together.')).toBeInTheDocument();
+    const checkbox = screen.getByRole('checkbox', { name: /select activity row/i });
+    await userEvent.click(checkbox);
+    expect(screen.getByRole('button', { name: 'Undo 1 action' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Clear' }));
+    expect(checkbox).not.toBeChecked();
+    expect(screen.queryByRole('region', { name: 'Bulk actions' })).not.toBeInTheDocument();
+  });
+
+  it('drops a selected action when refreshed data says it has been undone', async () => {
+    let undone = false;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                undoState: undone
+                  ? { kind: 'executed', executedAt: new Date(NOW).toISOString() }
+                  : { kind: 'available', token: 'refresh', expiresAt: '2099-01-01T00:00:00Z' },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    const view = renderScreen();
+    await userEvent.click(await screen.findByRole('checkbox', { name: /select activity row/i }));
+    expect(screen.getByRole('button', { name: 'Undo 1 action' })).toBeEnabled();
+    undone = true;
+    await act(async () => {
+      await view.client.invalidateQueries({ queryKey: ['activity'] });
+    });
+    await screen.findByText('Undone');
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Bulk actions' })).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole('checkbox', { name: /select activity row/i }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Select actions to undo together.')).not.toBeInTheDocument();
   });
 
   it('selecting a row reveals the bulk action bar with a count', async () => {
@@ -3091,7 +3185,7 @@ describe('ActivityScreen — B7 multi-select + bulk undo', () => {
                 undoState: {
                   kind: 'available',
                   token: '11111111-1111-1111-1111-111111111111',
-                  expiresAt: new Date(NOW + 24 * 60 * 60 * 1000).toISOString(),
+                  expiresAt: '2099-01-01T00:00:00Z',
                 },
               }),
             ],
@@ -3102,8 +3196,8 @@ describe('ActivityScreen — B7 multi-select + bulk undo', () => {
     renderScreen();
     const checkbox = await screen.findByRole('checkbox', { name: /select activity row/i });
     await userEvent.click(checkbox);
-    // BulkActionBar header: "Selection 1 row" + accent "Undo 1" CTA.
-    expect(screen.getByText(/^1 row$/)).toBeInTheDocument();
+    // The selection and CTA both name the actions being undone.
+    expect(screen.getByText('1 action selected')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /undo 1/i })).toBeInTheDocument();
   });
 });
@@ -3133,7 +3227,13 @@ describe('ActivityScreen — B11 group by sender', () => {
         path: '/api/activity',
         respond: () =>
           jsonOk({
-            data: [row({ id: 'g-1', affectedCount: 3 }), row({ id: 'g-2', affectedCount: 4 })],
+            data: ['g-1', 'g-2'].map((id, index) =>
+              row({
+                id,
+                affectedCount: index + 3,
+                undoState: { kind: 'available', token: id, expiresAt: '2099-01-01T00:00:00Z' },
+              }),
+            ),
             meta: META_BASE,
           }),
       },

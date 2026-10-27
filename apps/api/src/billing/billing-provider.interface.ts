@@ -21,6 +21,8 @@ import type { PaddleCheckoutCode } from '@declutrmail/shared/entitlements';
 /** Input to `createCheckout` — already catalog-resolved by BillingService. */
 export interface CreateCheckoutInput {
   workspaceId: string;
+  checkoutAttemptId?: string;
+  checkoutOffer?: 'pass_onetime';
   /** Authed user's email — pre-fills provider checkout; never stored provider-side by us. */
   userEmail: string;
   tierId: PurchasableTier;
@@ -100,6 +102,10 @@ export type NormalizedBillingEvent =
        */
       providerCustomerId: string | null;
       workspaceId: string | null;
+      checkoutAttemptId?: string | null;
+      checkoutPriceIds?: string[];
+      checkoutItemsValid?: boolean;
+      checkoutCurrencyCode?: string | null;
       /** Set on a one-off transaction. Subscription payments leave this unset. */
       providerTransactionId?: string | null;
       /** Price ids on a one-off transaction. Empty when the payment is subscription-linked. */
@@ -189,6 +195,7 @@ export type NormalizedBillingEvent =
 
 /** Provider-agnostic subscription snapshot extracted from a webhook. */
 export interface NormalizedSubscription {
+  checkoutAttemptId?: string;
   providerSubscriptionId: string;
   /** Provider customer id (`ctm_…` / `cust_…`); null when absent. */
   providerCustomerId: string | null;
@@ -224,6 +231,37 @@ export type FetchSubscriptionResult =
   /** Exists at the provider in a status our normalization does not
    *  map (pre-grant / unknown). Real activity — never "no payment". */
   | { kind: 'found_unmapped'; providerStatus: string };
+
+/**
+ * What the provider's OWN record of one checkout transaction says about
+ * whether it can still turn into a payment. Read-only: nothing here
+ * cancels, edits or retries anything (ADR-0046 leaves provider-side
+ * cancellation unapproved outside the sandbox).
+ *
+ *   - `unpaid`   the transaction exists, belongs to this workspace, has
+ *                not been paid, and shows NO payment attempt that is
+ *                still moving. The only answer that may support "no
+ *                payment found" — and only for THIS transaction.
+ *   - `stopped`  the provider canceled it; it can never be paid.
+ *   - `paid`     captured, or already attached to a subscription.
+ *   - `in_flight` a payment attempt exists that is not finished (3DS,
+ *                a bank or wallet still deciding, an authorization not
+ *                yet captured). Real activity — never "no payment".
+ *   - `unknown`  anything we cannot classify with certainty: a status
+ *                or attempt state we do not recognise, a missing
+ *                attempts list, a mismatched id or workspace, a 404.
+ *                Absence of evidence — it supports no claim either way.
+ */
+export type CheckoutHold = 'unpaid' | 'stopped' | 'paid' | 'in_flight' | 'unknown';
+
+/**
+ * Optional on `BillingProvider` because only some rails create a
+ * transaction we can name before payment. A provider without it is
+ * simply never "exact".
+ */
+export interface CheckoutHoldReader {
+  fetchCheckoutHold(transactionId: string, workspaceId: string): Promise<CheckoutHold>;
+}
 
 /**
  * D249 — inputs to the claimless/hint subscription search. Each
@@ -511,6 +549,13 @@ export interface BillingProvider {
   searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult>;
 
   /**
+   * Exact, read-only answer for the one transaction the server created
+   * for a checkout (see CheckoutHold). Throws `BILLING_PROVIDER_ERROR`
+   * on network/5xx, which the reconciler maps to `provider_unavailable`.
+   */
+  fetchCheckoutHold?: CheckoutHoldReader['fetchCheckoutHold'];
+
+  /**
    * D119 / ADR-0035 — a self-serve payment-method surface, when the rail
    * has one.
    *
@@ -541,6 +586,9 @@ export interface BillingProvider {
    * the rail as unavailable rather than serving a silently short list.
    */
   listInvoices(providerSubscriptionId: string): Promise<ProviderInvoicePage>;
+
+  /** Provider-owned history for a server-resolved workspace customer, including one-time payments. */
+  listCustomerInvoices(providerCustomerId: string): Promise<ProviderInvoicePage>;
 
   /**
    * D119 / ADR-0035 — mint a document URL for one invoice, per click.
@@ -603,8 +651,25 @@ export interface ProviderInvoice {
   amount: string;
   currencyCode: string;
   status: 'paid' | 'due' | 'canceled' | 'unknown';
+  /** Confirmed aggregate refunds; original payment amount and document remain intact. */
+  refundedAmount?: string;
   /** A stable provider-hosted page, when the rail exposes one. */
   hostedUrl: string | null;
   /** Whether `invoiceDocumentUrl` can mint a document for this row. */
   documentAvailable: boolean;
+}
+
+/** Sanitized exact-transaction evidence for a durable purchase. */
+export type CheckoutTransactionFacts = {
+  state: 'unpaid' | 'in_flight' | 'paid' | 'completed' | 'stopped';
+  transactionId: string;
+  subscriptionId: string | null;
+  customerId: string | null;
+};
+export interface CheckoutTransactionOwner {
+  id: string;
+  workspaceId: string;
+  providerPriceId: string;
+  currencyCode: string;
+  offer: string | null;
 }

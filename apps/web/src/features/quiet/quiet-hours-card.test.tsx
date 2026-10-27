@@ -53,14 +53,14 @@ describe('QuietHoursCard — edge states', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the "Quiet now" pill only when activeNow', () => {
+  it('shows the "Actions paused" pill only when activeNow', () => {
     renderCard({ state: { kind: 'ready', config: CONFIG, activeNow: true } });
-    expect(screen.getByText('Quiet now')).toBeInTheDocument();
+    expect(screen.getByText('Actions paused')).toBeInTheDocument();
   });
 
-  it('hides the "Quiet now" pill when inactive', () => {
+  it('hides the "Actions paused" pill when inactive', () => {
     renderCard();
-    expect(screen.queryByText('Quiet now')).not.toBeInTheDocument();
+    expect(screen.queryByText('Actions paused')).not.toBeInTheDocument();
   });
 
   it('shows the Disconnected pill for a disconnected mailbox', () => {
@@ -95,10 +95,10 @@ describe('QuietHoursCard — save status', () => {
 describe('QuietHoursCard — form contract', () => {
   it('renders the saved config in the form', () => {
     renderCard();
-    expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
-    expect(screen.getByLabelText('Quiet window end')).toHaveValue('06:00');
-    expect(screen.getByLabelText('Quiet window timezone')).toHaveValue('Asia/Kolkata');
-    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).toBeChecked();
+    expect(screen.getByLabelText('Pause window start')).toHaveValue('22:00');
+    expect(screen.getByLabelText('Pause window end')).toHaveValue('06:00');
+    expect(screen.getByLabelText('Schedule timezone')).toHaveValue('Asia/Kolkata');
+    expect(screen.getByRole('switch', { name: 'Use a daily pause window' })).toBeChecked();
     expect(screen.getByText('Saved')).toBeInTheDocument();
   });
 
@@ -109,42 +109,42 @@ describe('QuietHoursCard — form contract', () => {
 
   it('Save is disabled until the form is dirty', async () => {
     renderCard();
-    const save = screen.getByRole('button', { name: 'Save quiet hours' });
+    const save = screen.getByRole('button', { name: 'Save Schedule' });
     expect(save).toBeDisabled();
-    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Use a daily pause window' }));
     expect(save).toBeEnabled();
   });
 
   it('saves the edited window through onSave', async () => {
     const props = renderCard();
-    fireEvent.change(screen.getByLabelText('Quiet window start'), {
+    fireEvent.change(screen.getByLabelText('Pause window start'), {
       target: { value: '20:30' },
     });
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
     expect(props.onSave).toHaveBeenCalledWith({ ...CONFIG, startLocal: '20:30' });
   });
 
   it('shows a readable timezone while saving its original IANA identifier', async () => {
     const config = { ...CONFIG, timezone: 'America/Los_Angeles', endLocal: '07:00' };
     const props = renderCard({ state: { kind: 'ready', config, activeNow: false } });
-    expect(screen.getByRole('combobox', { name: 'Quiet window timezone' })).toHaveValue(
+    expect(screen.getByRole('combobox', { name: 'Schedule timezone' })).toHaveValue(
       'America/Los_Angeles',
     );
     expect(
       screen.getByText('Pacific Time (Los Angeles)', { selector: 'span' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Ends at 7:00 AM the next day.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(screen.getByRole('switch', { name: 'Use a daily pause window' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
     expect(props.onSave).toHaveBeenCalledWith({ ...config, enabled: false });
   });
 
   it('rejects a zero-length window (start === end) client-side', async () => {
     const props = renderCard();
-    fireEvent.change(screen.getByLabelText('Quiet window end'), {
+    fireEvent.change(screen.getByLabelText('Pause window end'), {
       target: { value: '22:00' },
     });
-    await userEvent.click(screen.getByRole('button', { name: 'Save quiet hours' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Schedule' }));
     expect(props.onSave).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toBeInTheDocument();
   });
@@ -167,16 +167,16 @@ describe('QuietHoursCard — form contract', () => {
 
   it('disables the whole form while saving', () => {
     renderCard({ saving: true });
-    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).toBeDisabled();
-    expect(screen.getByLabelText('Quiet window start')).toBeDisabled();
+    expect(screen.getByRole('switch', { name: 'Use a daily pause window' })).toBeDisabled();
+    expect(screen.getByLabelText('Pause window start')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Saving…' })).toBeDisabled();
   });
 
   it('unconfigured mailbox gets the disabled-by-default draft', () => {
     renderCard({ state: { kind: 'ready', config: null, activeNow: false } });
-    expect(screen.getByRole('switch', { name: 'Enable quiet hours' })).not.toBeChecked();
-    expect(screen.getByLabelText('Quiet window start')).toHaveValue('22:00');
-    expect(screen.getByLabelText('Quiet window end')).toHaveValue('07:00');
+    expect(screen.getByRole('switch', { name: 'Use a daily pause window' })).not.toBeChecked();
+    expect(screen.getByLabelText('Pause window start')).toHaveValue('22:00');
+    expect(screen.getByLabelText('Pause window end')).toHaveValue('07:00');
   });
 
   it('says Saved only when quiet hours are stored', () => {
@@ -192,8 +192,8 @@ describe('QuietHoursCard — form contract', () => {
   it('reports each edit, so the screen can end a finished save', async () => {
     const onEdit = vi.fn();
     renderCard({ onEdit });
-    await userEvent.click(screen.getByRole('switch', { name: 'Enable quiet hours' }));
-    fireEvent.change(screen.getByLabelText('Quiet window start'), {
+    await userEvent.click(screen.getByRole('switch', { name: 'Use a daily pause window' }));
+    fireEvent.change(screen.getByLabelText('Pause window start'), {
       target: { value: '20:30' },
     });
     expect(onEdit).toHaveBeenCalledTimes(2);

@@ -1,0 +1,67 @@
+name: Diagnose checkout API revision
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: 'Cloud Run API revision name, such as declutrmail-api-01012-huq'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PROJECT: declutrmail-ai-prod
+      REGION: us-central1
+      REVISION: ${{ inputs.revision }}
+    steps:
+      - name: Validate fixed service scope
+        run: |
+          set -euo pipefail
+          [[ "$REVISION" =~ ^declutrmail-api-[0-9]{5}-[a-z0-9]{3}$ ]]
+      - name: Authenticate with existing deploy identity
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Read revision conditions and bounded system logs
+        run: |
+          set -euo pipefail
+          gcloud run revisions describe "$REVISION" \
+            --project="$PROJECT" --region="$REGION" \
+            --format='json(status.conditions)' \
+            | jq '{conditions: [.status.conditions[]? | {type, status, reason, message}]}'
+          gcloud logging read \
+            "resource.type=cloud_run_revision AND resource.labels.service_name=declutrmail-api AND resource.labels.revision_name=$REVISION AND logName=projects/$PROJECT/logs/run.googleapis.com%2Fvarlog%2Fsystem" \
+            --project="$PROJECT" --freshness=3h --limit=15 \
+            --format='json(timestamp,severity,textPayload,jsonPayload.message)' \
+            | jq '[.[] | {timestamp, severity, textPayload, message: .jsonPayload.message}]' \
+            || echo 'System log read unavailable; revision conditions remain available above.'
+      - name: Read bounded redacted startup errors
+        run: |
+          set -euo pipefail
+          gcloud logging read \
+            "resource.type=cloud_run_revision AND resource.labels.service_name=declutrmail-api AND resource.labels.revision_name=$REVISION AND severity>=ERROR" \
+            --project="$PROJECT" --freshness=3h --limit=30 \
+            --format='json(timestamp,severity,textPayload,jsonPayload.kind,jsonPayload.message)' \
+            | jq '[.[] | {
+                timestamp,
+                severity,
+                kind: .jsonPayload.kind,
+                message: ((.jsonPayload.message // .textPayload // "")
+                  | tostring
+                  | gsub("postgres(ql)?://[^[:space:]]+"; "[redacted-dsn]")
+                  | gsub("Bearer[[:space:]]+[^[:space:]]+"; "Bearer [redacted]")
+                  | gsub("(?i)(api[_-]?key|token|secret|password)[=:][^[:space:],}]+"; "[redacted]")
+                  | gsub("pdl_[A-Za-z0-9_]+"; "[redacted]")
+                  | .[:600])
+              }]' \
+            || echo 'Application error log read unavailable.'

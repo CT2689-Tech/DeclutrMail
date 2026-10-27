@@ -122,7 +122,7 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
   } = props;
 
   return (
-    <section aria-label={`Quiet hours for ${mailboxEmail}`} style={{ display: 'grid', gap: 8 }}>
+    <section aria-label={`Schedule for ${mailboxEmail}`} style={{ display: 'grid', gap: 8 }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <span
           style={{
@@ -136,7 +136,7 @@ export function QuietHoursCard(props: QuietHoursCardProps) {
           {mailboxEmail}
         </span>
         {mailboxStatus === 'disconnected' && <Pill tone="amber">Disconnected</Pill>}
-        {state.kind === 'ready' && state.activeNow && <Pill tone="primary">Quiet now</Pill>}
+        {state.kind === 'ready' && state.activeNow && <Pill tone="primary">Actions paused</Pill>}
       </header>
 
       {state.kind === 'loading' && (
@@ -268,33 +268,33 @@ function QuietHoursForm({
         .dm-quiet-timezone-control > span { display: flex; width: 100%; }
       `}</style>
       <div style={groupSurface}>
-        <Row label="Enable quiet hours">
+        <Row label="Use a daily pause window">
           <Switch
             checked={draft.enabled}
             disabled={saving}
-            ariaLabel="Enable quiet hours"
+            ariaLabel="Use a daily pause window"
             onChange={(next) => set({ enabled: next })}
           />
         </Row>
-        <Row label="Start" divider>
+        <Row label="Pause at" divider>
           <input
             className="dm-field"
             type="time"
             value={draft.startLocal}
             disabled={saving}
             onChange={(e) => set({ startLocal: e.target.value })}
-            aria-label="Quiet window start"
+            aria-label="Pause window start"
             style={inputStyle}
           />
         </Row>
-        <Row label="End" divider>
+        <Row label="Resume at" divider>
           <input
             className="dm-field"
             type="time"
             value={draft.endLocal}
             disabled={saving}
             onChange={(e) => set({ endLocal: e.target.value })}
-            aria-label="Quiet window end"
+            aria-label="Pause window end"
             style={inputStyle}
           />
         </Row>
@@ -305,7 +305,7 @@ function QuietHoursForm({
               disabled={saving}
               onFocus={() => setZones(timeZoneOptions(draft.timezone))}
               onChange={(e) => set({ timezone: e.target.value })}
-              aria-label="Quiet window timezone"
+              aria-label="Schedule timezone"
               style={{ width: '100%', maxWidth: '100%' }}
             >
               {zones.map((z) => (
@@ -359,7 +359,7 @@ function QuietHoursForm({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px' }}>
         <Button tone="primary" size="md" onClick={submit} disabled={saving || !dirty}>
-          {saving ? 'Saving…' : 'Save quiet hours'}
+          {saving ? 'Saving…' : 'Save Schedule'}
         </Button>
         {/* `useBrowserDefault` means no config is stored yet: nothing is saved.
             While the save status region says "Saved", screen readers hear it

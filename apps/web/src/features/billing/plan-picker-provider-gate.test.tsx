@@ -176,6 +176,7 @@ describe('checkout provider gate (D117)', () => {
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({
+        attemptId: expect.any(String),
         tierId: 'pro',
         cycle: 'annual',
         provider: 'paddle',

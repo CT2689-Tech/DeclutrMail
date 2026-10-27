@@ -1,5 +1,6 @@
 'use client';
 
+import { CleanupSelect } from '@/components/cleanup-select';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { Button, PreviewSheet, tokens } from '@declutrmail/shared';
@@ -208,7 +209,7 @@ export function CancelModal({
 
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: text.sm }}>
           <span style={{ color: color.fgMuted }}>Why are you canceling? (optional)</span>
-          <select
+          <CleanupSelect
             value={reason}
             disabled={isCanceling || isPausing}
             onChange={(e) => setReason(e.target.value as CancelReason | '')}
@@ -229,7 +230,7 @@ export function CancelModal({
                 {opt.label}
               </option>
             ))}
-          </select>
+          </CleanupSelect>
         </label>
 
         {cancelError != null && <ErrorLine>{cancelError}</ErrorLine>}

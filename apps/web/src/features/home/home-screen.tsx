@@ -12,38 +12,39 @@ import { activityKeys } from '@/features/activity/api/query-keys';
 import { useAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
 import {
-  celebrationFromUnsubscribeBacklog,
   toastUnsubscribeBacklog,
   toastUnsubscribeBacklogFailure,
 } from '@/features/inbox-report/backlog-outcome';
-import { writeReportCelebration } from '@/features/inbox-report/seen';
 import { isMailboxScopeConflict } from '@/features/mailboxes/api/reset-mailbox-cache';
 import { NoActiveMailbox } from '@/features/mailboxes/no-active-mailbox';
 import { undoKeys } from '@/features/undo/query-keys';
 
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useSyncStatus } from '@/features/onboarding/api/use-sync-status';
+import { hasCapability } from '@declutrmail/shared/entitlements';
+import { syncStatusNeedsReconnect } from '@/features/mailboxes/mailbox-health';
+import { useNow } from '@/lib/use-now';
 import { inProgressStageSentence } from '@/features/onboarding/sync-stage-copy';
 import { apiGet } from '@/lib/api/client';
-import {
-  useActionStatus,
-  useBatchStatus,
-  useConfirmUnsubscribeBacklog,
-} from '@/lib/api/use-action';
-import { fetchSnoozed } from '@/lib/api/snoozed';
-import { snoozedListQueryOptions } from '@/features/snoozed/api/query-options';
+import { useConfirmUnsubscribeBacklog } from '@/lib/api/use-action';
 
 import { homeInboxReportQueryOptions } from './api/query-options';
+import { useHomeSenderPreview } from './api/use-home-sender-preview';
 import { useHomeSummary } from './api/use-home-summary';
+import { useHomeCleanupStatus } from './api/use-home-cleanup-status';
+import { useHomeAttention } from './api/use-home-attention';
+import { useHomeOverview } from './api/use-home-overview';
+import { homePriority, homeSyncLine } from './home-orientation';
 import { HomeArrivals } from './home-arrivals';
 import {
   homeCandidatesFromReport,
+  homeShortlist,
   homeLaterCandidate,
   rankHomeNextSteps,
   type HomeFixCandidate,
 } from './home-next-steps';
 import { composeHomeNumbers, type HomeState } from './home-state';
-import { HomeView } from './home-view';
+import { HomeView, homeLaterOverview } from './home-view';
 
 /**
  * Home — the landing screen. Container (D198): wires the reads, composes
@@ -59,7 +60,7 @@ import { HomeView } from './home-view';
  * | no decisions, still syncing   | title, status, scan bar          |
  * | no decisions, scan failed     | "The scan stopped" + retry       |
  * | no decisions                  | "Nothing cleared yet" + button   |
- * | decisions                     | number + label + button          |
+ * | decisions                     | next action + closed Details     |
  *
  * A mailbox switch needs nothing here: `resetMailboxScopedCache`
  * invalidates every query, these included.
@@ -67,32 +68,32 @@ import { HomeView } from './home-view';
 /** F2's size field is not on main, so the Largest card stays off. */
 const SENDER_SIZE_VIEW = false;
 
-interface ArchiveMove {
-  id: string;
-  handle: 'action' | 'batch';
-}
-
-/** Poll the archive Home just confirmed so the tray can offer Undo. */
-function useHomeArchiveUndo(mailboxId: string | null, move: ArchiveMove | null) {
-  const batch = move?.handle === 'batch';
-  const scoped = mailboxId !== null ? mailboxId : undefined;
-  useActionStatus(move && !batch ? move.id : null, scoped);
-  useBatchStatus(move && batch ? move.id : null, scoped);
-}
-
 export function HomeScreen() {
   const { me } = useAuth();
   const { tier } = useTier();
   const queryClient = useQueryClient();
   const confirmBacklog = useConfirmUnsubscribeBacklog();
-  const [archiveMove, setArchiveMove] = useState<ArchiveMove | null>(null);
   const hasActiveMailbox = me.activeMailboxId != null;
-  useHomeArchiveUndo(me.activeMailboxId, archiveMove);
 
-  const summary = useHomeSummary({ enabled: hasActiveMailbox });
+  const summary = useHomeSummary({
+    enabled: hasActiveMailbox,
+    mailboxId: me.activeMailboxId ?? undefined,
+  });
   const sync = useSyncStatus(me.activeMailboxId ?? undefined, { enabled: hasActiveMailbox });
   const cleanup = useCleanupSummary();
   const mailboxId = me.activeMailboxId;
+  const activeMailbox = me.mailboxes.find((m) => m.id === mailboxId);
+  const cleanupStatus = useHomeCleanupStatus(mailboxId);
+  const overview = useHomeOverview(mailboxId, tier, activeMailbox?.readiness === 'ready');
+  const canReviewNew =
+    hasActiveMailbox && hasCapability(tier, 'screener') && activeMailbox?.readiness === 'ready';
+  const { newSenders, later } = useHomeAttention(mailboxId, canReviewNew);
+  const needsReconnect =
+    activeMailbox?.needsReconnect === true || syncStatusNeedsReconnect(sync.data);
+  const now = useNow(60_000, sync.data?.last_synced_at);
+  const scope = useRef({ mailboxId, generation: 0 });
+  if (scope.current.mailboxId !== mailboxId)
+    scope.current = { mailboxId, generation: scope.current.generation + 1 };
   const report = useQuery({
     ...homeInboxReportQueryOptions(mailboxId, async (signal) => {
       const envelope = await apiGet<InboxReportDto>(`/api/mailboxes/${mailboxId}/inbox-report`, {
@@ -102,17 +103,30 @@ export function HomeScreen() {
     }),
     enabled: hasActiveMailbox && mailboxId != null,
   });
-  const later = useQuery({
-    ...snoozedListQueryOptions((signal) => fetchSnoozed(signal)),
-    select: (envelope) => envelope.data,
-    enabled: hasActiveMailbox,
-  });
   const presentation = homeReportPresentation(report.data);
-  const laterStep = homeLaterCandidate(later.data ?? []);
+  const laterStep = homeLaterCandidate(later.isError ? [] : (later.data ?? []), now);
+  const priority = homePriority({
+    sync: sync.isError ? undefined : sync.data,
+    needsReconnect,
+    cleanup: cleanupStatus,
+    // Review backlog is visible beside the suggestion; it must not hide useful cleanup.
+    newSenders: null,
+    laterAttention: later.isError
+      ? 0
+      : (later.data ?? []).filter(
+          (row) => row.returnStatus === 'missed' || row.returnStatus === 'retrying',
+        ).length,
+  });
   const nextSteps = rankHomeNextSteps(
     [...homeCandidatesFromReport(report.data ?? null), ...(laterStep !== null ? [laterStep] : [])],
     { senderSizeView: SENDER_SIZE_VIEW },
   );
+  const senderPreview = useHomeSenderPreview(
+    mailboxId,
+    nextSteps.find((step) => step.kind === 'unsub_archive')?.senderIds ?? [],
+    activeMailbox?.readiness === 'ready',
+  );
+  const shortlist = homeShortlist(senderPreview.senders);
   // The stage sentence comes from a client poll. The server document has
   // only the leave line, so the first client render must match that.
   const [stageMounted, setStageMounted] = useState(false);
@@ -133,33 +147,29 @@ export function HomeScreen() {
     setStageMounted(true);
   }, []);
 
-  const activeMailbox = me.mailboxes.find((m) => m.id === me.activeMailboxId);
-  const readiness = activeMailbox?.readiness;
+  const readiness =
+    stageMounted && !sync.isError
+      ? (sync.data?.readiness_status ?? activeMailbox?.readiness)
+      : activeMailbox?.readiness;
   const syncing = readiness === 'queued' || readiness === 'syncing';
 
   function confirmHomeFix(step: HomeFixCandidate) {
     if (step.kind !== 'unsub_archive') return;
     const mailbox = activeMailbox?.id;
     if (!mailbox || step.senderIds.length === 0) return;
+    if (confirmBacklog.isPending) return;
+    const generation = scope.current.generation;
     confirmBacklog.mutate(
       { mailboxId: mailbox, mode: 'archive', senderIds: [...step.senderIds] },
       {
         onSuccess: (result) => {
-          toastUnsubscribeBacklog(result);
-          const next = celebrationFromUnsubscribeBacklog(result, {
-            senderKeys: step.senderIds,
-            generatedAt: report.data?.generatedAt,
-          });
-          if (next) {
-            writeReportCelebration(mailbox, next);
-            if (next.actionId && next.actionHandle) {
-              setArchiveMove({ id: next.actionId, handle: next.actionHandle });
-            }
-          }
+          if (scope.current.generation === generation) toastUnsubscribeBacklog(result);
           void queryClient.invalidateQueries({ queryKey: activityKeys.all });
           void queryClient.invalidateQueries({ queryKey: undoKeys.all });
         },
-        onError: toastUnsubscribeBacklogFailure,
+        onError: (error) => {
+          if (scope.current.generation === generation) toastUnsubscribeBacklogFailure(error);
+        },
       },
     );
   }
@@ -170,16 +180,53 @@ export function HomeScreen() {
 
   return (
     <HomeView
+      key={mailboxId}
       state={resolve()}
+      statusLine={
+        stageMounted
+          ? homeSyncLine(sync.data, sync.isError, needsReconnect, now)
+          : 'Checking Gmail status…'
+      }
+      priority={stageMounted ? priority : null}
+      noSuggestions={report.isSuccess && nextSteps.length === 0}
       tier={tier}
       visitSummary={<HomeArrivals />}
       summary={cleanup.data ?? null}
-      nextSteps={nextSteps}
+      nextSteps={[
+        ...(shortlist ? [shortlist] : []),
+        ...nextSteps.filter((step) => step.kind !== 'unsub_archive'),
+      ]}
       senderSizeView={SENDER_SIZE_VIEW}
       mailboxId={activeMailbox?.id ?? ''}
       mailboxEmail={activeMailbox?.email ?? null}
       reportLead={presentation.lead}
       supportText={presentation.support}
+      overview={activeMailbox?.readiness === 'ready' ? overview : undefined}
+      report={report.data ?? null}
+      reportStatus={
+        report.isError || (!shortlist && senderPreview.isError)
+          ? 'error'
+          : report.isPending || senderPreview.isLoading
+            ? 'loading'
+            : 'ready'
+      }
+      newSenders={{
+        status: newSenders.isError ? 'error' : newSenders.isPending ? 'loading' : 'ready',
+        data: newSenders.isError ? null : (newSenders.data?.pending ?? null),
+      }}
+      later={{
+        status: later.isError ? 'error' : later.isPending ? 'loading' : 'ready',
+        data: later.isError || !later.data ? null : homeLaterOverview(later.data, now),
+      }}
+      timeZone={me.user.timezone ?? 'UTC'}
+      onRefresh={() => {
+        void queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey.includes('home') ||
+            query.queryKey.includes('home-overview') ||
+            query.queryKey.includes('home-sender-preview'),
+        });
+      }}
       onConfirmFix={(step) => confirmHomeFix(step)}
     />
   );

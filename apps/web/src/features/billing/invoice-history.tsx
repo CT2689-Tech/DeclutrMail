@@ -1,5 +1,6 @@
 'use client';
 
+import { CleanupSelect } from '@/components/cleanup-select';
 import linkStyles from './billing-links.module.css';
 
 /**
@@ -56,9 +57,10 @@ const FILTER_STYLE = {
 } as const;
 
 const SECTION_STYLE = {
+  scrollMarginTop: 24,
   background: color.card,
   border: `1px solid ${color.border}`,
-  borderRadius: radius.md,
+  borderRadius: radius.lg,
   padding: 'clamp(16px, 3vw, 22px)',
   display: 'flex',
   flexDirection: 'column',
@@ -72,12 +74,30 @@ const SECTION_STYLE = {
  * to NOTHING rather than a guess — the provider used a status we do not
  * map, and inventing "Paid" over it is the one error that matters here.
  */
-const STATUS_LABEL: Record<BillingInvoice['status'], string | null> = {
+const STATUS_LABEL = {
   paid: 'Paid',
   due: 'Due',
   canceled: 'Canceled',
   unknown: null,
-};
+  refunded: 'Refunded',
+  partially_refunded: 'Partially refunded',
+} as const;
+
+function invoiceStatus(invoice: BillingInvoice): keyof typeof STATUS_LABEL {
+  const refund = invoice.refundedAmount;
+  if (
+    invoice.status !== 'paid' ||
+    !refund ||
+    !/^\d+$/.test(refund) ||
+    !/^\d+$/.test(invoice.amount)
+  )
+    return invoice.status;
+  const returned = BigInt(refund);
+  const original = BigInt(invoice.amount);
+  if (returned > original) return 'unknown';
+  if (returned === 0n) return invoice.status;
+  return returned === original ? 'refunded' : 'partially_refunded';
+}
 
 export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const queryClient = useQueryClient();
@@ -107,23 +127,35 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
   if ((holdStreamPlaceholder && !streamRevealed) || invoices.isLoading) {
     return (
-      <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-        <GroupTitle as="div">Invoices</GroupTitle>
+      <section
+        id="invoices"
+        tabIndex={-1}
+        aria-label="Payment history"
+        data-testid="invoice-history"
+        style={SECTION_STYLE}
+      >
+        <GroupTitle>Payment history</GroupTitle>
         <div
           aria-hidden="true"
           style={{ height: 72, background: color.fill, borderRadius: radius.lg }}
         />
-        <span style={{ position: 'absolute', left: -9999 }}>Loading invoices</span>
+        <span style={{ position: 'absolute', left: -9999 }}>Loading invoices…</span>
       </section>
     );
   }
 
   if (invoices.isError) {
     return (
-      <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-        <GroupTitle as="div">Invoices</GroupTitle>
+      <section
+        id="invoices"
+        tabIndex={-1}
+        aria-label="Payment history"
+        data-testid="invoice-history"
+        style={SECTION_STYLE}
+      >
+        <GroupTitle>Payment history</GroupTitle>
         <RecoverableErrorState
-          headingLevel={2}
+          headingLevel={3}
           title="We couldn’t load your invoices"
           description="Try again to load your invoices."
           onRetry={() => invoices.refetch()}
@@ -135,39 +167,72 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const data = invoices.data;
   if (!data) return null;
   const partial = data.unavailableProviders.length > 0;
+  // Compact only a complete, successfully read empty history. An unavailable,
+  // omitted or truncated result is still a recovery state, never "no invoices".
+  if (data.invoices.length === 0 && !partial && data.omittedRows === 0 && !data.truncated) {
+    return (
+      <section
+        id="invoices"
+        tabIndex={-1}
+        aria-label="Payment history"
+        data-testid="invoice-history"
+        style={{ borderTop: `1px solid ${color.border}`, paddingTop: 16, scrollMarginTop: 24 }}
+      >
+        <GroupTitle>Payment history</GroupTitle>
+        <p style={{ margin: '8px 0 0', color: color.fgMuted, fontSize: text.sm }}>
+          No invoices yet
+        </p>
+      </section>
+    );
+  }
   const filtered = data.invoices.filter((invoice) => {
     const date = invoice.issuedAt.slice(0, 10);
     return (
-      (status === 'all' || status === invoice.status) &&
+      (status === 'all' || status === invoiceStatus(invoice)) &&
       (!from || date >= from) &&
       (!to || date <= to)
     );
   });
 
   return (
-    <section aria-label="Invoices" data-testid="invoice-history" style={SECTION_STYLE}>
-      <GroupTitle as="div">Invoices</GroupTitle>
+    <section
+      id="invoices"
+      tabIndex={-1}
+      aria-label="Payment history"
+      data-testid="invoice-history"
+      style={SECTION_STYLE}
+    >
+      <GroupTitle>Payment history</GroupTitle>
+      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+        Payments and invoices from past subscriptions and one-time purchases.
+      </p>
       {data.invoices.length > 0 ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
               Status{' '}
-              <select
+              <CleanupSelect
+                name="invoice-status"
+                autoComplete="off"
                 style={FILTER_STYLE}
                 value={status}
                 onChange={(event) => setStatus(event.target.value)}
               >
                 <option value="all">All statuses</option>
                 <option value="paid">Paid invoices</option>
+                <option value="refunded">Refunded invoices</option>
+                <option value="partially_refunded">Partially refunded invoices</option>
                 <option value="due">Due invoices</option>
                 <option value="canceled">Canceled invoices</option>
                 <option value="unknown">Unknown status</option>
-              </select>
+              </CleanupSelect>
             </label>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
               From{' '}
               <input
                 type="date"
+                name="invoice-from"
+                autoComplete="off"
                 style={FILTER_STYLE}
                 value={from}
                 onChange={(event) => setFrom(event.target.value)}
@@ -177,6 +242,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               Through{' '}
               <input
                 type="date"
+                name="invoice-through"
+                autoComplete="off"
                 style={FILTER_STYLE}
                 value={to}
                 min={from || undefined}
@@ -205,12 +272,8 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       ) : null}
 
       {data.invoices.length === 0 ? (
-        // THREE distinct empty answers, never collapsed: a rail we could
-        // not ask (partial), rows that exist but none renderable
-        // (omitted — with wrong field names EVERY row drops, and calling
-        // that "no invoices yet" is the failed-read-as-empty defect,
-        // gate network 2026-08-16 CONFIRMED), and the genuine
-        // never-billed state (D212 EmptyState primitive).
+        // Failed, omitted and capped reads cannot prove an account never paid.
+        // Only a complete empty history can show "No invoices yet".
         partial ? (
           <div
             style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}
@@ -229,19 +292,19 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           </div>
         ) : data.omittedRows > 0 ? (
           <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
-            Your invoices exist, but we couldn&rsquo;t display them. Email{' '}
+            We couldn&rsquo;t display this billing history. Email{' '}
             <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
               support@declutrmail.com
             </a>{' '}
-            and we&rsquo;ll send them to you directly.
+            for help with your invoices.
           </p>
-        ) : (
+        ) : data.truncated ? (
           <EmptyState
-            headingLevel={2}
-            title="No invoices yet"
-            description="Your first one appears here once a payment has been collected."
+            headingLevel={3}
+            title="No invoices in this limited history"
+            description="Request older invoices below to check beyond this list."
           />
-        )
+        ) : null
       ) : (
         <>
           {/* QA-billing-20260901-07: with no column labels, "Due" on the
@@ -271,7 +334,11 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
             {filtered.map((invoice) => {
               const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
               const date = formatBillingDate(invoice.issuedAt);
-              const label = STATUS_LABEL[invoice.status];
+              const displayStatus = invoiceStatus(invoice);
+              const label = STATUS_LABEL[displayStatus];
+              const refundAmount = invoice.refundedAmount
+                ? formatProviderAmount(invoice.refundedAmount, invoice.currencyCode)
+                : null;
               const busy = mint.isPending && mint.variables === invoice.id;
               // Codex round 1 (QA-billing-20260901-07): the new header
               // row is `aria-hidden` (decorative, sighted-only), so a
@@ -285,7 +352,12 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               // of it. Name each field.
               const rowLabel = `Date ${date ?? 'unknown'}, amount ${
                 amount ?? invoice.currencyCode
-              }, status ${label ?? 'unknown'}`;
+              }, status ${label ?? 'unknown'}${
+                (displayStatus === 'refunded' || displayStatus === 'partially_refunded') &&
+                refundAmount
+                  ? `, refunded ${refundAmount}`
+                  : ''
+              }`;
               return (
                 <li
                   key={`${invoice.provider}:${invoice.id}`}
@@ -333,6 +405,11 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                       style={{ color: color.fgMuted, minWidth: isPhone ? 0 : 70 }}
                     >
                       {label}
+                      {displayStatus === 'partially_refunded' && refundAmount ? (
+                        <span style={{ display: 'block', fontSize: text.sm }}>
+                          {refundAmount} refunded
+                        </span>
+                      ) : null}
                     </span>
                   ) : isPhone ? null : (
                     <span aria-hidden="true" style={{ minWidth: 70 }} />
@@ -373,22 +450,20 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
       {partial && data.invoices.length > 0 ? (
         <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
-          One of your payment providers didn&rsquo;t answer, so this list may be missing invoices.
+          Some payment history couldn&rsquo;t be loaded, so this list may be missing invoices.
           Reload to try again.
         </p>
       ) : null}
 
       {data.omittedRows > 0 && data.invoices.length > 0 ? (
         <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
-          {data.omittedRows === 1 ? 'One invoice' : `${data.omittedRows} invoices`} couldn&rsquo;t
-          be displayed. Email support@declutrmail.com if you need{' '}
-          {data.omittedRows === 1 ? 'it' : 'them'}.
+          Some invoices couldn&rsquo;t be displayed. Email support@declutrmail.com if you need them.
         </p>
       ) : null}
 
       {data.truncated ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-          Showing your most recent invoices.{' '}
+          This list shows a limited invoice history.{' '}
           <a
             className={linkStyles.link}
             href="mailto:support@declutrmail.com?subject=Older%20invoice%20request"

@@ -1,4 +1,4 @@
-import { act, fireEvent } from '@testing-library/react';
+import { act } from '@testing-library/react';
 import { hydrateRoot, type Root } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { dehydrate, hydrate, QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -106,13 +106,10 @@ it.each(['suggestions', 'pattern'] as const)(
       );
     });
     expect(recovered).not.toHaveBeenCalled();
-    if (optional === 'pattern') {
-      const next = container.querySelector<HTMLButtonElement>('[aria-label^="Show next notice"]');
-      expect(next).not.toBeNull();
-      fireEvent.click(next!);
-    }
     expect(container.textContent).toContain(
-      optional === 'suggestions' ? '1 on this page' : 'Watch for the same pattern?',
+      optional === 'suggestions'
+        ? '1 recorded sender match on this page'
+        : 'Watch for the same pattern?',
     );
   },
 );

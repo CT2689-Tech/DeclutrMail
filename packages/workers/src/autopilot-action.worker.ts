@@ -997,7 +997,8 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // charges every execution; the count only real work), so the count
     // changes nothing — until another sweep for this mailbox spends the
     // same rule between our holds, which the running budget cannot see.
-    const cap = AUTOPILOT_PRESETS[match.presetKey].dailyActionCap;
+    const presetCap = AUTOPILOT_PRESETS[match.presetKey].dailyActionCap;
+    const cap = match.actionKind === 'unsubscribe' ? Math.min(25, presetCap) : presetCap;
     const remaining = Math.min(
       remainingByRule.get(match.ruleId) ?? Number.POSITIVE_INFINITY,
       cap - fresh.executedInWindow,

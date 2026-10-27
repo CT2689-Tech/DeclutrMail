@@ -30,6 +30,6 @@ import { SecurityEventsService } from './security-events.service.js';
   imports: [UsersModule, forwardRef(() => AuthModule)],
   controllers: [SecurityEventsController],
   providers: [SecurityEventsService, SecurityEventsReadService, AdminAllowlistGuard],
-  exports: [SecurityEventsService],
+  exports: [SecurityEventsService, AdminAllowlistGuard],
 })
 export class SecurityEventsModule {}

@@ -5,7 +5,7 @@ import { cache } from 'react';
 import { serverGet } from '@/lib/api/server';
 import { parseBillingSubscription } from './parse-payload';
 
-/** One request-scoped subscription read shared by the page and invoice stream. */
+/** Request-scoped current-plan read; historical payments have a separate endpoint. */
 export const getServerBillingSubscription = cache(async (cookieHeader: string) =>
   parseBillingSubscription(await serverGet<unknown>('/api/billing/subscription', cookieHeader)),
 );

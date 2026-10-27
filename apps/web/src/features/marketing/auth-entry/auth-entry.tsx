@@ -17,6 +17,7 @@ import { TrackedCta } from '../landing/tracked-cta';
 import { oauthSignInUrl, oauthStartUrl } from '../landing/urls';
 import { TrustRow } from '../trust/trust-row';
 import { NotOnGmail } from '../waitlist/not-on-gmail';
+import '@/features/theme/app-light-theme.css';
 
 // The preview promise, first sentence only — the rest of the shared claim
 // (the final count can change) belongs to the preview itself.
@@ -58,6 +59,7 @@ export function AuthEntry({
     authResult !== 'gmail_access_missing';
   return (
     <div className="dm-auth-entry">
+      <span id="dm-app-theme" hidden />
       <section className="dm-auth-entry-card" aria-labelledby="dm-auth-entry-title">
         <Logo variant="mark" size={40} />
         <h1 id="dm-auth-entry-title">
@@ -138,18 +140,23 @@ export function AuthEntry({
         </details>
 
         {!returning && !signedOut && (
-          <ol className="dm-auth-entry-next" aria-label="After you connect">
-            <li>
-              <strong>DeclutrMail groups your email by sender.</strong> The first scan runs on its
-              own — we email you when your inbox is ready.
-            </li>
-            <li>
-              <strong>You review senders before email moves.</strong> {PREVIEW_PROMISE}
-            </li>
-          </ol>
+          <details className="dm-auth-entry-storage">
+            <summary>What happens after you connect</summary>
+            <div>
+              <ol className="dm-auth-entry-next" aria-label="After you connect">
+                <li>
+                  <strong>DeclutrMail groups your email by sender.</strong> The first scan runs on
+                  its own — we email you when your inbox is ready.
+                </li>
+                <li>
+                  <strong>You review senders before email moves.</strong> {PREVIEW_PROMISE}
+                </li>
+              </ol>
+            </div>
+          </details>
         )}
 
-        <TrustRow key={CASA_VERIFICATION_APPROVED_ON} />
+        <TrustRow key={CASA_VERIFICATION_APPROVED_ON} variant="short" />
 
         <p className="dm-auth-entry-fine">
           No card required for Free. Disconnect from Settings or your Google Account at any time.

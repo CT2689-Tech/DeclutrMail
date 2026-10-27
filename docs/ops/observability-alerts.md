@@ -62,6 +62,8 @@ remain local. No notification channel is created.
   missing delivery configuration after activation is an error, not an empty report.
   Same-UTC-day replays skip an already published summary. The native log alert uses
   a five-minute minimum rate limit so a delayed daily run does not suppress tomorrow.
+  Replay reads are bounded to that UTC day and follow empty partial Logging pages;
+  repeated tokens or an incomplete search fail without publishing another summary.
 - Non-auth sync failures retain separate immediate per-mailbox incidents. Two or
   more observed reconnect requirements sustained ten minutes have an independent
   immediate aggregate alert; its observations inherit the existing two-hour grace.
@@ -88,6 +90,11 @@ The workflow input `digest_receipt` is that smoke-log hash, not a Gmail message 
 Smoke writes the verification log row. It does not prove the admin inbox received mail.
 Application refuses unavailable native queries, changed plans or missing
 receipts, reads every changed policy back, and attempts restoration on failure.
+Plan fingerprints normalize object-key ordering from provider responses while
+retaining value and array changes as drift.
+Native readback treats an omitted numeric `thresholdValue` as its protobuf zero
+default. Other missing fields and changed thresholds still fail; encrypted
+failure reports retain the mismatched expected and actual policy definitions.
 Run **plan** and **smoke** through the protected-main workflow using the
 same WIF identity as the daily watchdog. Plan lists policies and channels only.
 Prepare and apply run preflight, which verifies incident, digest-log, and probe
@@ -104,11 +111,21 @@ first real daily summary without running vendor/billing collectors. Receiving a
 verification email proves that path at that time; it does not establish future
 delivery or measured noise reduction. Review actual receipts over the following week.
 
-Production activation is pending: the first plan run
+Production routing was activated on October 23, 2026. The initial plan
 [39747620933](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/39747620933)
-failed with HTTP 403 on `notificationChannels.list` before any policy writes.
-The existing CI identity cannot yet establish the daily route. The activation
-variable stays unset; existing production notification settings remain in place.
+failed with HTTP 403 before any writes. After the approved scoped IAM grant,
+protected-main preparation and a rendered verification email in the admin inbox
+passed. `OPS_ALERT_DIGEST_ENABLED=true` now enables the existing daily schedule.
+
+[Apply 40040919870](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/40040919870)
+and [independent readback 40041044114](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/40041044114)
+passed. The [first real summary](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/40041103263)
+reported one open Gmail reconnect incident and arrived in the admin inbox with
+that actual warning rendered. Both the temporary setup binding and role were
+removed. A [digest retry after removal](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/40041190798)
+succeeded with the five ongoing permissions and skipped a duplicate email for
+the same UTC day. These checks establish activation and observed delivery;
+future scheduled delivery and measured noise reduction still need observation.
 
 Sources: [Cloud Monitoring notification controls](https://docs.cloud.google.com/monitoring/api/ref_v3/rest/v3/projects.alertPolicies#AlertStrategy)
 and [incident fanout behavior](https://docs.cloud.google.com/monitoring/alerts/concepts-indepth).
