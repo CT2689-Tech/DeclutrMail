@@ -158,13 +158,6 @@ export function digestDeliveryEnabled(value) {
   return typeof value === 'string' && value.toLowerCase() === 'true';
 }
 
-export function digestAlertFilter(now = Date.now()) {
-  const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
-  // alerts.list filter/orderBy use the discovery names state and close_time.
-  // The Alert JSON spells the timestamp closeTime, which this API refuses.
-  return `state="OPEN" OR (state="CLOSED" AND close_time>="${since}")`;
-}
-
 export function routingPlan(policies, checks, channel) {
   const names = new Map();
   for (const p of policies.filter((p) => OWNED.has(p.displayName))) {
@@ -423,10 +416,10 @@ export async function runRouting(
       )
     )
       throw new Error('Digest notification policy drift');
-    const payload = warningSummary(
-      state.policies,
-      await listAll(request, 'alerts', { filter: digestAlertFilter() }),
-    );
+    // The production API rejects the proposed state/close-time filter. Use
+    // its established paginated read; warningSummary applies the complete
+    // open/recently-closed window locally without dropping later pages.
+    const payload = warningSummary(state.policies, await listAll(request, 'alerts'));
     report.digest = { ...payload, ...(await publishDigest(request, payload)) };
     return;
   }

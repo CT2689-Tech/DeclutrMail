@@ -30,7 +30,6 @@ import {
   failureLogLine,
   verificationLogEntry,
   verificationReceipt,
-  digestAlertFilter,
   digestDeliveryEnabled,
 } from './alert-email-routing.mjs';
 
@@ -662,14 +661,7 @@ test('emergency reminders target exactly the retained notification channels', ()
   ]);
 });
 
-test('digest lists open incidents and incidents closed in the last 24h', async () => {
-  const at = Date.parse('2026-10-22T13:00:00.000Z');
-  const filter = digestAlertFilter(at);
-  assert.equal(
-    filter,
-    'state="OPEN" OR (state="CLOSED" AND close_time>="2026-10-21T13:00:00.000Z")',
-  );
-  assert.doesNotMatch(filter, /openTime|closeTime/);
+test('native-compatible pagination retains open and recent closed incidents without the rejected filter', async () => {
   const initial = fixture();
   const active = routingPlan(initial, checks, channel).map((p, i) => ({
     ...p,
@@ -692,19 +684,28 @@ test('digest lists open incidents and incidents closed in the last 24h', async (
   const seen = [];
   const request = async (url, method, body) => {
     seen.push(String(url));
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith('/alerts')) {
+      // Production rejected the proposed filter with HTTP 400. Exercise the
+      // established unfiltered contract and the complete local time window.
+      if (parsed.searchParams.has('filter')) throw new Error('HTTP 400 INVALID_ARGUMENT');
+      if (!parsed.searchParams.has('pageToken'))
+        return {
+          alerts: [stale, { ...closed, name: 'open-now', state: 'OPEN' }],
+          nextPageToken: 'closed-page',
+        };
+      assert.equal(parsed.searchParams.get('pageToken'), 'closed-page');
+      return { alerts: [closed] };
+    }
     return db.request(url, method, body);
   };
   const result = report();
   await runRouting('digest', { request, report: result });
-  const listed = seen.find((url) => url.includes('/alerts?'));
-  const actual = new URL(listed).searchParams.get('filter');
-  assert.match(actual, /state="OPEN"/);
-  assert.match(actual, /state="CLOSED"/);
-  assert.match(actual, /close_time>="/);
-  assert.doesNotMatch(actual, /openTime|closeTime/);
-  const since = Date.parse(/close_time>="([^"]+)"/.exec(actual)[1]);
-  assert.ok(Math.abs(since - (Date.now() - 24 * 60 * 60 * 1000)) < 5000);
-  assert.equal(result.digest.warningCount, 1);
+  const listed = seen.filter((url) => url.includes('/alerts?'));
+  assert.equal(listed.length, 2);
+  assert.ok(listed.every((url) => !new URL(url).searchParams.has('filter')));
+  assert.equal(result.digest.warningCount, 2);
+  assert.match(result.digest.summary, /1 open/);
   assert.match(result.digest.summary, /1 closed in the last 24h/);
   assert.ok(!result.digest.summary.includes('closed-in-window'));
 });

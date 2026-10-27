@@ -61,13 +61,23 @@ and [notification settings](https://developer.paddle.com/api-reference/notificat
   capacity just to remove a warning.
 - Redis command volume is a diagnostic heuristic, not proof of a provider
   billing quota. Inspect the actual plan, storage and bandwidth, while retaining
-  lifecycle and spend-cap checks. A fixed-plan observation does not authorize
-  a paid test or plan change.
+  lifecycle and spend-cap checks. Crossing that heuristic, including twice its
+  configured warning, produces WARN; `WARN_IS_FAILURE=true` still opts into
+  strict handling. Native lifecycle and spend breaches remain independent hard
+  failures. A fixed-plan observation does not authorize a paid test or plan change.
 - Anthropic Admin API authentication failure remains unavailable cost data.
   An ordinary inference key or a configured secret name does not prove cost
   access. Manual Console cost verification does not repair the automated read.
 - Existing alert-delivery receipts and successful routing verification should
   be reused unless routing behavior or recipients change.
+
+The [2026-10-27 production read](https://github.com/CT2689-Tech/DeclutrMail/actions/runs/40591616564)
+rejected the proposed alert-state/close-time query with HTTP 400. The digest uses
+the previously working unfiltered paginated read and applies its open/recently
+closed 24-hour window locally. Every page is included; stale closed incidents,
+duplicates and private labels remain excluded from the aggregate summary.
+Keep a denied uptime-check inventory read separate from successful daily digest
+reads; neither justifies expanding IAM or claiming full routing verification.
 
 Before declaring the shared monitoring dashboard or private finance report
 usable, open its exact URL in the intended authenticated account and verify

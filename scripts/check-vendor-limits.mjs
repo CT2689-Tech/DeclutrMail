@@ -437,7 +437,11 @@ export async function checkUpstash() {
     );
     const volume = {
       ...gauge(cmds, warnCmds),
-      detail: `${fmtInt(cmds)} commands today (warn ${fmtInt(warnCmds)})`,
+      // This operator-configured daily count is a diagnostic, not a native
+      // quota. Even 2x cannot establish a provider breach. Actual lifecycle
+      // state and the independently measured spend cap still fail above.
+      status: cmds >= warnCmds ? 'WARN' : 'OK',
+      detail: `${fmtInt(cmds)} commands today (warn ${fmtInt(warnCmds)}; diagnostic, not a provider quota)`,
     };
     // Spend and volume fail independently. Acknowledging a volume spike
     // must not hide the spend projection that predicts a suspension.
