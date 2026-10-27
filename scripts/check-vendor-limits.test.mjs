@@ -198,6 +198,49 @@ const prodDb = {
 };
 const openCauses = (result) => result.failing.flatMap((r) => r.open.map((o) => o.cause.text));
 
+test('daily command heuristics stay warnings above 2x, without hiding real spend or lifecycle breaches', async () => {
+  const stats = {
+    daily_net_commands: 2_302_767,
+    current_storage: 48 * 1024 * 1024,
+    total_monthly_billing: 0,
+  };
+  for (const database_type of ['Fixed 250MB', 'Pay as You Go', 'free', undefined]) {
+    const row = {
+      name: 'Upstash Redis',
+      ...(await withFetch(
+        { [UPSTASH_DBS]: [{ ...prodDb, database_type }], [UPSTASH_STATS]: stats },
+        UPSTASH,
+        checkUpstash,
+      )),
+    };
+    assert.equal(row.status, 'WARN');
+    assert.equal(row.usage.commands_today, stats.daily_net_commands);
+    assert.equal(
+      row.causes.find((c) => /commands today/.test(c.text)).value,
+      stats.daily_net_commands,
+    );
+    assert.equal(triage([row], parse(LIST), { today: TODAY }).failing.length, 0);
+    assert.equal(
+      triage([row], parse(LIST), { today: TODAY, warnIsFailure: true }).failing.length,
+      1,
+    );
+  }
+  const costly = {
+    name: 'Upstash Redis',
+    ...(await withFetch(
+      { [UPSTASH_DBS]: [prodDb], [UPSTASH_STATS]: { ...stats, total_monthly_billing: 29.99 } },
+      UPSTASH,
+      checkUpstash,
+    )),
+  };
+  const commandOnly = parse(
+    `${LIST}Upstash Redis\tWARN\tcommands today\t5000000\t2026-10-03\tvolume diagnostic\n`,
+  );
+  assert.equal(costly.status, 'BREACH');
+  assert.equal(openCauses(triage([costly], commandOnly, { today: TODAY })).length, 1);
+  assert.match(openCauses(triage([costly], commandOnly, { today: TODAY }))[0], /projecting/);
+});
+
 test('acknowledging Upstash volume no longer hides the spend projection that predicts a suspension', async () => {
   // #782 review: every active row's detail ends with "N commands today", so a
   // line for a volume spike also covered the spend BREACH that, on
@@ -524,10 +567,13 @@ test('acknowledging a suspended staging database does not stop the checks on pro
   const known = parse(
     `${LIST}Upstash Redis\tBREACH\tstaging-cache: state=suspended\t-\t2026-10-03\tstaging, being deleted\n`,
   );
-  const open = openCauses(triage([row], known, { today: TODAY }));
+  const open = openCauses(triage([row], known, { today: TODAY, warnIsFailure: true }));
   assert.equal(open.length, 2);
   assert.match(open[0], /^declutrmail-v2-bullmq: projecting \$[\d.]+ against a \$30\.00 cap$/);
-  assert.equal(open[1], 'declutrmail-v2-bullmq: 5,000,000 commands today (warn 1,000,000)');
+  assert.equal(
+    open[1],
+    'declutrmail-v2-bullmq: 5,000,000 commands today (warn 1,000,000; diagnostic, not a provider quota)',
+  );
 });
 
 test('when two lines name one cause, the tightest ceiling decides', () => {
@@ -664,7 +710,7 @@ test('a missing volume field keeps the causes measured before it', async () => {
           ),
         ],
         known,
-        { today: TODAY },
+        { today: TODAY, warnIsFailure: true },
       ),
     );
   const spend = /^declutrmail-v2-bullmq: projecting \$[\d.]+ against a \$30\.00 cap$/;
@@ -674,7 +720,10 @@ test('a missing volume field keeps the causes measured before it', async () => {
   const noStorage = await open({ daily_net_commands: 5_000_000, total_monthly_billing: 29.99 });
   assert.equal(noStorage.length, 2);
   assert.match(noStorage[0], spend);
-  assert.equal(noStorage[1], 'declutrmail-v2-bullmq: 5,000,000 commands today (warn 1,000,000)');
+  assert.equal(
+    noStorage[1],
+    'declutrmail-v2-bullmq: 5,000,000 commands today (warn 1,000,000; diagnostic, not a provider quota)',
+  );
 });
 
 test('a failed events read keeps each PostHog quota as its own cause', async () => {
@@ -743,9 +792,12 @@ test('a line that matches several failing causes in a row holds none of them', a
   const byName = parse(
     `${LIST}Upstash Redis\tBREACH\tdeclutrmail-v2-bullmq:\t5000000\t2026-10-03\tvolume spike\n`,
   );
-  const open = triage([row], byName, { today: TODAY }).failing[0].open;
+  const open = triage([row], byName, { today: TODAY, warnIsFailure: true }).failing[0].open;
   assert.equal(open.length, 2);
-  for (const { why } of open) assert.match(why, /^line \d+ matches 2 causes in this row/);
+  assert.match(open[0].why, /^line \d+ matches 2 causes in this row/);
+  assert.equal(open[1].cause.status, 'WARN');
+  assert.match(open[1].why, /not acknowledged/);
+  assert.equal(openCauses(triage([row], byName, { today: TODAY })).length, 1);
   // Text that covers two suspended databases would cover the next one too.
   const suspended = {
     name: 'Upstash Redis',
