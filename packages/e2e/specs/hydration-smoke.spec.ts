@@ -426,7 +426,7 @@ test('live Pro complimentary billing hydrates on annual across repeated loads', 
   await withBillingFixture('complimentary-pro', async () => {
     await expectLoadsHydrate(page, '/billing', async () => {
       await expect(page.getByTestId('complimentary-note')).toContainText(
-        'Pro is complimentary on this account',
+        'Pro is included at no cost',
       );
       const purchaseOptions = page
         .locator('#change-plan summary')
@@ -452,7 +452,7 @@ test('live Pro complimentary billing hydrates with the monthly toggle selected',
   await withBillingFixture('complimentary-pro', async () => {
     await expectLoadsHydrate(page, '/billing?plan=plus&cycle=monthly', async () => {
       await expect(page.getByTestId('complimentary-note')).toContainText(
-        'Pro is complimentary on this account',
+        'Pro is included at no cost',
       );
       await expect(page.getByRole('button', { name: 'Monthly', pressed: true })).toBeVisible();
       await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
