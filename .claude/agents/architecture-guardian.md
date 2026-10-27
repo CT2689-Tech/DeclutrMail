@@ -197,6 +197,11 @@ Each of these shipped to production at least once. Flag (BLOCKING):
   tier filter derived from `hasCapability` (a request guard does not cover a
   producer).
 - A JS `Date` or `BigInt` interpolated directly into a raw `sql` template.
+- A billing or entitlement state transition ordered by a provider event
+  timestamp instead of a domain rule. Terminal states (`canceled`, a settled
+  refund) stay terminal; same-second Paddle / Razorpay events are not a total
+  order. Also recommend an independent adversarial review for any
+  entitlement-affecting concurrency change.
 
 **Flag (BLOCKING)** mutation endpoints without idempotency handling.
 
