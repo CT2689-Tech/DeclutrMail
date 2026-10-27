@@ -37,3 +37,7 @@ it is. Typing `/ct-` lists them all.
   (`privacy-auditor`, `defect-class-sweeper`, …). CLAUDE.md §7 and the
   commands above call them by those names.
 - Third-party skills (`caveman*`, plugin skills) keep their upstream names.
+- The `pr-review-toolkit` plugin ships generic agents with the same names
+  (`pr-review-toolkit:silent-failure-hunter`, `…:type-design-analyzer`). The
+  plugin is per machine and knows nothing of D7, D226 or the worker policies.
+  Gates and `ct-gates` call the repo agents in `agents/`; use those.

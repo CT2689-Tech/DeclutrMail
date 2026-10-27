@@ -57,18 +57,21 @@ read enough surrounding context to know whether it's a real concern.
 
 #### Check A — `any` leakage
 
-`tsconfig.base.json` is strict, so explicit `any` requires intent.
+`pnpm lint` already errors on an explicit `any`
+(`@typescript-eslint/no-explicit-any`). Spend this check on what lint
+cannot see: the repo does not run the type-aware `no-unsafe-*` rules, so an
+IMPLICIT `any` flows through silently.
 
 ```bash
-git diff -- '*.ts' '*.tsx' | rg -n ':\s*any\b|<any>|as\s+any\b|Record<string,\s*any>'
+git diff -- '*.ts' '*.tsx' | rg -n 'JSON\.parse\(|\.json\(\)|eslint-disable[^\n]*no-explicit-any'
 ```
 
 For each match:
 
-- Is there a comment explaining why? If not, **[SUGGESTION]** — replace
-  with a narrower type or `unknown` + narrowing.
-- Is it in a `// @ts-expect-error` line? If so, is the next line valid
-  under strict mode? Verify.
+- `JSON.parse(...)` or `await res.json()` assigned without a Zod parse or an
+  explicit `unknown` → **[SUGGESTION]**: parse at the boundary.
+- An `eslint-disable` for `no-explicit-any` without a reason on the same
+  line → **[SUGGESTION]**.
 
 #### Check B — Non-exhaustive switches on discriminated unions
 
@@ -109,9 +112,9 @@ Flag as **[NIT]** when found.
 
 #### Check E — `// @ts-ignore` / `// @ts-nocheck`
 
-Strictly forbidden in production code unless paired with a tracking
-issue. Flag any `@ts-ignore` (silent) as **[BLOCKING]** — `@ts-expect-error`
-(loud) is acceptable when commented.
+`pnpm lint` already rejects these (`@typescript-eslint/ban-ts-comment`).
+Flag as **[BLOCKING]** only an `eslint-disable` that switches that rule off
+to let one through. `@ts-expect-error` with a description is allowed.
 
 ### Step 4: Type-narrowing opportunities
 
