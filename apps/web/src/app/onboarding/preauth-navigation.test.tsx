@@ -48,15 +48,11 @@ it('keeps an anonymous visitor on the promise and Connect steps until they choos
       </QueryWrapper>,
     );
 
-    expect(
-      screen.getByText('Clear thousands of emails by sender — and see exactly what moves.'),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect Gmail' })).toBeInTheDocument();
     await waitFor(() =>
       expect(queryClient.getQueryState(['onboarding', 'session-probe'])?.status).toBe('error'),
     );
-    expect(
-      screen.getByText('Clear thousands of emails by sender — and see exactly what moves.'),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Connect Gmail' })).toBeInTheDocument();
     expect(assign).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: /Connect Gmail/ }));
     expect(await screen.findByText('Connect your Gmail.')).toBeInTheDocument();
