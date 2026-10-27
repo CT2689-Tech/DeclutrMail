@@ -287,8 +287,20 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - name: Install promtool
+        run: |
+          set -euo pipefail
+          version=2.55.1
+          archive="prometheus-${version}.linux-amd64.tar.gz"
+          curl -fsSL -o "/tmp/${archive}" "https://github.com/prometheus/prometheus/releases/download/v${version}/${archive}"
+          echo "19700bdd42ec31ee162e4079ebda4cd0a44432df4daa637141bdbea4b1cd8927  /tmp/${archive}" | sha256sum -c -
+          tar -xzf "/tmp/${archive}" -C /tmp "prometheus-${version}.linux-amd64/promtool"
+          mkdir -p "$HOME/.local/bin"
+          mv "/tmp/prometheus-${version}.linux-amd64/promtool" "$HOME/.local/bin/promtool"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/promtool" --version
       - name: Infrastructure telemetry contracts
-        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/alert-email-routing.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/vercel-spend-guard.test.mjs scripts/paddle-webhook-monitor.test.mjs scripts/vendor-monitoring-followups.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
+        run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/alert-email-routing.test.mjs scripts/alert-promql-fixtures.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/vercel-spend-guard.test.mjs scripts/paddle-webhook-monitor.test.mjs scripts/vendor-monitoring-followups.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
       - name: Scoped private infrastructure inspection contracts

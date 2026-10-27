@@ -43,6 +43,7 @@ const REQUIRED = [
   'DeclutrMail runtime collection repeatedly failing',
   ...[...DAILY_POLICIES].filter((n) => n !== RECONNECT_POLICY),
   'Mailbox stuck: broken past grace window, unnoticed',
+  'Stuck-mailbox watchdog silent',
   'Mailbox lock: leak or acquisition failure',
 ];
 const FIELDS = [
@@ -83,11 +84,22 @@ export const planHash = (policies) =>
     )
     .digest('hex');
 
-export function contains(actual, expected) {
-  if (Array.isArray(expected))
+export function contains(actual, expected, path = '') {
+  if (Array.isArray(expected)) {
+    // Native ProtoJSON omits default-valued repeated fields. Normalize only
+    // the known notification arrays; nonempty expectations remain strict.
+    if (
+      actual === undefined &&
+      expected.length === 0 &&
+      ['notificationChannels', 'alertStrategy.notificationChannelStrategy'].includes(path)
+    )
+      return true;
+    if (!Array.isArray(actual)) return false;
     return (
-      (actual ?? []).length === expected.length && expected.every((v, i) => contains(actual[i], v))
+      actual.length === expected.length &&
+      expected.every((v, i) => contains(actual[i], v, `${path}[]`))
     );
+  }
   if (expected && typeof expected === 'object')
     return Object.entries(expected).every(([k, v]) =>
       contains(
@@ -99,9 +111,58 @@ export function contains(actual, expected) {
           ? 0
           : actual?.[k],
         v,
+        path ? `${path}.${k}` : k,
       ),
     );
   return actual === expected;
+}
+
+export function failureLogLine(err) {
+  return String(err?.message ?? err ?? 'Alert routing failed')
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/ya29\.[A-Za-z0-9._-]+/g, '[redacted]')
+    .split('\n')[0]
+    .slice(0, 500);
+}
+
+/** Shape of the smoke log row that sends the ROUTING_VERIFICATION admin email. */
+export function verificationLogEntry(runId) {
+  if (!/^\d+$/.test(String(runId ?? ''))) return null;
+  const day = `verification-${runId}`;
+  return {
+    insertId: `declutrmail-alert-digest-${day}`,
+    jsonPayload: {
+      kind: 'ops.alert_daily_summary',
+      day,
+      warningCount: 1,
+      summary: `ROUTING_VERIFICATION ${runId}: daily warning email path verification; no production failure is implied.`,
+    },
+  };
+}
+
+/** SHA-256 of that row's insertId and day. Null when the row is not the smoke email. */
+export function verificationReceipt(entry) {
+  const runId = /^verification-(\d+)$/.exec(entry?.jsonPayload?.day ?? '')?.[1];
+  const expected = verificationLogEntry(runId);
+  if (
+    !expected ||
+    entry.insertId !== expected.insertId ||
+    entry.jsonPayload.summary !== expected.jsonPayload.summary
+  )
+    return null;
+  return createHash('sha256').update(`${entry.insertId}\n${entry.jsonPayload.day}`).digest('hex');
+}
+
+/** Agrees with Actions `vars.OPS_ALERT_DIGEST_ENABLED == 'true'` (case-insensitive). */
+export function digestDeliveryEnabled(value) {
+  return typeof value === 'string' && value.toLowerCase() === 'true';
+}
+
+export function digestAlertFilter(now = Date.now()) {
+  const since = new Date(now - 24 * 60 * 60 * 1000).toISOString();
+  // alerts.list filter/orderBy use the discovery names state and close_time.
+  // The Alert JSON spells the timestamp closeTime, which this API refuses.
+  return `state="OPEN" OR (state="CLOSED" AND close_time>="${since}")`;
 }
 
 export function routingPlan(policies, checks, channel) {
@@ -149,12 +210,13 @@ export function routingPlan(policies, checks, channel) {
   });
 }
 
-export async function listAll(request, collection) {
+export async function listAll(request, collection, { filter } = {}) {
   const values = [];
   const seen = new Set();
   let next = '';
   do {
     const params = new URLSearchParams({ pageSize: '100' });
+    if (filter) params.set('filter', filter);
     if (next) params.set('pageToken', next);
     const data = await request(`${ROOT}/${collection}?${params}`);
     values.push(...(data[collection] ?? []));
@@ -272,30 +334,36 @@ async function savePolicy(request, p) {
 }
 
 async function publishDigest(request, payload, { verification = false } = {}) {
-  const day = verification
-    ? `verification-${process.env.GITHUB_RUN_ID}`
-    : new Date().toISOString().slice(0, 10);
-  if (!verification) {
-    const tomorrow = new Date(Date.parse(`${day}T00:00:00Z`) + 86400000).toISOString();
-    const search = {
-      resourceNames: [`projects/${PROJECT}`],
-      filter: `logName="projects/${PROJECT}/logs/declutrmail-alert-digest" AND jsonPayload.kind="ops.alert_daily_summary" AND jsonPayload.day="${day}" AND timestamp >= "${day}T00:00:00Z" AND timestamp < "${tomorrow}"`,
-      orderBy: 'timestamp desc',
-      pageSize: 1,
-    };
-    const seen = new Set();
-    let token = '';
-    for (let page = 0; ; page++) {
-      const existing = await request('https://logging.googleapis.com/v2/entries:list', 'POST', {
-        ...search,
-        ...(token ? { pageToken: token } : {}),
-      });
-      if (existing.entries?.length) return { published: false, alreadyPublished: true, day };
-      token = existing.nextPageToken ?? '';
-      if (!token) break;
-      if (seen.has(token) || page >= 9) throw new Error('Digest replay search incomplete');
-      seen.add(token);
-    }
+  if (verification) {
+    const entry = verificationLogEntry(process.env.GITHUB_RUN_ID);
+    if (!entry) throw new Error('Smoke verification requires a numeric run id');
+    await request('https://logging.googleapis.com/v2/entries:write', 'POST', {
+      logName: `projects/${PROJECT}/logs/declutrmail-alert-digest`,
+      resource: { type: 'global', labels: { project_id: PROJECT } },
+      entries: [{ insertId: entry.insertId, severity: 'WARNING', jsonPayload: entry.jsonPayload }],
+    });
+    return { published: true, day: entry.jsonPayload.day };
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.parse(`${day}T00:00:00Z`) + 86400000).toISOString();
+  const search = {
+    resourceNames: [`projects/${PROJECT}`],
+    filter: `logName="projects/${PROJECT}/logs/declutrmail-alert-digest" AND jsonPayload.kind="ops.alert_daily_summary" AND jsonPayload.day="${day}" AND timestamp >= "${day}T00:00:00Z" AND timestamp < "${tomorrow}"`,
+    orderBy: 'timestamp desc',
+    pageSize: 1,
+  };
+  const seen = new Set();
+  let token = '';
+  for (let page = 0; ; page++) {
+    const existing = await request('https://logging.googleapis.com/v2/entries:list', 'POST', {
+      ...search,
+      ...(token ? { pageToken: token } : {}),
+    });
+    if (existing.entries?.length) return { published: false, alreadyPublished: true, day };
+    token = existing.nextPageToken ?? '';
+    if (!token) break;
+    if (seen.has(token) || page >= 9) throw new Error('Digest replay search incomplete');
+    seen.add(token);
   }
   await request('https://logging.googleapis.com/v2/entries:write', 'POST', {
     logName: `projects/${PROJECT}/logs/declutrmail-alert-digest`,
@@ -311,11 +379,24 @@ async function publishDigest(request, payload, { verification = false } = {}) {
   return { published: true, day };
 }
 
+async function assertVerificationReceipt(request, receipt) {
+  if (typeof receipt !== 'string' || !/^[a-f0-9]{64}$/.test(receipt))
+    throw new Error('Observed digest email receipt required before muting warnings');
+  const listed = await request('https://logging.googleapis.com/v2/entries:list', 'POST', {
+    resourceNames: [`projects/${PROJECT}`],
+    filter: `logName="projects/${PROJECT}/logs/declutrmail-alert-digest" AND jsonPayload.kind="ops.alert_daily_summary" AND jsonPayload.summary:"ROUTING_VERIFICATION "`,
+    orderBy: 'timestamp desc',
+    pageSize: 20,
+  });
+  const matched = (listed.entries ?? []).some((entry) => verificationReceipt(entry) === receipt);
+  if (!matched) throw new Error('Observed digest email receipt required before muting warnings');
+}
+
 export async function runRouting(
   mode,
   { request, report, expectedHash, receipt, digestEnabled } = {},
 ) {
-  if (mode === 'apply' && digestEnabled !== 'true')
+  if (mode === 'apply' && !digestDeliveryEnabled(digestEnabled))
     throw new Error('Scheduled daily digest must be enabled before muting warnings');
   const state = await inventory(request, mode !== 'digest');
   report.before = state.policies.filter((p) => OWNED.has(p.displayName));
@@ -325,8 +406,7 @@ export async function runRouting(
       const alreadyRouted = state.policies.some(
         (p) =>
           DAILY_POLICIES.has(p.displayName) &&
-          p.displayName !== RECONNECT_POLICY &&
-          (p.userLabels?.notification_route === 'daily' || p.notificationChannels?.length === 0),
+          (p.userLabels?.notification_route === 'daily' || !p.notificationChannels?.length),
       );
       if (alreadyRouted) throw new Error('Daily warning delivery path is missing after activation');
       report.notConfigured = true;
@@ -343,25 +423,22 @@ export async function runRouting(
       )
     )
       throw new Error('Digest notification policy drift');
-    const payload = warningSummary(state.policies, await listAll(request, 'alerts'));
+    const payload = warningSummary(
+      state.policies,
+      await listAll(request, 'alerts', { filter: digestAlertFilter() }),
+    );
     report.digest = { ...payload, ...(await publishDigest(request, payload)) };
     return;
   }
   const plan = routingPlan(state.policies, state.checks, state.channel);
   report.plan = plan;
   report.planHash = planHash(state.policies);
-  report.preflight = await preflight(request, state, plan);
+  // Plan only lists policies and channels. Probe and incident reads stay on prepare/apply.
+  if (mode !== 'plan') report.preflight = await preflight(request, state, plan);
   if (mode === 'plan') return;
   if (mode === 'smoke') {
     assertDailyRoutingReady(state.policies, { reconnect: true, verified: false });
-    report.digest = await publishDigest(
-      request,
-      {
-        warningCount: 1,
-        summary: `ROUTING_VERIFICATION ${process.env.GITHUB_RUN_ID}: daily warning email path verification; no production failure is implied.`,
-      },
-      { verification: true },
-    );
+    report.digest = await publishDigest(request, {}, { verification: true });
     return;
   }
   if (mode === 'verify') {
@@ -376,8 +453,7 @@ export async function runRouting(
   if (!['prepare', 'apply'].includes(mode)) throw new Error('Invalid routing mode');
   if (!expectedHash || expectedHash !== report.planHash)
     throw new Error('Reviewed plan changed; read a fresh plan');
-  if (mode === 'apply' && !/^[a-f0-9]{64}$/.test(receipt ?? ''))
-    throw new Error('Observed digest email receipt required before muting warnings');
+  if (mode === 'apply') await assertVerificationReceipt(request, receipt);
   if (mode === 'apply')
     plan.find((p) => p.displayName === DIGEST_POLICY).userLabels.delivery_verified = 'true';
   const changed = [];
@@ -430,8 +506,11 @@ export async function runRouting(
         )
           created.push(p);
       }
-    } catch {
-      report.rollback.push({ discoveryUnavailable: true });
+    } catch (discoveryErr) {
+      report.rollback.push({
+        discoveryUnavailable: true,
+        error: String(discoveryErr?.message ?? discoveryErr),
+      });
     }
     // Restore original notification channels first, then remove only resources created here.
     for (const p of changed.reverse()) {
@@ -445,15 +524,23 @@ export async function runRouting(
         )
           throw new Error('Rollback readback failed', { cause: err });
         report.rollback.push({ name: p.displayName, restored: true });
-      } catch {
-        report.rollback.push({ name: p.displayName, restored: false });
+      } catch (rollbackErr) {
+        report.rollback.push({
+          name: p.displayName,
+          restored: false,
+          error: [rollbackErr?.message, rollbackErr?.cause?.message].filter(Boolean).join(': '),
+        });
       }
     }
     for (const p of created.reverse()) {
       try {
         await request(`https://monitoring.googleapis.com/v3/${p.name}`, 'DELETE');
-      } catch {
-        report.rollback.push({ name: p.displayName, removed: false });
+      } catch (removeErr) {
+        report.rollback.push({
+          name: p.displayName,
+          removed: false,
+          error: String(removeErr?.message ?? removeErr),
+        });
       }
     }
     throw err;
@@ -492,10 +579,8 @@ async function main() {
     if (report.planHash && mode !== 'digest') console.log(`Plan hash: ${report.planHash}`);
     if (report.nextPlanHash) console.log(`Next plan hash: ${report.nextPlanHash}`);
   } catch (err) {
-    report.error = String(err.message);
-    console.error(
-      'Alert routing failed; unavailable reads and rollback details are retained in the encrypted report.',
-    );
+    report.error = String(err?.message ?? err);
+    console.error(failureLogLine(err));
     process.exitCode = 1;
   } finally {
     if (process.env.ALERT_ROUTING_OUTPUT && process.env.ALERT_ROUTING_PUBLIC_KEY) {

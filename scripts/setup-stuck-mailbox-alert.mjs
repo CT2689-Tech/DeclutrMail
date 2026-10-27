@@ -45,11 +45,11 @@
  */
 import { pathToFileURL } from 'node:url';
 
-import { gcpRequest, gcpToken } from './infra-observability.mjs';
+import { gcpRequest, gcpSend, gcpToken } from './infra-observability.mjs';
 import {
   notificationPolicy,
   RECONNECT_POLICY,
-  assertDailyRoutingReady,
+  enforceDailyRouting,
 } from './alert-notification-policy.mjs';
 
 const ALERT_EMAIL = 'admin@declutrmail.ai';
@@ -146,8 +146,9 @@ const STUCK_DOC = [
   'Find it: `gcloud logging read \'resource.type="cloud_run_revision" AND jsonPayload.kind="mailbox.stuck_unnoticed" AND jsonPayload.mailboxAccountId="${metric.label.mailbox_account_id}"\' --project=declutrmail-ai-prod --freshness=1h` — the line carries `errorCode` and `stuckSinceHours`.',
   '',
   '- `sync_failed` / `sync_stalled`: the first scan never finished and nothing is retrying it. Check `dead_letter_jobs` and `provider_sync_state` for the mailbox.',
-  '- `needs_reconnect`: a revoked Gmail grant. The user has to reconnect; check the reconnect email and banner reached them.',
   '- `incremental_failed`: ongoing sync failing with a non-auth error and not recovering.',
+  '',
+  'A revoked Gmail grant (`needs_reconnect`) is not this alert. It is the daily reconnect warning.',
   '',
   'While "Stuck-mailbox watchdog silent" is open, this alert cannot see newly stuck mailboxes.',
 ].join('\n');
@@ -236,23 +237,27 @@ export function starveTestResources(project, runId, resource) {
   };
 }
 
-async function listAll(url, key, token) {
+function asSend(tokenOrSend) {
+  return typeof tokenOrSend === 'function'
+    ? tokenOrSend
+    : (url, method = 'GET', body) => gcpRequest(url, tokenOrSend, method, body);
+}
+
+async function listAll(url, key, tokenOrSend) {
+  const send = asSend(tokenOrSend);
   const records = [];
   let next = '';
   do {
-    const data = await gcpRequest(
-      `${url}${next ? `?pageToken=${encodeURIComponent(next)}` : ''}`,
-      token,
-    );
+    const data = await send(`${url}${next ? `?pageToken=${encodeURIComponent(next)}` : ''}`);
     records.push(...(data[key] ?? []));
     next = data.nextPageToken;
   } while (next);
   return records;
 }
 
-async function latestEntry(project, token, filter, sinceMs) {
+async function latestEntry(project, tokenOrSend, filter, sinceMs) {
   const since = new Date(Date.now() - sinceMs).toISOString();
-  const data = await gcpRequest(`${LOGGING}/entries:list`, token, 'POST', {
+  const data = await asSend(tokenOrSend)(`${LOGGING}/entries:list`, 'POST', {
     resourceNames: [`projects/${project}`],
     filter: `${filter} AND timestamp>="${since}"`,
     orderBy: 'timestamp desc',
@@ -261,14 +266,17 @@ async function latestEntry(project, token, filter, sinceMs) {
   return data.entries?.[0];
 }
 
-export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
+export async function setupStuckMailboxAlert(
+  project,
+  { apply = false, allowUnverifiedRouting = false, request } = {},
+) {
   if (!apply) {
     console.log(
       JSON.stringify(
         {
           logMetrics: [STUCK_METRIC, COMPLETED_METRIC],
           policies: [stuckMailboxPolicy(), reconnectMailboxPolicy(), watchdogSilentPolicy()],
-          note: 'Plan only. --apply converges these in place; --starve-test proves them without paging anyone.',
+          note: 'Plan only. --apply converges these in place; --starve-test proves them without paging anyone. Emergency threshold or filter repairs before daily routing is verified require --allow-unverified-routing with --apply. That keeps existing notification channels and assigns the admin email channel when a policy has none.',
         },
         null,
         2,
@@ -276,44 +284,49 @@ export async function setupStuckMailboxAlert(project, { apply = false } = {}) {
     );
     return;
   }
-  const token = gcpToken();
+  const send = gcpSend(request);
   const root = `${MONITORING}/projects/${project}`;
   for (const metric of [STUCK_METRIC, COMPLETED_METRIC]) {
     // PUT is the Logging API create-or-update for a named metric.
-    await gcpRequest(`${LOGGING}/projects/${project}/metrics/${metric.name}`, token, 'PUT', metric);
+    await send(`${LOGGING}/projects/${project}/metrics/${metric.name}`, 'PUT', metric);
     console.log(`log metric ${metric.name}`);
   }
   const channels = (
-    await listAll(`${root}/notificationChannels`, 'notificationChannels', token)
+    await listAll(`${root}/notificationChannels`, 'notificationChannels', send)
   ).filter(
     (c) => c.type === 'email' && c.labels?.email_address === ALERT_EMAIL && c.enabled !== false,
   );
   if (channels.length !== 1)
     throw new Error(`Expected one enabled ${ALERT_EMAIL} email channel, found ${channels.length}`);
-  const existing = await listAll(`${root}/alertPolicies`, 'alertPolicies', token);
-  assertDailyRoutingReady(existing, { reconnect: true });
+  const existing = await listAll(`${root}/alertPolicies`, 'alertPolicies', send);
+  enforceDailyRouting(existing, { reconnect: true, allowUnverified: allowUnverifiedRouting });
   async function upsert(policy) {
     const old = existing.filter((p) => p.displayName === policy.displayName);
     if (old.length > 1) throw new Error(`Duplicate alert policy: ${policy.displayName}`);
+    const prior = old[0]?.notificationChannels;
+    const input =
+      allowUnverifiedRouting && prior?.length ? { ...policy, notificationChannels: prior } : policy;
     const value = {
       ...policy,
       combiner: 'OR',
       enabled: true,
-      ...notificationPolicy(policy, channels[0].name),
+      ...notificationPolicy(input, channels[0].name, {
+        preserveChannels: allowUnverifiedRouting,
+      }),
     };
     if (old[0])
-      await gcpRequest(`${MONITORING}/${old[0].name}`, token, 'PATCH', {
+      await send(`${MONITORING}/${old[0].name}`, 'PATCH', {
         ...value,
         name: old[0].name,
       });
-    else await gcpRequest(`${root}/alertPolicies`, token, 'POST', value);
+    else await send(`${root}/alertPolicies`, 'POST', value);
     console.log(`alert policy "${policy.displayName}"`);
   }
   await upsert(stuckMailboxPolicy());
   await upsert(reconnectMailboxPolicy());
   const heartbeat = await latestEntry(
     project,
-    token,
+    send,
     `resource.type="cloud_run_revision" AND resource.labels.service_name="${WORKER_SERVICE}" AND jsonPayload.kind="stuck_mailbox_watchdog.completed"`,
     20 * 60 * 1000,
   );
@@ -475,5 +488,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const args = process.argv.slice(2);
   const project = args.find((a) => !a.startsWith('--')) ?? 'declutrmail-ai-prod';
   if (args.includes('--starve-test')) await starveTest(project);
-  else await setupStuckMailboxAlert(project, { apply: args.includes('--apply') });
+  else
+    await setupStuckMailboxAlert(project, {
+      apply: args.includes('--apply'),
+      allowUnverifiedRouting: args.includes('--allow-unverified-routing'),
+    });
 }

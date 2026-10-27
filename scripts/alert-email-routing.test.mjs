@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { infrastructurePolicies, workerHeartbeatPolicy } from './setup-infra-alerts.mjs';
 import {
@@ -13,6 +14,7 @@ import {
   coverageNotifications,
   workerOutageQuery,
   assertDailyRoutingReady,
+  enforceDailyRouting,
   DIGEST_POLICY,
   RECONNECT_BURST_POLICY,
   COVERAGE_POLICY,
@@ -25,6 +27,11 @@ import {
   warningSummary,
   listAll,
   contains,
+  failureLogLine,
+  verificationLogEntry,
+  verificationReceipt,
+  digestAlertFilter,
+  digestDeliveryEnabled,
 } from './alert-email-routing.mjs';
 
 const channel = {
@@ -98,8 +105,14 @@ function backend(initial = fixture(), options = {}) {
         data: { result: samples && !options.sparse ? [{ metric: {}, value: [1, '3'] }] : [] },
       };
     }
-    if (method === 'GET' && parsed.pathname.includes('/alertPolicies/'))
-      return structuredClone(policies.find((p) => `/${p.name}` === parsed.pathname.slice(3)));
+    if (method === 'GET' && parsed.pathname.includes('/alertPolicies/')) {
+      const found = structuredClone(
+        policies.find((p) => `/${p.name}` === parsed.pathname.slice(3)),
+      );
+      if (options.corruptRollbackReadback && writes.length > options.failWrite)
+        found.notificationChannels = ['leftover'];
+      return found;
+    }
     if (method === 'POST' && parsed.pathname.endsWith('/alertPolicies')) {
       const p = nativePolicy({
         ...structuredClone(body),
@@ -126,6 +139,8 @@ function backend(initial = fixture(), options = {}) {
       if (options.logsUnavailable) throw new Error('digest log read denied');
       logSearches.push(structuredClone(body));
       if (options.logPages) return options.logPages[logSearches.length - 1];
+      if (String(body?.filter ?? '').includes('ROUTING_VERIFICATION'))
+        return { entries: options.verificationEntries ?? [] };
       return { entries: options.alreadyPublished ? [{}] : [] };
     }
     if (parsed.pathname.endsWith('/entries:write')) return {};
@@ -134,6 +149,9 @@ function backend(initial = fixture(), options = {}) {
   return { request, writes, logSearches, policies: () => structuredClone(policies) };
 }
 const report = () => ({ mode: 'test' });
+const smokeEntry = verificationLogEntry('4821');
+const smokeReceipt = verificationReceipt(smokeEntry);
+const BANNED_SUBJECT = [/run ledger/i, /lock ownership/i, /worker observations/i];
 
 test('plan hash tolerates provider object-key ordering while detecting value changes', () => {
   const initial = fixture();
@@ -152,6 +170,7 @@ test('routine warnings are opening-only and daily, while major outages retain de
     const value = notificationPolicy(p, channel.name);
     assert.ok(value.severity);
     assert.ok(value.documentation.subject);
+    for (const pattern of BANNED_SUBJECT) assert.doesNotMatch(value.documentation.subject, pattern);
     assert.deepEqual(
       value.conditions.map((c) => c.conditionThreshold?.thresholdValue),
       p.conditions.map((c) => c.conditionThreshold?.thresholdValue),
@@ -226,6 +245,18 @@ test('routing plan retains every detection threshold, hold, aligner and mailbox/
       assert.equal(value.conditions[i].name, p.conditions[i].name);
     }
   }
+  for (const value of planned)
+    for (const pattern of BANNED_SUBJECT)
+      assert.doesNotMatch(value.documentation.subject ?? '', pattern);
+  assert.throws(
+    () =>
+      routingPlan(
+        before.filter((p) => p.displayName !== 'Stuck-mailbox watchdog silent'),
+        checks,
+        channel,
+      ),
+    /Stuck-mailbox watchdog silent/,
+  );
   assert.ok(planned.some((p) => p.displayName === RECONNECT_BURST_POLICY));
   assert.ok(
     planned
@@ -281,24 +312,29 @@ test('warning summary includes current and recently closed incidents, deduplicat
 });
 
 test('plan is read-only and preflight failures do not mutate policies', async () => {
-  const db = backend();
-  const result = report();
-  await runRouting('plan', { request: db.request, report: result });
-  assert.equal(db.writes.length, 0);
-  assert.equal(result.planHash, planHash(fixture()));
+  const blind = backend(fixture(), {
+    alertsUnavailable: true,
+    logsUnavailable: true,
+    sparse: true,
+  });
+  const planned = report();
+  await runRouting('plan', { request: blind.request, report: planned });
+  assert.equal(blind.writes.length, 0);
+  assert.equal(planned.preflight, undefined);
+  assert.equal(planned.planHash, planHash(fixture()));
   for (const options of [
     { alertsUnavailable: true },
     { logsUnavailable: true },
     { sparse: true },
   ]) {
-    const broken = backend(fixture(), options);
+    const broken = backend(fixture(), { ...options, verificationEntries: [smokeEntry] });
     await assert.rejects(
       runRouting('apply', {
         digestEnabled: 'true',
         request: broken.request,
         report: report(),
         expectedHash: planHash(fixture()),
-        receipt: 'a'.repeat(64),
+        receipt: smokeReceipt,
       }),
     );
     assert.equal(broken.writes.length, 0);
@@ -306,14 +342,17 @@ test('plan is read-only and preflight failures do not mutate policies', async ()
 });
 
 test('apply cannot mute warning emails while scheduled delivery is disabled', async () => {
-  for (const digestEnabled of [undefined, 'false', 'TRUE', true]) {
+  for (const value of ['true', 'TRUE', 'True']) assert.equal(digestDeliveryEnabled(value), true);
+  for (const value of [undefined, '', 'false', '1', true])
+    assert.equal(digestDeliveryEnabled(value), false);
+  for (const digestEnabled of [undefined, '', 'false', '1', true]) {
     const db = backend();
     await assert.rejects(
       runRouting('apply', {
         request: db.request,
         report: report(),
         expectedHash: planHash(fixture()),
-        receipt: 'a'.repeat(64),
+        receipt: smokeReceipt,
         digestEnabled,
       }),
       /Scheduled daily digest must be enabled/,
@@ -321,11 +360,20 @@ test('apply cannot mute warning emails while scheduled delivery is disabled', as
     assert.equal(db.writes.length, 0);
     assert.deepEqual(db.policies(), fixture());
   }
+  const enabled = backend(fixture(), { verificationEntries: [smokeEntry] });
+  await runRouting('apply', {
+    request: enabled.request,
+    report: report(),
+    expectedHash: planHash(fixture()),
+    receipt: smokeReceipt,
+    digestEnabled: 'TRUE',
+  });
+  assert.ok(enabled.writes.length > 0);
 });
 
 test('prepare creates backstops without muting any original email, apply requires receipt and unchanged plan', async () => {
   const initial = fixture();
-  const db = backend(initial);
+  const db = backend(initial, { verificationEntries: [smokeEntry] });
   const prepared = report();
   await runRouting('prepare', {
     request: db.request,
@@ -354,9 +402,20 @@ test('prepare creates backstops without muting any original email, apply require
       request: db.request,
       report: report(),
       expectedHash: 'stale',
-      receipt: 'a'.repeat(64),
+      receipt: smokeReceipt,
     }),
     /changed/,
+  );
+  assert.equal(db.writes.length, writes);
+  await assert.rejects(
+    runRouting('apply', {
+      digestEnabled: 'true',
+      request: db.request,
+      report: report(),
+      expectedHash: prepared.nextPlanHash,
+      receipt: 'a'.repeat(64),
+    }),
+    /receipt/,
   );
   assert.equal(db.writes.length, writes);
   await runRouting('apply', {
@@ -364,7 +423,7 @@ test('prepare creates backstops without muting any original email, apply require
     request: db.request,
     report: report(),
     expectedHash: prepared.nextPlanHash,
-    receipt: 'a'.repeat(64),
+    receipt: smokeReceipt,
   });
   const actual = db.policies();
   assertDailyRoutingReady(actual, { reconnect: true });
@@ -388,7 +447,7 @@ test('failed rollout restores original policies and leaves unrelated policies un
       notificationChannels: ['another-channel'],
     },
   ];
-  const db = backend(initial, { failWrite: 5 });
+  const db = backend(initial, { failWrite: 5, verificationEntries: [smokeEntry] });
   const result = report();
   await assert.rejects(
     runRouting('apply', {
@@ -396,7 +455,7 @@ test('failed rollout restores original policies and leaves unrelated policies un
       request: db.request,
       report: result,
       expectedHash: planHash(initial),
-      receipt: 'a'.repeat(64),
+      receipt: smokeReceipt,
     }),
   );
   assert.equal(result.rollback.filter((r) => r.restored === false).length, 0);
@@ -501,6 +560,36 @@ test('digest does not publish before activation; after activation zero warnings 
   assert.ok(outage.writes.some((w) => w.url.endsWith('/entries:write')));
 });
 
+test('digest fails when any daily policy, including reconnect, is off immediate email', async () => {
+  const base = fixture();
+  const reconnect = {
+    ...reconnectMailboxPolicy(),
+    name: 'projects/declutrmail-ai-prod/alertPolicies/reconnect',
+    enabled: true,
+    combiner: 'OR',
+    notificationChannels: [channel.name],
+    userLabels: { notification_route: 'immediate' },
+  };
+  const healthy = backend([...base, reconnect]);
+  const skipped = report();
+  await runRouting('digest', { request: healthy.request, report: skipped });
+  assert.equal(skipped.notConfigured, true);
+  assert.equal(healthy.writes.length, 0);
+  for (const misrouted of [
+    { ...reconnect, notificationChannels: [] },
+    { ...reconnect, userLabels: { notification_route: 'daily' } },
+  ]) {
+    const db = backend([...base, misrouted]);
+    const result = report();
+    await assert.rejects(
+      runRouting('digest', { request: db.request, report: result }),
+      /Daily warning delivery path is missing after activation/,
+    );
+    assert.notEqual(result.notConfigured, true);
+    assert.equal(db.writes.length, 0);
+  }
+});
+
 test('pagination is complete or fails explicitly, and native empty protobuf lists compare correctly', async () => {
   let calls = 0;
   assert.deepEqual(
@@ -514,8 +603,154 @@ test('pagination is complete or fails explicitly, and native empty protobuf list
     listAll(async () => ({ alerts: [], nextPageToken: 'same' }), 'alerts'),
     /Repeated/,
   );
-  assert.ok(contains({}, { notificationChannels: [] }));
+  assert.equal(contains({}, { notificationChannels: [] }), true);
+  assert.equal(contains({ notificationChannels: [] }, { notificationChannels: [] }), true);
+  assert.equal(contains({}, { notificationChannels: ['expected'] }), false);
+  assert.equal(
+    contains({ notificationChannels: ['leftover'] }, { notificationChannels: [] }),
+    false,
+  );
+  assert.equal(contains({ notificationChannels: null }, { notificationChannels: [] }), false);
+  assert.equal(contains({}, { arbitraryList: [] }), false);
+  assert.equal(contains({}, { alertStrategy: { notificationChannelStrategy: [] } }), true);
   assert.ok(!contains({}, { enabled: true }));
+});
+
+test('prepare and apply accept native omitted empty repeated notification fields', async () => {
+  const initial = fixture();
+  const db = backend(initial, { verificationEntries: [smokeEntry] });
+  const request = async (url, method = 'GET', body) => {
+    const result = await db.request(url, method, body);
+    if (method === 'GET' && new URL(url).pathname.includes('/alertPolicies/')) {
+      if (result.notificationChannels?.length === 0) delete result.notificationChannels;
+      if (result.alertStrategy?.notificationChannelStrategy?.length === 0)
+        delete result.alertStrategy.notificationChannelStrategy;
+    }
+    return result;
+  };
+  await runRouting('prepare', { request, report: report(), expectedHash: planHash(initial) });
+  await runRouting('apply', {
+    request,
+    report: report(),
+    expectedHash: planHash(db.policies()),
+    digestEnabled: 'true',
+    receipt: smokeReceipt,
+  });
+  assert.ok(
+    db.policies().some((p) => DAILY_POLICIES.has(p.displayName) && !p.notificationChannels?.length),
+  );
+});
+
+test('emergency reminders target exactly the retained notification channels', () => {
+  const retained = [
+    'projects/p/notificationChannels/kept',
+    'projects/p/notificationChannels/backup',
+  ];
+  const policy = fixture().find((p) => p.displayName === 'DeclutrMail API unavailable');
+  const actual = notificationPolicy({ ...policy, notificationChannels: retained }, channel.name, {
+    preserveChannels: true,
+  });
+  assert.deepEqual(actual.notificationChannels, retained);
+  assert.deepEqual(actual.alertStrategy.notificationChannelStrategy, [
+    { notificationChannelNames: retained, renotifyInterval: '14400s' },
+  ]);
+  const fallback = notificationPolicy({ ...policy, notificationChannels: [] }, channel.name, {
+    preserveChannels: true,
+  });
+  assert.deepEqual(fallback.alertStrategy.notificationChannelStrategy[0].notificationChannelNames, [
+    channel.name,
+  ]);
+});
+
+test('digest lists open incidents and incidents closed in the last 24h', async () => {
+  const at = Date.parse('2026-10-22T13:00:00.000Z');
+  const filter = digestAlertFilter(at);
+  assert.equal(
+    filter,
+    'state="OPEN" OR (state="CLOSED" AND close_time>="2026-10-21T13:00:00.000Z")',
+  );
+  assert.doesNotMatch(filter, /openTime|closeTime/);
+  const initial = fixture();
+  const active = routingPlan(initial, checks, channel).map((p, i) => ({
+    ...p,
+    name: p.name ?? `projects/p/alertPolicies/a${i}`,
+  }));
+  active.find((p) => p.displayName === DIGEST_POLICY).userLabels.delivery_verified = 'true';
+  const latency = active.find((p) => p.displayName === 'DeclutrMail API sustained high latency');
+  const closed = {
+    name: 'projects/declutrmail-ai-prod/alerts/closed-in-window',
+    state: 'CLOSED',
+    closeTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    policy: { name: latency.name },
+  };
+  const stale = {
+    ...closed,
+    name: 'projects/declutrmail-ai-prod/alerts/closed-old',
+    closeTime: '2020-01-01T00:00:00.000Z',
+  };
+  const db = backend(active, { alerts: [closed, stale] });
+  const seen = [];
+  const request = async (url, method, body) => {
+    seen.push(String(url));
+    return db.request(url, method, body);
+  };
+  const result = report();
+  await runRouting('digest', { request, report: result });
+  const listed = seen.find((url) => url.includes('/alerts?'));
+  const actual = new URL(listed).searchParams.get('filter');
+  assert.match(actual, /state="OPEN"/);
+  assert.match(actual, /state="CLOSED"/);
+  assert.match(actual, /close_time>="/);
+  assert.doesNotMatch(actual, /openTime|closeTime/);
+  const since = Date.parse(/close_time>="([^"]+)"/.exec(actual)[1]);
+  assert.ok(Math.abs(since - (Date.now() - 24 * 60 * 60 * 1000)) < 5000);
+  assert.equal(result.digest.warningCount, 1);
+  assert.match(result.digest.summary, /1 closed in the last 24h/);
+  assert.ok(!result.digest.summary.includes('closed-in-window'));
+});
+
+test('rollback failure text stays on the report that is encrypted', async () => {
+  const initial = fixture();
+  const db = backend(initial, {
+    failWrite: 5,
+    corruptRollbackReadback: true,
+    verificationEntries: [smokeEntry],
+  });
+  const result = report();
+  await assert.rejects(
+    runRouting('apply', {
+      digestEnabled: 'true',
+      request: db.request,
+      report: result,
+      expectedHash: planHash(initial),
+      receipt: smokeReceipt,
+    }),
+  );
+  const failed = result.rollback.filter((row) => row.restored === false);
+  assert.ok(failed.length >= 1);
+  assert.match(failed[0].error, /Rollback readback failed/);
+});
+
+test('routing failures print the error and not the report or a token', () => {
+  assert.equal(
+    failureLogLine(new Error('Bearer ya29.secret-token\nfull report {"policies":[]}')),
+    'Bearer [redacted]',
+  );
+  const result = spawnSync(process.execPath, ['scripts/alert-email-routing.mjs', 'plan'], {
+    encoding: 'utf8',
+  });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Public key PEM required/);
+  assert.doesNotMatch(result.stderr, /encrypted report|Bearer |ya29\./);
+});
+
+test('emergency routing repair is an explicit skip, not the default', () => {
+  assert.throws(() => enforceDailyRouting([]), /installed/);
+  assert.doesNotThrow(() => enforceDailyRouting([], { allowUnverified: true }));
+  assert.throws(
+    () => enforceDailyRouting([], { reconnect: true, allowUnverified: false }),
+    /installed/,
+  );
 });
 
 test('digest replay search follows empty partial pages and refuses incomplete searches', async () => {
@@ -563,4 +798,12 @@ test('rollout and scheduled digest use existing WIF and daily cadence without pa
   assert.ok(!/secrets\.(PADDLE|RAZORPAY|RESEND|SUPABASE)/.test(workflow));
   const daily = readFileSync('.github/workflows/vendor-limits-watchdog.yml', 'utf8');
   assert.equal(daily.split('node scripts/alert-email-routing.mjs digest').length - 1, 1);
+  const digestStep = daily.slice(daily.indexOf('Publish one daily operational warning summary'));
+  assert.match(
+    digestStep,
+    /if: always\(\) && steps\.collect\.outcome != 'skipped' && env\.GCP_WIF_PROVIDER != '' && vars\.OPS_ALERT_DIGEST_ENABLED == 'true'\n {8}run: node scripts\/alert-email-routing\.mjs digest/,
+  );
+  assert.match(workflow, /smoke ROUTING_VERIFICATION log insertId and day/);
+  assert.doesNotMatch(workflow, /Gmail ID/);
+  assert.doesNotMatch(workflow, /inbox delivery/);
 });
