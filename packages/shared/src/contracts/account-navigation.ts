@@ -6,5 +6,6 @@ export function isUserScopedAppPath(pathname: string): boolean {
     '/settings/help',
     '/billing',
     '/admin/security',
+    '/admin/acquisition',
   ].includes(pathname);
 }

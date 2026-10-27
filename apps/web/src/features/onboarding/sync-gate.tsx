@@ -350,10 +350,6 @@ function SyncProgress({
         />
       </div>
 
-      <div style={{ marginTop: 16, maxWidth: 460 }}>
-        <TrustLine />
-      </div>
-
       {/* The real current_stage, as one sentence. Ready says it in the title.
           While counts show, it stays the live status for screen readers
           only — a count that changes every batch would be announced each
@@ -380,6 +376,10 @@ function SyncProgress({
           <style>{SCAN_COUNT_CSS}</style>
         </>
       )}
+
+      <div style={{ marginTop: 16, maxWidth: 460 }}>
+        <TrustLine />
+      </div>
 
       {!ready && mailboxId && <ScanPreview key={mailboxId} mailboxId={mailboxId} />}
 

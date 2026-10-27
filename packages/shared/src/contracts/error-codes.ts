@@ -863,6 +863,12 @@ export const ERROR_CODES = {
     retryable: true,
     message: 'That service is temporarily unavailable. Try again in a moment.',
   },
+  SIGNUP_ATTRIBUTION_REPORT_UNAVAILABLE: {
+    status: 503,
+    severityTier: 'inline_recoverable',
+    retryable: true,
+    message: 'Source answers are unavailable. Try again.',
+  },
   // lifecycle limits
   GONE: {
     status: 410,

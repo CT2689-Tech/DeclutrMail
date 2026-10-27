@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button, tokens } from '@declutrmail/shared';
-import type { SignupHeardFromPatch } from '@declutrmail/shared/contracts';
+import { Button } from '@declutrmail/shared';
+import {
+  SIGNUP_HEARD_FROM_CHOICES,
+  type SignupHeardFromPatch,
+} from '@declutrmail/shared/contracts';
 
 import { AI_PROMPT_CHANGED, aiConsentBlocksHeardFrom } from '@/features/ai-consent/ai-prompt-queue';
 import { readMeSettings } from '@/features/settings/api/me-settings-reader';
@@ -13,18 +16,10 @@ import { apiPatch } from '@/lib/api/client';
 import { CONSENT_CHANGE_EVENT, readStoredConsent } from '@/lib/cookie-consent';
 import { ME_QUERY_KEY } from './api/me-contract';
 import { useAuth } from './auth-provider';
+import styles from './heard-from-prompt.module.css';
 
-const { color, font, shadow } = tokens;
-
-const CHOICES = [
-  { value: 'hn', label: 'Hacker News' },
-  { value: 'ph', label: 'Product Hunt' },
-  { value: 'reddit', label: 'Reddit' },
-  { value: 'simulator', label: 'Inbox simulator' },
-  { value: 'x', label: 'X' },
-  { value: 'linkedin', label: 'LinkedIn' },
-  { value: 'friend', label: 'Friend or colleague' },
-] as const;
+type HeardFromChoice = (typeof SIGNUP_HEARD_FROM_CHOICES)[number];
+const LEGACY_CHANNELS = new Set(['hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin', 'friend']);
 
 /**
  * Skippable first-login self-report. Not a sixth onboarding step — it
@@ -127,8 +122,18 @@ export function HeardFromPrompt() {
     }
   };
 
+  // The frontend can arrive before an API/migration rollout. Only offer
+  // channels the serving API accepts; older APIs retain the original set.
+  const supportedChannels = me.signupAttribution?.supportedChannels;
+  const choices = SIGNUP_HEARD_FROM_CHOICES.filter((choice) =>
+    supportedChannels
+      ? supportedChannels.includes(choice.value)
+      : LEGACY_CHANNELS.has(choice.value),
+  );
+
   return (
     <HeardFromPromptView
+      choices={choices}
       busy={busy}
       failed={failed}
       otherDetail={otherDetail}
@@ -155,99 +160,146 @@ export function HeardFromPromptView({
   onChoose,
   onSkip,
   onSubmitOther,
+  choices = SIGNUP_HEARD_FROM_CHOICES,
+  initiallyExpanded = false,
+  initiallyOther = false,
 }: {
   busy: boolean;
   failed: boolean;
   otherDetail: string;
   onOtherDetailChange: (value: string) => void;
-  onChoose: (heardFrom: (typeof CHOICES)[number]['value']) => void;
+  onChoose: (heardFrom: (typeof SIGNUP_HEARD_FROM_CHOICES)[number]['value']) => void;
   onSkip: () => void;
   onSubmitOther: (detail: string) => void;
+  choices?: readonly HeardFromChoice[];
+  /** Presentation fixtures can open the same native disclosures without auth. */
+  initiallyExpanded?: boolean;
+  initiallyOther?: boolean;
 }) {
+  const [expanded, setExpanded] = useState(initiallyExpanded || Boolean(otherDetail));
+  const [otherOpen, setOtherOpen] = useState(initiallyOther || Boolean(otherDetail));
+  const otherInput = useRef<HTMLInputElement>(null);
+  const focusOtherWhenMounted = useRef(false);
+
+  const revealOther = () => {
+    focusOtherWhenMounted.current = true;
+    setOtherOpen(true);
+    // The form mounts after this event. Its callback ref focuses only when
+    // the user requests it, never when the optional prompt first appears.
+    if (otherInput.current) {
+      otherInput.current.focus();
+      focusOtherWhenMounted.current = false;
+    }
+  };
+
   return (
     <section
       aria-label="How did you first hear about us?"
       data-testid="heard-from-prompt"
-      style={{
-        position: 'fixed',
-        // Clears the app shell's mobile tab bar; the var is 0 on desktop
-        // and undefined (→ 0) on the onboarding layout, which has no bar.
-        bottom: 'calc(16px + var(--dm-tabbar-inset, 0px))',
-        left: 16,
-        zIndex: 140,
-        width: 'calc(100vw - 32px)',
-        maxWidth: 400,
-        padding: '14px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: 10,
-        boxShadow: shadow.pop,
-        fontFamily: font.sans,
-      }}
+      className={styles.prompt}
     >
-      <p style={{ margin: 0, fontSize: 14, color: color.fg }}>How did you first hear about us?</p>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {CHOICES.map((choice) => (
-          <Button
-            key={choice.value}
-            type="button"
-            tone="ghost"
-            size="sm"
-            disabled={busy}
-            onClick={() => onChoose(choice.value)}
+      <details open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+        <summary className={styles.summary}>
+          <span>
+            <span className={styles.optional}>Optional</span>
+            <span className={styles.question}>How did you first hear about us?</span>
+          </span>
+          <svg
+            className={styles.chevron}
+            width="14"
+            height="14"
+            viewBox="0 0 14 14"
+            aria-hidden="true"
           >
-            {choice.label}
-          </Button>
-        ))}
-      </div>
-      <label
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 6,
-          fontSize: 12,
-          color: color.fgMuted,
-        }}
+            <path d="m3 5 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" />
+          </svg>
+        </summary>
+        <div className={styles.body}>
+          <p className={styles.hint}>Choose one to save your answer.</p>
+          <div className={styles.choices}>
+            {choices.map((choice) => (
+              <Button
+                key={choice.value}
+                type="button"
+                tone="ghost"
+                size="sm"
+                style={CHOICE_STYLE}
+                disabled={busy}
+                onClick={() => onChoose(choice.value)}
+              >
+                {choice.label}
+              </Button>
+            ))}
+            <Button
+              type="button"
+              tone="ghost"
+              size="sm"
+              style={CHOICE_STYLE}
+              disabled={busy}
+              ariaExpanded={otherOpen}
+              onClick={revealOther}
+            >
+              Other
+            </Button>
+          </div>
+          {otherOpen && (
+            <form
+              className={styles.otherForm}
+              onSubmit={(event) => {
+                event.preventDefault();
+                const detail = otherDetail.trim();
+                if (!busy && detail) onSubmitOther(detail);
+              }}
+            >
+              <label>
+                Where did you hear about us?
+                <input
+                  ref={(input) => {
+                    otherInput.current = input;
+                    if (input && focusOtherWhenMounted.current) {
+                      input.focus();
+                      focusOtherWhenMounted.current = false;
+                    }
+                  }}
+                  value={otherDetail}
+                  onChange={(event) => onOtherDetailChange(event.target.value)}
+                  maxLength={200}
+                  disabled={busy}
+                />
+              </label>
+              <Button type="submit" tone="primary" size="lg" disabled={busy || !otherDetail.trim()}>
+                Save answer
+              </Button>
+            </form>
+          )}
+        </div>
+      </details>
+      <Button
+        type="button"
+        tone="ghost"
+        disabled={busy}
+        onClick={onSkip}
+        style={{ position: 'absolute', top: 14, right: 12, minHeight: 44 }}
       >
-        Something else
-        <input
-          value={otherDetail}
-          placeholder="Where did you hear about us?"
-          onChange={(event) => onOtherDetailChange(event.target.value)}
-          maxLength={200}
-          disabled={busy}
-          style={{
-            fontFamily: font.sans,
-            fontSize: 14,
-            padding: '6px 8px',
-            border: `1px solid ${color.border}`,
-            borderRadius: 6,
-            background: color.bg,
-            color: color.fg,
-          }}
-        />
-      </label>
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-        <Button type="button" tone="ghost" disabled={busy} onClick={onSkip}>
-          Skip
-        </Button>
-        <Button
-          type="button"
-          tone="primary"
-          disabled={busy || otherDetail.trim().length === 0}
-          onClick={() => onSubmitOther(otherDetail.trim())}
-        >
-          Send
-        </Button>
-      </div>
-      {failed ? (
-        <p role="status" style={{ margin: 0, fontSize: 12, color: color.dangerText }}>
-          That didn’t save. Try again.
+        Skip
+      </Button>
+      {busy ? (
+        <p role="status" className={styles.status}>
+          Saving your answer…
+        </p>
+      ) : failed ? (
+        <p role="status" className={styles.error}>
+          That didn’t save. Try again, or skip.
         </p>
       ) : null}
     </section>
   );
 }
+
+const CHOICE_STYLE = {
+  minHeight: 44,
+  height: 'auto',
+  padding: '8px 12px',
+  whiteSpace: 'normal',
+  lineHeight: 1.35,
+} as const;

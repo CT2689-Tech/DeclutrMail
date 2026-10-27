@@ -107,6 +107,7 @@ describe('HeardFromPrompt', () => {
   it('sends the chosen channel and retires itself', async () => {
     storeConsent('all');
     renderPrompt();
+    await userEvent.click(await screen.findByText('How did you first hear about us?'));
     await userEvent.click(await screen.findByRole('button', { name: 'Hacker News' }));
 
     expect(apiPatch).toHaveBeenCalledWith('/api/me/signup-heard-from', { heardFrom: 'hn' });
@@ -175,9 +176,128 @@ describe('HeardFromPrompt', () => {
     renderPrompt();
     await userEvent.click(await screen.findByRole('button', { name: 'Skip' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent('That didn’t save. Try again.');
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'That didn’t save. Try again, or skip.',
+    );
     // Still mounted, still retryable — a dead-looking control was the bug.
     expect(screen.getByTestId('heard-from-prompt')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Skip' })).toBeEnabled();
+  });
+
+  it('starts as an optional collapsed question without saving or stealing focus', async () => {
+    storeConsent('all');
+    renderPrompt();
+
+    const prompt = await screen.findByTestId('heard-from-prompt');
+    expect(screen.getByText('Optional')).toBeVisible();
+    expect(prompt.querySelector('details')).not.toHaveAttribute('open');
+    expect(screen.getByRole('button', { name: 'Hacker News' })).not.toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Skip' })).toBeVisible();
+    expect(prompt).not.toContainElement(document.activeElement as HTMLElement);
+    expect(apiPatch).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByText('How did you first hear about us?'));
+    expect(prompt.querySelector('details')).toHaveAttribute('open');
+    expect(screen.getByText('Choose one to save your answer.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Hacker News' })).toBeVisible();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(apiPatch).not.toHaveBeenCalled();
+  });
+
+  it('persists Skip directly from the collapsed prompt', async () => {
+    storeConsent('all');
+    renderPrompt();
+    await userEvent.click(await screen.findByRole('button', { name: 'Skip' }));
+
+    expect(apiPatch).toHaveBeenCalledWith('/api/me/signup-heard-from', { heardFrom: 'skipped' });
+    await waitFor(() => expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument());
+  });
+
+  it('keeps new channels hidden while an older API serves the original choice set', async () => {
+    storeConsent('all');
+    renderPrompt();
+    await userEvent.click(await screen.findByText('How did you first hear about us?'));
+
+    expect(screen.getByRole('button', { name: 'Hacker News' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Friend or colleague' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Google / search' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'ChatGPT / AI' })).not.toBeInTheDocument();
+  });
+
+  it('offers only server-supported channels and saves the newly supported answer', async () => {
+    storeConsent('all');
+    me.current = {
+      ...meWithPrompt(true),
+      signupAttribution: {
+        ref: 'hn',
+        heardFrom: null,
+        promptNeeded: true,
+        supportedChannels: ['google', 'hn', 'other', 'skipped'],
+      },
+    };
+    renderPrompt();
+    await userEvent.click(await screen.findByText('How did you first hear about us?'));
+
+    expect(screen.getByRole('button', { name: 'Google / search' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Hacker News' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'ChatGPT / AI' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reddit' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Google / search' }));
+    expect(apiPatch).toHaveBeenCalledWith('/api/me/signup-heard-from', { heardFrom: 'google' });
+    await waitFor(() => expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument());
+  });
+
+  it('reveals Other only on request and saves a trimmed answer by form submit', async () => {
+    storeConsent('all');
+    renderPrompt();
+    await userEvent.click(await screen.findByText('How did you first hear about us?'));
+    await userEvent.click(screen.getByRole('button', { name: 'Other' }));
+
+    const input = screen.getByRole('textbox', { name: 'Where did you hear about us?' });
+    expect(input).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Save answer' })).toBeDisabled();
+    await userEvent.type(input, '  A podcast  ');
+    expect(apiPatch).not.toHaveBeenCalled();
+    await userEvent.keyboard('{Enter}');
+
+    expect(apiPatch).toHaveBeenCalledWith('/api/me/signup-heard-from', {
+      heardFrom: 'other',
+      detail: 'A podcast',
+    });
+    await waitFor(() => expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument());
+  });
+
+  it('keeps an unsuccessful choice retryable in the expanded prompt', async () => {
+    storeConsent('all');
+    apiPatch.mockRejectedValueOnce(new Error('offline'));
+    renderPrompt();
+    await userEvent.click(await screen.findByText('How did you first hear about us?'));
+    await userEvent.click(screen.getByRole('button', { name: 'Hacker News' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('That didn’t save.');
+    expect(screen.getByRole('button', { name: 'Hacker News' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Hacker News' }));
+    expect(apiPatch).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument());
+  });
+
+  it('disables answer and Skip submissions while saving', async () => {
+    storeConsent('all');
+    let finishSave!: () => void;
+    apiPatch.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishSave = resolve;
+        }),
+    );
+    renderPrompt();
+    await userEvent.click(await screen.findByText('How did you first hear about us?'));
+    await userEvent.click(screen.getByRole('button', { name: 'Hacker News' }));
+
+    expect(screen.getByRole('status')).toHaveTextContent('Saving your answer…');
+    for (const button of screen.getAllByRole('button')) expect(button).toBeDisabled();
+    finishSave();
+    await waitFor(() => expect(screen.queryByTestId('heard-from-prompt')).not.toBeInTheDocument());
   });
 });

@@ -168,7 +168,7 @@ export const subscriptions = pgTable(
     ),
     signupAttributionHeardFromCheck: check(
       'subscriptions_signup_attribution_heard_from_chk',
-      sql`${table.signupAttributionHeardFrom} IS NULL OR ${table.signupAttributionHeardFrom} IN ('hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin', 'friend', 'other', 'skipped')`,
+      sql`${table.signupAttributionHeardFrom} IS NULL OR ${table.signupAttributionHeardFrom} IN ('hn', 'ph', 'reddit', 'simulator', 'x', 'linkedin', 'friend', 'other', 'skipped', 'google', 'ai_assistant', 'youtube', 'instagram', 'tiktok')`,
     ),
     signupAttributionHeardDetailCheck: check(
       'subscriptions_signup_attribution_heard_detail_chk',

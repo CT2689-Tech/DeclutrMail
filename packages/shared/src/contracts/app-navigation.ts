@@ -18,6 +18,7 @@ const APP_PATHS = [
   '/billing',
   '/onboarding',
   '/admin/security',
+  '/admin/acquisition',
 ];
 
 export { isUserScopedAppPath } from './account-navigation.js';

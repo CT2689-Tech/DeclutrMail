@@ -5,13 +5,14 @@
 // split `no-active-mailbox.stories.tsx` uses.
 //
 // Variants (D211 edge-state coverage):
-//   • Idle      — the ask, nothing chosen yet
-//   • Typing    — free-text entered, so Send is enabled
-//   • Busy      — a choice is in flight, every control disabled
+//   • Idle      — compact optional ask, with a persistent Skip
+//   • Expanded  — source choices, each saved when selected
+//   • Other     — explicit free-text path with its own Save answer
+//   • Busy      — a choice is in flight, every submission control disabled
 //   • Failed    — the PATCH failed and the card says so instead of
 //                 silently resetting itself
 
-import type { ComponentProps } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { tokens } from '@declutrmail/shared';
 import { HeardFromPromptView } from './heard-from-prompt';
 
@@ -55,10 +56,12 @@ type Args = ComponentProps<typeof HeardFromPromptView>;
 
 const noop = () => {};
 
-function frame(args: Args) {
+function PromptFixture(args: Args) {
+  const [detail, setDetail] = useState(args.otherDetail);
   return (
     <div style={{ background: color.bg, minHeight: '100vh' }}>
-      <HeardFromPromptView {...args} />
+      <span id="dm-app-theme" hidden />
+      <HeardFromPromptView {...args} otherDetail={detail} onOtherDetailChange={setDetail} />
     </div>
   );
 }
@@ -73,26 +76,53 @@ const BASE: Args = {
   onSubmitOther: noop,
 };
 
-/** Idle — the ask as a first-login user meets it. Send is disabled until text exists. */
+/** The optional ask never opens a form or moves keyboard focus on arrival. */
 export const Idle: Story<typeof HeardFromPromptView> = {
   args: BASE,
-  render: (args) => frame(args),
+  render: (args) => <PromptFixture {...args} />,
 };
 
-/** Typing — free text entered, so the Send action becomes available. */
+export const Expanded: Story<typeof HeardFromPromptView> = {
+  args: { ...BASE, initiallyExpanded: true },
+  render: (args) => <PromptFixture {...args} />,
+};
+
+export const Other: Story<typeof HeardFromPromptView> = {
+  args: { ...BASE, initiallyExpanded: true, initiallyOther: true },
+  render: (args) => <PromptFixture {...args} />,
+};
+
+/** Free text entered, so Save answer becomes available. */
 export const Typing: Story<typeof HeardFromPromptView> = {
-  args: { ...BASE, otherDetail: 'A podcast I listen to' },
-  render: (args) => frame(args),
+  args: {
+    ...BASE,
+    initiallyExpanded: true,
+    initiallyOther: true,
+    otherDetail: 'A podcast I listen to',
+  },
+  render: (args) => <PromptFixture {...args} />,
 };
 
 /** Busy — a choice is in flight; every control is disabled so it cannot double-submit. */
 export const Busy: Story<typeof HeardFromPromptView> = {
-  args: { ...BASE, otherDetail: 'A podcast I listen to', busy: true },
-  render: (args) => frame(args),
+  args: {
+    ...BASE,
+    initiallyExpanded: true,
+    initiallyOther: true,
+    otherDetail: 'A podcast I listen to',
+    busy: true,
+  },
+  render: (args) => <PromptFixture {...args} />,
 };
 
 /** Failed — the PATCH failed. The card SAYS so and stays retryable. */
 export const Failed: Story<typeof HeardFromPromptView> = {
-  args: { ...BASE, otherDetail: 'A podcast I listen to', failed: true },
-  render: (args) => frame(args),
+  args: {
+    ...BASE,
+    initiallyExpanded: true,
+    initiallyOther: true,
+    otherDetail: 'A podcast I listen to',
+    failed: true,
+  },
+  render: (args) => <PromptFixture {...args} />,
 };
