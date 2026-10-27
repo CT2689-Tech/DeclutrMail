@@ -81,7 +81,7 @@ fi
 if grep -niE "bod(y|ies)\s+read.*0" "$file_path" >/dev/null 2>&1; then
   echo "❌ verify-no-body-storage: banned trust copy 'Bodies read: 0' in $file_path (D228)" >&2
   grep -niE "bod(y|ies)\s+read.*0" "$file_path" | sed 's/^/   /' >&2
-  exit 1
+  exit 2
 fi
 
 # Note on Message-ID detection (D231): a regex check produced too many

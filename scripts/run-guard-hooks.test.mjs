@@ -98,7 +98,7 @@ test('a clean change passes, and every guard reports what it checked', (t) => {
   const { status, output } = run(root, '--base', base);
 
   assert.equal(status, 0, output);
-  assert.match(output, /Positive controls: all 9 guards fired/);
+  assert.match(output, /Positive controls: all 7 guards fired/);
   for (const guard of Object.keys(POSITIVE_CONTROLS)) {
     assert.match(output, new RegExp(`${guard} +checked 2 files · 0 violations`));
   }

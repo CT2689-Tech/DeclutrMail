@@ -24,7 +24,7 @@ hook="$repo_root/.claude/hooks/check-microcopy.sh"
 #   1) absolute path the hook should "see" (we materialise the file at $path
 #      so the hook's `-f` check passes)
 #   2) body to write into that path
-#   3) expected exit code (0 = pass, 1 = block)
+#   3) expected exit code (0 = pass, 2 = block)
 expect() {
   local path="$1"
   local body="$2"
@@ -73,12 +73,12 @@ expect "$tmp/apps/web/src/features/triage/foo.spec.ts" \
 #    Stories that contain the banned verb in story copy must still block.
 expect "$tmp/apps/web/src/features/triage/triage.stories.tsx" \
   $'export const Default = { args: { title: "Screen later" } };\n' \
-  1
+  2
 
 # 3. apps/web/** UI files with the banned verb still block.
 expect "$tmp/apps/web/src/features/triage/triage-page.tsx" \
   $'export function Page() { return <h1>Screen</h1>; }\n' \
-  1
+  2
 
 # 4. Files outside apps/web/** and not *.stories.* are out of scope.
 expect "$tmp/packages/db/src/schema/triage.ts" \
@@ -109,7 +109,7 @@ git worktree add --detach --quiet "$probe_worktree" HEAD >/dev/null 2>&1
 
 expect "$probe_worktree/apps/web/src/features/triage/triage-page.tsx" \
   $'export function Page() { return <button>Screen</button>; }\n' \
-  1
+  2
 
 git worktree remove --force "$probe_worktree" >/dev/null 2>&1 || true
 probe_worktree=""
