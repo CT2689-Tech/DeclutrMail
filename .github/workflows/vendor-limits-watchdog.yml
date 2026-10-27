@@ -123,8 +123,10 @@ jobs:
           # Billing providers (D117) — webhook-delivery health checks.
           # PADDLE_ENV unset → sandbox host; set the repo variable to
           # `production` once the live Paddle account is wired.
-          PADDLE_API_KEY: ${{ secrets.PADDLE_API_KEY }}
+          # Dedicated notification_setting.read credential, separate from application billing.
+          PADDLE_WATCHDOG_API_KEY: ${{ secrets.PADDLE_WATCHDOG_API_KEY }}
           PADDLE_ENV: ${{ vars.PADDLE_ENV }}
+          PADDLE_WATCHDOG_KEY_EXPIRES_ON: ${{ vars.PADDLE_WATCHDOG_KEY_EXPIRES_ON }}
           RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
           RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
         run: node scripts/check-vendor-limits.mjs
