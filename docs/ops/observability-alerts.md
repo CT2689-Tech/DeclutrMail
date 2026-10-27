@@ -88,6 +88,11 @@ to that smoke log entry: SHA-256 of its insertId and day
 (`ROUTING_VERIFICATION <run-id>`). An arbitrary 64-character hex string is refused.
 The workflow input `digest_receipt` is that smoke-log hash, not a Gmail message id.
 Smoke writes the verification log row. It does not prove the admin inbox received mail.
+Before applying a route that removes direct warning emails, independently verify
+receipt in the intended admin inbox. Reuse an existing verified receipt when its
+channel and delivery path are unchanged; do not send another smoke email solely
+because the collector code changed. Keep that inbox evidence separate from the
+log hash accepted by the workflow.
 Application refuses unavailable native queries, changed plans or missing
 receipts, reads every changed policy back, and attempts restoration on failure.
 Plan fingerprints normalize object-key ordering from provider responses while
