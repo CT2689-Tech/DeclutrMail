@@ -376,7 +376,7 @@ rg -n "catch" -A3 apps/api/src packages/workers/src | rg "console\.(error|warn)"
 rg -n "import type \{ \w+ \} from '@declutrmail/shared/contracts'" apps/web/src
 
 # C5 — declared events with no emitter
-rg --only-matching "^  \w+:" packages/shared/src/observability/events.ts \
+rg --no-filename --only-matching "^  \w+:" packages/shared/src/observability/events/ \
    | tr -d ' :' | sort -u        # diff against the `track('…')` call sites
 
 # NOTE: pass `-a/--text`. `triage-undo-tray.tsx` contains a U+0000 and is skipped as binary.
