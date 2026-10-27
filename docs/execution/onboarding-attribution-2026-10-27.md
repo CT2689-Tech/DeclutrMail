@@ -57,7 +57,8 @@ migration approval is required by CLAUDE.md section 2.0 before merge/apply.
 
 - Workspace typecheck and lint passed; lint retained six existing warnings.
 - All 605 script tests passed before the final generated bundle refresh.
-- Shared attribution/report contracts: 12 tests passed.
+- Shared attribution/report contracts: 12 tests passed. Full shared suite after
+  adding the new route's edge-state inventory and sign-in destination: 959 tests passed.
 - Database parity, migration round-trip and prior attribution: 6 tests passed;
   new channel/rollback coverage: 4 tests passed.
 - API report/guard/module tests: 36 passed; auth-controller/report focused run:
@@ -75,6 +76,14 @@ migration approval is required by CLAUDE.md section 2.0 before merge/apply.
   Google/search through the actual UI. The actual report then showed 6 accounts,
   5 answered, 1 skipped, 0 unanswered, including the new Google answer. A database
   read confirmed its original tracked `hn` referral was retained.
+- The same report rendered through the isolated production Next build and real
+  API session, with those counts intact. Route-gate and consent-gated page-load
+  classification regressions passed (59 tests); admin reports remain accessible
+  without a connected mailbox, and the new route survives ordinary sign-in.
+- A second synthetic account without admin permission received Not found in the
+  production build; the previous admin's report aggregates were removed.
+- Error-code registry/report integration: 29 tests passed after registering the
+  report's retryable 503 code in the shared vocabulary.
 
 Browser screenshots and responsive measurements are held outside the repository
 in this session's private visualization evidence directory. Real user answers,
@@ -82,7 +91,12 @@ mailbox data, credentials and free-text answers are not committed.
 
 ## Release status
 
-This document records pre-PR evidence only. Merge, production migration, deployment
+The founder approved all five channels and production migration 0099 on October
+27, 2026, after reviewing the concrete PR and its additive scope. CI's route-parity
+and page-load-coverage checks exposed missing registrations; these were added
+with the existing responsive/hydration smoke routes and reviewed independently.
+
+This document records candidate evidence only. Merge, production migration, deployment
 and production browser verification must be recorded separately after they happen.
 Earlier scan, cleanup and Undo launch evidence is reused; this change does not
 repeat mailbox mutations or live billing tests.

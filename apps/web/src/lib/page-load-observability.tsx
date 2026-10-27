@@ -16,6 +16,7 @@ const WEB_VITAL_NAMES = new Set<WebVitalName>(['CLS', 'FCP', 'INP', 'LCP', 'TTFB
 const EXACT_SURFACES: Record<string, WebVitalEvent['surface']> = {
   '/': 'landing',
   '/activity': 'activity',
+  '/admin/acquisition': 'admin_acquisition',
   '/admin/security': 'admin_security',
   '/autopilot': 'autopilot',
   '/autopilot/settings': 'quiet',

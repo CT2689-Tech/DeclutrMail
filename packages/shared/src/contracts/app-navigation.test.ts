@@ -13,6 +13,7 @@ describe('app destinations surviving login', () => {
     '/settings?cancelDeletion=1',
     '/settings#mailbox-mb-123',
     '/quiet',
+    '/admin/acquisition',
     '/brief?date=2026-10-10',
     '/onboarding?mailbox=mb-123&reconnect=1',
   ])('preserves %s', (path) => {

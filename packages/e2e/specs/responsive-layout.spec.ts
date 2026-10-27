@@ -36,6 +36,7 @@ const APP_ROUTES = [
   '/settings/senders',
   `/senders/${BILLING_SEED.archiveSenderId}`,
   '/admin/security',
+  '/admin/acquisition',
 ] as const;
 
 // One route per public renderer; the 375px a11y lane owns the deeper WCAG

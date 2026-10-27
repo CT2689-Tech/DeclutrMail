@@ -165,6 +165,7 @@ const HYDRATED_ROUTES = [
   '/settings/senders',
   '/onboarding',
   '/admin/security',
+  '/admin/acquisition',
 ] as const;
 
 test.beforeAll(async () => {

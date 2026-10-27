@@ -101,6 +101,7 @@ export type ScreenId =
   | 'settings-privacy'
   | 'settings-help'
   | 'admin-security'
+  | 'admin-acquisition'
   | 'quiet'
   // Graduated from `RoutePlaceholder` stubs: billing in #219 (D119/
   // D120), screener in #220 (D71–D77).
@@ -135,6 +136,7 @@ export const SCREEN_ROUTES: Record<ScreenId, string | null> = {
   'settings-privacy': 'settings/privacy',
   'settings-help': 'settings/help',
   'admin-security': 'admin/security',
+  'admin-acquisition': 'admin/acquisition',
   billing: 'billing',
   quiet: 'quiet',
   screener: 'senders?view=first-review',
@@ -604,6 +606,43 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
       // NotFound story — non-allowlisted callers get the 404 surface.
       required: true,
       storybook: 'apps/web/src/features/admin-security/security-events-screen.stories.tsx',
+      status: 'covered',
+    },
+    'sync-in-progress': { required: false, status: 'n/a' },
+    'sync-failed-transient': { required: false, status: 'n/a' },
+    'quota-exceeded': { required: false, status: 'n/a' },
+    'free-cap-reached': { required: false, status: 'n/a' },
+    'sender-deleted-upstream': { required: false, status: 'n/a' },
+    'account-deletion-pending': { required: false, status: 'n/a' },
+    placeholder: { required: false, status: 'n/a' },
+  },
+
+  // Aggregate source answers share the existing admin-only 404 boundary.
+  'admin-acquisition': {
+    loading: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    empty: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    error: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    'partial-error': {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
+      status: 'covered',
+    },
+    offline: { required: false, status: 'n/a' },
+    unauthorized: {
+      required: true,
+      storybook: 'apps/web/src/features/admin-acquisition/acquisition-report.stories.tsx',
       status: 'covered',
     },
     'sync-in-progress': { required: false, status: 'n/a' },

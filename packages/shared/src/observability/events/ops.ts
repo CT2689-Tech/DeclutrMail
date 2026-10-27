@@ -67,7 +67,8 @@ export interface OpsEventPayloads {
 
   web_vital_reported: {
     /** Bounded route family; raw paths and dynamic identifiers are never sent. */
-    surface: PageSurface | 'admin_security' | 'settings_help' | 'demo' | 'other';
+    surface:
+      PageSurface | 'admin_security' | 'admin_acquisition' | 'settings_help' | 'demo' | 'other';
     metric: 'CLS' | 'FCP' | 'INP' | 'LCP' | 'TTFB';
     /** Milliseconds except CLS, which is a unitless score. Rounded to 3 decimals. */
     value: number;

@@ -1469,15 +1469,18 @@ describe('(app) layout — user-scoped routes stay reachable with no active mail
   // mailbox. Gating it trapped an operator with zero connected mailboxes
   // behind the reconnect takeover on a route that never needed one —
   // the 2026-07-09 billing/deletion trap in miniature.
-  it('renders /admin/security (audit log, mailbox-independent) through the gate', async () => {
-    pathnameRef.current = '/admin/security';
-    installFetchStub(onboardedNoMailbox());
+  it.each(['/admin/security', '/admin/acquisition'])(
+    'renders %s (admin report, mailbox-independent) through the gate',
+    async (pathname) => {
+      pathnameRef.current = pathname;
+      installFetchStub(onboardedNoMailbox());
 
-    renderLayout();
+      renderLayout();
 
-    expect(await screen.findByText('authed app body')).toBeInTheDocument();
-    expect(screen.queryByText('No Gmail account selected')).not.toBeInTheDocument();
-  });
+      expect(await screen.findByText('authed app body')).toBeInTheDocument();
+      expect(screen.queryByText('No Gmail account selected')).not.toBeInTheDocument();
+    },
+  );
 });
 
 describe('(app) layout — undo tray stays off account surfaces (D245)', () => {
