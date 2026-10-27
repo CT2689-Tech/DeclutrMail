@@ -464,11 +464,11 @@ function formatRecoveryDate(iso: string): string {
 function recoveryStartRefusal(error: Error): string | null {
   switch (apiErrorCode(error)) {
     case 'ACTION_ALREADY_RECOVERED':
-      return 'This action was already recovered.';
+      return 'This change already succeeded on retry.';
     case 'RECOVERY_ATTEMPT_STALE':
       return 'A newer attempt exists for this action.';
     case 'ACTION_NOT_RECOVERABLE':
-      return 'This action no longer needs recovery.';
+      return 'This change no longer needs a retry.';
     case 'ACTION_NOT_FOUND':
       return 'We couldn’t find this action.';
     default:
@@ -482,7 +482,7 @@ function recoveryConfirmErrorMessage(error: Error, senderName: string | null): s
     return 'This review expired. Check Gmail again before trying the action.';
   }
   if (code === 'LATER_TIMER_SUPERSEDED') {
-    return 'This sender already has a newer Later schedule. The failed schedule was not replayed.';
+    return 'This sender already has a newer Later schedule. The earlier return time wasn’t used again.';
   }
   if (code === 'LATER_WAKE_TIME_REQUIRED') {
     return 'The saved return time has passed. Check Gmail again, then choose a new return time.';
@@ -490,13 +490,13 @@ function recoveryConfirmErrorMessage(error: Error, senderName: string | null): s
   // Activity re-reads on every one of these (`useConfirmActionRecovery`'s
   // `onSettled`); there is no "Refresh Activity" control to point at.
   if (code === 'ACTION_NO_LONGER_FAILED') {
-    return 'This action no longer needs recovery.';
+    return 'This change no longer needs a retry.';
   }
   if (code === 'RECOVERY_SENDER_PROTECTED') {
     return `${senderName ?? 'A sender here'} is Protected now — check Gmail again to confirm anyway.`;
   }
   if (code === 'IDEMPOTENCY_KEY_CONFLICT' || code === 'RECOVERY_ALREADY_REQUESTED') {
-    return 'This recovery review was already used.';
+    return 'This retry preview was already used.';
   }
   // The same key answers a repeat, so an ambiguous failure is safe to
   // retry; a refusal would only be refused again.

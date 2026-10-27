@@ -111,7 +111,7 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
     </QueryClientProvider>,
   );
 
-  expect(html).toContain('Pro is complimentary on this account');
+  expect(html).toContain('Pro is included at no cost');
   expect(html).toContain('aria-pressed="true"');
   expect(html).toContain('>Annual');
   expect(html).toContain(annualLine('plus'));
@@ -154,7 +154,7 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
       [],
     );
     expect(container.querySelector('[data-testid="complimentary-note"]')?.textContent).toContain(
-      'Pro is complimentary on this account',
+      'Pro is included at no cost',
     );
     const annual = container.querySelector('[data-testid="cycle-toggle"] [aria-pressed="true"]');
     expect(annual?.textContent).toContain('Annual');

@@ -198,14 +198,17 @@ export function UpgradeModal() {
           <>
             {TIER_MANIFEST.plus.name} removes the monthly cap
             {hit.details.resetsAt
-              ? `; otherwise your quota resets on ${resetDateLabel(hit.details.resetsAt)}`
+              ? `; your free monthly limit resets on ${resetDateLabel(hit.details.resetsAt)}`
               : ''}
             .
           </>
         ) : hit.reason === 'action_tier' ? (
           <>
             {requiredTierName} unlocks{' '}
-            {hit.details.selector === 'sender-filter' ? 'all-matching cleanup' : 'this workflow'}.
+            {hit.details.selector === 'sender-filter'
+              ? 'cleanup for every sender in a filter'
+              : 'this workflow'}
+            .
           </>
         ) : hit.reason === 'pro_feature' ? (
           <>{requiredTierName} unlocks this feature.</>
@@ -451,7 +454,7 @@ function inboxLimitTitle(d: InboxLimitDetails, tierLabel: string): string {
 function actionTierTitle(d: ActionTierDetails): string {
   const plan = TIER_MANIFEST[d.requiredTier].name;
   return d.selector === 'sender-filter'
-    ? `All-matching actions are part of ${plan}`
+    ? `Selecting every sender in a filter is part of ${plan}`
     : `This action is part of ${plan}`;
 }
 

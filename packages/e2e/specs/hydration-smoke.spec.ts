@@ -219,7 +219,7 @@ async function expectRouteHydrates(page: Page, route: string): Promise<void> {
     for (const label of [
       'Loading Autopilot rules',
       'Loading Autopilot suggestions',
-      'Loading your preset rules…',
+      'Loading your built-in rules…',
       'Checking new rule ideas…',
     ])
       await expect(page.getByText(label, { exact: true })).toHaveCount(0);

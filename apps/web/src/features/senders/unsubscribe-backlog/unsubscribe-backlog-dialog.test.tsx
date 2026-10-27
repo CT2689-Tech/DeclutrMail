@@ -474,7 +474,7 @@ describe('Unsubscribe uses the action preview contract', () => {
     expect(screen.queryByRole('button', { name: 'Unsubscribe only' })).toBeNull();
     expect(screen.getByRole('heading')).not.toHaveTextContent(/delete 0 emails/);
     expect(screen.queryByText(/0 emails you already have/)).toBeNull();
-    expect(screen.getByText('Archived email is outside this scope.')).toBeVisible();
+    expect(screen.getByText('Archived email isn’t included.')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Include archived' }));
     expect(
       screen.getByRole('button', { name: /^Unsubscribe \+ Delete(?: [\d,]+ emails?)?$/ }),

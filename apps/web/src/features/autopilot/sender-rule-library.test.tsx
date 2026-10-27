@@ -280,7 +280,7 @@ describe('sender rule library', () => {
       id: 'autopilot-sender-rules',
       title: 'Autopilot',
     });
-    expect(useUiStore.getState().screenHelp?.body).toContain('Preview and approve each batch.');
+    expect(useUiStore.getState().screenHelp?.body).toContain('preview and approve each batch.');
   });
 
   it('previews disabled non-paused presets that the global pause also changes', async () => {
@@ -640,7 +640,7 @@ it('labels the eligible subset separately from all configured senders and plural
   setup();
   await loaded();
   expect(screen.getByRole('heading', { name: '1 matching email' })).toBeInTheDocument();
-  expect(screen.getAllByText(/1 eligible sender/).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/1 sender with matching email/).length).toBeGreaterThan(0);
   expect(screen.getByText('Family', { exact: true })).toBeInTheDocument();
   expect(screen.getByText('Protected', { exact: true })).toBeInTheDocument();
 });

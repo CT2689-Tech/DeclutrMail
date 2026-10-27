@@ -142,7 +142,7 @@ export function FilterFields({
         </FilterGroup>
       )}
       {outcomes && onOutcomes && (
-        <FilterGroup label="Outcome">
+        <FilterGroup label="Result">
           {OUTCOME_CHIPS.map((chip) => (
             <Chip
               key={chip.value}

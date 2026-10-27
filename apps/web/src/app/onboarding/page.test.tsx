@@ -313,9 +313,9 @@ describe('onboarding page — pre-auth boundary (D107/D108)', () => {
     await userEvent.click(await screen.findByRole('button', { name: /Connect Gmail/ }));
     expect(await screen.findByText('Connect your Gmail.')).toBeInTheDocument();
     expect(screen.getByText('Access')).toBeInTheDocument();
-    expect(screen.getByText('Fetched during the scan')).toBeInTheDocument();
-    expect(screen.getByText('Stored in DeclutrMail')).toBeInTheDocument();
-    expect(screen.getByText('Actions you approve')).toBeInTheDocument();
+    expect(screen.getByText('What we check')).toBeInTheDocument();
+    expect(screen.getByText('What we keep')).toBeInTheDocument();
+    expect(screen.getByText('Before you confirm')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Continue to Google' })).toBeInTheDocument();
   });
 

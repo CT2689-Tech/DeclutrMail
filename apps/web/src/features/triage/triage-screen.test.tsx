@@ -188,7 +188,7 @@ describe('TriageScreen — empty / loading branches', () => {
     expect(free).toContain('See Plus');
     // D19 — freeRemaining is the LIFETIME cleanup remainder (5 total),
     // not a daily counter; the copy must say so.
-    expect(free).toContain('free emails left');
+    expect(free).toContain('emails left to clear');
 
     const paid = renderState({ kind: 'empty', stats: TRIAGE_SESSION_STATS });
     expect(paid).not.toContain('See Plus');

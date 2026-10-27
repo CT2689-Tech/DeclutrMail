@@ -344,7 +344,7 @@ describe('UpgradeModal', () => {
       },
     });
     render(<UpgradeModal />);
-    expect(screen.getByText(/your quota resets on Aug 27/)).toBeInTheDocument();
+    expect(screen.getByText(/your free monthly limit resets on Aug 27/)).toBeInTheDocument();
   });
 
   it('action_tier: explains the all-matching selector and offers the Pro path (A3)', () => {
@@ -359,8 +359,12 @@ describe('UpgradeModal', () => {
     });
     render(<UpgradeModal />);
 
-    expect(screen.getByText('All-matching actions are part of Pro')).toBeInTheDocument();
-    expect(screen.getByText(/Pro unlocks all-matching cleanup/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Selecting every sender in a filter is part of Pro'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Pro unlocks cleanup for every sender in a filter/),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
       'href',
       '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',

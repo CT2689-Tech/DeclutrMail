@@ -147,7 +147,7 @@ describe('meter copy', () => {
 
   it('keeps the empty-state action sentence until the email meter exists', () => {
     render(<TriageEmptyState stats={TRIAGE_SESSION_STATS_FREE} readiness="ready" />);
-    expect(screen.getByText('2 of 50 free emails left')).toBeInTheDocument();
+    expect(screen.getByText('2 emails left to clear')).toBeInTheDocument();
     expect(screen.queryByText(/Jan 1|resets/)).not.toBeInTheDocument();
   });
 
@@ -155,6 +155,6 @@ describe('meter copy', () => {
     summaryState.data = metered;
     render(<TriageEmptyState stats={TRIAGE_SESSION_STATS_FREE} readiness="ready" />);
     expect(screen.queryByText(/cleanup action/)).not.toBeInTheDocument();
-    expect(screen.getByText('640 of 1,000 free emails left · resets Nov 1')).toBeInTheDocument();
+    expect(screen.getByText('640 emails left to clear · resets Nov 1')).toBeInTheDocument();
   });
 });

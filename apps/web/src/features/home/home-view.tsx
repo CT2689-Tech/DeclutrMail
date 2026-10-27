@@ -195,7 +195,7 @@ export function HomeView({
                     ) : (
                       <PrimaryLink action={{ label: 'Review senders', href: '/senders' }} />
                     )}
-                    <p className={styles.footnote}>Review the exact scope before confirming.</p>
+                    <p className={styles.footnote}>See what will change before you confirm.</p>
                   </div>
                   {report && report.fix.sendersCount > primary.senderCount && (
                     <Link href="/senders#inbox-report" className={styles.textLink}>
@@ -233,7 +233,7 @@ export function HomeView({
                 <Attention
                   href="/senders?view=first-review"
                   title="New senders"
-                  detail="Awaiting a first decision"
+                  detail="Ready for your first review"
                   read={newSenders}
                 />
               )}
@@ -264,7 +264,7 @@ export function HomeView({
                 <Attention
                   href="/followups"
                   title="Follow-ups"
-                  detail="Conversations awaiting a reply"
+                  detail="Conversations waiting for a reply"
                   read={overview.followups}
                 />
               )}
@@ -291,7 +291,7 @@ export function HomeView({
                   <p>
                     {overview.suggestions.data === null
                       ? readLabel(overview.suggestions)
-                      : `${format(overview.suggestions.data)} preset suggestions awaiting approval`}
+                      : `${format(overview.suggestions.data)} rule suggestions to review`}
                   </p>
                   <Link href="/autopilot" className={styles.textLink}>
                     Review automations
@@ -344,11 +344,11 @@ export function HomeView({
                   </dl>
                 </>
               ) : (
-                <p className={styles.muted}>Your confirmed cleanup results will appear here.</p>
+                <p className={styles.muted}>Your results will appear after your first cleanup.</p>
               )}
               {overview?.recent.data && (
                 <div className={styles.receipt}>
-                  <h3>Recent completed cleanup</h3>
+                  <h3>Latest completed cleanup</h3>
                   <p>
                     {format(overview.recent.data.affectedCount)} emails{' '}
                     {overview.recent.data.action === 'archive' ? 'archived' : 'moved to Trash'}
@@ -359,9 +359,12 @@ export function HomeView({
                 </div>
               )}
               <Link href={`/activity?window=${period}`} className={styles.textLink}>
-                See your activity & Undo
+                Activity & Undo
               </Link>
-              <p className={styles.footnote}>Archive + Delete outcomes. Undone actions excluded.</p>
+              <p className={styles.footnote}>
+                Email totals count emails archived or moved to Trash. Anything you undo isn’t
+                counted.
+              </p>
             </section>
             <section
               className={styles.insights}
@@ -387,8 +390,8 @@ export function HomeView({
                   {reportStatus === 'error'
                     ? 'Inbox Report unavailable.'
                     : reportStatus === 'loading'
-                      ? 'Loading mailbox insights…'
-                      : 'Open your report to explore the scanned mail.'}
+                      ? 'Loading your email report…'
+                      : 'Open your report to explore the emails scanned so far.'}
                 </p>
               )}
               <Link href="/senders#inbox-report" className={styles.textLink}>
@@ -397,18 +400,18 @@ export function HomeView({
             </section>
           </div>
           {overview && (
-            <section className={styles.snapshot} aria-label="Mailbox snapshot">
+            <section className={styles.snapshot} aria-label="Scanned email totals">
               {overview.snapshot.data ? (
                 <>
                   <div>
                     <strong>{format(overview.snapshot.data.inboxCount)}</strong>
-                    <span>Scanned Inbox emails</span>
+                    <span>Inbox emails scanned</span>
                     <small>{format(overview.snapshot.data.unreadInboxCount)} unread</small>
                   </div>
                   <div>
                     <strong>{format(overview.snapshot.data.receivedCount)}</strong>
-                    <span>Scanned received emails</span>
-                    <small>Including archived and Trash</small>
+                    <span>Received emails scanned</span>
+                    <small>Including archived emails and Trash</small>
                   </div>
                   <div>
                     <strong>
@@ -416,24 +419,24 @@ export function HomeView({
                         ? 'Unavailable'
                         : `≈${formatReportSize(overview.snapshot.data.totalBytes)}`}
                     </strong>
-                    <span>Scanned mail estimate</span>
+                    <span>Estimated size of scanned emails</span>
                     <small>
                       {overview.snapshot.data.sizeKnownCount < overview.snapshot.data.receivedCount
-                        ? 'Size estimates are incomplete'
+                        ? 'Sizes aren’t available for every email'
                         : 'Based on Gmail size estimates'}
                     </small>
                   </div>
                   <p className={styles.snapshotNote}>
-                    Scanned inbound metadata · Updated {date(overview.snapshot.data.asOf, timeZone)}
+                    Totals updated {date(overview.snapshot.data.asOf, timeZone)}
                     <br />
-                    Gmail storage quota is separate.
+                    This estimate isn’t your total Gmail storage usage.
                   </p>
                 </>
               ) : (
                 <p className={styles.muted}>
                   {overview.snapshot.status === 'loading'
-                    ? 'Loading mailbox snapshot…'
-                    : 'Mailbox snapshot unavailable.'}
+                    ? 'Loading scanned email totals…'
+                    : 'Couldn’t load scanned email totals.'}
                   {onRefresh && overview.snapshot.status === 'error' && (
                     <button className={styles.textButton} onClick={onRefresh}>
                       Try again
@@ -597,15 +600,15 @@ function insightTitle(id: string) {
   return (
     (
       {
-        mostly_unread_share: 'Mostly unread senders',
+        mostly_unread_share: 'Senders you mostly leave unread',
         large_mail: 'Large messages',
-        third_party_labels: 'Mail under other-app labels',
+        third_party_labels: 'Email labeled by other apps',
         people_share: 'People you write to',
-        years_deep: 'Older mail',
+        years_deep: 'Older email',
         top10_share: 'Your busiest senders',
-        trash_bytes: 'Mail in Trash',
+        trash_bytes: 'Email in Trash',
       } as Record<string, string>
-    )[id] ?? 'Mailbox insight'
+    )[id] ?? 'Email insight'
   );
 }
 

@@ -2847,10 +2847,10 @@ function SendersScreenContent({
               : verb === 'Unsubscribe'
                 ? 'No new unsubscribe request is available for this selection.'
                 : verb === 'Delete'
-                  ? 'No eligible current emails to delete in this selection.'
+                  ? 'None of the selected senders has email available to delete.'
                   : verb === 'Archive'
-                    ? 'No eligible inbox emails to archive in this selection.'
-                    : 'No eligible inbox emails to move to Later in this selection.',
+                    ? 'None of the selected senders has Inbox email available to archive.'
+                    : 'None of the selected senders has Inbox email available to move to Later.',
           'warn',
         );
         return;

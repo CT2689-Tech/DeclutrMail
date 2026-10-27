@@ -24,7 +24,7 @@ export function CheckoutAttemptNotice({
       : attempt.state === 'stopping'
         ? `Canceling your ${name} checkout. You keep your current access.`
         : attempt.state === 'paid'
-          ? `Your ${name} payment is confirmed. We’re finishing access.`
+          ? `Your ${name} payment is confirmed. We’re activating your purchase.`
           : attempt.state === 'payment_in_progress'
             ? `Your ${name} payment is still processing. You keep your current access.`
             : `We’re checking your ${name} checkout. You keep your current access.`;

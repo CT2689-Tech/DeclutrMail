@@ -54,7 +54,7 @@ function ruleError(error: unknown, operation: 'save' | 'preview' | 'execute' | '
   if (code === 'AUTOPILOT_RULE_PAUSED')
     return 'This rule is paused. Resume it before previewing a batch.';
   if (code === 'AUTOPILOT_PREVIEW_EMPTY')
-    return 'No eligible email remains. Refresh the preview to check again.';
+    return 'No emails are available for this change. Refresh the preview to check again.';
   if (code === 'AUTOPILOT_RULE_LIMIT')
     return 'You have 50 rules. Retire one before adding another.';
   if (code === 'AUTOPILOT_PREVIEW_EXPIRED')
@@ -315,7 +315,7 @@ export function SenderRuleLibraryScope({
       <ScreenIntro
         id="autopilot-sender-rules"
         title="Autopilot"
-        body="Choose senders and save rules for Archive or Delete. Saving a sender rule never moves email. Preview and approve each batch. Preset rules have their own Observe and Active settings."
+        body="Choose senders and save Archive or Delete rules, then preview and approve each batch. Built-in rules have separate Watch first and Active settings."
         tip="Use Pause all to pause rules. Resume them individually when you’re ready."
       />
       <header className={styles.header}>
@@ -466,9 +466,7 @@ export function SenderRuleLibraryScope({
                             · {num(rule.matchingMessageCount)} matching email
                             {rule.matchingMessageCount === 1 ? '' : 's'} from{' '}
                             {num(rule.matchingSenderCount)}{' '}
-                            {rule.matchingSenderCount === 1
-                              ? 'eligible sender'
-                              : 'eligible senders'}
+                            {rule.matchingSenderCount === 1 ? 'sender' : 'senders'}
                           </small>
                         </span>
                       </button>
@@ -520,7 +518,7 @@ export function SenderRuleLibraryScope({
                           void Promise.allSettled(deleteMatches.map((query) => query.refetch()))
                         }
                       >
-                        Retry matches
+                        Check again
                       </Button>
                     )}
                   </p>
@@ -647,8 +645,8 @@ export function SenderRuleLibraryScope({
                         <span className={styles.count}>
                           {num(selected.matchingSenderCount)}{' '}
                           {selected.matchingSenderCount === 1
-                            ? 'eligible sender'
-                            : 'eligible senders'}
+                            ? 'sender with matching email'
+                            : 'senders with matching email'}
                         </span>
                       </div>
                       {selected.senders.map((sender) => (
@@ -794,8 +792,8 @@ export function SenderRuleLibraryScope({
                 <p className={styles.muted}>
                   {num(rule.matchingMessageCount)} matching email
                   {rule.matchingMessageCount === 1 ? '' : 's'} from {num(rule.matchingSenderCount)}{' '}
-                  {rule.matchingSenderCount === 1 ? 'eligible sender' : 'eligible senders'}. Preview
-                  checks the current batch.
+                  {rule.matchingSenderCount === 1 ? 'sender' : 'senders'}. Preview checks the
+                  current batch.
                 </p>
               </section>
             ))}
@@ -806,7 +804,7 @@ export function SenderRuleLibraryScope({
       {pauseOpen && !planLocked && (
         <ConfirmModalFrame
           title={`Pause ${num(pausableCount)} rules?`}
-          subtitle="Pause rules and automatic preset cleanups."
+          subtitle="Pause rules and automatic cleanups from built-in rules."
           note="Resume individual rules when you’re ready."
           confirmLabel="Pause all"
           confirmBusyLabel="Pausing…"

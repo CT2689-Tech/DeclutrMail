@@ -1502,7 +1502,7 @@ function ExportSupportBundleButton({
         title={
           disabled
             ? 'Fix the current date filters before exporting.'
-            : 'Review filters and create a support bundle.'
+            : 'Choose which activity details to download for support.'
         }
         style={{
           ...headerButtonStyle,
@@ -1511,7 +1511,7 @@ function ExportSupportBundleButton({
           cursor: disabled ? 'not-allowed' : 'pointer',
         }}
       >
-        Export support bundle
+        Export for support
       </button>
       {open && (
         <ActivitySupportBundleDialog
@@ -2635,7 +2635,7 @@ function UndoCell({
           title={
             failed
               ? (revert.error?.message ?? 'Could not confirm Undo. Try again.')
-              : 'Revert this action.'
+              : 'Undo this change.'
           }
           onMouseEnter={(e) => {
             if (!isPendingHere) e.currentTarget.style.background = color.primarySoft;
@@ -2737,7 +2737,7 @@ function ActivityErrorState({
   const isClientInput = isFilterError || isActivityFilterValidationError(error);
   const title = isClientInput ? 'Check your activity filters' : 'We couldn’t load your activity';
   const message = isClientInput
-    ? 'Activity could not load this filter. Use a valid outcome and a From date earlier than To, or reset the filters.'
+    ? 'Activity could not load this filter. Choose a result and a From date earlier than To, or reset the filters.'
     : 'Try again in a moment.';
   return (
     <div style={embedded ? { width: '100%', fontFamily: font.sans } : screenColumnStyle}>

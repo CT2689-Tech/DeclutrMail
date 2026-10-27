@@ -99,7 +99,7 @@ export function HomePreview({ state }: { state: HomePreviewState }) {
               state === 'failed'
                 ? 'Scan needs attention'
                 : state === 'reconnect'
-                  ? 'Gmail needs reconnect'
+                  ? 'Reconnect Gmail'
                   : state === 'queued'
                     ? 'Scan queued'
                     : state === 'syncing'
