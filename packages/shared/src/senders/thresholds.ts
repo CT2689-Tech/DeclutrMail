@@ -21,9 +21,8 @@
 //     numeric; weights are integers.
 //
 // IMPORT FROM:
-//   - apps/web/src/features/senders/uplift-d/intent.ts  (FE bucketing)
 //   - apps/api/src/senders/senders.read-service.ts      (BE SQL interpolation)
-//   - apps/web/src/features/senders/senders-screen.tsx  (chip rendering)
+//   - apps/web/src/features/senders/filters.tsx         (window chips)
 //
 // BE NOTE: when interpolating into raw SQL (`sql`...``), use template
 // substitution to keep values bound parameters when possible. The

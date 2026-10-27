@@ -67,10 +67,7 @@ export interface LastReview {
   generatedBy: TriageReasoningSource;
   /**
    * Engine confidence, 0..1 (mirrors `triage_decisions.confidence`,
-   * `numeric(3,2)`). Drives the FE intent-bucketing confidence gate
-   * (`uplift-d/intent.ts`): a low-confidence verdict stays in the
-   * catch-all bucket rather than surfacing as a recommendation the
-   * engine isn't sure about. Always present when a decision exists —
+   * `numeric(3,2)`). Always present when a decision exists —
    * `confidence` is `NOT NULL` on `triage_decisions`.
    */
   confidence: number;
