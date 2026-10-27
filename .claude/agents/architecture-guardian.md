@@ -75,9 +75,11 @@ For each new or modified worker class extending `BaseDeclutrWorker`:
 - Does it declare exactly one policy from the 5-enum set:
   `webhookPolicy | perMailboxPolicy | batchPolicy | cronPolicy | adminPolicy`?
 - Does it implement `processJob()` (not a custom run method)?
+  (`packages/workers/src/base-declutr-worker.ts`; policies in
+  `packages/workers/src/worker-policies.ts`)
 - Does it declare an `idempotencyKey` strategy per the policy:
   - `perMailboxPolicy`: keyed on `(mailbox_id, gmail_message_id)` or similar
-  - `webhookPolicy`: keyed on the webhook event ID (Pub/Sub `messageId`, Stripe `event.id`, etc.)
+  - `webhookPolicy`: keyed on the webhook event ID (Pub/Sub `messageId`, Paddle / Razorpay event id, etc.)
   - `batchPolicy`: keyed on `(batch_id, item_id)`
   - `cronPolicy`: keyed on `(worker_name, scheduled_at_minute)`
   - `adminPolicy`: exempt from idempotency (its job IS to surface failures)
@@ -95,37 +97,40 @@ For each new or modified worker class extending `BaseDeclutrWorker`:
 #### Check C — Read-only services + cross-feature events (D204)
 
 Services in DeclutrMail are **read-only by default**. Writes must go
-through the owning feature's repository OR through an event emission.
+through the owning feature's repository OR through an outbox event —
+`OutboxPublisher.publish({ schema, ... })` (`packages/workers/src/outbox-publisher.ts`)
+with a `.strict()` Zod schema from `packages/events/src/events.ts`. There is
+no in-process event bus.
 
 For each service in the diff:
 
 - Does it only contain `find*`, `get*`, `list*`, `query*` methods? (read-only marker)
 - If it has a write method (`create*`, `update*`, `delete*`, `apply*`),
   is it within the OWNING feature's module?
-- If the write affects another feature's data, is it done via event
-  emission (`eventBus.emit(...)`) rather than a direct cross-module call?
+- If the write affects another feature's data, is it done via an outbox
+  event rather than a direct cross-module call?
 
 **Anti-pattern (BLOCKING):** A service in feature A directly calling
 `featureB.repository.update(...)`. Must be event-based.
 
-**Allowed exception:** `OrchestratorService` classes (D205) explicitly
-own cross-feature workflows and may call multiple feature services. They
-must:
-- Be named `*Orchestrator`
-- Live in their feature's `orchestrators/` subfolder
-- Use a `UnitOfWork` pattern (transactional boundary documented)
-- Have a corresponding `*OrchestratorOptions` type
+**Allowed exception:** orchestrator classes (D205) explicitly own
+cross-feature workflows and may call multiple feature services. They
+must be named `*Orchestrator` and document their transactional boundary
+in the class comment.
 
-The only orchestrators allowed at launch (per D205): `AuthSignupOrchestrator`,
-`AccountDeletionOrchestrator`, and any added by future D-decision.
+The orchestrators that exist today: `AuthSignupOrchestrator`
+(`apps/api/src/auth/auth-signup.orchestrator.ts`) and
+`AccountDeletionOrchestrator` (`apps/api/src/account/deletion.service.ts`).
+A new one is a stop condition (below).
 
 #### Check D — Undo journal wiring (D232, D207)
 
-For each destructive mutation handler (Archive, Unsubscribe, Later
-when scope=multiple, account deletion):
+For each destructive mutation handler (Archive, Unsubscribe, Later,
+Delete, account deletion):
 
-- Does it write to `undo_journal` with a valid `expires_at` matching
-  the user's tier (Free = 7d, Pro = 30d per D81 / D188 area)?
+- Does it write to `undo_journal` with an `expires_at` derived from the
+  tier's `undoWindowDays` in `packages/shared/src/entitlements/pricing.config.ts`
+  (30 days on every tier today) — never a literal?
 - Does the response include the `undo_token` for client display?
 - Is the journal write inside the same transaction as the mutation?
 
@@ -150,19 +155,23 @@ Refer to `privacy-auditor` for body-storage check.
 
 For each new HTTP endpoint (`@Get`, `@Post`, etc.) in a controller:
 
-- Does the response follow the D202 envelope: `{ data, meta, error? }`?
+- Does the response follow the D202 envelope `{ data, meta? }`
+  (`packages/shared/src/contracts/envelope.ts`, built with `ok()` /
+  `withMeta()`)? Errors go through `AllExceptionsFilter`, never a hand-built body.
 - For list endpoints: does it use cursor pagination (`cursor` + `limit`),
   NOT offset pagination?
 - Does it return correct HTTP status codes (200 read, 201 create, 204 delete,
   4xx client error, 5xx server error)?
-- Is there a corresponding DTO file in `dto/`?
+- Is the request body parsed with a Zod schema from
+  `packages/shared/src/contracts/` (there are no `dto/` classes)?
 
 #### Check G — Rate limiting (D156)
 
 For each new public endpoint:
 
-- Is there a `@Throttle` decorator from `@nestjs/throttler`?
-- Are rate limits set per-route (not relying on global)?
+- Is there a `@RateLimit(...)` decorator from
+  `apps/api/src/common/rate-limit/` (a named bucket or
+  `{ bucket, limit, windowSec }`)? `@nestjs/throttler` is not used.
 
 **Flag (WARNING)** missing per-route throttle on auth, mutation, and
 expensive query endpoints.
@@ -172,9 +181,22 @@ expensive query endpoints.
 For each mutation endpoint (POST/PATCH/DELETE):
 
 - Does it accept an `Idempotency-Key` header?
-- Is the key stored with the result in `idempotency_records` table
-  (24h TTL)?
+- Is the key persisted under a unique constraint (for actions:
+  `action_jobs.idempotency_key`, index `action_jobs_idempotency_key_uniq`)?
 - Does a repeat key return the stored result rather than re-executing?
+
+#### Check I — CLAUDE.md §2.6 runtime invariants
+
+Each of these shipped to production at least once. Flag (BLOCKING):
+
+- A network call, queue publish, or session-scoped Postgres primitive
+  (`SET`, `LISTEN`, advisory lock) inside an open transaction.
+- A cron worker looping over `mailbox_accounts` serially instead of via
+  `createLimiter(n)` (`packages/workers/src/reasoning.ts`).
+- A cron that produces data for a capability-gated feature without its own
+  tier filter derived from `hasCapability` (a request guard does not cover a
+  producer).
+- A JS `Date` or `BigInt` interpolated directly into a raw `sql` template.
 
 **Flag (BLOCKING)** mutation endpoints without idempotency handling.
 
@@ -187,7 +209,7 @@ For each mutation endpoint (POST/PATCH/DELETE):
 **Findings:** <blocking count>, <warning count>, <info count>
 
 ### [BLOCKING] <one-line title>
-**Check:** <A/B/C/D/E/F/G/H>
+**Check:** <A–I>
 **File:** <path>:<line>
 **Pattern:** <what was found>
 **Why it's a violation:** <reference D###>

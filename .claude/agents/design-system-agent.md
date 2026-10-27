@@ -60,8 +60,11 @@ If typecheck/lint/build fails, stop and report.
 
 #### Check A — Canonical verbs (D227)
 
-The product UI uses exactly four user-facing verbs: **Keep · Archive ·
-Unsubscribe · Later** with shortcuts **K / A / U / L**.
+The product UI uses exactly five user-facing verbs: **Keep · Archive ·
+Unsubscribe · Later · Delete** with shortcuts **K / A / U / L / D**
+(Delete added by ADR-0019). Labels and shortcuts come from the verb
+registry, `packages/shared/src/actions/verb-registry.ts` — a hardcoded
+verb label or shortcut in a component is a finding.
 
 ```bash
 # Forbidden literal strings in product UI
@@ -76,9 +79,9 @@ git diff -- 'apps/web/**' | rg -n -i 'press\s+s\b' || true
 
 For each touched component:
 
-- Action buttons must use one of: Keep, Archive, Unsubscribe, Later
-- Keyboard shortcut comments/labels must use K, A, U, L (never S)
-- Marketing/onboarding copy mentioning the 4 verbs must use these labels
+- Action buttons must use one of: Keep, Archive, Unsubscribe, Later, Delete
+- Keyboard shortcut comments/labels must use K, A, U, L, D (never S)
+- Marketing/onboarding copy mentioning the verbs must use these labels
 
 **Flag (BLOCKING)** any usage of "Screen" as an action verb in product UI,
 "press S" / "S key" wording, or "K/A/U/S" literal patterns.
@@ -94,17 +97,19 @@ The action sheet may be skipped (D34 "remember preference" toggle), but
 the **preview is mandatory** in both paths.
 
 For each destructive action handler in the diff (Archive, Unsubscribe,
-Later-with-scope, or anything calling a mutation hook):
+Later, Delete, or anything calling a mutation hook):
 
-- Does the path render an `<ActionPreview>` component before `useMutation` fires?
-- If `skipSheet=true` path: does it render `<ActionPreview variant="inline">`?
-- Is `<ActionPreview>` placed in JSX BEFORE the mutation call site, not after?
-- Does the mutation call site await user confirmation (either modal accept
-  or inline preview timer elapsing)?
+- Does the path render a preview — `PreviewSheet`
+  (`packages/shared/src/components/preview-sheet/`) or the inline preview
+  when the sheet is skipped — before the mutation fires?
+- Does the mutation call site await user confirmation?
+- Does the preview state what CLAUDE.md §2.3 says it owes the user — the
+  count, where the email goes, and how to undo it, each once? A preview that
+  denies things the user would not fear (an Archive preview saying it does
+  not delete) is a **[WARNING]**.
 
-**Flag (BLOCKING)** any destructive mutation handler that calls `useMutation`
-without an upstream `<ActionPreview>` render OR without an explicit
-confirmation gate.
+**Flag (BLOCKING)** any destructive mutation handler that fires without an
+upstream preview OR without an explicit confirmation gate.
 
 #### Check C — Component placement (D198, D199, D220)
 
@@ -122,19 +127,15 @@ For each new component file:
   ```
 - If feature-owned: does it avoid being imported by any other feature?
 
-Check the D220 promoted-component allowlist (the 10 at launch):
-
-```
-PageShell, PageHeader, EmptyState, UndoBanner, MetricCard,
-ActionPill, InsightBadge, TrustBadge, DangerZoneCard, DataStorageCard
-```
-
-(Or current list per the plan — verify against the latest D220 status.)
+The promoted set is whatever lives in `packages/shared/src/components/`
+today (`ls` it — do not trust a list written in a doc; the original D220
+names were never built under those names). CLAUDE.md §4 records the
+founder-ratified additions (`NumericDisplay`, `ActionPopover`, `ErrorState`).
 
 **Anti-patterns:**
 - **[BLOCKING]** promoted component with only 1 consumer (lazy-promotion violation)
 - **[BLOCKING]** feature-owned component imported by another feature (boundary violation)
-- **[WARNING]** new component added to `packages/shared/` not in the allowlist
+- **[WARNING]** new component added to `packages/shared/` with fewer than 2 consumers and no founder ratification
 
 #### Check D — Headless hooks vs render components (D198)
 
@@ -240,12 +241,11 @@ Stop and surface to founder if the PR:
 - Adds or removes a promoted shared component from `packages/shared/`
 - Introduces a new state management library
 - Modifies the canonical verb list or shortcut bindings
-- Changes the `<ActionPreview>` component contract
+- Changes the `PreviewSheet` contract or the verb registry
 - Modifies CLAUDE.md §2.2 or §2.3 (verb / lifecycle guardrails)
 
 ## Non-goals
 
-- You do NOT review accessibility deeply (use a11y-architect when added)
 - You do NOT review TypeScript code style (use typescript-reviewer)
 - You do NOT verify backend correctness (use architecture-guardian)
 - You do NOT write or propose fixes
