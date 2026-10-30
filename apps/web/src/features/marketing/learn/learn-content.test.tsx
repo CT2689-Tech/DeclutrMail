@@ -6,7 +6,7 @@ import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-
 
 import { ANSWER_ARTICLES, ANSWER_SLUGS } from './answer-content';
 import { ArticlePage } from './article-page';
-import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
+import { getBlogArticle, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { FAQ_ENTRIES } from './faq-content';
 import { MARKETING_PATHS } from '@/app/sitemap';
@@ -55,7 +55,7 @@ function wordCount(article: LearnArticle): number {
 
 const HOW_TO = HOW_TO_SLUGS.map((slug) => HOW_TO_ARTICLES[slug]);
 const ANSWERS = ANSWER_SLUGS.map((slug) => ANSWER_ARTICLES[slug]);
-const BLOG = BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug]);
+const BLOG = BLOG_SLUGS.map(getBlogArticle);
 const ALL_ARTICLES = [...HOW_TO, ...ANSWERS, ...BLOG];
 
 describe('public learning content registry', () => {
@@ -220,9 +220,9 @@ describe('public learning content registry', () => {
   });
 
   it('ships three complete first-party launch essays', () => {
-    expect(BLOG).toHaveLength(3);
-    for (const article of BLOG) {
-      expect(article.kind).toBe('Launch essay');
+    const launchEssays = BLOG.filter((article) => article.kind === 'Launch essay');
+    expect(launchEssays).toHaveLength(3);
+    for (const article of launchEssays) {
       expect(article.sections.length, article.path).toBeGreaterThanOrEqual(6);
       expect(wordCount(article), `${article.path} word count`).toBeGreaterThanOrEqual(700);
     }

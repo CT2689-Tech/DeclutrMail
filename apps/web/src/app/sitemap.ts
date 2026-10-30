@@ -16,7 +16,7 @@ import {
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { ANSWER_ARTICLES, ANSWER_SLUGS } from '@/features/marketing/learn/answer-content';
-import { BLOG_ARTICLES, BLOG_SLUGS } from '@/features/marketing/learn/blog-content';
+import { getBlogArticle, BLOG_SLUGS } from '@/features/marketing/learn/blog-content';
 import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '@/features/marketing/learn/how-to-content';
 
 /** Public marketing paths, in crawl-priority order. */
@@ -77,11 +77,11 @@ const LAST_MODIFIED = new Map<string, string>([
   ).filter(([, iso]) => iso !== ''),
   ...HOW_TO_SLUGS.map((slug) => [`/how-to/${slug}`, HOW_TO_ARTICLES[slug].updatedAt] as const),
   ...ANSWER_SLUGS.map((slug) => [`/answers/${slug}`, ANSWER_ARTICLES[slug].updatedAt] as const),
-  ...BLOG_SLUGS.map((slug) => [`/blog/${slug}`, BLOG_ARTICLES[slug].updatedAt] as const),
+  ...BLOG_SLUGS.map((slug) => [`/blog/${slug}`, getBlogArticle(slug).updatedAt] as const),
   ['/compare', COMPARISONS_VERIFIED_FLOOR_ISO],
   ['/how-to', oldest(HOW_TO_SLUGS.map((slug) => HOW_TO_ARTICLES[slug].updatedAt))],
   ['/answers', oldest(ANSWER_SLUGS.map((slug) => ANSWER_ARTICLES[slug].updatedAt))],
-  ['/blog', oldest(BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug].updatedAt))],
+  ['/blog', oldest(BLOG_SLUGS.map((slug) => getBlogArticle(slug).updatedAt))],
   ...Object.entries(PAGE_LAST_UPDATED),
 ]);
 

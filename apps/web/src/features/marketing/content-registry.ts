@@ -21,6 +21,7 @@
 import { COMPARISONS } from './comparison/comparison-data';
 import { ANSWER_ARTICLES } from './learn/answer-content';
 import { BLOG_ARTICLES } from './learn/blog-content';
+import { PUBLISHED_BLOG_ARTICLES } from './learn/published-blog-content';
 import { CHANGELOG_ENTRIES } from './learn/changelog-content';
 import { FAQ_ENTRIES } from './learn/faq-content';
 import { ANSWERS_HUB, HOW_TO_HUB } from './learn/hub-content';
@@ -35,6 +36,7 @@ import { HOW_TO_ARTICLES } from './learn/how-to-content';
 export const MARKETING_CONTENT_SOURCES = {
   'learn/answer-content': { label: 'answers', content: ANSWER_ARTICLES },
   'learn/blog-content': { label: 'blog', content: BLOG_ARTICLES },
+  'learn/published-blog-content': { label: 'approved-blog', content: PUBLISHED_BLOG_ARTICLES },
   'learn/changelog-content': { label: 'changelog', content: CHANGELOG_ENTRIES },
   'learn/faq-content': { label: 'faq', content: FAQ_ENTRIES },
   'learn/how-to-content': { label: 'how-to', content: HOW_TO_ARTICLES },

@@ -53,7 +53,7 @@ export interface LearnArticle {
    * `git blame` over the article's line range, not today.
    */
   readonly updatedAt: string;
-  readonly kind: 'How-to guide' | 'Direct answer' | 'Launch essay';
+  readonly kind: 'How-to guide' | 'Direct answer' | 'Launch essay' | 'Article';
   readonly title: string;
   readonly description: string;
   readonly intro: string;

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { ArticlePage } from '@/features/marketing/learn/article-page';
-import { BLOG_ARTICLES, BLOG_SLUGS, type BlogSlug } from '@/features/marketing/learn/blog-content';
+import { getBlogArticle, BLOG_SLUGS, type BlogSlug } from '@/features/marketing/learn/blog-content';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
 function isBlogSlug(value: string): value is BlogSlug {
@@ -19,7 +19,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   if (!isBlogSlug(slug)) return {};
-  const article = BLOG_ARTICLES[slug];
+  const article = getBlogArticle(slug);
   return marketingPageMetadata({
     title: `${article.title} — DeclutrMail Journal`,
     description: article.description,
@@ -30,5 +30,5 @@ export async function generateMetadata({
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   if (!isBlogSlug(slug)) notFound();
-  return <ArticlePage article={BLOG_ARTICLES[slug]} />;
+  return <ArticlePage article={getBlogArticle(slug)} />;
 }

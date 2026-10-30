@@ -1,0 +1,27 @@
+name: Content pipeline contracts
+on:
+  pull_request:
+    paths:
+      - 'scripts/content-pipeline*'
+      - 'apps/web/src/features/marketing/learn/**'
+      - '.github/workflows/content-pipeline-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/content-pipeline*'
+      - 'apps/web/src/features/marketing/learn/**'
+      - '.github/workflows/content-pipeline-tests.yml'
+  merge_group:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - run: node --test scripts/content-pipeline.test.mjs
+      - run: node scripts/content-pipeline.mjs check-registry
