@@ -87,6 +87,22 @@ test('static extraction handles graph schema, entities, case and scripted false 
   assert.equal(p.anchors[0].rel, 'nofollow');
 });
 
+test('raw-text and quoted-tag edge cases never become synthetic metadata', () => {
+  const page = parsePage(
+    '<!-- <h1>comment</h1> --!>' +
+      '<script>const sample = "<meta name=robots content=noindex><h1>script</h1>";</script\t\n bar>' +
+      '<textarea><h1>textarea</h1></textarea>' +
+      '<meta name="description" content="Preview > blind actions">' +
+      '<h1>Real <span>heading</span></h1>',
+    URL,
+  );
+  assert.equal(page.robots, '');
+  assert.equal(page.description, 'Preview > blind actions');
+  assert.deepEqual(page.h1, ['Real heading']);
+  const unfinished = parsePage('<script>"<meta name=robots content=noindex>"', URL);
+  assert.equal(unfinished.robots, '');
+});
+
 test('HTTP reads pin DNS and reject unapproved redirects before another request', async () => {
   let requests = 0;
   const resolver = async () => [{ address: '1.1.1.1', family: 4 }];

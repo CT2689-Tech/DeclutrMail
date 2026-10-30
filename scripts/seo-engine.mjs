@@ -204,26 +204,107 @@ export function robotsAllows(body, agent, pathname = '/') {
   return matching[0]?.allow ?? true;
 }
 
+// Extract tokens without rewriting HTML. This is metadata inspection, not an
+// HTML sanitizer. Raw-text elements are consumed as a unit, never re-parsed as
+// markup; quoted '>' characters do not terminate a tag.
+function* htmlTokens(body) {
+  let pos = 0;
+  while (pos < body.length) {
+    const start = body.indexOf('<', pos);
+    if (start < 0) {
+      yield { text: body.slice(pos) };
+      return;
+    }
+    if (start > pos) yield { text: body.slice(pos, start) };
+    if (body.startsWith('<!--', start)) {
+      const commentEnd = /--!?>/g;
+      commentEnd.lastIndex = start + 4;
+      const end = commentEnd.exec(body);
+      if (!end) return;
+      pos = end.index + end[0].length;
+      continue;
+    }
+    const name = /^<(\/?)([a-z][\w:-]*)(?=[\s/>])/i.exec(body.slice(start));
+    if (!name) {
+      yield { text: '<' };
+      pos = start + 1;
+      continue;
+    }
+    let end = start + name[0].length;
+    let quote = null;
+    for (; end < body.length; end++) {
+      const char = body[end];
+      if (quote) {
+        if (char === quote) quote = null;
+      } else if (char === '"' || char === "'") quote = char;
+      else if (char === '>') break;
+    }
+    if (end === body.length) return;
+    const tag = name[2].toLowerCase();
+    const closing = Boolean(name[1]);
+    const attributes = closing ? {} : attrs(body.slice(start + name[0].length, end));
+    pos = end + 1;
+    if (!closing && ['script', 'style', 'textarea', 'title'].includes(tag)) {
+      const close = new RegExp('</' + tag + '(?=[\\s/>])[^>]*>', 'gi');
+      close.lastIndex = pos;
+      const match = close.exec(body);
+      yield { tag, attributes, rawText: body.slice(pos, match ? match.index : body.length) };
+      pos = match ? match.index + match[0].length : body.length;
+    } else yield { tag, closing, attributes };
+  }
+}
+
 export function parsePage(body, url, headers = {}) {
   // Static response only. Missing tags/schema/links require rendered confirmation.
-  const html = body.replace(/<!--[\s\S]*?-->/g, '');
-  const visible = html.replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, '');
-  const text = (s) => clean(decode(s.replace(/<[^>]*>/g, ' ')));
+  const text = (s) => clean(decode(s));
   const meta = {};
-  for (const match of visible.matchAll(/<meta\b[^>]*>/gi)) {
-    const a = attrs(match[0]);
-    const key = (a.name || a.property || '').toLowerCase();
-    if (key) meta[key] = clean(a.content);
-  }
-  const links = [...visible.matchAll(/<link\b[^>]*>/gi)].map((m) => attrs(m[0]));
+  const links = [];
   const schema = [];
+  const anchors = [];
+  const h1 = [];
+  let title = '';
+  let heading = null;
+  let anchor = null;
   let schemaErrors = 0;
-  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
-    if (attrs(match[1]).type?.toLowerCase() !== 'application/ld+json') continue;
-    try {
-      schema.push(JSON.parse(match[2]));
-    } catch {
-      schemaErrors += 1;
+  for (const token of htmlTokens(body)) {
+    if (token.text !== undefined) {
+      if (heading !== null) heading += token.text;
+      if (anchor) anchor.text += token.text;
+      continue;
+    }
+    const a = token.attributes;
+    if (token.tag === 'script' && a.type?.toLowerCase() === 'application/ld+json') {
+      try {
+        schema.push(JSON.parse(token.rawText));
+      } catch {
+        schemaErrors += 1;
+      }
+    } else if (token.tag === 'title' && !title) title = text(token.rawText || '');
+    else if (token.tag === 'meta' && !token.closing) {
+      const key = (a.name || a.property || '').toLowerCase();
+      if (key) meta[key] = clean(a.content);
+    } else if (token.tag === 'link' && !token.closing) links.push(a);
+    else if (token.tag === 'h1') {
+      if (token.closing) {
+        if (heading !== null) h1.push(text(heading));
+        heading = null;
+      } else heading = '';
+    } else if (token.tag === 'a') {
+      if (token.closing) {
+        if (anchor) {
+          anchor.text = text(anchor.text);
+          anchors.push(anchor);
+        }
+        anchor = null;
+      } else
+        anchor = {
+          url: a.href ? absolute(a.href, url) : null,
+          rel: clean(a.rel).toLowerCase(),
+          text: '',
+        };
+    } else {
+      if (heading !== null) heading += ' ';
+      if (anchor) anchor.text += ' ';
     }
   }
   const types = new Set();
@@ -237,16 +318,8 @@ export function parsePage(body, url, headers = {}) {
       }
   }
   schema.forEach(walk);
-  const anchors = [...visible.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi)].map((m) => {
-    const a = attrs(m[1]);
-    return {
-      url: a.href ? absolute(a.href, url) : null,
-      rel: clean(a.rel).toLowerCase(),
-      text: text(m[2]),
-    };
-  });
   return {
-    title: text(visible.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i)?.[1] || ''),
+    title,
     description: meta.description || '',
     canonical: absolute(
       links.find((a) => a.rel?.toLowerCase().split(/\s+/).includes('canonical'))?.href || url,
@@ -256,7 +329,7 @@ export function parsePage(body, url, headers = {}) {
     robots: clean(
       [meta.robots, meta.googlebot, headers['x-robots-tag']].filter(Boolean).join(','),
     ).toLowerCase(),
-    h1: [...visible.matchAll(/<h1\b[^>]*>([\s\S]*?)<\/h1\s*>/gi)].map((m) => text(m[1])),
+    h1,
     schemaTypes: [...types].sort(),
     schemaHash: schema.length ? hash(schema) : null,
     schemaErrors,
