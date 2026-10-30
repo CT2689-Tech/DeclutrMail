@@ -1,5 +1,11 @@
 # DeclutrMail marketing execution plan
 
+The [content and directory pipeline](content-pipeline.md) adds private drafting,
+exact-version review and approval-triggered publication staging. Its initial
+public article registry is empty. Founder approval, Content sign-off and zero
+additional spend remain mandatory; directory image packets do not submit or
+upload anything by themselves.
+
 October 30, 2026: [SEO engine v1](seo-engine.md) extends the existing daily growth
 automation with public metadata baselines, change detection, known-backlink
 verification, private evidence imports, a deduplicated review queue and weekly

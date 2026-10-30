@@ -5,7 +5,7 @@ import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { TrustRow } from '@/features/marketing/trust/trust-row';
 import { SupportTasks } from './support-tasks';
-import { BLOG_ARTICLES, BLOG_SLUGS } from './blog-content';
+import { getBlogArticle, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
 import { publishedFaqEntries } from './faq-content';
 import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
@@ -83,14 +83,16 @@ export function AnswersIndexPage() {
 }
 
 export function BlogIndexPage() {
-  const articles = BLOG_SLUGS.map((slug) => BLOG_ARTICLES[slug]);
+  const articles = BLOG_SLUGS.map(getBlogArticle);
   return (
     <ReadingLayout
       title="Notes on calmer, inspectable email"
       lede="First-party essays about decisions by sender, privacy boundaries, recovery, and the design trade-offs behind a Gmail companion."
       meta={
         <>
-          <span>{articles.length} launch essays</span>
+          <span>
+            {articles.filter((article) => article.kind === 'Launch essay').length} launch essays
+          </span>
           <span>No sponsored posts</span>
         </>
       }

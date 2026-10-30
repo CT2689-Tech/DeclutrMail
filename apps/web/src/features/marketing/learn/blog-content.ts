@@ -1,16 +1,27 @@
 import { WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { LearnArticle } from './types';
+import { PUBLISHED_BLOG_ARTICLES, PUBLISHED_BLOG_SLUGS } from './published-blog-content';
 
 export const BLOG_SLUGS = [
   'why-cleanup-starts-with-senders',
   'metadata-only-is-a-design-constraint',
   'reversible-does-not-mean-risk-free',
+  ...PUBLISHED_BLOG_SLUGS,
 ] as const;
 
 export type BlogSlug = (typeof BLOG_SLUGS)[number];
 
+export function getBlogArticle(slug: BlogSlug): LearnArticle {
+  const article = BLOG_ARTICLES[slug];
+  if (!Object.hasOwn(BLOG_ARTICLES, slug) || !article) {
+    throw new Error(`Missing registered blog article: ${slug}`);
+  }
+  return article;
+}
+
 export const BLOG_ARTICLES: Record<BlogSlug, LearnArticle> = {
+  ...PUBLISHED_BLOG_ARTICLES,
   'why-cleanup-starts-with-senders': {
     slug: 'why-cleanup-starts-with-senders',
     path: '/blog/why-cleanup-starts-with-senders',
