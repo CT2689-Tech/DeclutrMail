@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "hosts": ["declutrmail.com", "www.declutrmail.com", "declutrmail.ai", "www.declutrmail.ai"],
+  "pages": [
+    "https://declutrmail.com/",
+    "https://declutrmail.com/pricing",
+    "https://declutrmail.com/how-it-works",
+    "https://declutrmail.com/demo",
+    "https://declutrmail.com/privacy",
+    "https://declutrmail.ai/"
+  ],
+  "discovery": ["https://declutrmail.com/robots.txt", "https://declutrmail.com/sitemap.xml"],
+  "backlinks": [
+    {
+      "source": "https://www.saashub.com/declutrmail",
+      "target": "https://declutrmail.com/",
+      "allowedHosts": ["www.saashub.com", "saashub.com"]
+    }
+  ],
+  "promptPortfolio": [
+    "How can I clean up years of Gmail without deleting something important?",
+    "What tool lets me preview a bulk Gmail cleanup?",
+    "How do I remove old promotional emails from Gmail?",
+    "How can I archive Gmail messages by sender?",
+    "What is a good Clean Email alternative for Gmail?",
+    "What is a good Trimbox alternative for Gmail?",
+    "Should I use Gmail filters or a Gmail cleanup tool?",
+    "How do I clean up Gmail when my storage is full?",
+    "Can I undo a bulk Gmail cleanup?",
+    "Is DeclutrMail safe to connect to Gmail?",
+    "What does DeclutrMail cost?",
+    "Can DeclutrMail unsubscribe me and delete existing mail?"
+  ]
+}

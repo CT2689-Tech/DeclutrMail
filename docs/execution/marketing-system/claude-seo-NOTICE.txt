@@ -1,0 +1,43 @@
+DeclutrMail SEO engine v1 — upstream attribution
+
+Source: https://github.com/AgriciDaniel/claude-seo
+Reviewed revision: 6be93f45064ffbadced572b5d5c95f55fd263af0 (v2.5.0 metadata)
+Reviewed October 30, 2026.
+
+Adapted as a small Node.js implementation, without installing Claude Code,
+its agent configuration, Python runtime, browser, hooks, or paid extensions:
+- skills/seo-drift/SKILL.md and scripts/drift_compare.py:
+  observed metadata baselines, explicit comparisons, severity and next actions.
+- skills/seo-backlinks/SKILL.md and scripts/verify_backlinks.py:
+  known-link verification, anchor/rel capture, source labels and uncertainty.
+
+DeclutrMail-specific additions: private atomic state, single-writer lock,
+deduplicated tasks, evidence imports, weekly decisions, strict bounded public
+reads, and publication/outreach approval requirements. Numeric backlink health
+scores and generic anchor/TLD thresholds were not adopted. Baselines are
+observations, not evidence of SEO quality. Missing static markup/links require
+rendered confirmation. Existing Codex browser and access rules take precedence.
+
+No upstream framework-integration material is included.
+
+MIT License
+
+Copyright (c) 2026 agricidaniel
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

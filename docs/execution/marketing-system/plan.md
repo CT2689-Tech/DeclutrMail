@@ -1,5 +1,14 @@
 # DeclutrMail marketing execution plan
 
+October 30, 2026: [SEO engine v1](seo-engine.md) extends the existing daily growth
+automation with public metadata baselines, change detection, known-backlink
+verification, private evidence imports, a deduplicated review queue and weekly
+decisions. Selected claude-seo workflows are adapted with pinned provenance;
+this supersedes the earlier deferral for that bounded scope. Additional spend
+remains $0. Publishing and outreach require specific founder approval, and the
+existing Content owner-deck/sign-off rule remains in force. No second scheduler,
+new paid integration or automatic publication is introduced.
+
 Updated October 20, 2026. Owner and integration owner: the current Codex marketing
 session. The founder approves external communications and spending. This plan extends
 the existing daily growth loop; it does not launch another scheduler or replace its
