@@ -143,6 +143,7 @@ test('private review escapes injected markup and cannot publish', () => {
   assert.equal(html.includes('<script>run()'), false);
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /Not published/);
+  assert.ok(html.includes(contentDigest(d)));
   assert.match(html, /preview itself cannot publish/);
 });
 
