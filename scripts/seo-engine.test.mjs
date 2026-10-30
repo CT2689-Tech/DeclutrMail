@@ -391,6 +391,10 @@ test('persistent runs preserve baselines, deduplicate evidence and reject concur
   await execute('import', { ...options, input: evidence }, deps);
   s = JSON.parse(await readFile(path.join(options.stateDir, 'state.json'), 'utf8'));
   assert.equal(s.evidence.length, 1);
+  assert.match(
+    await readFile(path.join(options.stateDir, 'latest.md'), 'utf8'),
+    /Public pages read: 1/,
+  );
   await assert.rejects(
     execute('accept-baseline', { ...options, url: URL }, deps),
     /review evidence/,

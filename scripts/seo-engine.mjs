@@ -693,6 +693,7 @@ async function atomicJson(filename, value) {
 
 const md = (s) => clean(s).replace(/[|`<>]/g, ' ');
 function report(state, run, review, now) {
+  const collection = run || state.latestCollection;
   const lines = [
     '# DeclutrMail SEO engine',
     '',
@@ -708,13 +709,14 @@ function report(state, run, review, now) {
   ];
   for (const [source, data] of Object.entries(sourceCoverage(state.evidence, now)))
     lines.push(`| ${source} | ${data.status} | ${data.observedAt || 'unavailable'} |`);
-  if (run)
+  if (collection)
     lines.push(
       '',
-      `Public pages read: ${Object.keys(run.observations).length}; unavailable discovery/page reads: ${run.coverage.filter((c) => c.status === 'unavailable').length}.`,
-      `Known backlinks checked: ${run.backlinks.length}.`,
+      `Latest public collection: ${collection.observedAt}.`,
+      `Public pages read: ${collection.pageCount ?? Object.keys(collection.observations).length}; unavailable discovery/page reads: ${collection.unavailableCount ?? collection.coverage.filter((c) => c.status === 'unavailable').length}.`,
+      `Known backlinks checked: ${collection.backlinkCount ?? collection.backlinks.length}.`,
       '',
-      ...run.limits.map((s) => `- ${s}`),
+      ...collection.limits.map((s) => `- ${s}`),
     );
   lines.push(
     '',
@@ -765,6 +767,13 @@ export async function execute(command, options, dependencies = {}) {
         if (!state.baselines[url] && observation.status === 200) state.baselines[url] = observation;
       }
       state.latestObservations = run.observations;
+      state.latestCollection = {
+        observedAt: now,
+        pageCount: Object.keys(run.observations).length,
+        unavailableCount: run.coverage.filter((c) => c.status === 'unavailable').length,
+        backlinkCount: run.backlinks.length,
+        limits: run.limits,
+      };
       state.backlog = mergeBacklog(
         state.backlog,
         [...run.findings, ...searchOpportunities(state.evidence, now)],
