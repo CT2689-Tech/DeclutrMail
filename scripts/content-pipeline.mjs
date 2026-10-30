@@ -354,7 +354,7 @@ export function validateRegistry(registry, today = pacificDate()) {
 
 function articleMarkup(a) {
   return (
-    `<h1>${escape(a.title)}</h1><p>${escape(a.readingMinutes)} minute read · Proposed page date: ${escape(a.publishedAt)}</p><p class="lede">${escape(a.intro)}</p><p>${escape(a.description)}</p>` +
+    `<h1>${escape(a.title)}</h1><p>${escape(a.readingMinutes)} minute read · Proposed page date: ${escape(a.publishedAt)} · Updated: ${escape(a.updatedAt)}</p><p>Proposed destination: <code>https://declutrmail.com${escape(a.path)}</code></p><p class="lede">${escape(a.intro)}</p><p>${escape(a.description)}</p>` +
     (a.quickAnswer ? `<aside>${escape(a.quickAnswer)}</aside>` : '') +
     a.sections
       .map(

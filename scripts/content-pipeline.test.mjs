@@ -144,6 +144,8 @@ test('private review escapes injected markup and cannot publish', () => {
   assert.match(html, /&lt;script&gt;/);
   assert.match(html, /Not published/);
   assert.ok(html.includes(contentDigest(d)));
+  assert.ok(html.includes('https://declutrmail.com' + d.article.path));
+  assert.ok(html.includes('Updated: ' + d.article.updatedAt));
   assert.match(html, /preview itself cannot publish/);
 });
 
