@@ -80,8 +80,14 @@ jobs:
                 [.status.traffic[]? | select(.percent == 100) | .revisionName] == [$new]
               ' >/dev/null
           echo "API serving $new with Paddle secret version $SECRET_VERSION."
-          curl --fail --silent --show-error --max-time 20 \
-            --output /dev/null https://api.declutrmail.com/api/healthz
+          if ! curl --fail --silent --show-error --max-time 20 \
+            --output /dev/null https://api.declutrmail.com/api/healthz; then
+            gcloud run services update-traffic "$service" \
+              --project="$PROJECT" --region="$region" --quiet \
+              --to-revisions="$old=100"
+            echo 'API health failed; restored previous serving revision.' >&2
+            exit 1
+          fi
           echo 'API health endpoint passed.'
       - name: Refresh worker using its serving image, then route traffic
         run: |
