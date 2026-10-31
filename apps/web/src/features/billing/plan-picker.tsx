@@ -881,7 +881,7 @@ export function PlanPicker({
       >
         {currentAccess?.kind !== 'complimentary' || !includedAccess ? (
           <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>
-            {pricingV2 && currentTier === 'free' ? 'Choose how to clean up' : 'Plans'}
+            {pricingV2 && currentTier === 'free' ? 'Choose a cleanup option' : 'Plans'}
           </h2>
         ) : null}
         {pricingV2 ? null : (
