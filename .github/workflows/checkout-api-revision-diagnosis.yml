@@ -83,3 +83,21 @@ jobs:
                   | gsub("pdl_[A-Za-z0-9_]+"; "[redacted]")
                   | .[:600])
               }]'
+      - name: Read bounded checkout creation failures
+        run: |
+          set -euo pipefail
+          gcloud logging read \
+            "resource.type=cloud_run_revision AND resource.labels.service_name=declutrmail-api AND resource.labels.revision_name=$REVISION AND (textPayload:\"paddle.checkout.\" OR jsonPayload.message:\"paddle.checkout.\")" \
+            --project="$PROJECT" --freshness=12h --limit=10 \
+            --format='json(timestamp,severity,textPayload,jsonPayload.message)' \
+            | jq '[.[] | {
+                timestamp,
+                severity,
+                message: ((.textPayload // .jsonPayload.message // "")
+                  | tostring
+                  | gsub("[[:alnum:]._%+-]+@[[:alnum:].-]+\\.[[:alpha:]]{2,}"; "[email]")
+                  | gsub("Bearer[[:space:]]+[^[:space:]]+"; "Bearer [redacted]")
+                  | gsub("(?i)(api[_-]?key|token|secret|password)[=:][^[:space:],}]+"; "[redacted]")
+                  | gsub("pdl_[A-Za-z0-9_]+"; "[redacted]")
+                  | .[:600])
+              }]'
