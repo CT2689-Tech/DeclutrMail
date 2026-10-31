@@ -1,0 +1,122 @@
+name: Repair checkout attempts rejected by expired live Paddle key
+
+# One-time incident repair. All three transaction-create requests received an
+# explicit Paddle 403 on 2026-10-31; no transaction ID or payment was recorded.
+# This workflow does not call Paddle or create a checkout.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: billing-provider-refusal-repair-2026-10-31
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Authenticate with existing deploy identity
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Stop only the three provider-refused attempts and append audit events
+        env:
+          PGCONNECT_TIMEOUT: '10'
+          PGSSLMODE: require
+        run: |
+          set -euo pipefail
+          db_url=$(gcloud secrets versions access latest \
+            --secret=database-url-prod --project=declutrmail-ai-prod)
+          test -n "$db_url"
+          psql "$db_url" -X -v ON_ERROR_STOP=1 -q <<'SQL'
+          BEGIN;
+          SET LOCAL lock_timeout = '5s';
+          SET LOCAL statement_timeout = '30s';
+
+          CREATE TEMP TABLE incident_attempts (id uuid PRIMARY KEY) ON COMMIT DROP;
+          INSERT INTO incident_attempts (id)
+          SELECT id
+          FROM billing_checkout_attempts
+          WHERE created_at IN (
+            '2026-10-31 12:36:54.109753+00'::timestamptz,
+            '2026-10-31 16:17:29.533114+00'::timestamptz,
+            '2026-10-31 16:55:42.430778+00'::timestamptz
+          )
+          FOR UPDATE;
+
+          DO $$
+          DECLARE changed integer;
+          BEGIN
+            IF (SELECT count(*) FROM incident_attempts) <> 3 THEN
+              RAISE EXCEPTION 'Incident target count changed; no rows updated';
+            END IF;
+            IF EXISTS (
+              SELECT 1 FROM billing_checkout_attempts a
+              JOIN incident_attempts i ON i.id = a.id
+              WHERE a.provider <> 'paddle'
+                OR a.state <> 'unknown'
+                OR a.provider_transaction_id IS NOT NULL
+                OR a.provider_subscription_id IS NOT NULL
+                OR a.paid_at IS NOT NULL
+                OR a.stopped_at IS NOT NULL
+            ) THEN
+              RAISE EXCEPTION 'Incident attempt state changed; no rows updated';
+            END IF;
+            IF EXISTS (
+              SELECT 1 FROM subscriptions s
+              JOIN billing_checkout_attempts a ON a.workspace_id = s.workspace_id
+              JOIN incident_attempts i ON i.id = a.id
+              WHERE s.provider = 'paddle'
+            ) THEN
+              RAISE EXCEPTION 'Incident workspace has a Paddle subscription; no rows updated';
+            END IF;
+            IF EXISTS (
+              SELECT 1 FROM subscription_events e
+              JOIN incident_attempts i
+                ON e.payload ->> 'checkout_attempt_id' = i.id::text
+                OR e.payload ->> 'attemptId' = i.id::text
+              WHERE e.event_type <> 'local.checkout_attempted'
+            ) THEN
+              RAISE EXCEPTION 'Incident attempt has later billing evidence; no rows updated';
+            END IF;
+
+            UPDATE billing_checkout_attempts a
+            SET state = 'stopped',
+                stopped_at = now(),
+                updated_at = now(),
+                version = a.version + 1
+            FROM incident_attempts i
+            WHERE a.id = i.id;
+            GET DIAGNOSTICS changed = ROW_COUNT;
+            IF changed <> 3 THEN
+              RAISE EXCEPTION 'Incident update count changed; rolling back';
+            END IF;
+
+            INSERT INTO subscription_events
+              (provider, provider_event_id, event_type, payload, processed_at)
+            SELECT 'paddle',
+                   'local_checkout_provider_refused_' || i.id::text,
+                   'local.checkout_provider_refused',
+                   jsonb_build_object(
+                     'attemptId', i.id::text,
+                     'reason', 'paddle_403_forbidden',
+                     'incident', '2026-10-31-live-key-expiry'
+                   ),
+                   now()
+            FROM incident_attempts i;
+            GET DIAGNOSTICS changed = ROW_COUNT;
+            IF changed <> 3 THEN
+              RAISE EXCEPTION 'Incident audit count changed; rolling back';
+            END IF;
+          END $$;
+          COMMIT;
+          SQL
+          unset db_url
+          echo 'Three provider-refused checkout attempts stopped with audit events.'
