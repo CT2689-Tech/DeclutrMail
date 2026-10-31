@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -378,6 +378,9 @@ export function PlanPicker({
   const changePlan = useChangePlan();
   const [launchError, setLaunchError] = useState<string | null>(null);
   const consumedIntent = useRef(false);
+  const pickerRef = useRef<HTMLElement>(null);
+  const reviewRef = useRef<HTMLDivElement>(null);
+  const selectionTrigger = useRef<HTMLElement | null>(null);
   // Synchronous re-entrancy guard: the async slot claim yields before
   // the mutation's isPending flips, so a double-click could otherwise
   // enter a confirm handler twice in one frame.
@@ -429,14 +432,25 @@ export function PlanPicker({
   // panel — an open panel's Confirm is a charge-capable control and may
   // not outlive the lock that says a money outcome is unresolved.
   useEffect(() => {
-    if (disabled && selected !== null) {
+    if (disabled && (selected !== null || passSelected)) {
       setSelected(null);
+      setPassSelected(false);
       checkout.reset();
       changePlan.reset();
       setLaunchError(null);
     }
     // Reset fns are referentially stable — deps stay minimal on purpose.
-  }, [disabled, selected]);
+  }, [disabled, selected, passSelected]);
+
+  // Selecting a plan reveals its review beside that choice. Bring the
+  // review into view for keyboard users and deep links from Pricing.
+  useEffect(() => {
+    if (disabled || (!passSelected && selected === null)) return;
+    const review = reviewRef.current;
+    if (!review) return;
+    review.focus({ preventScroll: true });
+    review.scrollIntoView?.({ block: 'nearest' });
+  }, [disabled, passSelected, selected]);
 
   // QA-billing-20260901-09/-05: independent of `selected` — the Pro
   // card's own disclosure needs this before the confirm panel is ever
@@ -476,12 +490,36 @@ export function PlanPicker({
   const stripProvider: BillingProviderId = selected === null ? provider : effectiveProvider;
   const errorMessage = checkoutErrorMessage(checkout.error);
   const monthsFree = sharedAnnualMonthsFree(stripProvider);
+  // A Free visitor's purchasable annual plan follows the one-time Pass.
+  // Keep the current Free card and Pro waitlist available below it.
+  const tierIds =
+    pricingV2 && currentTier === 'free' ? (['plus', 'free', 'pro'] as const) : STRIP_TIER_IDS;
 
-  function closePanel() {
+  function rememberSelectionTrigger() {
+    const active = document.activeElement;
+    selectionTrigger.current =
+      active instanceof HTMLElement &&
+      active.tagName === 'BUTTON' &&
+      pickerRef.current?.contains(active)
+        ? active
+        : null;
+  }
+
+  function restoreReviewFocus() {
+    const origin = selectionTrigger.current;
+    const picker = pickerRef.current;
+    window.setTimeout(() => {
+      const target = origin?.isConnected ? origin : picker?.isConnected ? picker : null;
+      target?.focus();
+    }, 0);
+  }
+
+  function closePanel(restoreFocus = false) {
     setSelected(null);
     checkout.reset();
     changePlan.reset();
     setLaunchError(null);
+    if (restoreFocus) restoreReviewFocus();
   }
 
   function onSelect(id: StripTierId) {
@@ -490,6 +528,7 @@ export function PlanPicker({
     // sub, the CURRENT TIER at the OTHER cycle is a valid switch target
     // (Razorpay changes aren't self-serve — no cycle switch either).
     if (id === currentTier && grantingSub !== null && grantingSub.provider !== 'paddle') return;
+    rememberSelectionTrigger();
     checkout.reset();
     changePlan.reset();
     setLaunchError(null);
@@ -723,6 +762,7 @@ export function PlanPicker({
         selected={passSelected}
         disabled={disabled}
         onSelect={() => {
+          rememberSelectionTrigger();
           setSelected(null);
           setPassSelected(true);
           void track('pass_selected', { source: 'plan_picker' });
@@ -730,6 +770,103 @@ export function PlanPicker({
         }}
       />
     ) : null;
+  const primaryPassInGrid = pricingV2 && currentTier === 'free' && passOffer !== null;
+
+  const reviewPanel =
+    passSelected && !disabled ? (
+      <ConfirmPanel
+        target="plus"
+        cycle="annual"
+        offer="pass_onetime"
+        provider="paddle"
+        razorpayOffered={false}
+        pricingV2={pricingV2}
+        country={country}
+        indiaCheckoutOpen={indiaCheckoutOpen}
+        pricePointOverride={OFFERS.backlogPass.price}
+        onProviderChange={setProvider}
+        foundingEligible={false}
+        claimFounding={false}
+        onClaimFoundingChange={setClaimFounding}
+        isPending={checkout.isPending}
+        errorMessage={launchError ?? errorMessage}
+        onConfirm={() => void onConfirm('plus')}
+        onDismiss={() => {
+          void track('checkout_closed', { plan: 'pass' });
+          setPassSelected(false);
+          restoreReviewFocus();
+        }}
+      />
+    ) : selected !== null && !disabled ? (
+      selected === 'free' ? (
+        grantingSub !== null ? (
+          <DowngradePanel
+            currentTier={currentTier}
+            currentPeriodEnd={grantingSub.currentPeriodEnd}
+            onRequestCancel={() => {
+              closePanel();
+              onRequestCancel();
+            }}
+          />
+        ) : null
+      ) : grantingSub !== null ? (
+        grantingSub.provider === 'paddle' ? (
+          <ChangePlanPanel
+            target={selected}
+            cycle={cycle}
+            fromTier={grantingSub.tier}
+            fromCycle={grantingSub.cycle}
+            currentPeriodEnd={grantingSub.currentPeriodEnd}
+            provider={grantingSub.provider}
+            pricingV2={pricingV2}
+            isPending={changePlan.isPending}
+            errorMessage={changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null}
+            onConfirm={() => void onConfirmChange(selected)}
+            onDismiss={() => closePanel(true)}
+          />
+        ) : (
+          <RazorpaySwitchPanel target={selected} cycle={cycle} onDismiss={() => closePanel(true)} />
+        )
+      ) : (
+        <ConfirmPanel
+          target={selected}
+          cycle={cycle}
+          provider={pricingV2 ? 'paddle' : provider}
+          razorpayOffered={razorpayOffered}
+          pricingV2={pricingV2}
+          country={country}
+          indiaCheckoutOpen={indiaCheckoutOpen}
+          pricePointOverride={
+            pricingV2 && selected === 'plus' && cycle === 'annual' ? PLUS_ANNUAL_2026_10 : null
+          }
+          onProviderChange={setProvider}
+          foundingEligible={foundingEligible}
+          claimFounding={claimFounding}
+          onClaimFoundingChange={setClaimFounding}
+          isPending={checkout.isPending}
+          errorMessage={launchError ?? errorMessage}
+          onConfirm={() => void onConfirm(selected)}
+          onDismiss={() => {
+            void track('checkout_closed', {
+              plan: selected === 'pro' ? 'pro' : 'plus',
+            });
+            closePanel(true);
+          }}
+        />
+      )
+    ) : null;
+
+  const reviewRegion = (
+    <div
+      ref={reviewRef}
+      role="region"
+      aria-label="Review your choice"
+      tabIndex={-1}
+      style={{ flexBasis: '100%', gridColumn: '1 / -1', scrollMarginTop: 24 }}
+    >
+      {reviewPanel}
+    </div>
+  );
 
   const options = (
     <>
@@ -743,7 +880,9 @@ export function PlanPicker({
         }}
       >
         {currentAccess?.kind !== 'complimentary' || !includedAccess ? (
-          <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Plans</h2>
+          <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>
+            {pricingV2 && currentTier === 'free' ? 'Choose how to clean up' : 'Plans'}
+          </h2>
         ) : null}
         {pricingV2 ? null : (
           <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
@@ -754,6 +893,13 @@ export function PlanPicker({
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
           Your current access is shown above. Buying a subscription starts a separate recurring
           payment. Review the price and renewal details before checkout.
+        </p>
+      ) : null}
+
+      {pricingV2 && currentTier === 'free' ? (
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
+          Clear a backlog once, or keep cleaning up throughout the year. Review the exact terms
+          before checkout.
         </p>
       ) : null}
 
@@ -775,18 +921,24 @@ export function PlanPicker({
         </p>
       ) : null}
 
-      {quietPassOffer ? null : passOffer}
+      {quietPassOffer || primaryPassInGrid ? null : passOffer}
+      {!quietPassOffer && !primaryPassInGrid && passSelected && !disabled ? reviewRegion : null}
 
       <div
         style={{
-          display: 'flex',
-          flexDirection: isPhone ? 'column' : 'row',
+          display: primaryPassInGrid ? 'grid' : 'flex',
+          gridTemplateColumns: primaryPassInGrid
+            ? 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))'
+            : undefined,
+          flexDirection: primaryPassInGrid ? undefined : isPhone ? 'column' : 'row',
           gap: 16,
           flexWrap: 'wrap',
           alignItems: 'stretch',
         }}
       >
-        {STRIP_TIER_IDS.map((id) => {
+        {primaryPassInGrid ? passOffer : null}
+        {primaryPassInGrid && passSelected && !disabled ? reviewRegion : null}
+        {tierIds.map((id) => {
           // Pro is no longer sold at launch. An existing Pro subscription is
           // a readout of its own cycle, rather than an annual purchase quote.
           const cardCycle =
@@ -796,144 +948,62 @@ export function PlanPicker({
           return pricingV2 && id === 'pro' && id !== currentOfferTier ? (
             <ProWaitlistCard key={id} disabled={disabled} />
           ) : (
-            <PlanCard
-              key={id}
-              tierId={id}
-              cycle={cardCycle}
-              isCurrent={id === currentOfferTier}
-              isUpgrade={TIER_RANK[id] > TIER_RANK[currentTier]}
-              currentCycle={displayedSubscription?.cycle ?? null}
-              accessLabel={
-                includedAccess && id === currentTier ? currentAccess.priceLabel : undefined
-              }
-              currentPriceLabel={
-                displayedSubscription?.tier === id && displayedSubscription.cycle === cardCycle
-                  ? chargedPlanPrice(
-                      displayedSubscription.tier,
-                      displayedSubscription.cycle,
-                      displayedSubscription.provider,
-                      displayedSubscription.foundingMember,
-                      displayedSubscription.providerPriceId,
-                      displayedSubscription.chargedUsdCents,
-                      displayedSubscription.chargedCurrency,
-                    )
-                  : undefined
-              }
-              canSwitchCycle={pricingV2 ? false : grantingSub?.provider === 'paddle'}
-              isSelected={id === selected}
-              disabled={disabled}
-              hasGrantingSubscription={grantingSub !== null}
-              provider={stripProvider}
-              {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
-              {...(pricingV2 && id === 'plus' && cycle === 'annual'
-                ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
-                : {})}
-              onSelect={() => onSelect(id)}
-              showFoundingHint={
-                !pricingV2 &&
-                id === 'pro' &&
-                id !== currentTier &&
-                foundingPossible &&
-                !foundingSoldOut
-              }
-              foundingMemberNote={
-                id === currentTier && grantingSub?.foundingMember === true
-                  ? pricingV2
-                    ? WS1_COPY['cancel.founding']
-                    : 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
-                  : null
-              }
-            />
+            <Fragment key={id}>
+              <PlanCard
+                tierId={id}
+                cycle={cardCycle}
+                isCurrent={id === currentOfferTier}
+                isUpgrade={TIER_RANK[id] > TIER_RANK[currentTier]}
+                currentCycle={displayedSubscription?.cycle ?? null}
+                accessLabel={
+                  includedAccess && id === currentTier ? currentAccess.priceLabel : undefined
+                }
+                currentPriceLabel={
+                  displayedSubscription?.tier === id && displayedSubscription.cycle === cardCycle
+                    ? chargedPlanPrice(
+                        displayedSubscription.tier,
+                        displayedSubscription.cycle,
+                        displayedSubscription.provider,
+                        displayedSubscription.foundingMember,
+                        displayedSubscription.providerPriceId,
+                        displayedSubscription.chargedUsdCents,
+                        displayedSubscription.chargedCurrency,
+                      )
+                    : undefined
+                }
+                canSwitchCycle={pricingV2 ? false : grantingSub?.provider === 'paddle'}
+                isSelected={id === selected}
+                disabled={disabled}
+                hasGrantingSubscription={grantingSub !== null}
+                provider={stripProvider}
+                {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
+                {...(pricingV2 && id === 'plus' && cycle === 'annual'
+                  ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
+                  : {})}
+                onSelect={() => onSelect(id)}
+                showFoundingHint={
+                  !pricingV2 &&
+                  id === 'pro' &&
+                  id !== currentTier &&
+                  foundingPossible &&
+                  !foundingSoldOut
+                }
+                foundingMemberNote={
+                  id === currentTier && grantingSub?.foundingMember === true
+                    ? pricingV2
+                      ? WS1_COPY['cancel.founding']
+                      : 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
+                    : null
+                }
+              />
+              {selected === id && !disabled ? reviewRegion : null}
+            </Fragment>
           );
         })}
       </div>
 
       {quietPassOffer ? passOffer : null}
-
-      {passSelected && !disabled ? (
-        <ConfirmPanel
-          target="plus"
-          cycle="annual"
-          offer="pass_onetime"
-          provider="paddle"
-          razorpayOffered={false}
-          pricingV2={pricingV2}
-          country={country}
-          indiaCheckoutOpen={indiaCheckoutOpen}
-          pricePointOverride={OFFERS.backlogPass.price}
-          onProviderChange={setProvider}
-          foundingEligible={false}
-          claimFounding={false}
-          onClaimFoundingChange={setClaimFounding}
-          isPending={checkout.isPending}
-          errorMessage={launchError ?? errorMessage}
-          onConfirm={() => void onConfirm('plus')}
-          onDismiss={() => {
-            void track('checkout_closed', { plan: 'pass' });
-            setPassSelected(false);
-          }}
-        />
-      ) : selected !== null && !disabled ? (
-        selected === 'free' ? (
-          grantingSub !== null ? (
-            <DowngradePanel
-              currentTier={currentTier}
-              currentPeriodEnd={grantingSub.currentPeriodEnd}
-              onRequestCancel={() => {
-                closePanel();
-                onRequestCancel();
-              }}
-            />
-          ) : null
-        ) : grantingSub !== null ? (
-          grantingSub.provider === 'paddle' ? (
-            <ChangePlanPanel
-              target={selected}
-              cycle={cycle}
-              fromTier={grantingSub.tier}
-              fromCycle={grantingSub.cycle}
-              currentPeriodEnd={grantingSub.currentPeriodEnd}
-              provider={grantingSub.provider}
-              pricingV2={pricingV2}
-              isPending={changePlan.isPending}
-              errorMessage={
-                changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
-              }
-              onConfirm={() => void onConfirmChange(selected)}
-              onDismiss={closePanel}
-            />
-          ) : (
-            <RazorpaySwitchPanel target={selected} cycle={cycle} onDismiss={closePanel} />
-          )
-        ) : (
-          <ConfirmPanel
-            target={selected}
-            cycle={cycle}
-            provider={pricingV2 ? 'paddle' : provider}
-            razorpayOffered={razorpayOffered}
-            pricingV2={pricingV2}
-            country={country}
-            indiaCheckoutOpen={indiaCheckoutOpen}
-            pricePointOverride={
-              pricingV2 && selected === 'plus' && cycle === 'annual' ? PLUS_ANNUAL_2026_10 : null
-            }
-            onProviderChange={setProvider}
-            foundingEligible={foundingEligible}
-            claimFounding={claimFounding}
-            onClaimFoundingChange={setClaimFounding}
-            isPending={checkout.isPending}
-            errorMessage={launchError ?? errorMessage}
-            onConfirm={() => void onConfirm(selected)}
-            onDismiss={() => {
-              void track('checkout_closed', {
-                plan: selected === 'pro' ? 'pro' : 'plus',
-              });
-              closePanel();
-            }}
-          />
-        )
-      ) : null}
-
+      {quietPassOffer && passSelected && !disabled ? reviewRegion : null}
       {/* The money-back note lives in the confirm panel — the point where
           money moves — and nowhere else on this screen. */}
       <details
@@ -955,6 +1025,7 @@ export function PlanPicker({
 
   return (
     <section
+      ref={pickerRef}
       id="change-plan"
       tabIndex={-1}
       aria-label="Plans"
@@ -1132,7 +1203,7 @@ function ProWaitlistCard({ disabled }: { disabled: boolean }) {
       ) : (
         <div style={{ marginTop: 'auto', paddingTop: 12 }}>
           <Button
-            tone="primary"
+            tone="default"
             style={{ width: '100%' }}
             onClick={() => void join()}
             disabled={disabled || pending}
@@ -1454,31 +1525,50 @@ function PassOfferCard({
     <div
       data-testid="pass-offer-card"
       style={{
-        padding: compact ? '8px 0' : 16,
+        padding: compact ? '8px 0' : 'clamp(18px, 4vw, 24px)',
         border: compact ? undefined : `1px solid ${selected ? color.primary : color.border}`,
         borderRadius: compact ? undefined : radius.md,
         background: compact ? undefined : color.card,
+        boxShadow: !compact && selected ? `0 0 0 1px ${color.primary}` : undefined,
+        boxSizing: 'border-box',
+        height: compact ? undefined : '100%',
+        display: 'flex',
+        flexDirection: compact ? 'row' : 'column',
+        gap: compact ? '8px 20px' : 8,
         outline: compact && selected ? `2px solid ${color.primary}` : undefined,
         outlineOffset: compact && selected ? 4 : undefined,
-        ...(compact
-          ? { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px 20px' }
-          : {}),
+        alignItems: compact ? 'center' : undefined,
+        flexWrap: compact ? 'wrap' : undefined,
       }}
     >
       <div style={compact ? { flex: '1 1 240px', minWidth: 0, fontSize: text.sm } : undefined}>
-        <div style={{ fontWeight: compact ? 500 : 600, color: compact ? color.fgSoft : undefined }}>
+        <div
+          style={
+            compact
+              ? { fontWeight: 500, color: color.fgSoft }
+              : { ...tokens.typography.sectionTitle, color: color.fg }
+          }
+        >
           {fillStory(WS1_COPY['pricing.pass.name'])}
           {compact ? <span style={{ color: color.fgMuted }}> · optional purchase</span> : null}
         </div>
-        <div style={{ color: color.fgMuted, marginTop: 4 }}>
+        <div
+          style={{
+            color: compact ? color.fgMuted : color.fg,
+            marginTop: compact ? 4 : 10,
+            fontSize: compact ? text.sm : text.lg,
+            fontWeight: compact ? 400 : 600,
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
           {fillStory(WS1_COPY['cap.pass.sublabel'], locale)}
         </div>
       </div>
       <Button
-        tone="default"
+        tone={!compact && !included ? 'primary' : 'default'}
         disabled={disabled || included}
         onClick={onSelect}
-        style={{ marginTop: compact ? 0 : 12 }}
+        style={{ marginTop: compact ? 0 : 'auto', width: compact ? undefined : '100%' }}
       >
         {included
           ? fillStory(WS1_COPY['picker.pass.includedInPlus'])

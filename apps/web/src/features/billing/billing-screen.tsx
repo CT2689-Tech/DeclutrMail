@@ -1060,6 +1060,128 @@ export function BillingScreen({
     notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
   }
 
+  const purchaseFirst =
+    !billingDark &&
+    (plan.entitlementTier === 'free' || (initialIntent !== null && grantingBackingSub === null));
+  const planPicker = (
+    <PlanPicker
+      currentTier={plan.entitlementTier}
+      currentAccess={{
+        kind: passCoversPlan(plan)
+          ? 'pass'
+          : backingSub === null &&
+              plan.complimentary?.source !== 'pass' &&
+              plan.complimentary?.tier === plan.entitlementTier
+            ? 'complimentary'
+            : 'tier',
+        priceLabel: currentPlanPriceLabel(plan, visitorLocale),
+        subscription: backingSub,
+      }}
+      grantingSub={grantingBackingSub}
+      // While a plan action awaits its webhook, a second one could
+      // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
+      // whose row doesn't exist yet. Withhold every affordance until
+      // the pending state resolves (the banner above says why).
+      // A non-backing row that is not CANCELED still occupies the
+      // server's one-live-subscription slot (SUBSCRIPTION_EXISTS keys
+      // on STATUS active/past_due/paused, not on backing) — offering
+      // checkout against it is a guaranteed 409 dead-end. Resume or
+      // cancel first; the notice above carries those verbs (A6).
+      disabled={
+        billingDark ||
+        setupRequired ||
+        pending !== null ||
+        activeServerAttempt !== null ||
+        reviewPending ||
+        plan.backing.state === 'past_due' ||
+        plan.backing.state === 'cancel_scheduled' ||
+        plan.scheduledChange != null ||
+        nonBackingBlocksNewCheckout(nonBacking)
+      }
+      initialIntent={initialIntent}
+      initialProvider={initialProvider}
+      pricingV2={pricingV2}
+      passEnabled={passEnabled}
+      country={country}
+      indiaCheckoutOpen={indiaCheckoutOpen}
+      checkoutGeoToken={checkoutGeoToken}
+      onRequestCancel={() => setCancelOpen(true)}
+      onPaymentCompleted={(target, cycle, attemptId, offer) =>
+        // Own-id transition over this checkout's reservation: the
+        // overlay reported payment — the record becomes the visible
+        // "Payment received" lock+poll.
+        startPending('checkout', target, cycle, attemptId, offer)
+      }
+      onCheckoutRejected={releaseAttemptLock}
+      onCheckoutLoadFailed={(attemptId, session, target, cycle) => {
+        if (!mounted.current || currentOwner.current !== workspaceId) return;
+        const record = readPendingCheckout(workspaceId);
+        if (record?.attemptId !== attemptId) return;
+        if (session.provider === 'paddle' && session.attemptId) {
+          surfaceAttemptLock(attemptId);
+          void subscriptionQuery.refetch();
+          return;
+        }
+        setHeldCheckout({
+          workspaceId,
+          session,
+          target,
+          cycle,
+          attemptId,
+          expiresAt: record.at + 30 * 60_000,
+        });
+        surfaceAttemptLock(attemptId);
+      }}
+      onCheckoutSession={(attemptId) => {
+        const bound = bindPendingCheckoutAttempt(workspaceId, attemptId);
+        if (bound) setPending(bound);
+        void subscriptionQuery.refetch();
+      }}
+      onCheckoutAttempt={(target, cycle, offer) =>
+        attemptClaim('checkout_intent', target, cycle, offer)
+      }
+      onCheckoutAbandoned={surfaceAttemptLock}
+      onCheckoutClosed={(attemptId) => {
+        surfaceAttemptLock(attemptId);
+      }}
+      ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
+      mayOpenCheckout={(attemptId) => {
+        const record = readPendingCheckout(workspaceId);
+        return (
+          mounted.current &&
+          mayStartCheckout.current &&
+          currentOwner.current === workspaceId &&
+          record?.kind === 'checkout_intent' &&
+          record.attemptId === attemptId &&
+          Date.now() < record.at + 30 * 60 * 1000
+        );
+      }}
+      onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
+      onPlanChangeFailedKnown={releaseAttemptLock}
+      onPlanChangeAccepted={(next, target, cycle, attemptId) => {
+        if (!mounted.current || currentOwner.current !== workspaceId) return;
+        const scheduled = next.subscription?.scheduledChange ?? null;
+        if (scheduled) {
+          // Scheduled ($0) — release this attempt's lock (UUID-
+          // matched: never a concurrent attempt's unresolved lock).
+          releaseAttemptLock(attemptId);
+          queryClient.setQueryData(billingKeys.subscription(), next);
+          const date = formatBillingDate(scheduled.effectiveAt);
+          toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
+        } else {
+          startPending('change', target, cycle, attemptId);
+        }
+      }}
+      onPlanChangeUnconfirmed={(target, cycle, attemptId) =>
+        // Ambiguous provider outcome on an immediate upgrade: the
+        // prorated charge may have applied. Enter the SAME lock+poll
+        // machinery as checkout — no stale panel with an armed
+        // money-moving retry button.
+        startPending('change_unconfirmed', target, cycle, attemptId)
+      }
+    />
+  );
+
   return (
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
       <BillingPageHeader description={billingAccountScope(plan)} />
@@ -1140,6 +1262,8 @@ export function BillingScreen({
           the picker. Withheld while a money action is unresolved — the
           portal can start a payment, and arming two money paths at once
           is the double-charge case this screen is built around. */}
+      {purchaseFirst ? planPicker : null}
+
       <PlanCoverage
         tier={plan.entitlementTier}
         pass={passCoversPlan(plan)}
@@ -1164,122 +1288,7 @@ export function BillingScreen({
           and never fetches. */}
       {!billingDark ? (invoiceHistory ?? <InvoiceHistory />) : null}
 
-      <PlanPicker
-        currentTier={plan.entitlementTier}
-        currentAccess={{
-          kind: passCoversPlan(plan)
-            ? 'pass'
-            : backingSub === null &&
-                plan.complimentary?.source !== 'pass' &&
-                plan.complimentary?.tier === plan.entitlementTier
-              ? 'complimentary'
-              : 'tier',
-          priceLabel: currentPlanPriceLabel(plan, visitorLocale),
-          subscription: backingSub,
-        }}
-        grantingSub={grantingBackingSub}
-        // While a plan action awaits its webhook, a second one could
-        // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
-        // whose row doesn't exist yet. Withhold every affordance until
-        // the pending state resolves (the banner above says why).
-        // A non-backing row that is not CANCELED still occupies the
-        // server's one-live-subscription slot (SUBSCRIPTION_EXISTS keys
-        // on STATUS active/past_due/paused, not on backing) — offering
-        // checkout against it is a guaranteed 409 dead-end. Resume or
-        // cancel first; the notice above carries those verbs (A6).
-        disabled={
-          billingDark ||
-          setupRequired ||
-          pending !== null ||
-          activeServerAttempt !== null ||
-          reviewPending ||
-          plan.backing.state === 'past_due' ||
-          plan.backing.state === 'cancel_scheduled' ||
-          plan.scheduledChange != null ||
-          nonBackingBlocksNewCheckout(nonBacking)
-        }
-        initialIntent={initialIntent}
-        initialProvider={initialProvider}
-        pricingV2={pricingV2}
-        passEnabled={passEnabled}
-        country={country}
-        indiaCheckoutOpen={indiaCheckoutOpen}
-        checkoutGeoToken={checkoutGeoToken}
-        onRequestCancel={() => setCancelOpen(true)}
-        onPaymentCompleted={(target, cycle, attemptId, offer) =>
-          // Own-id transition over this checkout's reservation: the
-          // overlay reported payment — the record becomes the visible
-          // "Payment received" lock+poll.
-          startPending('checkout', target, cycle, attemptId, offer)
-        }
-        onCheckoutRejected={releaseAttemptLock}
-        onCheckoutLoadFailed={(attemptId, session, target, cycle) => {
-          if (!mounted.current || currentOwner.current !== workspaceId) return;
-          const record = readPendingCheckout(workspaceId);
-          if (record?.attemptId !== attemptId) return;
-          if (session.provider === 'paddle' && session.attemptId) {
-            surfaceAttemptLock(attemptId);
-            void subscriptionQuery.refetch();
-            return;
-          }
-          setHeldCheckout({
-            workspaceId,
-            session,
-            target,
-            cycle,
-            attemptId,
-            expiresAt: record.at + 30 * 60_000,
-          });
-          surfaceAttemptLock(attemptId);
-        }}
-        onCheckoutSession={(attemptId) => {
-          const bound = bindPendingCheckoutAttempt(workspaceId, attemptId);
-          if (bound) setPending(bound);
-          void subscriptionQuery.refetch();
-        }}
-        onCheckoutAttempt={(target, cycle, offer) =>
-          attemptClaim('checkout_intent', target, cycle, offer)
-        }
-        onCheckoutAbandoned={surfaceAttemptLock}
-        onCheckoutClosed={(attemptId) => {
-          surfaceAttemptLock(attemptId);
-        }}
-        ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
-        mayOpenCheckout={(attemptId) => {
-          const record = readPendingCheckout(workspaceId);
-          return (
-            mounted.current &&
-            mayStartCheckout.current &&
-            currentOwner.current === workspaceId &&
-            record?.kind === 'checkout_intent' &&
-            record.attemptId === attemptId &&
-            Date.now() < record.at + 30 * 60 * 1000
-          );
-        }}
-        onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
-        onPlanChangeFailedKnown={releaseAttemptLock}
-        onPlanChangeAccepted={(next, target, cycle, attemptId) => {
-          if (!mounted.current || currentOwner.current !== workspaceId) return;
-          const scheduled = next.subscription?.scheduledChange ?? null;
-          if (scheduled) {
-            // Scheduled ($0) — release this attempt's lock (UUID-
-            // matched: never a concurrent attempt's unresolved lock).
-            releaseAttemptLock(attemptId);
-            queryClient.setQueryData(billingKeys.subscription(), next);
-            const date = formatBillingDate(scheduled.effectiveAt);
-            toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
-          } else {
-            startPending('change', target, cycle, attemptId);
-          }
-        }}
-        onPlanChangeUnconfirmed={(target, cycle, attemptId) =>
-          // Ambiguous provider outcome on an immediate upgrade: the
-          // prorated charge may have applied. Enter the SAME lock+poll
-          // machinery as checkout — no stale panel with an armed
-          // money-moving retry button.
-          startPending('change_unconfirmed', target, cycle, attemptId)
-        }
-      />
+      {!purchaseFirst ? planPicker : null}
 
       <p style={{ fontSize: text.sm }}>
         <a className={`${linkStyles.link} dm-tap-target`} href="/settings/help">

@@ -4,7 +4,7 @@
  * passes in as `passEnabled`.
  */
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
@@ -50,6 +50,90 @@ function renderPicker(
 }
 
 describe('PlanPicker launch pricing', () => {
+  it('puts the purchasable choices first and opens review beside the chosen offer', async () => {
+    renderPicker({ pricingV2: true, passEnabled: true });
+    const pass = screen.getByTestId('pass-offer-card');
+    const plus = screen.getByTestId('plan-option-plus');
+    const free = screen.getByTestId('plan-option-free');
+    expect(pass.compareDocumentPosition(plus) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(plus.compareDocumentPosition(free) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const passButton = within(pass).getByRole('button', { name: 'Get Backlog Pass' });
+    passButton.focus();
+    fireEvent.click(passButton);
+    const passReview = screen.getByRole('region', { name: 'Review your choice' });
+    expect(
+      pass.compareDocumentPosition(passReview) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      passReview.compareDocumentPosition(plus) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(await within(passReview).findByTestId('checkout-panel')).toHaveTextContent(
+      'Backlog Pass · one-time purchase',
+    );
+    expect(passReview).toHaveFocus();
+
+    fireEvent.click(within(passReview).getByRole('button', { name: 'Not now' }));
+    await waitFor(() => expect(passButton).toHaveFocus());
+    const plusButton = within(plus).getByRole('button', { name: 'Upgrade to Plus' });
+    plusButton.focus();
+    fireEvent.click(plusButton);
+    const plusReview = screen.getByRole('region', { name: 'Review your choice' });
+    expect(
+      plus.compareDocumentPosition(plusReview) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      plusReview.compareDocumentPosition(free) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(await within(plusReview).findByTestId('checkout-panel')).toHaveTextContent(
+      'Plus · annual subscription',
+    );
+    fireEvent.click(within(plusReview).getByRole('button', { name: 'Not now' }));
+    await waitFor(() => expect(plusButton).toHaveFocus());
+  });
+
+  it('places legacy pricing review beside the chosen plan', async () => {
+    renderPicker({ pricingV2: false, passEnabled: false });
+    const plus = screen.getByTestId('plan-option-plus');
+    const pro = screen.getByTestId('plan-option-pro');
+    fireEvent.click(within(plus).getByRole('button', { name: 'Upgrade to Plus' }));
+    const review = screen.getByRole('region', { name: 'Review your choice' });
+    expect(plus.compareDocumentPosition(review) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(review.compareDocumentPosition(pro) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(await within(review).findByTestId('checkout-panel')).toBeInTheDocument();
+  });
+
+  it('does not reopen a Pass review after a payment lock clears', async () => {
+    const client = createTestQueryClient();
+    const view = (disabled: boolean) => (
+      <QueryWrapper client={client}>
+        <PlanPicker
+          currentTier="free"
+          grantingSub={null}
+          disabled={disabled}
+          pricingV2
+          passEnabled
+          onRequestCancel={() => undefined}
+          onPaymentCompleted={() => undefined}
+          onCheckoutAttempt={() => Promise.resolve('attempt')}
+          onCheckoutAbandoned={() => undefined}
+          onCheckoutClosed={() => undefined}
+          onPlanChangeAccepted={() => undefined}
+          onPlanChangeUnconfirmed={() => undefined}
+          onPlanChangeAttempt={() => Promise.resolve('attempt')}
+          onPlanChangeFailedKnown={() => undefined}
+        />
+      </QueryWrapper>
+    );
+    const { rerender } = render(view(false));
+    fireEvent.click(screen.getByRole('button', { name: 'Get Backlog Pass' }));
+    expect(await screen.findByTestId('checkout-panel')).toBeInTheDocument();
+    rerender(view(true));
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    rerender(view(false));
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+  });
+
   it('hides the cycle toggle when only one cycle is listed', () => {
     renderPicker({ pricingV2: true, passEnabled: false });
     expect(screen.queryByRole('button', { name: 'Monthly' })).not.toBeInTheDocument();

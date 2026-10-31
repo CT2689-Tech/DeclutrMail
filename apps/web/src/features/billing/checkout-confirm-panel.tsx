@@ -107,7 +107,7 @@ export function ConfirmPanel({
       : amountLabel !== null
         ? `${amountLabel} billed ${cycle === 'annual' ? 'annually' : 'monthly'}, starting today. Renews automatically — cancel anytime.`
         : `Pricing for the ${cycle} cycle isn’t available right now — try the other billing cycle.`;
-  const promoLive = pricingV2 && promoBanner(new Date(), false) !== null;
+  const activePromo = pricingV2 ? promoBanner(new Date(), offer === 'pass_onetime') : null;
 
   return (
     <div
@@ -125,6 +125,13 @@ export function ConfirmPanel({
       <GroupTitle as="div">
         {pricingV2 ? fillStory(WS1_COPY['checkout.title']) : 'Preview · before anything changes'}
       </GroupTitle>
+      {pricingV2 ? (
+        <h3 style={{ margin: 0, color: color.fg, fontSize: text.lg, lineHeight: 1.3 }}>
+          {offer === 'pass_onetime'
+            ? 'Backlog Pass · one-time purchase'
+            : `${tier.name} · annual subscription`}
+        </h3>
+      ) : null}
       {!pricingV2 && (razorpayOffered || provider === 'razorpay') ? (
         <fieldset style={{ border: 'none', margin: 0, padding: 0 }}>
           {/* D117 — the provider is the user's explicit regional choice. */}
@@ -183,9 +190,9 @@ export function ConfirmPanel({
       <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
         {pricingV2 ? fillStory(WS1_COPY['checkout.taxNote']) : CHECKOUT_TOTAL_NOTE}
       </p>
-      {promoLive ? (
+      {activePromo ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-          {fillStory(WS1_COPY['checkout.codeNote'])}
+          {activePromo} Enter the code at checkout. The final total appears there.
         </p>
       ) : null}
       {pricingV2 && currency === 'INR' ? (

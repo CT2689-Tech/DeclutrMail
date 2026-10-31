@@ -351,6 +351,18 @@ describe('BillingScreen — designed states', () => {
 });
 
 describe('BillingScreen — plan picker (billing live, free tier)', () => {
+  it('shows purchase options before coverage and payment history on Free', async () => {
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen(null, undefined, { pricingV2: true });
+    const picker = await screen.findByTestId('plan-picker');
+    const coverage = screen.getByRole('region', { name: 'Your plan includes' });
+    const history = screen.getByRole('region', { name: 'Payment history' });
+    expect(
+      picker.compareDocumentPosition(coverage) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(picker.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('plan card: Free, $0, monthly cleanup actions left, no cancel affordance', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
@@ -2489,6 +2501,19 @@ describe('BillingScreen — checkout funnel events', () => {
 });
 
 describe('BillingScreen — paid subscriber', () => {
+  it('keeps current coverage and payment history ahead of purchase options', async () => {
+    mockTier = 'pro';
+    stubSubscription(() => jsonOk({ data: PRO_SUB }));
+    renderScreen();
+    const picker = await screen.findByTestId('plan-picker');
+    const coverage = screen.getByRole('region', { name: 'Your plan includes' });
+    const history = screen.getByRole('region', { name: 'Payment history' });
+    expect(
+      coverage.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(history.compareDocumentPosition(picker) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('keeps refund review visible across reload, suppresses renewal and allows cancellation', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: { ...PRO_SUB, billingReviewPending: true } }));

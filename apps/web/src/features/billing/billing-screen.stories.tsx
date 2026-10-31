@@ -145,6 +145,23 @@ export const FreeTier: Story<typeof BillingScreen> = {
     frame(makeClient(meFixture('free', 3), FREE_BODY)),
 };
 
+/** Launch purchase path with synthetic account data and no provider calls. */
+export const FreeLaunch: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(makeClient({ ...meFixture('free', 3), passEnabled: true }, FREE_BODY), {
+      pricingV2: true,
+    }),
+};
+
+/** Review placement after choosing the one-time offer. */
+export const LaunchPassReview: Story<typeof BillingScreen> = {
+  render: (_args: ComponentProps<typeof BillingScreen>) =>
+    frame(makeClient({ ...meFixture('free', 3), passEnabled: true }, FREE_BODY), {
+      pricingV2: true,
+      initialIntent: { plan: 'plus', cycle: 'annual', offer: 'pass_onetime' },
+    }),
+};
+
 /** Deep-linked intent (pricing page / gate nudge / TierGate) — the D226
  *  confirm step opens pre-selected: one click left to the provider. */
 export const IntentConfirmOpen: Story<typeof BillingScreen> = {
