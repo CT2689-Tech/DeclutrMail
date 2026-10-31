@@ -15,6 +15,8 @@ import {
 import { useTier } from '@/features/auth/api/use-tier';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 
+import { tierInboxLimit } from './billing-model';
+
 const { color } = tokens;
 const tools = [
   ['senders', 'Sender cleanup'],
@@ -35,7 +37,9 @@ export function PlanCoverage({
   /** Free hand-granted Pass: `pricing.pass.features.granted`, which has no buy-again line. */
   freeManualPass?: boolean;
 }) {
-  const { connectedInboxes, pricingV2 } = useTier();
+  // The server's ceiling: it already knows launch pricing and a Pass's
+  // one-account limit, which the manifest's legacy value does not.
+  const { connectedInboxes, inboxLimit, pricingV2 } = useTier();
   const plan = TIER_MANIFEST[tier];
   return (
     <section
@@ -44,12 +48,12 @@ export function PlanCoverage({
     >
       <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Your plan includes</h2>
       <div>
-        {connectedInboxes ?? 0} of {plan.inboxLimit} connected Gmail accounts ·{' '}
+        {connectedInboxes ?? 0} of {inboxLimit} connected Gmail accounts ·{' '}
         <Link className={`${linkStyles.link} dm-tap-target`} href="/settings#mailboxes">
           Manage Gmail accounts
         </Link>
       </div>
-      {(connectedInboxes ?? 0) > plan.inboxLimit ? (
+      {(connectedInboxes ?? 0) > inboxLimit ? (
         <p style={{ margin: 0 }}>
           Existing connections continue working. Adding a Gmail account is blocked while you are at
           or above this plan’s limit.
@@ -80,9 +84,19 @@ export function PlanCoverage({
   );
 }
 
-export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTier: TierId }) {
+export function PlanConsequences({
+  fromTier,
+  toTier,
+  pricingV2 = false,
+}: {
+  fromTier: TierId;
+  toTier: TierId;
+  pricingV2?: boolean;
+}) {
   const from = TIER_MANIFEST[fromTier];
   const to = TIER_MANIFEST[toTier];
+  const fromLimit = tierInboxLimit(fromTier, pricingV2);
+  const toLimit = tierInboxLimit(toTier, pricingV2);
   const lost = from.capabilities.filter((cap) => !to.capabilities.includes(cap));
   const gained = to.capabilities.filter((cap) => !from.capabilities.includes(cap));
   const labelsFor = (capabilities: typeof lost) =>
@@ -94,17 +108,15 @@ export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTie
       {gained.length ? <p>Added: {labelsFor(gained)}.</p> : null}
       {lost.length ? <p>No longer included after the change: {labelsFor(lost)}.</p> : null}
       <p>
-        {to.name} includes {to.inboxLimit} connected Gmail{' '}
-        {to.inboxLimit === 1 ? 'account' : 'accounts'} and{' '}
+        {to.name} includes {toLimit} connected Gmail {toLimit === 1 ? 'account' : 'accounts'}.{' '}
         {to.cleanupActionsPerMonth === null
           ? WS2_COPY.liveFix.billing.limit.unlimited
           : fillStory(WS2_COPY.liveFix.billing.limit.free)}
-        .
       </p>
-      {to.inboxLimit < from.inboxLimit ? (
+      {toLimit < fromLimit ? (
         <p>
           Existing connected Gmail accounts continue working, even above the new limit. You cannot
-          add another while at or above {to.inboxLimit}. Completed email actions stay in place.
+          add another while at or above {toLimit}. Completed email actions stay in place.
         </p>
       ) : null}
     </div>

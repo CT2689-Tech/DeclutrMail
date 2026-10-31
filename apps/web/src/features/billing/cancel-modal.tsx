@@ -169,7 +169,9 @@ export function CancelModal({
       cancelLabel={backsEntitlement ? 'Keep current plan' : 'Never mind'}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: space[4], textAlign: 'left' }}>
-        {backsEntitlement ? <PlanConsequences fromTier={entitlementTier} toTier="free" /> : null}
+        {backsEntitlement ? (
+          <PlanConsequences fromTier={entitlementTier} toTier="free" pricingV2={pricingV2} />
+        ) : null}
         {/* D118's retention offer. Offered only where it can actually
             work: Paddle (Razorpay has no pause primitive we drive —
             `PAUSE_UNSUPPORTED`), on an active row that is not already on

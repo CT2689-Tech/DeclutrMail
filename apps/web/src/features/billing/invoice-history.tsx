@@ -43,6 +43,9 @@ import { useInvoiceDocument, useInvoices } from './api/use-invoices';
 import { GroupTitle } from '@/features/settings/settings-list';
 
 const { color, radius, text } = tokens;
+/** Rows above which the status and year filters appear. */
+const FILTER_AFTER = 5;
+
 const FILTER_STYLE = {
   background: color.card,
   color: color.fg,
@@ -120,8 +123,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const mint = useInvoiceDocument();
   const isPhone = useIsAtMost('xs');
   const [status, setStatus] = useState('all');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [year, setYear] = useState('');
 
   if (!enabled) return null;
 
@@ -169,30 +171,25 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const partial = data.unavailableProviders.length > 0;
   // Compact only a complete, successfully read empty history. An unavailable,
   // omitted or truncated result is still a recovery state, never "no invoices".
+  // A complete, successfully read empty history has nothing to show, so
+  // the section stays out of the way — above all on a Free account deciding
+  // what to buy. Unavailable, omitted or truncated reads still render below:
+  // those are recovery states, never "no invoices".
   if (data.invoices.length === 0 && !partial && data.omittedRows === 0 && !data.truncated) {
-    return (
-      <section
-        id="invoices"
-        tabIndex={-1}
-        aria-label="Payment history"
-        data-testid="invoice-history"
-        style={{ borderTop: `1px solid ${color.border}`, paddingTop: 16, scrollMarginTop: 24 }}
-      >
-        <GroupTitle>Payment history</GroupTitle>
-        <p style={{ margin: '8px 0 0', color: color.fgMuted, fontSize: text.sm }}>
-          No invoices yet
-        </p>
-      </section>
-    );
+    return null;
   }
-  const filtered = data.invoices.filter((invoice) => {
-    const date = invoice.issuedAt.slice(0, 10);
-    return (
+  const filtered = data.invoices.filter(
+    (invoice) =>
       (status === 'all' || status === invoiceStatus(invoice)) &&
-      (!from || date >= from) &&
-      (!to || date <= to)
-    );
-  });
+      (!year || invoice.issuedAt.startsWith(year)),
+  );
+  // Filters earn their space once the list is long — or capped, since a
+  // capped read means more history exists than loaded. Receipts are
+  // looked up by tax year, so a year beats a from/through date range.
+  const filterable = data.invoices.length > FILTER_AFTER || data.truncated;
+  const years = [...new Set(data.invoices.map((invoice) => invoice.issuedAt.slice(0, 4)))].sort(
+    (a, b) => b.localeCompare(a),
+  );
 
   return (
     <section
@@ -206,7 +203,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
         Payments and invoices from past subscriptions and one-time purchases.
       </p>
-      {data.invoices.length > 0 ? (
+      {filterable ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
@@ -228,35 +225,28 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               </CleanupSelect>
             </label>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
-              From{' '}
-              <input
-                type="date"
-                name="invoice-from"
+              Year{' '}
+              <CleanupSelect
+                name="invoice-year"
                 autoComplete="off"
                 style={FILTER_STYLE}
-                value={from}
-                onChange={(event) => setFrom(event.target.value)}
-              />
+                value={year}
+                onChange={(event) => setYear(event.target.value)}
+              >
+                <option value="">All years</option>
+                {years.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </CleanupSelect>
             </label>
-            <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
-              Through{' '}
-              <input
-                type="date"
-                name="invoice-through"
-                autoComplete="off"
-                style={FILTER_STYLE}
-                value={to}
-                min={from || undefined}
-                onChange={(event) => setTo(event.target.value)}
-              />
-            </label>
-            {status !== 'all' || from || to ? (
+            {status !== 'all' || year ? (
               <Button
                 size="sm"
                 onClick={() => {
                   setStatus('all');
-                  setFrom('');
-                  setTo('');
+                  setYear('');
                 }}
               >
                 Clear filters

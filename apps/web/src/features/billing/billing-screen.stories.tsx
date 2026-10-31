@@ -503,6 +503,56 @@ export const ProWithoutSubscription: Story<typeof BillingScreen> = {
     ),
 };
 
+/**
+ * Free under launch pricing (D119 redesign): one status line, then Plus
+ * and the Backlog Pass side by side. Each card carries its own preview,
+ * so its button opens checkout directly.
+ */
+export const LaunchFree: Story<typeof BillingScreen> = {
+  render: () =>
+    frame(
+      makeClient(
+        {
+          ...meFixture('free', 640),
+          pricingV2: true,
+          passEnabled: true,
+          meterV2: true,
+          cleanupLimit: 1000,
+          cleanupUsed: 360,
+          cleanupResetsAt: '2026-11-07T08:00:00.000Z',
+        },
+        FREE_BODY,
+      ),
+      { pricingV2: true },
+    ),
+};
+
+/** A launch-price Plus subscriber: plan and card side by side; plan options open on request. */
+export const LaunchPlusSubscriber: Story<typeof BillingScreen> = {
+  render: () =>
+    frame(
+      makeClient(
+        { ...meFixture('plus', null), pricingV2: true, passEnabled: true, inboxLimit: 2 },
+        {
+          complimentary: null,
+          tier: 'plus',
+          foundingMember: false,
+          pendingCheckout: null,
+          subscription: PRO_SUB.subscription
+            ? {
+                ...PRO_SUB.subscription,
+                tier: 'plus',
+                cycle: 'annual',
+                chargedUsdCents: 5900,
+                chargedCurrency: 'USD',
+              }
+            : null,
+        },
+      ),
+      { pricingV2: true },
+    ),
+};
+
 /** Complimentary Pro: extra purchases stay secondary to current access. */
 export const CompedPro: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>

@@ -5,7 +5,7 @@
  * US: the strings already shipped after #1020 stay byte-identical.
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
@@ -142,13 +142,16 @@ describe('visitor price surfaces — US stays the #1020 strings', () => {
 
   it('renders /billing cards, confirm, /pricing, teaser, and chips in USD', async () => {
     const picker = renderPicker('US', false);
-    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('$0');
-    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('$59/yr');
-    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
-      '$19 once · 30 days, one Gmail account · doesn’t renew',
-    );
-    const billingConfirm = await screen.findByTestId('checkout-panel');
-    expect(billingConfirm).toHaveTextContent('$19 once, today');
+    // /billing's offer cards carry their own preview (no separate confirm).
+    const offerPlus = screen.getByTestId('launch-offer-plus');
+    const offerPass = screen.getByTestId('launch-offer-pass');
+    expect(offerPlus).toHaveTextContent('$59');
+    expect(offerPlus).toHaveTextContent('a year');
+    expect(screen.getByTestId('launch-offer-plus-terms')).toHaveTextContent('$59 billed yearly');
+    expect(offerPass).toHaveTextContent('$19');
+    expect(offerPass).toHaveTextContent('once');
+    await waitFor(() => expect(offerPass).toHaveFocus());
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     picker.unmount();
 
     renderConfirm({ country: 'US', indiaCheckoutOpen: false });
@@ -201,43 +204,38 @@ describe('visitor price surfaces — India uses one currency', () => {
   it('quotes one INR catalog on plain /billing for a Free account (no offer params)', () => {
     renderPicker('IN', true, null);
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
-    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('₹0');
-    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('₹1,999/yr');
-    expect(screen.getByTestId('plan-option-plus')).not.toHaveTextContent('incl. GST');
-    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
-      '₹799 once · 30 days, one Gmail account · doesn’t renew',
-    );
-    expect(screen.getByTestId('plan-option-free').textContent).not.toContain('$');
-    expect(screen.getByTestId('plan-option-plus').textContent).not.toContain('$');
-    expect(screen.getByTestId('pass-offer-card').textContent).not.toContain('$');
+    const plus = screen.getByTestId('launch-offer-plus');
+    const pass = screen.getByTestId('launch-offer-pass');
+    expect(plus).toHaveTextContent('₹1,999');
+    expect(plus).not.toHaveTextContent('incl. GST');
+    expect(pass).toHaveTextContent('₹799');
+    expect(pass).toHaveTextContent('once');
+    expect(plus.textContent).not.toContain('$');
+    expect(pass.textContent).not.toContain('$');
   });
 
   it('keeps USD on plain /billing for a US Free account (no offer params)', () => {
     renderPicker('US', false, null);
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
-    expect(screen.getByTestId('plan-option-free')).toHaveTextContent('$0');
-    expect(screen.getByTestId('plan-option-plus')).toHaveTextContent('$59/yr');
-    expect(screen.getByTestId('pass-offer-card')).toHaveTextContent(
-      '$19 once · 30 days, one Gmail account · doesn’t renew',
-    );
+    expect(screen.getByTestId('launch-offer-plus')).toHaveTextContent('$59');
+    expect(screen.getByTestId('launch-offer-pass')).toHaveTextContent('$19');
+    expect(screen.getByTestId('launch-offer-plus').textContent).not.toContain('₹');
   });
 
   it('renders /billing cards, offer header, and confirm without $ and with Plus cadence', async () => {
     renderPicker('IN', true);
-    const free = screen.getByTestId('plan-option-free');
-    const plus = screen.getByTestId('plan-option-plus');
-    const pass = screen.getByTestId('pass-offer-card');
-    expect(free).toHaveTextContent('₹0');
-    expect(free).not.toHaveTextContent('$');
-    expect(plus).toHaveTextContent('₹1,999/yr');
+    const plus = screen.getByTestId('launch-offer-plus');
+    const pass = screen.getByTestId('launch-offer-pass');
+    expect(plus).toHaveTextContent('₹1,999');
+    expect(plus).toHaveTextContent('a year');
     expect(plus).not.toHaveTextContent('incl. GST');
     expect(plus).not.toHaveTextContent('$');
-    expect(pass).toHaveTextContent('₹799 once · 30 days, one Gmail account · doesn’t renew');
+    expect(screen.getByTestId('launch-offer-plus-terms')).toHaveTextContent('₹1,999 billed yearly');
+    expect(pass).toHaveTextContent('₹799');
     expect(pass).not.toHaveTextContent('$');
-    const confirm = await screen.findByTestId('checkout-panel');
-    expect(confirm).toHaveTextContent('Before you pay');
-    expect(confirm).toHaveTextContent('₹799 once, today');
-    expect(confirm.textContent).not.toContain('$');
+    // The Pass deep link points at the Pass card; checkout opens on its button.
+    await waitFor(() => expect(pass).toHaveFocus());
+    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
   });
 
   it('renders the Plus confirm, /pricing, teaser, meter chips, and gate in INR', () => {

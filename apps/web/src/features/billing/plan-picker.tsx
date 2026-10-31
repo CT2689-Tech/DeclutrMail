@@ -19,12 +19,15 @@ import type {
 } from '@declutrmail/shared/contracts';
 import {
   fillStory,
+  fillStoryList,
   launchPriceDisplay,
   OFFERS,
+  passAmount,
   PLUS_ANNUAL_2026_10,
   proNotPurchasableMessage,
   proWaitlistCta,
   proWaitlistJoined,
+  promoBanner,
   TIER_MANIFEST,
   TIER_RANK,
   type TierId,
@@ -51,6 +54,7 @@ import {
   chargedPlanPrice,
   formatBillingDate,
   isDeferredDowngrade,
+  moneyBackNote,
   sharedAnnualMonthsFree,
   STRIP_TIER_IDS,
   type StripTierId,
@@ -58,6 +62,7 @@ import {
 } from './billing-model';
 import { CheckoutLaunchError, withCheckoutLoadDeadline } from './checkout-error';
 import { PlanConsequences } from './plan-coverage';
+import { LaunchOfferCard } from './launch-offer-card';
 
 const ChangePlanPanel = dynamic(
   () => import('./change-plan-panel').then((module) => module.ChangePlanPanel),
@@ -345,12 +350,32 @@ export function PlanPicker({
     currentTier === 'pro' && includedAccess && currentAccess?.kind === 'complimentary';
   const currentOfferTier =
     displayedSubscription?.tier ?? (currentTier === 'free' || includedAccess ? currentTier : null);
+  // Launch pricing for someone with nothing paid on file — Free, or a
+  // Backlog Pass holder: Plus and the Pass are the only things to buy, so
+  // they ARE the picker. Each card carries its own preview and opens
+  // checkout directly. Included and complimentary plans keep the strip.
+  const launchOffers =
+    pricingV2 && grantingSub === null && (currentTier === 'free' || currentAccess?.kind === 'pass');
+  // A deep link names an offer: point at its card. Opening a payment
+  // surface on page load is never the deep link's job.
+  const [highlighted] = useState<'plus' | 'pass' | null>(() =>
+    launchOffers && initialIntent
+      ? initialIntent.offer === 'pass_onetime'
+        ? 'pass'
+        : initialIntent.plan === 'plus'
+          ? 'plus'
+          : null
+      : null,
+  );
+  const [launching, setLaunching] = useState<'plus' | 'pass' | null>(null);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [cycle, setCycle] = useState<BillingCycle>(
     pricingV2 ? 'annual' : (initialIntent?.cycle ?? 'annual'),
   );
   const [selected, setSelected] = useState<StripTierId | null>(null);
-  const [passSelected, setPassSelected] = useState(initialIntent?.offer === 'pass_onetime');
+  const [passSelected, setPassSelected] = useState(
+    !launchOffers && initialIntent?.offer === 'pass_onetime',
+  );
   const [provider, setProvider] = useState<BillingProviderId>(initialProvider);
   // Default OFF. The control reads "Claim Founding Pro", which is the
   // language of an opt-in, and it was pre-ticked — so the quoted price and
@@ -411,6 +436,7 @@ export function PlanPicker({
     // Launch pricing does not sell Pro. A Brief deep link lands on the
     // waitlist card instead of a confirm panel the catalog cannot charge.
     if (
+      !launchOffers &&
       intentPlan &&
       // The Pass preview owns this link; do not queue a subscription behind it.
       intentOffer !== 'pass_onetime' &&
@@ -422,7 +448,25 @@ export function PlanPicker({
       consumedIntent.current = true;
       setSelected(intentPlan);
     }
-  }, [intentPlan, intentCycle, intentOffer, currentTier, disabled, grantingSub, pricingV2]);
+  }, [
+    intentPlan,
+    intentCycle,
+    intentOffer,
+    currentTier,
+    disabled,
+    grantingSub,
+    pricingV2,
+    launchOffers,
+  ]);
+
+  useEffect(() => {
+    if (!highlighted) return;
+    const card = document.getElementById(
+      `offer-${highlighted === 'pass' ? 'launch-offer-pass' : 'launch-offer-plus'}`,
+    );
+    card?.scrollIntoView({ behavior: 'instant', block: 'center' });
+    card?.focus({ preventScroll: true });
+  }, [highlighted]);
 
   // A lock landing mid-session (pending action started in THIS tab or
   // ANOTHER via the storage event) must disarm any already-open confirm
@@ -479,6 +523,7 @@ export function PlanPicker({
 
   function closePanel() {
     setSelected(null);
+    setLaunching(null);
     checkout.reset();
     changePlan.reset();
     setLaunchError(null);
@@ -501,19 +546,21 @@ export function PlanPicker({
     }
   }
 
-  async function onConfirm(target: PaidTier) {
+  // `pass` is explicit so a launch card can buy in the same click that
+  // chose it — `passSelected` state would still read the old value here.
+  async function onConfirm(target: PaidTier, pass: boolean = passSelected) {
     // `disabled` re-checked at fire time: a lock can land between the
     // panel opening and this click (cross-tab storage event race) —
     // and React state can lag storage, so the slot is claimed
     // ATOMICALLY (Web Locks mutex) and RESERVED (`checkout_intent`)
     // before any payment surface can open. A second tab's claim now
     // finds the reservation and stands down.
-    const panelProvider: BillingProviderId = passSelected || pricingV2 ? 'paddle' : provider;
+    const panelProvider: BillingProviderId = pass || pricingV2 ? 'paddle' : provider;
     const tier = TIER_MANIFEST[target];
     const manifestPoint = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
     const foundingPoint =
-      !passSelected && foundingEligible && claimFounding && tier.promo ? tier.promo.annual : null;
-    const quotedPoint = passSelected
+      !pass && foundingEligible && claimFounding && tier.promo ? tier.promo.annual : null;
+    const quotedPoint = pass
       ? OFFERS.backlogPass.price
       : (foundingPoint ??
         (pricingV2 && target === 'plus' && cycle === 'annual'
@@ -534,7 +581,7 @@ export function PlanPicker({
     )
       return;
     confirmInFlight.current = true;
-    const offer = passSelected ? ('pass_onetime' as const) : undefined;
+    const offer = pass ? ('pass_onetime' as const) : undefined;
     const attemptId = await onCheckoutAttempt(target, cycle, offer);
     confirmInFlight.current = false;
     if (ownsCheckout && !ownsCheckout()) return;
@@ -555,10 +602,10 @@ export function PlanPicker({
       {
         attemptId,
         tierId: target,
-        cycle: passSelected ? 'annual' : cycle,
+        cycle: pass ? 'annual' : cycle,
         provider: effectiveProvider,
         ...(founding ? { promo: 'foundingPro' as const } : {}),
-        ...(passSelected ? { offer: 'pass_onetime' as const } : {}),
+        ...(pass ? { offer: 'pass_onetime' as const } : {}),
         ...(checkoutGeoToken ? { checkoutGeoToken } : {}),
       },
       {
@@ -579,7 +626,7 @@ export function PlanPicker({
                   onCompleted: () => {
                     if (ownsCheckout && !ownsCheckout()) return;
                     void track('checkout_overlay_completed', funnel);
-                    if (passSelected && !(session.provider === 'paddle' && session.attemptId)) {
+                    if (pass && !(session.provider === 'paddle' && session.attemptId)) {
                       try {
                         sessionStorage.setItem('dm.pass.checkout', '1');
                       } catch {
@@ -712,8 +759,12 @@ export function PlanPicker({
     );
   }
 
+  // A paying Plus/Pro subscriber has nothing to gain from the Pass, and
+  // "Already included in Plus" misnamed a Pro plan. Withhold it.
+  const passIncluded =
+    grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro');
   const passOffer =
-    pricingV2 && passEnabled ? (
+    pricingV2 && passEnabled && !passIncluded ? (
       <PassOfferCard
         compact={quietPassOffer}
         locale={visitorPriceLocale({ country, indiaCheckoutOpen })}
@@ -730,6 +781,39 @@ export function PlanPicker({
         }}
       />
     ) : null;
+
+  function buyLaunchOffer(kind: 'plus' | 'pass') {
+    if (disabled) return;
+    checkout.reset();
+    changePlan.reset();
+    setLaunchError(null);
+    setSelected(null);
+    setPassSelected(false);
+    setLaunching(kind);
+    if (kind === 'pass') {
+      void track('pass_selected', { source: 'plan_picker' });
+      void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'pass' });
+    } else {
+      void track('plus_selected', { source: 'plan_picker' });
+      void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'plus' });
+    }
+    void onConfirm('plus', kind === 'pass');
+  }
+
+  const launchLayout = launchOffers ? (
+    <LaunchOffers
+      passEnabled={passEnabled}
+      country={country}
+      indiaCheckoutOpen={indiaCheckoutOpen}
+      isPhone={isPhone}
+      disabled={disabled}
+      pendingOffer={checkout.isPending ? launching : null}
+      errorOffer={launching}
+      errorMessage={launchError ?? errorMessage}
+      highlighted={highlighted}
+      onBuy={buyLaunchOffer}
+    />
+  ) : null;
 
   const options = (
     <>
@@ -775,164 +859,171 @@ export function PlanPicker({
         </p>
       ) : null}
 
-      {quietPassOffer ? null : passOffer}
+      {launchLayout ?? (
+        <>
+          {quietPassOffer ? null : passOffer}
 
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: isPhone ? 'column' : 'row',
-          gap: 16,
-          flexWrap: 'wrap',
-          alignItems: 'stretch',
-        }}
-      >
-        {STRIP_TIER_IDS.map((id) => {
-          // Pro is no longer sold at launch. An existing Pro subscription is
-          // a readout of its own cycle, rather than an annual purchase quote.
-          const cardCycle =
-            pricingV2 && id === 'pro' && displayedSubscription?.tier === 'pro'
-              ? displayedSubscription.cycle
-              : cycle;
-          return pricingV2 && id === 'pro' && id !== currentOfferTier ? (
-            <ProWaitlistCard key={id} disabled={disabled} />
-          ) : (
-            <PlanCard
-              key={id}
-              tierId={id}
-              cycle={cardCycle}
-              isCurrent={id === currentOfferTier}
-              isUpgrade={TIER_RANK[id] > TIER_RANK[currentTier]}
-              currentCycle={displayedSubscription?.cycle ?? null}
-              accessLabel={
-                includedAccess && id === currentTier ? currentAccess.priceLabel : undefined
-              }
-              currentPriceLabel={
-                displayedSubscription?.tier === id && displayedSubscription.cycle === cardCycle
-                  ? chargedPlanPrice(
-                      displayedSubscription.tier,
-                      displayedSubscription.cycle,
-                      displayedSubscription.provider,
-                      displayedSubscription.foundingMember,
-                      displayedSubscription.providerPriceId,
-                      displayedSubscription.chargedUsdCents,
-                      displayedSubscription.chargedCurrency,
-                    )
-                  : undefined
-              }
-              canSwitchCycle={pricingV2 ? false : grantingSub?.provider === 'paddle'}
-              isSelected={id === selected}
-              disabled={disabled}
-              hasGrantingSubscription={grantingSub !== null}
-              provider={stripProvider}
-              {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
-              {...(pricingV2 && id === 'plus' && cycle === 'annual'
-                ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
-                : {})}
-              onSelect={() => onSelect(id)}
-              showFoundingHint={
-                !pricingV2 &&
-                id === 'pro' &&
-                id !== currentTier &&
-                foundingPossible &&
-                !foundingSoldOut
-              }
-              foundingMemberNote={
-                id === currentTier && grantingSub?.foundingMember === true
-                  ? pricingV2
-                    ? WS1_COPY['cancel.founding']
-                    : 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
-                  : null
-              }
-            />
-          );
-        })}
-      </div>
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: isPhone ? 'column' : 'row',
+              gap: 16,
+              flexWrap: 'wrap',
+              alignItems: 'stretch',
+            }}
+          >
+            {STRIP_TIER_IDS.map((id) => {
+              // Pro is no longer sold at launch. An existing Pro subscription is
+              // a readout of its own cycle, rather than an annual purchase quote.
+              const cardCycle =
+                pricingV2 && id === 'pro' && displayedSubscription?.tier === 'pro'
+                  ? displayedSubscription.cycle
+                  : cycle;
+              return pricingV2 && id === 'pro' && id !== currentOfferTier ? (
+                <ProWaitlistCard key={id} disabled={disabled} />
+              ) : (
+                <PlanCard
+                  key={id}
+                  tierId={id}
+                  cycle={cardCycle}
+                  isCurrent={id === currentOfferTier}
+                  isUpgrade={TIER_RANK[id] > TIER_RANK[currentTier]}
+                  currentCycle={displayedSubscription?.cycle ?? null}
+                  accessLabel={
+                    includedAccess && id === currentTier ? currentAccess.priceLabel : undefined
+                  }
+                  currentPriceLabel={
+                    displayedSubscription?.tier === id && displayedSubscription.cycle === cardCycle
+                      ? chargedPlanPrice(
+                          displayedSubscription.tier,
+                          displayedSubscription.cycle,
+                          displayedSubscription.provider,
+                          displayedSubscription.foundingMember,
+                          displayedSubscription.providerPriceId,
+                          displayedSubscription.chargedUsdCents,
+                          displayedSubscription.chargedCurrency,
+                        )
+                      : undefined
+                  }
+                  canSwitchCycle={pricingV2 ? false : grantingSub?.provider === 'paddle'}
+                  isSelected={id === selected}
+                  disabled={disabled}
+                  hasGrantingSubscription={grantingSub !== null}
+                  provider={stripProvider}
+                  {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
+                  {...(pricingV2 && id === 'plus' && cycle === 'annual'
+                    ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
+                    : {})}
+                  onSelect={() => onSelect(id)}
+                  showFoundingHint={
+                    !pricingV2 &&
+                    id === 'pro' &&
+                    id !== currentTier &&
+                    foundingPossible &&
+                    !foundingSoldOut
+                  }
+                  foundingMemberNote={
+                    id === currentTier && grantingSub?.foundingMember === true
+                      ? pricingV2
+                        ? WS1_COPY['cancel.founding']
+                        : 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
+                      : null
+                  }
+                />
+              );
+            })}
+          </div>
 
-      {quietPassOffer ? passOffer : null}
+          {quietPassOffer ? passOffer : null}
 
-      {passSelected && !disabled ? (
-        <ConfirmPanel
-          target="plus"
-          cycle="annual"
-          offer="pass_onetime"
-          provider="paddle"
-          razorpayOffered={false}
-          pricingV2={pricingV2}
-          country={country}
-          indiaCheckoutOpen={indiaCheckoutOpen}
-          pricePointOverride={OFFERS.backlogPass.price}
-          onProviderChange={setProvider}
-          foundingEligible={false}
-          claimFounding={false}
-          onClaimFoundingChange={setClaimFounding}
-          isPending={checkout.isPending}
-          errorMessage={launchError ?? errorMessage}
-          onConfirm={() => void onConfirm('plus')}
-          onDismiss={() => {
-            void track('checkout_closed', { plan: 'pass' });
-            setPassSelected(false);
-          }}
-        />
-      ) : selected !== null && !disabled ? (
-        selected === 'free' ? (
-          grantingSub !== null ? (
-            <DowngradePanel
-              currentTier={currentTier}
-              currentPeriodEnd={grantingSub.currentPeriodEnd}
-              onRequestCancel={() => {
-                closePanel();
-                onRequestCancel();
+          {passSelected && !disabled ? (
+            <ConfirmPanel
+              target="plus"
+              cycle="annual"
+              offer="pass_onetime"
+              provider="paddle"
+              razorpayOffered={false}
+              pricingV2={pricingV2}
+              country={country}
+              indiaCheckoutOpen={indiaCheckoutOpen}
+              pricePointOverride={OFFERS.backlogPass.price}
+              onProviderChange={setProvider}
+              foundingEligible={false}
+              claimFounding={false}
+              onClaimFoundingChange={setClaimFounding}
+              isPending={checkout.isPending}
+              errorMessage={launchError ?? errorMessage}
+              onConfirm={() => void onConfirm('plus')}
+              onDismiss={() => {
+                void track('checkout_closed', { plan: 'pass' });
+                setPassSelected(false);
               }}
             />
-          ) : null
-        ) : grantingSub !== null ? (
-          grantingSub.provider === 'paddle' ? (
-            <ChangePlanPanel
-              target={selected}
-              cycle={cycle}
-              fromTier={grantingSub.tier}
-              fromCycle={grantingSub.cycle}
-              currentPeriodEnd={grantingSub.currentPeriodEnd}
-              provider={grantingSub.provider}
-              pricingV2={pricingV2}
-              isPending={changePlan.isPending}
-              errorMessage={
-                changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
-              }
-              onConfirm={() => void onConfirmChange(selected)}
-              onDismiss={closePanel}
-            />
-          ) : (
-            <RazorpaySwitchPanel target={selected} cycle={cycle} onDismiss={closePanel} />
-          )
-        ) : (
-          <ConfirmPanel
-            target={selected}
-            cycle={cycle}
-            provider={pricingV2 ? 'paddle' : provider}
-            razorpayOffered={razorpayOffered}
-            pricingV2={pricingV2}
-            country={country}
-            indiaCheckoutOpen={indiaCheckoutOpen}
-            pricePointOverride={
-              pricingV2 && selected === 'plus' && cycle === 'annual' ? PLUS_ANNUAL_2026_10 : null
-            }
-            onProviderChange={setProvider}
-            foundingEligible={foundingEligible}
-            claimFounding={claimFounding}
-            onClaimFoundingChange={setClaimFounding}
-            isPending={checkout.isPending}
-            errorMessage={launchError ?? errorMessage}
-            onConfirm={() => void onConfirm(selected)}
-            onDismiss={() => {
-              void track('checkout_closed', {
-                plan: selected === 'pro' ? 'pro' : 'plus',
-              });
-              closePanel();
-            }}
-          />
-        )
-      ) : null}
+          ) : selected !== null && !disabled ? (
+            selected === 'free' ? (
+              grantingSub !== null ? (
+                <DowngradePanel
+                  currentTier={currentTier}
+                  currentPeriodEnd={grantingSub.currentPeriodEnd}
+                  pricingV2={pricingV2}
+                  onRequestCancel={() => {
+                    closePanel();
+                    onRequestCancel();
+                  }}
+                />
+              ) : null
+            ) : grantingSub !== null ? (
+              grantingSub.provider === 'paddle' ? (
+                <ChangePlanPanel
+                  target={selected}
+                  cycle={cycle}
+                  fromTier={grantingSub.tier}
+                  fromCycle={grantingSub.cycle}
+                  currentPeriodEnd={grantingSub.currentPeriodEnd}
+                  provider={grantingSub.provider}
+                  pricingV2={pricingV2}
+                  isPending={changePlan.isPending}
+                  errorMessage={
+                    changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
+                  }
+                  onConfirm={() => void onConfirmChange(selected)}
+                  onDismiss={closePanel}
+                />
+              ) : (
+                <RazorpaySwitchPanel target={selected} cycle={cycle} onDismiss={closePanel} />
+              )
+            ) : (
+              <ConfirmPanel
+                target={selected}
+                cycle={cycle}
+                provider={pricingV2 ? 'paddle' : provider}
+                razorpayOffered={razorpayOffered}
+                pricingV2={pricingV2}
+                country={country}
+                indiaCheckoutOpen={indiaCheckoutOpen}
+                pricePointOverride={
+                  pricingV2 && selected === 'plus' && cycle === 'annual'
+                    ? PLUS_ANNUAL_2026_10
+                    : null
+                }
+                onProviderChange={setProvider}
+                foundingEligible={foundingEligible}
+                claimFounding={claimFounding}
+                onClaimFoundingChange={setClaimFounding}
+                isPending={checkout.isPending}
+                errorMessage={launchError ?? errorMessage}
+                onConfirm={() => void onConfirm(selected)}
+                onDismiss={() => {
+                  void track('checkout_closed', {
+                    plan: selected === 'pro' ? 'pro' : 'plus',
+                  });
+                  closePanel();
+                }}
+              />
+            )
+          ) : null}
+        </>
+      )}
 
       {/* The money-back note lives in the confirm panel — the point where
           money moves — and nowhere else on this screen. */}
@@ -1087,6 +1178,172 @@ function launchPlusLine(
   indiaCheckoutOpen: boolean,
 ): { amount: string; per: string; note?: string } {
   return launchPriceDisplay(visitorPriceLocale({ country, indiaCheckoutOpen })).plus;
+}
+
+/** Plus and the Backlog Pass side by side, each its own preview + checkout. */
+function LaunchOffers({
+  passEnabled,
+  country,
+  indiaCheckoutOpen,
+  isPhone,
+  disabled,
+  pendingOffer,
+  errorOffer,
+  errorMessage,
+  highlighted,
+  onBuy,
+}: {
+  passEnabled: boolean;
+  country: string | null;
+  indiaCheckoutOpen: boolean;
+  isPhone: boolean;
+  disabled: boolean;
+  pendingOffer: 'plus' | 'pass' | null;
+  errorOffer: 'plus' | 'pass' | null;
+  errorMessage: string | null;
+  highlighted: 'plus' | 'pass' | null;
+  onBuy: (kind: 'plus' | 'pass') => void;
+}) {
+  const geo = { pricingV2: true, country, indiaCheckoutOpen };
+  const plusCurrency = currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', geo);
+  const passCurrency = currencyForPricePoint(OFFERS.backlogPass.price, 'paddle', geo);
+  const plusLocale = plusCurrency === 'INR' ? 'inr' : 'usd';
+  const passLocale = passCurrency === 'INR' ? 'inr' : 'usd';
+  const plusPaused = inrNewPurchasePaused('paddle', plusCurrency, indiaCheckoutOpen);
+  const passPaused = inrNewPurchasePaused('paddle', passCurrency, indiaCheckoutOpen);
+  const promoLive = promoBanner(new Date(), false) !== null;
+  const termsFor = (summary: string | null, currency: 'USD' | 'INR', paused: boolean) =>
+    paused
+      ? [WS1_COPY['pricing.inrPaused.checkout']]
+      : [
+          ...(summary ? [summary] : []),
+          fillStory(WS1_COPY['checkout.taxNote']),
+          ...(currency === 'INR' ? [fillStory(WS1_COPY['checkout.inr'], 'inr')] : []),
+          moneyBackNote(true),
+          ...(promoLive ? [fillStory(WS1_COPY['checkout.codeNote'])] : []),
+        ];
+  const plusMonthly = formatMoney(
+    {
+      usdCents: Math.round(PLUS_ANNUAL_2026_10.usdCents / 12),
+      inrPaise: Math.round((PLUS_ANNUAL_2026_10.inr?.paise ?? PLUS_ANNUAL_2026_10.inrPaise) / 12),
+    },
+    plusCurrency,
+  );
+  const opening = fillStory(WS1_COPY['checkout.opening']);
+  return (
+    <>
+      <div
+        style={{
+          display: 'grid',
+          // auto-fit collapses unused tracks, so two cards share the full width.
+          gridTemplateColumns: isPhone ? 'minmax(0, 1fr)' : 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: 16,
+          alignItems: 'stretch',
+        }}
+      >
+        <LaunchOfferCard
+          testId="launch-offer-plus"
+          recommended
+          badge="Recommended"
+          name={TIER_MANIFEST.plus.name}
+          amount={launchPlusLine(country, indiaCheckoutOpen).amount}
+          per={fillStory(WS1_COPY['pricing.plus.priceSuffix'], plusLocale)}
+          hint={`about ${plusMonthly} a month`}
+          features={fillStoryList(WS1_COPY['pricing.plus.features'], plusLocale).slice(0, 4)}
+          terms={termsFor(
+            fillStory(WS1_COPY['checkout.plus.summary'], plusLocale),
+            plusCurrency,
+            plusPaused,
+          )}
+          ctaLabel={
+            plusPaused
+              ? WS1_COPY['pricing.inrPaused.button']
+              : pendingOffer === 'plus'
+                ? opening
+                : fillStory(WS1_COPY['pricing.plus.cta'])
+          }
+          pending={pendingOffer !== null}
+          disabled={disabled || plusPaused}
+          error={errorOffer === 'plus' ? errorMessage : null}
+          highlighted={highlighted === 'plus'}
+          onBuy={() => onBuy('plus')}
+        />
+        {passEnabled ? (
+          <LaunchOfferCard
+            testId="launch-offer-pass"
+            badge={fillStory(WS1_COPY['pricing.pass.badge'])}
+            name={fillStory(WS1_COPY['pricing.pass.name'])}
+            amount={passAmount(passLocale)}
+            per={fillStory(WS1_COPY['pricing.pass.priceSuffix'], passLocale)}
+            hint={fillStory(WS1_COPY['pricing.pass.renewal'], passLocale)}
+            features={fillStoryList(WS1_COPY['pricing.pass.features'], passLocale).slice(0, 3)}
+            terms={termsFor(null, passCurrency, passPaused)}
+            ctaLabel={
+              passPaused
+                ? WS1_COPY['pricing.inrPaused.button']
+                : pendingOffer === 'pass'
+                  ? opening
+                  : fillStory(WS1_COPY['pricing.pass.cta'])
+            }
+            pending={pendingOffer !== null}
+            disabled={disabled || passPaused}
+            error={errorOffer === 'pass' ? errorMessage : null}
+            highlighted={highlighted === 'pass'}
+            onBuy={() => onBuy('pass')}
+          />
+        ) : null}
+      </div>
+      <ProWaitlistLine disabled={disabled} />
+    </>
+  );
+}
+
+/** Pro is not for sale at launch: one quiet line, never a second filled button. */
+function ProWaitlistLine({ disabled }: { disabled: boolean }) {
+  const [joined, setJoined] = useState(false);
+  const [pending, setPending] = useState(false);
+  async function join() {
+    if (pending || joined || disabled) return;
+    setPending(true);
+    try {
+      await apiPost<{ status: 'joined' | 'already_joined' }>('/api/v1/waitlist', {
+        kind: 'pro',
+        source: 'billing',
+      });
+      setJoined(true);
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <p data-testid="plan-option-pro" style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
+      {fillStory(WS1_COPY['pricing.proRow'])}{' '}
+      {joined ? (
+        <span role="status" style={{ color: color.fg }}>
+          {proWaitlistJoined()}
+        </span>
+      ) : (
+        <button
+          type="button"
+          className="dm-tap-target"
+          onClick={() => void join()}
+          disabled={disabled || pending}
+          style={{
+            padding: 0,
+            border: 0,
+            background: 'none',
+            color: color.primary,
+            font: 'inherit',
+            textDecoration: 'underline',
+            textUnderlineOffset: 3,
+            cursor: disabled || pending ? 'default' : 'pointer',
+          }}
+        >
+          {fillStory(WS1_COPY['pricing.proRow.link'])}
+        </button>
+      )}
+    </p>
+  );
 }
 
 function ProWaitlistCard({ disabled }: { disabled: boolean }) {
@@ -1395,10 +1652,12 @@ function RazorpaySwitchPanel({
 function DowngradePanel({
   currentTier,
   currentPeriodEnd,
+  pricingV2,
   onRequestCancel,
 }: {
   currentTier: TierId;
   currentPeriodEnd: string | null;
+  pricingV2: boolean;
   onRequestCancel: () => void;
 }) {
   const end = formatBillingDate(currentPeriodEnd);
@@ -1425,7 +1684,7 @@ function DowngradePanel({
           : `Your ${tierLabel} features will remain active until the end of the current period. Then you’ll switch to Free.`}{' '}
         Downgrading to Free means canceling your subscription — the next step covers cancellation.
       </p>
-      <PlanConsequences fromTier={currentTier} toTier="free" />
+      <PlanConsequences fromTier={currentTier} toTier="free" pricingV2={pricingV2} />
       <div>
         <Button tone="default" onClick={onRequestCancel}>
           Continue to cancellation

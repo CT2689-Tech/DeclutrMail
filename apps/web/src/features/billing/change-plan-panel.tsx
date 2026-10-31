@@ -219,7 +219,7 @@ export function ChangePlanPanel({
             : 'This quote needs refreshing before you can confirm.'}
         </p>
       ) : null}
-      <PlanConsequences fromTier={fromTier} toTier={target} />
+      <PlanConsequences fromTier={fromTier} toTier={target} pricingV2={pricingV2} />
       {!samePlan && !quoteReady && !preview.isFetching ? (
         <Button onClick={() => void preview.refetch()} disabled={isPending}>
           Refresh quote

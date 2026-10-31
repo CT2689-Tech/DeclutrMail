@@ -9,6 +9,7 @@
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
+  INBOXES,
   launchPriceDisplay,
   passEndLabel,
   PLUS_ANNUAL_2026_10,
@@ -531,6 +532,17 @@ export function freeManualPassGrant(grant: BillingSubscription['complimentary'])
     typeof txn === 'string' &&
     txn.startsWith('manual-pass:')
   );
+}
+
+/**
+ * Connected Gmail accounts a tier offers. Launch pricing raised Plus to
+ * two accounts, while the manifest still lists the legacy one — reading
+ * `TIER_MANIFEST[tier].inboxLimit` directly told every Plus subscriber
+ * their plan covered a single account.
+ */
+export function tierInboxLimit(tier: TierId, pricingV2: boolean): number {
+  if (pricingV2 && (tier === 'free' || tier === 'plus' || tier === 'pro')) return INBOXES[tier];
+  return TIER_MANIFEST[tier].inboxLimit;
 }
 
 /** The live grant is a Backlog Pass and it is the plan on the card. */

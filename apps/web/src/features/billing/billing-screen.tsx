@@ -115,14 +115,20 @@ const CheckoutRecovery = dynamic(
 
 const { color, font, radius, text } = tokens;
 
-/** One-account plans use the approved planIncludes line. Plus keeps scope. */
-function billingAccountScope(plan: BillingPlanView): string {
-  const oneAccount = passCoversPlan(plan) || TIER_MANIFEST[plan.entitlementTier].inboxLimit === 1;
-  if (!oneAccount) return WS2_COPY.liveFix.billing.scope;
-  return fillStory(WS2_COPY.liveFix.billing.planIncludes.one, 'usd', {
-    name: passCoversPlan(plan)
-      ? fillStory(WS1_COPY['planName.pass'])
-      : TIER_MANIFEST[plan.entitlementTier].name,
+/**
+ * The approved planIncludes line, from the server's account ceiling.
+ * The manifest's legacy Plus limit (1) told every launch-price Plus
+ * subscriber their plan covered one account; launch Plus covers two.
+ */
+function billingAccountScope(plan: BillingPlanView, inboxLimit: number): string {
+  const name = passCoversPlan(plan)
+    ? fillStory(WS1_COPY['planName.pass'])
+    : TIER_MANIFEST[plan.entitlementTier].name;
+  if (passCoversPlan(plan) || inboxLimit === 1)
+    return fillStory(WS2_COPY.liveFix.billing.planIncludes.one, 'usd', { name });
+  return fillStory(WS2_COPY.liveFix.billing.planIncludes.other, 'usd', {
+    name,
+    k: String(inboxLimit),
   });
 }
 
@@ -216,7 +222,7 @@ export function BillingScreen({
   invoiceHistory?: ReactNode;
 }) {
   const { me } = useAuth();
-  const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled } = useTier();
+  const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled, inboxLimit } = useTier();
   const visitorLocale = visitorPriceLocale({ country, indiaCheckoutOpen });
   const workspaceId = me.user.workspaceId;
   const currentOwner = useRef(workspaceId);
@@ -294,6 +300,25 @@ export function BillingScreen({
   const pause = usePauseSubscription();
   const reconcileCheckout = useReconcileCheckout();
   const [cancelOpen, setCancelOpen] = useState(false);
+  // A subscriber's plan options open on request ("Change plan", or a
+  // #change-plan link), instead of sitting at the bottom of the page.
+  const [changeOpen, setChangeOpen] = useState(false);
+  const openChangePlan = () => {
+    setChangeOpen(true);
+    revealChangePlan();
+  };
+  useEffect(() => {
+    // A cold #change-plan link opens on mount; BillingSectionAnchor then
+    // scrolls to it once the billing read has replaced the loading state.
+    if (window.location.hash === '#change-plan') setChangeOpen(true);
+    const onHashChange = () => {
+      if (window.location.hash !== '#change-plan') return;
+      setChangeOpen(true);
+      revealChangePlan();
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
   const isPhone = useIsAtMost('xs');
   // A 503 is a designed state, and it is not in the dehydrated snapshot.
   // The server therefore paints the loading placeholder. The browser can
@@ -1060,9 +1085,193 @@ export function BillingScreen({
     notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
   }
 
+  // Who the page is for decides its order. With nothing billing, the
+  // job is choosing what to buy, so the offers lead. A subscriber's job is
+  // managing what they have: plan and card first, plan changes on request.
+  const currentAccessKind = passCoversPlan(plan)
+    ? ('pass' as const)
+    : backingSub === null &&
+        plan.complimentary?.source !== 'pass' &&
+        plan.complimentary?.tier === plan.entitlementTier
+      ? ('complimentary' as const)
+      : ('tier' as const);
+  const purchaseFirst =
+    pricingV2 &&
+    backingSub === null &&
+    (plan.entitlementTier === 'free' || currentAccessKind === 'pass');
+  const pickerShown = purchaseFirst || backingSub === null || changeOpen || initialIntent !== null;
+  const showCancelLink =
+    !billingDark &&
+    !pauseConfirming &&
+    (plan.backing.state === 'active' || plan.backing.state === 'past_due');
+  const paymentMethodCard =
+    !billingDark && paymentMethodSub ? (
+      <PaymentMethodCard
+        provider={paymentMethodSub.provider}
+        isPastDue={paymentMethodSub.status === 'past_due'}
+        disabled={pending !== null}
+        disabledReason={
+          pending !== null ? 'Available once the payment above finishes confirming.' : null
+        }
+      />
+    ) : null;
+  const currentPlanCard = (
+    <CurrentPlanCard
+      plan={plan}
+      locale={visitorLocale}
+      cleanupRemaining={cleanupRemaining}
+      cleanupResetsAt={cleanupResetsAt}
+      billingDark={billingDark}
+      pauseConfirming={pauseConfirming}
+      reviewPending={reviewPending}
+      onChangePlan={openChangePlan}
+      onResumeCancellation={() =>
+        resumeCancellation.mutate(undefined, {
+          onSuccess: (next) => {
+            const end = formatBillingDate(next.subscription?.currentPeriodEnd ?? null);
+            toast(
+              end ? `Subscription restored — it renews on ${end}.` : 'Subscription restored.',
+              'success',
+            );
+          },
+        })
+      }
+      isResumingCancellation={resumeCancellation.isPending}
+      resumeCancellationError={
+        resumeCancellation.error ? resumeCancellationErrorMessage(resumeCancellation.error) : null
+      }
+    />
+  );
+  const planCoverage = (
+    <PlanCoverage
+      tier={plan.entitlementTier}
+      pass={passCoversPlan(plan)}
+      freeManualPass={freeManualPassGrant(plan.complimentary)}
+    />
+  );
+  const invoices = !billingDark ? (invoiceHistory ?? <InvoiceHistory />) : null;
+  const picker = (
+    <PlanPicker
+      currentTier={plan.entitlementTier}
+      currentAccess={{
+        kind: passCoversPlan(plan)
+          ? 'pass'
+          : backingSub === null &&
+              plan.complimentary?.source !== 'pass' &&
+              plan.complimentary?.tier === plan.entitlementTier
+            ? 'complimentary'
+            : 'tier',
+        priceLabel: currentPlanPriceLabel(plan, visitorLocale),
+        subscription: backingSub,
+      }}
+      grantingSub={grantingBackingSub}
+      // While a plan action awaits its webhook, a second one could
+      // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
+      // whose row doesn't exist yet. Withhold every affordance until
+      // the pending state resolves (the banner above says why).
+      // A non-backing row that is not CANCELED still occupies the
+      // server's one-live-subscription slot (SUBSCRIPTION_EXISTS keys
+      // on STATUS active/past_due/paused, not on backing) — offering
+      // checkout against it is a guaranteed 409 dead-end. Resume or
+      // cancel first; the notice above carries those verbs (A6).
+      disabled={
+        billingDark ||
+        setupRequired ||
+        pending !== null ||
+        activeServerAttempt !== null ||
+        reviewPending ||
+        plan.backing.state === 'past_due' ||
+        plan.backing.state === 'cancel_scheduled' ||
+        plan.scheduledChange != null ||
+        nonBackingBlocksNewCheckout(nonBacking)
+      }
+      initialIntent={initialIntent}
+      initialProvider={initialProvider}
+      pricingV2={pricingV2}
+      passEnabled={passEnabled}
+      country={country}
+      indiaCheckoutOpen={indiaCheckoutOpen}
+      checkoutGeoToken={checkoutGeoToken}
+      onRequestCancel={() => setCancelOpen(true)}
+      onPaymentCompleted={(target, cycle, attemptId, offer) =>
+        // Own-id transition over this checkout's reservation: the
+        // overlay reported payment — the record becomes the visible
+        // "Payment received" lock+poll.
+        startPending('checkout', target, cycle, attemptId, offer)
+      }
+      onCheckoutRejected={releaseAttemptLock}
+      onCheckoutLoadFailed={(attemptId, session, target, cycle) => {
+        if (!mounted.current || currentOwner.current !== workspaceId) return;
+        const record = readPendingCheckout(workspaceId);
+        if (record?.attemptId !== attemptId) return;
+        if (session.provider === 'paddle' && session.attemptId) {
+          surfaceAttemptLock(attemptId);
+          void subscriptionQuery.refetch();
+          return;
+        }
+        setHeldCheckout({
+          workspaceId,
+          session,
+          target,
+          cycle,
+          attemptId,
+          expiresAt: record.at + 30 * 60_000,
+        });
+        surfaceAttemptLock(attemptId);
+      }}
+      onCheckoutSession={(attemptId) => {
+        const bound = bindPendingCheckoutAttempt(workspaceId, attemptId);
+        if (bound) setPending(bound);
+        void subscriptionQuery.refetch();
+      }}
+      onCheckoutAttempt={(target, cycle, offer) =>
+        attemptClaim('checkout_intent', target, cycle, offer)
+      }
+      onCheckoutAbandoned={surfaceAttemptLock}
+      onCheckoutClosed={(attemptId) => {
+        surfaceAttemptLock(attemptId);
+      }}
+      ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
+      mayOpenCheckout={(attemptId) => {
+        const record = readPendingCheckout(workspaceId);
+        return (
+          mounted.current &&
+          mayStartCheckout.current &&
+          currentOwner.current === workspaceId &&
+          record?.kind === 'checkout_intent' &&
+          record.attemptId === attemptId &&
+          Date.now() < record.at + 30 * 60 * 1000
+        );
+      }}
+      onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
+      onPlanChangeFailedKnown={releaseAttemptLock}
+      onPlanChangeAccepted={(next, target, cycle, attemptId) => {
+        if (!mounted.current || currentOwner.current !== workspaceId) return;
+        const scheduled = next.subscription?.scheduledChange ?? null;
+        if (scheduled) {
+          // Scheduled ($0) — release this attempt's lock (UUID-
+          // matched: never a concurrent attempt's unresolved lock).
+          releaseAttemptLock(attemptId);
+          queryClient.setQueryData(billingKeys.subscription(), next);
+          const date = formatBillingDate(scheduled.effectiveAt);
+          toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
+        } else {
+          startPending('change', target, cycle, attemptId);
+        }
+      }}
+      onPlanChangeUnconfirmed={(target, cycle, attemptId) =>
+        // Ambiguous provider outcome on an immediate upgrade: the
+        // prorated charge may have applied. Enter the SAME lock+poll
+        // machinery as checkout — no stale panel with an armed
+        // money-moving retry button.
+        startPending('change_unconfirmed', target, cycle, attemptId)
+      }
+    />
+  );
+
   return (
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
-      <BillingPageHeader description={billingAccountScope(plan)} />
+      <BillingPageHeader description={billingAccountScope(plan, inboxLimit)} />
       <BillingSectionAnchor />
       {!billingDark && (paymentMethodSub !== null || invoiceCount > 5) ? (
         <EditorialContents
@@ -1071,7 +1280,10 @@ export function BillingScreen({
             ...(!billingDark && paymentMethodSub
               ? [{ href: '#payment', label: 'Payment details' }]
               : []),
-            ...(!billingDark ? [{ href: '#invoices', label: 'Payment history' }] : []),
+            // Only a history that exists gets a shortcut: an empty one renders nothing.
+            ...(!billingDark && invoiceCount > 0
+              ? [{ href: '#invoices', label: 'Payment history' }]
+              : []),
             { href: '#change-plan', label: 'Plans' },
           ]}
         />
@@ -1095,191 +1307,33 @@ export function BillingScreen({
         </p>
       )}
 
-      <CurrentPlanCard
-        plan={plan}
-        locale={visitorLocale}
-        cleanupRemaining={cleanupRemaining}
-        cleanupResetsAt={cleanupResetsAt}
-        billingDark={billingDark}
-        pauseConfirming={pauseConfirming}
-        reviewPending={reviewPending}
-        onCancel={() => setCancelOpen(true)}
-        onResumeCancellation={() =>
-          resumeCancellation.mutate(undefined, {
-            onSuccess: (next) => {
-              const end = formatBillingDate(next.subscription?.currentPeriodEnd ?? null);
-              toast(
-                end ? `Subscription restored — it renews on ${end}.` : 'Subscription restored.',
-                'success',
-              );
-            },
-          })
-        }
-        isResumingCancellation={resumeCancellation.isPending}
-        resumeCancellationError={
-          resumeCancellation.error ? resumeCancellationErrorMessage(resumeCancellation.error) : null
-        }
-      />
-
-      {!billingDark && paymentMethodSub && paymentMethodSub.status === 'past_due' ? (
-        <PaymentMethodCard
-          provider={paymentMethodSub.provider}
-          isPastDue={paymentMethodSub.status === 'past_due'}
-          disabled={pending !== null}
-          disabledReason={
-            pending !== null ? 'Available once the payment above finishes confirming.' : null
-          }
-        />
-      ) : null}
-
-      {/* D119/ADR-0035. Tied to the GRANTING record: the instrument
-          that matters is the one funding the current plan, and a
-          cancelled row's card is not something to send anyone to
-          update. On past_due this is the screen's primary action, which
-          is why it sits directly under the plan card rather than below
-          the picker. Withheld while a money action is unresolved — the
-          portal can start a payment, and arming two money paths at once
-          is the double-charge case this screen is built around. */}
-      <PlanCoverage
-        tier={plan.entitlementTier}
-        pass={passCoversPlan(plan)}
-        freeManualPass={freeManualPassGrant(plan.complimentary)}
-      />
-
-      {!billingDark && paymentMethodSub && paymentMethodSub.status !== 'past_due' ? (
-        <PaymentMethodCard
-          provider={paymentMethodSub.provider}
-          isPastDue={false}
-          disabled={pending !== null}
-          disabledReason={
-            pending !== null ? 'Available once the payment above finishes confirming.' : null
-          }
-        />
-      ) : null}
-
-      {/* Renders for anyone who has EVER paid, including a workspace
-          now back on Free: the tax need outlives the subscription, and
-          fetching last year's receipts is the commonest reason to open
-          this page after leaving. Billing-dark carries no rows to read
-          and never fetches. */}
-      {!billingDark ? (invoiceHistory ?? <InvoiceHistory />) : null}
-
-      <PlanPicker
-        currentTier={plan.entitlementTier}
-        currentAccess={{
-          kind: passCoversPlan(plan)
-            ? 'pass'
-            : backingSub === null &&
-                plan.complimentary?.source !== 'pass' &&
-                plan.complimentary?.tier === plan.entitlementTier
-              ? 'complimentary'
-              : 'tier',
-          priceLabel: currentPlanPriceLabel(plan, visitorLocale),
-          subscription: backingSub,
-        }}
-        grantingSub={grantingBackingSub}
-        // While a plan action awaits its webhook, a second one could
-        // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
-        // whose row doesn't exist yet. Withhold every affordance until
-        // the pending state resolves (the banner above says why).
-        // A non-backing row that is not CANCELED still occupies the
-        // server's one-live-subscription slot (SUBSCRIPTION_EXISTS keys
-        // on STATUS active/past_due/paused, not on backing) — offering
-        // checkout against it is a guaranteed 409 dead-end. Resume or
-        // cancel first; the notice above carries those verbs (A6).
-        disabled={
-          billingDark ||
-          setupRequired ||
-          pending !== null ||
-          activeServerAttempt !== null ||
-          reviewPending ||
-          plan.backing.state === 'past_due' ||
-          plan.backing.state === 'cancel_scheduled' ||
-          plan.scheduledChange != null ||
-          nonBackingBlocksNewCheckout(nonBacking)
-        }
-        initialIntent={initialIntent}
-        initialProvider={initialProvider}
-        pricingV2={pricingV2}
-        passEnabled={passEnabled}
-        country={country}
-        indiaCheckoutOpen={indiaCheckoutOpen}
-        checkoutGeoToken={checkoutGeoToken}
-        onRequestCancel={() => setCancelOpen(true)}
-        onPaymentCompleted={(target, cycle, attemptId, offer) =>
-          // Own-id transition over this checkout's reservation: the
-          // overlay reported payment — the record becomes the visible
-          // "Payment received" lock+poll.
-          startPending('checkout', target, cycle, attemptId, offer)
-        }
-        onCheckoutRejected={releaseAttemptLock}
-        onCheckoutLoadFailed={(attemptId, session, target, cycle) => {
-          if (!mounted.current || currentOwner.current !== workspaceId) return;
-          const record = readPendingCheckout(workspaceId);
-          if (record?.attemptId !== attemptId) return;
-          if (session.provider === 'paddle' && session.attemptId) {
-            surfaceAttemptLock(attemptId);
-            void subscriptionQuery.refetch();
-            return;
-          }
-          setHeldCheckout({
-            workspaceId,
-            session,
-            target,
-            cycle,
-            attemptId,
-            expiresAt: record.at + 30 * 60_000,
-          });
-          surfaceAttemptLock(attemptId);
-        }}
-        onCheckoutSession={(attemptId) => {
-          const bound = bindPendingCheckoutAttempt(workspaceId, attemptId);
-          if (bound) setPending(bound);
-          void subscriptionQuery.refetch();
-        }}
-        onCheckoutAttempt={(target, cycle, offer) =>
-          attemptClaim('checkout_intent', target, cycle, offer)
-        }
-        onCheckoutAbandoned={surfaceAttemptLock}
-        onCheckoutClosed={(attemptId) => {
-          surfaceAttemptLock(attemptId);
-        }}
-        ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
-        mayOpenCheckout={(attemptId) => {
-          const record = readPendingCheckout(workspaceId);
-          return (
-            mounted.current &&
-            mayStartCheckout.current &&
-            currentOwner.current === workspaceId &&
-            record?.kind === 'checkout_intent' &&
-            record.attemptId === attemptId &&
-            Date.now() < record.at + 30 * 60 * 1000
-          );
-        }}
-        onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
-        onPlanChangeFailedKnown={releaseAttemptLock}
-        onPlanChangeAccepted={(next, target, cycle, attemptId) => {
-          if (!mounted.current || currentOwner.current !== workspaceId) return;
-          const scheduled = next.subscription?.scheduledChange ?? null;
-          if (scheduled) {
-            // Scheduled ($0) — release this attempt's lock (UUID-
-            // matched: never a concurrent attempt's unresolved lock).
-            releaseAttemptLock(attemptId);
-            queryClient.setQueryData(billingKeys.subscription(), next);
-            const date = formatBillingDate(scheduled.effectiveAt);
-            toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
-          } else {
-            startPending('change', target, cycle, attemptId);
-          }
-        }}
-        onPlanChangeUnconfirmed={(target, cycle, attemptId) =>
-          // Ambiguous provider outcome on an immediate upgrade: the
-          // prorated charge may have applied. Enter the SAME lock+poll
-          // machinery as checkout — no stale panel with an armed
-          // money-moving retry button.
-          startPending('change_unconfirmed', target, cycle, attemptId)
-        }
-      />
+      {purchaseFirst ? (
+        <>
+          {plan.entitlementTier === 'free' ? (
+            <FreePlanStatus cleanupRemaining={cleanupRemaining} cleanupResetsAt={cleanupResetsAt} />
+          ) : (
+            currentPlanCard
+          )}
+          {picker}
+          <BillingFaq passEnabled={passEnabled} />
+          {plan.entitlementTier === 'free' ? null : planCoverage}
+          {invoices}
+        </>
+      ) : (
+        <>
+          {paymentMethodCard ? (
+            <div className={styles.manageGrid}>
+              {currentPlanCard}
+              {paymentMethodCard}
+            </div>
+          ) : (
+            currentPlanCard
+          )}
+          {planCoverage}
+          {invoices}
+          {pickerShown ? picker : null}
+        </>
+      )}
 
       <p style={{ fontSize: text.sm }}>
         <a className={`${linkStyles.link} dm-tap-target`} href="/settings/help">
@@ -1296,6 +1350,23 @@ export function BillingScreen({
             </a>
           </>
         )}
+        {showCancelLink ? (
+          <>
+            {' '}
+            ·{' '}
+            {/* QA-billing-20260901-06: this opens the preview; the modal's
+                own destructive confirm keeps "Cancel subscription" so the
+                two clicks read as two different things. */}
+            <button
+              type="button"
+              className={`${linkStyles.link} dm-tap-target`}
+              onClick={() => setCancelOpen(true)}
+              style={{ padding: 0, border: 0, background: 'none', font: 'inherit' }}
+            >
+              Review cancellation
+            </button>
+          </>
+        ) : null}
       </p>
       <CancelModal
         open={cancelOpen}
@@ -1335,6 +1406,15 @@ export function BillingScreen({
       />
     </div>
   );
+}
+
+/** The plan options mount on the render that opens them; scroll once they have. */
+function revealChangePlan() {
+  window.requestAnimationFrame(() => {
+    const section = document.getElementById('change-plan');
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    section?.focus({ preventScroll: true });
+  });
 }
 
 /** Restore a cold deep link after the billing read replaces its loading state. */
@@ -1843,6 +1923,113 @@ function freeEmailsLeftLine(remaining: number, resetAt: string | null): string {
   return at === -1 ? line : line.slice(0, at);
 }
 
+/**
+ * Free, at a glance: the plan and its monthly allowance on one line, so
+ * the offers below are the first real decision on the page.
+ */
+function FreePlanStatus({
+  cleanupRemaining,
+  cleanupResetsAt,
+}: {
+  cleanupRemaining: number | null;
+  cleanupResetsAt: string | null;
+}) {
+  const summary = useCleanupSummary().data;
+  const metered = summary?.metered && summary.limit > 0 ? summary : null;
+  const line = metered
+    ? meterChipLine({
+        remaining: metered.remaining,
+        limit: metered.limit,
+        resetAt: metered.resetAt,
+      }).text
+    : cleanupRemaining !== null
+      ? freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)
+      : null;
+  const share = metered ? Math.min(1, metered.used / metered.limit) : 0;
+  return (
+    <section
+      id="plan"
+      tabIndex={-1}
+      aria-label="Current plan"
+      data-testid="current-plan-card"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '8px 20px',
+        padding: '14px clamp(16px, 3vw, 24px)',
+        background: color.card,
+        border: `1px solid ${color.border}`,
+        borderRadius: radius.lg,
+        scrollMarginTop: 24,
+      }}
+    >
+      <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+        <strong style={{ fontWeight: 600, color: color.fg }}>{TIER_MANIFEST.free.name}</strong>
+        {line ? ` · ${line}` : null}
+      </p>
+      {metered ? (
+        <div
+          role="progressbar"
+          aria-label="Free emails cleared this month"
+          aria-valuemin={0}
+          aria-valuemax={metered.limit}
+          aria-valuenow={metered.used}
+          style={{
+            flex: '1 1 160px',
+            minWidth: 140,
+            height: 6,
+            borderRadius: radius.pill,
+            background: color.fill,
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              width: `${share * 100}%`,
+              height: '100%',
+              background: share >= 0.8 ? color.amber : color.primary,
+            }}
+          />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** The /pricing answers to "will I be charged again?", refunds and tax — reused verbatim. */
+function BillingFaq({ passEnabled }: { passEnabled: boolean }) {
+  const items = [
+    [
+      'pricing.faq.charged.q',
+      passEnabled ? 'pricing.faq.charged.a' : 'pricing.faq.charged.a.passOff',
+    ],
+    ['pricing.faq.refunds.q', 'pricing.faq.refunds.a'],
+    ...(passEnabled ? ([['pricing.faq.passEnds.q', 'pricing.faq.passEnds.a']] as const) : []),
+    ['pricing.faq.taxes.q', 'pricing.faq.taxes.a'],
+  ] as const;
+  return (
+    <section
+      aria-label="Billing questions"
+      data-testid="billing-faq"
+      style={{ display: 'grid', borderTop: `1px solid ${color.border}` }}
+    >
+      {items.map(([question, answer]) => (
+        <details key={question} style={{ borderBottom: `1px solid ${color.border}` }}>
+          <summary className="dm-disclosure" style={{ padding: '12px 0', minHeight: 44 }}>
+            {fillStory(WS1_COPY[question])}
+          </summary>
+          <p
+            style={{ margin: '0 0 12px', fontSize: text.sm, lineHeight: 1.6, color: color.fgSoft }}
+          >
+            {fillStory(WS1_COPY[answer])}
+          </p>
+        </details>
+      ))}
+    </section>
+  );
+}
+
 // ── Current plan card (D119 top block) ───────────────────────────────
 
 function CurrentPlanCard({
@@ -1853,7 +2040,7 @@ function CurrentPlanCard({
   billingDark,
   pauseConfirming,
   reviewPending,
-  onCancel,
+  onChangePlan,
   onResumeCancellation,
   isResumingCancellation,
   resumeCancellationError,
@@ -1871,7 +2058,8 @@ function CurrentPlanCard({
    *  for a subscription whose own fate is still unresolved. */
   pauseConfirming: boolean;
   reviewPending: boolean;
-  onCancel: () => void;
+  /** Opens the plan options in place; cancellation lives in the page footer. */
+  onChangePlan: () => void;
   /** D118 — revoke a scheduled cancel and go back on renewal. */
   onResumeCancellation: () => void;
   isResumingCancellation: boolean;
@@ -2034,19 +2222,11 @@ function CurrentPlanCard({
 
       {!billingDark &&
       !pauseConfirming &&
+      !reviewPending &&
       (backing.state === 'active' || backing.state === 'past_due') ? (
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          {!reviewPending ? (
-            <a className={linkStyles.link} href="#change-plan">
-              Manage plan
-            </a>
-          ) : null}
-          {/* QA-billing-20260901-06: this opens the preview; the modal's
-              own destructive confirm keeps "Cancel subscription" so the
-              two clicks read as two different things — matching the
-              resume flow's "Review resume" one component over. */}
-          <Button tone="default" onClick={onCancel}>
-            Review cancellation
+          <Button tone="default" onClick={onChangePlan}>
+            Change plan
           </Button>
         </div>
       ) : null}

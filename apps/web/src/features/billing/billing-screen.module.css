@@ -42,3 +42,11 @@
 .page :is(:global(#plan), :global(#payment), :global(#invoices)) {
   border-radius: 12px !important;
 }
+
+/* A subscriber's plan and the card that pays for it sit side by side. */
+.manageGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
