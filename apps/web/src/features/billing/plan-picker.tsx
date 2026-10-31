@@ -449,7 +449,7 @@ export function PlanPicker({
     const review = reviewRef.current;
     if (!review) return;
     review.focus({ preventScroll: true });
-    review.scrollIntoView?.({ block: 'nearest' });
+    review.scrollIntoView?.({ block: 'start' });
   }, [disabled, passSelected, selected]);
 
   // QA-billing-20260901-09/-05: independent of `selected` — the Pro
