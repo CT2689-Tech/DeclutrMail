@@ -43,7 +43,7 @@ describe('PricingStory', () => {
     const promise = screen.getByTestId('price-promise');
     const refunds = within(promise).getAllByText(/14-day money-back on any purchase/);
     expect(refunds).toHaveLength(1);
-    expect(screen.getByText(/^Launch offer:/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Launch offer:/)).toBeNull();
   });
 
   it.each(['usd', 'inr'] as const)(
