@@ -27,7 +27,7 @@ test('committed promtool fixtures execute the routing expressions', () => {
     assert.ok(fixture.includes(expr));
   // Absent sources each contribute 1. The committed expected value has to move with them.
   assert.equal(EXPECTED_RUNTIME_COLLECTIONS.length, 10);
-  assert.equal((fixture.match(/- expr: \|-/g) ?? []).length, 10);
+  assert.equal((fixture.match(/- expr: \|-/g) ?? []).length, 12);
   const names = [
     'absent',
     'sparse',
@@ -37,6 +37,8 @@ test('committed promtool fixtures execute the routing expressions', () => {
     'reconnect-zero',
     'reconnect-one',
     'reconnect-two',
+    'reconnect-late-tick',
+    'reconnect-deploy-overlap',
   ];
   for (const name of names) assert.match(fixture, new RegExp(`name: ${name}\\b`));
   const promtool = process.env.PROMTOOL ?? 'promtool';

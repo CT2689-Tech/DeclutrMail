@@ -121,29 +121,38 @@ export function coverageNotifications(policy, checkId) {
 }
 
 export function reconnectBurstPolicy() {
+  // Counts reconnect requests CREATED in the last 24 hours, not mailboxes that
+  // are still disconnected: two unrelated users who broke a week apart are not
+  // an authorization outage, and they stay in the daily summary.
   // _sum/_count preserves the exact mean of integer snapshots. Percentiles
-  // over exponential buckets can turn one mailbox into approximately 1.47.
-  const metric = 'logging_googleapis_com:user_ops_mailbox_affected';
-  const labels =
-    '{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}';
+  // over exponential buckets can turn one incident into approximately 1.47.
+  // Means are taken per status across revisions, so a deploy overlap counts an
+  // incident once. The 15m window spans three 5m ticks; a 5m window emptied on
+  // any late tick or deploy, closing and reopening the incident with a new email.
+  const metric = 'logging_googleapis_com:user_ops_reconnect_incidents';
+  const labels = '{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}';
   return {
     displayName: RECONNECT_BURST_POLICY,
     documentation: {
       mimeType: 'text/markdown',
       content:
-        'At least two Gmail connections require reconnection, sustained for ten minutes. Investigate a broader authorization failure. The per-mailbox diagnostic and daily summary retain isolated reconnect requirements. This uses existing two-hour stuck-mailbox grace observations; it is not an immediate OAuth failure detector.',
+        'At least two Gmail reconnect requests were created in the last 24 hours. Investigate a broader authorization failure. Connections that stay disconnected are listed in the daily summary; they do not page here.',
     },
     conditions: [
       {
-        displayName: 'Multiple Gmail connections need reconnection',
+        displayName: 'Two or more new Gmail reconnects in 24 hours',
         conditionPrometheusQueryLanguage: {
-          query: `(sum(increase(${metric}_sum${labels}[5m])) / sum(increase(${metric}_count${labels}[5m]))) >= 2`,
+          query: `sum(sum by (status) (increase(${metric}_sum${labels}[15m])) / sum by (status) (increase(${metric}_count${labels}[15m]))) >= 2`,
           duration: '600s',
           evaluationInterval: '60s',
           labels: { service: 'declutrmail-worker' },
         },
       },
     ],
+    // Without it an incident whose condition stops reporting (a replaced
+    // condition, a renamed metric) stays open for the 7-day default and keeps
+    // renotifying every 4 hours.
+    alertStrategy: { autoClose: '1800s' },
   };
 }
 
