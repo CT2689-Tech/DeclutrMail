@@ -137,7 +137,8 @@ test('phone account drawer reaches billing and keeps contextual help inside the 
   await expect(help).toBeFocused();
   const features = page.getByRole('list', { name: 'Included features' });
   await expect(features.getByText('Sender cleanup')).toBeVisible();
-  const accounts = page.getByRole('link', { name: 'Manage Gmail accounts' });
+  // The coverage row: "Gmail accounts · 1 of 2 connected ›".
+  const accounts = page.getByRole('link', { name: /^Gmail accounts\b.*connected/ });
   const accountBounds = await accounts.boundingBox();
   expect(accountBounds!.height).toBeGreaterThanOrEqual(44);
   await accounts.click();
