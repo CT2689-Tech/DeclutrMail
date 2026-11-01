@@ -352,11 +352,12 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   await expect(proCard).toContainText('Pro');
   // Provider name is plumbing, not a plan fact — asserted ABSENT.
   await expect(proCard).not.toContainText('via Paddle');
-  await expect(proCard).toContainText('Next renewal');
+  // The plan row reads "$19/mo · Renews Dec 1, 2026".
+  await expect(proCard).toContainText(/Renews [A-Z][a-z]{2} \d{1,2}, \d{4}/);
   // QA-billing-20260901-06: the opener button was renamed from "Cancel
   // subscription" so the two clicks (open preview vs. the modal's own
   // destructive confirm) read as two different things. The D119 redesign
-  // moved it off the plan card into the page footer; the card keeps
+  // moved it off the plan card into the Help group; the card keeps
   // "Change plan".
   await expect(proCard.getByRole('button', { name: 'Change plan' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Review cancellation' })).toBeVisible();
