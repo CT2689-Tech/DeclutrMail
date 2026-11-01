@@ -59,12 +59,19 @@ function priceLabel(tier: TierId, cycle: BillingCycle, currency: Currency): stri
  *
  * For a subscription that ALREADY EXISTS use `chargedPlanPrice` — these
  * answer different questions and must not be merged back together.
+ *
+ * Launch pricing sells Plus annual at the 2026-10 price; the manifest's
+ * annual point is the legacy $90 only existing subscribers keep.
  */
 export function quotedPlanPrice(
   tier: TierId,
   cycle: BillingCycle,
   provider: BillingProviderId = 'paddle',
+  pricingV2 = false,
 ): string | null {
+  if (pricingV2 && tier === 'plus' && cycle === 'annual') {
+    return `${formatMoney(PLUS_ANNUAL_2026_10, currencyForPricePoint(PLUS_ANNUAL_2026_10, provider))}/yr`;
+  }
   const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
   if (!point) return null;
   return priceLabel(tier, cycle, currencyForPricePoint(point, provider));
@@ -650,17 +657,18 @@ export function backingStatusNote(
     // the customer to a provider they had no link to, on the one status
     // where not acting ends the plan (ADR-0035).
     //
-    // Provider-split because the affordance is: on Razorpay the section
-    // below says the card CANNOT be changed self-serve, so "update your
-    // payment method below" would point at a refusal (gate network
+    // Provider-split because the affordance is: on Razorpay the payment
+    // section says the card CANNOT be changed self-serve, so "update your
+    // payment method" would point at a refusal (gate network
     // 2026-08-16). The note promises only what its rail can deliver.
+    // No direction: that card sits beside this one on desktop and below
+    // it on a phone.
     return {
       tone: 'warn',
       text:
         (backing.sub.provider === 'razorpay'
-          ? 'Payment past due — see the payment-method section below; we’ll help you fix this.'
-          : 'Payment past due — update your payment method below to keep your plan.') +
-        deadlineNote,
+          ? 'Payment past due — see Payment method; we’ll help you fix this.'
+          : 'Payment past due — update your payment method to keep your plan.') + deadlineNote,
     };
   }
   return null;

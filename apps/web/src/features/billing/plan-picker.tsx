@@ -471,16 +471,18 @@ export function PlanPicker({
   // A lock landing mid-session (pending action started in THIS tab or
   // ANOTHER via the storage event) must disarm any already-open confirm
   // panel — an open panel's Confirm is a charge-capable control and may
-  // not outlive the lock that says a money outcome is unresolved.
+  // not outlive the lock that says a money outcome is unresolved. A
+  // launch card's "Try again" goes too: the lock's notice owns that story.
   useEffect(() => {
-    if (disabled && selected !== null) {
+    if (disabled && (selected !== null || launching !== null)) {
       setSelected(null);
+      setLaunching(null);
       checkout.reset();
       changePlan.reset();
       setLaunchError(null);
     }
     // Reset fns are referentially stable — deps stay minimal on purpose.
-  }, [disabled, selected]);
+  }, [disabled, selected, launching]);
 
   // QA-billing-20260901-09/-05: independent of `selected` — the Pro
   // card's own disclosure needs this before the confirm panel is ever

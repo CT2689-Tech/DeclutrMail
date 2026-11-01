@@ -1056,7 +1056,7 @@ export function BillingScreen({
       node: (
         <NonBackingSubscriptionNotice
           record={nonBacking}
-          entitlementTier={plan.entitlementTier}
+          entitlementName={currentPlanTitle(plan)}
           onResumeStarted={() => startPending('resume', nonBacking.sub.tier, nonBacking.sub.cycle)}
           onRequestCancel={() => setCancelOpen(true)}
         />
@@ -1376,6 +1376,7 @@ export function BillingScreen({
         sub={backingSub ?? plan.nonBacking?.sub ?? null}
         backsEntitlement={backingSub !== null}
         entitlementTier={plan.entitlementTier}
+        entitlementName={currentPlanTitle(plan)}
         onClose={() => {
           setCancelOpen(false);
           // Clear a failed attempt so reopening the modal starts clean
@@ -1946,6 +1947,9 @@ function FreePlanStatus({
       ? freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)
       : null;
   const share = metered ? Math.min(1, metered.used / metered.limit) : 0;
+  // Coverage is left off for Free, so an account still holding the Gmail
+  // accounts of a plan it left hears about the limit here.
+  const { connectedInboxes, inboxLimit } = useTier();
   return (
     <section
       id="plan"
@@ -1992,6 +1996,15 @@ function FreePlanStatus({
             }}
           />
         </div>
+      ) : null}
+      {connectedInboxes > inboxLimit ? (
+        <p style={{ margin: 0, flexBasis: '100%', fontSize: text.sm, color: color.fgSoft }}>
+          {connectedInboxes} of {inboxLimit} connected Gmail accounts. Existing connections continue
+          working. Adding a Gmail account is blocked while you are at or above this plan’s limit.{' '}
+          <a className={`${linkStyles.link} dm-tap-target`} href="/settings#mailboxes">
+            Manage Gmail accounts
+          </a>
+        </p>
       ) : null}
     </section>
   );
@@ -2480,13 +2493,13 @@ const UNCONFIRMED_KEEP_MESSAGE =
  */
 function NonBackingSubscriptionNotice({
   record,
-  entitlementTier,
+  entitlementName,
   onResumeStarted,
   onRequestCancel,
 }: {
   record: NonBackingRecord;
-  /** The workspace's server-resolved entitlement tier. */
-  entitlementTier: TierId;
+  /** The current plan's name, as the plan card titles it (a Pass is the Backlog Pass, not Plus). */
+  entitlementName: string;
   onResumeStarted: () => void;
   onRequestCancel: () => void;
 }) {
@@ -2494,7 +2507,6 @@ function NonBackingSubscriptionNotice({
   const [confirmingResume, setConfirmingResume] = useState(false);
   const { sub, reason } = record;
   const tierName = TIER_MANIFEST[sub.tier].name;
-  const entitlementName = TIER_MANIFEST[entitlementTier].name;
   const boxStyle = {
     display: 'flex',
     flexDirection: 'column',

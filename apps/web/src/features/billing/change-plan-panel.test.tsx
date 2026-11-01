@@ -112,3 +112,37 @@ describe('deferred plan preview', () => {
     },
   );
 });
+
+describe('plan price under launch pricing', () => {
+  it('quotes the launch Plus annual price the server schedules, not the legacy manifest price', async () => {
+    const effectiveAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    installFetchStub([
+      {
+        method: 'POST',
+        path: '/api/billing/change-plan/preview',
+        respond: () => jsonOk({ data: { kind: 'deferred', effectiveAt } }),
+      },
+    ]);
+    render(
+      <QueryWrapper client={createTestQueryClient()}>
+        <ChangePlanPanel
+          target="plus"
+          cycle="annual"
+          fromTier="pro"
+          fromCycle="annual"
+          currentPeriodEnd={effectiveAt}
+          provider="paddle"
+          pricingV2
+          isPending={false}
+          errorMessage={null}
+          onConfirm={vi.fn()}
+          onDismiss={vi.fn()}
+        />
+      </QueryWrapper>,
+    );
+    const panel = screen.getByTestId('change-plan-panel');
+    await waitFor(() => expect(panel).toHaveTextContent('$0 today'));
+    expect(panel).toHaveTextContent('plan price $59/yr');
+    expect(panel).not.toHaveTextContent('$90');
+  });
+});

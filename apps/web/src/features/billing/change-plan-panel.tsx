@@ -57,7 +57,7 @@ export function ChangePlanPanel({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const toLabel = quotedPlanPrice(target, cycle, provider);
+  const toLabel = quotedPlanPrice(target, cycle, provider, pricingV2);
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);

@@ -31,6 +31,7 @@ let mockCleanupRemaining: number | null = 3;
 let mockPassEnabled = false;
 let mockPricingV2 = false;
 let mockInboxLimit: number | undefined;
+let mockMailboxCount = 1;
 // QA-billing-20260901-04 — the real anniversary reset date, distinct
 // from a calendar-month one so the fixture actually exercises the fix
 // rather than coincidentally matching the old "this month" copy.
@@ -40,15 +41,13 @@ vi.mock('@/features/auth/auth-provider', () => {
     me: {
       user: { id: 'u', email: 'me@example.com', workspaceId: mockWorkspaceId },
       activeMailboxId: 'mb-1',
-      mailboxes: [
-        {
-          id: 'mb-1',
-          email: 'me@example.com',
-          status: 'active',
-          connectedAt: null,
-          readiness: 'ready',
-        },
-      ],
+      mailboxes: Array.from({ length: mockMailboxCount }, (_, i) => ({
+        id: `mb-${i + 1}`,
+        email: i === 0 ? 'me@example.com' : `me+${i}@example.com`,
+        status: 'active',
+        connectedAt: null,
+        readiness: 'ready',
+      })),
       tier: mockTier,
       cleanupRemaining: mockCleanupRemaining,
       cleanupResetsAt: mockCleanupResetsAt,
@@ -276,6 +275,7 @@ beforeEach(() => {
   mockPassEnabled = false;
   mockPricingV2 = false;
   mockInboxLimit = undefined;
+  mockMailboxCount = 1;
   vi.mocked(launchCheckout).mockClear();
   vi.mocked(track).mockClear();
   // The pending-payment lock persists in localStorage by design — a
@@ -6435,6 +6435,28 @@ it('an exact fulfilled purchase returns to its stored destination after reload',
 });
 
 describe('BillingScreen — launch layout (D119 redesign)', () => {
+  it('names the Backlog Pass, not Plus, as the plan a Pass holder is on after a subscription ended', async () => {
+    mockTier = 'plus';
+    mockPricingV2 = true;
+    mockPassEnabled = true;
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          checkoutSetupComplete: true,
+          tier: 'plus',
+          foundingMember: false,
+          pendingCheckout: null,
+          complimentary: { tier: 'plus', expiresAt: '2026-11-12T00:00:00.000Z', source: 'pass' },
+          subscription: { ...SUB, tier: 'plus', status: 'canceled', currentPeriodEnd: null },
+        },
+      }),
+    );
+    renderScreen(null, undefined, { pricingV2: true });
+    const notice = await screen.findByTestId('non-backing-subscription-notice');
+    expect(notice).toHaveTextContent('Your Plus subscription ended.');
+    expect(notice).toHaveTextContent('Your account is on Backlog Pass.');
+  });
+
   it.each([
     ['the server sends the ceiling', 2],
     ['an older API omits it', undefined],
@@ -6472,6 +6494,82 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
     expect(screen.queryByRole('region', { name: 'Your plan includes' })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByTestId('invoice-history')).not.toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Change plan' })).not.toBeInTheDocument();
+  });
+
+  it('still tells a Free account above its Gmail limit that adding one is blocked', async () => {
+    mockPricingV2 = true;
+    mockMailboxCount = 3;
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen(null, undefined, { pricingV2: true });
+    const status = await screen.findByTestId('current-plan-card');
+    expect(status).toHaveTextContent('3 of 1 connected Gmail accounts');
+    expect(status).toHaveTextContent('Adding a Gmail account is blocked');
+  });
+
+  it('an ambiguous checkout failure locks the offers without a stale "Try again"', async () => {
+    mockPricingV2 = true;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'BILLING_PROVIDER_ERROR', message: 'provider unreachable' },
+            }),
+            { status: 502, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen(null, undefined, { pricingV2: true });
+    const plus = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(plus).getByRole('button', { name: 'Get Plus' }));
+
+    await screen.findByTestId('payment-processing-notice');
+    await waitFor(() => expect(within(plus).getByRole('button')).toBeDisabled());
+    expect(within(plus).queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('a rejected checkout keeps its message on the card and the offers open', async () => {
+    mockPricingV2 = true;
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/billing/subscription',
+        respond: () => jsonOk({ data: FREE_BODY }),
+      },
+      {
+        method: 'POST',
+        path: '/api/billing/checkout',
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'SUBSCRIPTION_EXISTS', message: 'already subscribed' },
+            }),
+            { status: 409, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    renderScreen(null, undefined, { pricingV2: true });
+    const plus = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(plus).getByRole('button', { name: 'Get Plus' }));
+
+    await within(plus).findByRole('alert');
+    expect(within(plus).getByRole('button', { name: 'Get Plus' })).toBeEnabled();
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
+  it('keeps the Free status to one line at or under the Gmail limit', async () => {
+    mockPricingV2 = true;
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen(null, undefined, { pricingV2: true });
+    const status = await screen.findByTestId('current-plan-card');
+    expect(status).not.toHaveTextContent('connected Gmail accounts');
   });
 
   it('opens checkout from one click on Get Plus, with the terms already on the card', async () => {

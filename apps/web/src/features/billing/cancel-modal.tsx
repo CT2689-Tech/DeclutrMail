@@ -45,6 +45,7 @@ export function CancelModal({
   sub,
   backsEntitlement,
   entitlementTier,
+  entitlementName: entitlementNameOverride,
   onClose,
   onConfirm,
   isCanceling,
@@ -64,6 +65,8 @@ export function CancelModal({
    *  plan, and its features are not necessarily active. */
   backsEntitlement: boolean;
   entitlementTier: TierId;
+  /** The plan card's title for the current plan (a Pass is the Backlog Pass); defaults to the tier name. */
+  entitlementName?: string;
   onClose: () => void;
   onConfirm: (reason: CancelReason | undefined) => void;
   isCanceling: boolean;
@@ -90,7 +93,7 @@ export function CancelModal({
   if (!open || !sub) return null;
 
   const tierLabel = TIER_MANIFEST[sub.tier].name;
-  const entitlementName = TIER_MANIFEST[entitlementTier].name;
+  const entitlementName = entitlementNameOverride ?? TIER_MANIFEST[entitlementTier].name;
   const end = formatBillingDate(sub.currentPeriodEnd);
   // Mirrors `BillingService.pauseForThirtyDays`'s guards exactly, so the
   // offer never renders on a subscription the API would refuse.
