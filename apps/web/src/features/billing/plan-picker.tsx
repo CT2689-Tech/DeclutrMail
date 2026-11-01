@@ -1224,8 +1224,14 @@ function LaunchOffers({
   const passLocale = passCurrency === 'INR' ? 'inr' : 'usd';
   const plusPaused = inrNewPurchasePaused('paddle', plusCurrency, indiaCheckoutOpen);
   const passPaused = inrNewPurchasePaused('paddle', passCurrency, indiaCheckoutOpen);
-  const promoLive = promoBanner(new Date(), false) !== null;
-  const termsFor = (summary: string | null, currency: 'USD' | 'INR', paused: boolean) =>
+  // Name the live code on each card: the Pass card's line covers both offers,
+  // Plus's covers Plus only. Null outside the promo window.
+  const termsFor = (
+    summary: string | null,
+    currency: 'USD' | 'INR',
+    paused: boolean,
+    promo: string | null,
+  ) =>
     paused
       ? [WS1_COPY['pricing.inrPaused.checkout']]
       : [
@@ -1233,7 +1239,7 @@ function LaunchOffers({
           fillStory(WS1_COPY['checkout.taxNote']),
           ...(currency === 'INR' ? [fillStory(WS1_COPY['checkout.inr'], 'inr')] : []),
           moneyBackNote(true),
-          ...(promoLive ? [fillStory(WS1_COPY['checkout.codeNote'])] : []),
+          ...(promo ? [`${promo} Enter it at checkout.`] : []),
         ];
   const plusMonthly = formatMoney(
     {
@@ -1267,6 +1273,7 @@ function LaunchOffers({
             fillStory(WS1_COPY['checkout.plus.summary'], plusLocale),
             plusCurrency,
             plusPaused,
+            promoBanner(new Date(), false),
           )}
           ctaLabel={
             plusPaused
@@ -1290,7 +1297,7 @@ function LaunchOffers({
             per={fillStory(WS1_COPY['pricing.pass.priceSuffix'], passLocale)}
             hint={fillStory(WS1_COPY['pricing.pass.renewal'], passLocale)}
             features={fillStoryList(WS1_COPY['pricing.pass.features'], passLocale).slice(0, 3)}
-            terms={termsFor(null, passCurrency, passPaused)}
+            terms={termsFor(null, passCurrency, passPaused, promoBanner(new Date(), true))}
             ctaLabel={
               passPaused
                 ? WS1_COPY['pricing.inrPaused.button']

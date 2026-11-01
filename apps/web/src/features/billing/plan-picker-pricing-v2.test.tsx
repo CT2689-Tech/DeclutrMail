@@ -5,7 +5,7 @@
  */
 
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory } from '@declutrmail/shared/entitlements';
@@ -173,5 +173,31 @@ describe('PlanPicker launch pricing', () => {
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(plus.textContent).not.toContain('$');
     expect(pass.textContent).not.toContain('$');
+  });
+
+  describe('launch code on the offer cards', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('names the code on each card while the promo runs', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-11-01T12:00:00Z'));
+      renderPicker({ pricingV2: true, passEnabled: true });
+      const plus = screen.getByTestId('launch-offer-plus-terms');
+      const pass = screen.getByTestId('launch-offer-pass-terms');
+      expect(plus).toHaveTextContent('PH30');
+      expect(plus).toHaveTextContent('30%');
+      expect(plus).not.toHaveTextContent(fillStory(WS1_COPY['pricing.pass.name']));
+      expect(pass).toHaveTextContent('PH30');
+      expect(pass).toHaveTextContent(fillStory(WS1_COPY['pricing.pass.name']));
+      expect(screen.queryByText(WS1_COPY['checkout.codeNote'])).not.toBeInTheDocument();
+    });
+
+    it('drops the code line once the promo ends', () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date('2026-11-05T00:00:00Z'));
+      renderPicker({ pricingV2: true, passEnabled: true });
+      expect(screen.getByTestId('launch-offer-plus-terms')).not.toHaveTextContent('PH30');
+      expect(screen.getByTestId('launch-offer-pass-terms')).not.toHaveTextContent('PH30');
+    });
   });
 });
