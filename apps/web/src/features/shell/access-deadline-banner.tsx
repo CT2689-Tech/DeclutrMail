@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
+import { notifyManager, useQueryClient } from '@tanstack/react-query';
 import { BannerSlot } from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import type { BillingSubscription } from '@declutrmail/shared/contracts';
@@ -51,8 +51,12 @@ export function AccessDeadlineBanner() {
 
 function AccessDeadlineFromCache() {
   const client = useQueryClient();
+  // The cache notifies while HydrationBoundary and the page render;
+  // re-rendering this banner then is a setState-in-render. Deferred the
+  // way useQuery defers its own observer notifications.
   const subscribe = useCallback(
-    (onStoreChange: () => void) => client.getQueryCache().subscribe(() => onStoreChange()),
+    (onStoreChange: () => void) =>
+      client.getQueryCache().subscribe(notifyManager.batchCalls(onStoreChange)),
     [client],
   );
   const data = useSyncExternalStore(

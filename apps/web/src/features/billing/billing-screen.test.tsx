@@ -77,6 +77,7 @@ import { track } from '@/lib/posthog';
 import {
   addFetchHandlers,
   installFetchStub,
+  jsonNotFound,
   jsonOk,
   jsonServerError,
   resetFetchStub,
@@ -1489,7 +1490,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       'href',
       'mailto:support@declutrmail.com',
     );
-    expect(notice).toHaveTextContent('Billing changes stay paused');
+    expect(notice).toHaveTextContent('changes stay paused');
     const currentAccess = screen.getByTestId('current-plan-card');
     expect(within(currentAccess).getByText('Free')).toBeInTheDocument();
     expect(currentAccess).toHaveTextContent(
@@ -1515,7 +1516,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // names no failure to reach the provider: our own refusal lands here.
     await within(notice).findByTestId('provider-check');
     expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
-      'We couldn’t check with the payment provider automatically.',
+      'Couldn’t check payment status',
     );
     expect(within(notice).getByTestId('provider-check')).not.toHaveTextContent(/reach/i);
 
@@ -1602,7 +1603,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     const notice = await screen.findByTestId('payment-processing-notice');
     await within(notice).findByTestId('provider-check');
     expect(within(notice).getByTestId('provider-check')).toHaveTextContent(
-      'Checking with the payment provider…',
+      'Checking payment status…',
     );
     // While the server is asking the provider, the customer is NOT
     // asked to guess — no release affordance exists yet.
@@ -2302,7 +2303,7 @@ describe('BillingScreen — closing checkout without paying (exact transaction c
 
         const notice = await screen.findByTestId('payment-processing-notice');
         const check = await within(notice).findByTestId('provider-check');
-        expect(check).toHaveTextContent('couldn’t check with the payment provider automatically');
+        expect(check).toHaveTextContent('Couldn’t check payment status');
         expect(check).not.toHaveTextContent('no completed payment found');
         // The manual two-step stays the way out.
         expect(
@@ -2334,7 +2335,7 @@ describe('BillingScreen — closing checkout without paying (exact transaction c
         'Checkout reported completion — your Backlog Pass hasn’t come through yet.',
       );
       // No "in a minute" promise under a heading that says it has not come through.
-      expect(notice).toHaveTextContent('Payment received. Billing changes stay paused;');
+      expect(notice).toHaveTextContent('Payment received. Plan and payment changes stay paused');
       expect(notice).not.toHaveTextContent('in a minute');
       expect(notice).not.toHaveTextContent('plan upgrade');
       await within(notice).findByRole('link', { name: 'Contact billing support' });
@@ -6432,6 +6433,184 @@ it('an exact fulfilled purchase returns to its stored destination after reload',
   renderScreen();
   await waitFor(() => expect(returnAfterUpgrade).toHaveBeenCalledWith('/brief'));
   expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+});
+
+describe('BillingScreen — a hold on a checkout the latest read no longer names', () => {
+  // The read reports only the workspace's LATEST attempt. A hold on an
+  // older one (a Pass started on one device, Plus bought on another)
+  // used to stay forever: a notice with no way out that also locked the
+  // payment-method card.
+  const held = '33333333-3333-4333-8333-333333333333';
+  const latest = {
+    id: '44444444-4444-4444-8444-444444444444',
+    version: 3,
+    state: 'fulfilled' as const,
+    tier: 'plus' as const,
+    cycle: 'annual' as const,
+    offer: null,
+    createdAt: new Date().toISOString(),
+    canResume: false,
+    canCancel: false,
+  };
+  const ATTEMPTS_READ: BillingSubscription = { ...PLUS_SUB, checkoutAttempt: latest };
+
+  function holdPass({ bound, minutesAgo }: { bound: boolean; minutesAgo: number }) {
+    window.localStorage.setItem(
+      pendingCheckoutKey('w'),
+      JSON.stringify({
+        workspaceId: 'w',
+        kind: 'checkout_intent',
+        fromTier: 'free',
+        fromCycle: null,
+        toTier: 'plus',
+        toCycle: 'annual',
+        offer: 'pass_onetime',
+        at: Date.now() - minutesAgo * 60_000,
+        attemptId: held,
+        ...(bound ? { serverAttemptId: held } : {}),
+      }),
+    );
+  }
+  function stubHeldAttempt(respond: () => Response | Promise<Response>) {
+    const calls = { count: 0 };
+    addFetchHandlers([
+      {
+        method: 'GET',
+        path: `/api/billing/checkout/${held}`,
+        respond: () => {
+          calls.count++;
+          return respond();
+        },
+      },
+    ]);
+    return calls;
+  }
+  const heldAttempt = (state: string) =>
+    jsonOk({ data: { ...latest, id: held, offer: 'pass_onetime', state } });
+
+  beforeEach(() => {
+    mockTier = 'plus';
+  });
+
+  it('a bound hold whose attempt the server no longer has clears, and the card unlocks', async () => {
+    stubSubscription(() => jsonOk({ data: ATTEMPTS_READ }));
+    holdPass({ bound: true, minutesAgo: 70 });
+    const calls = stubHeldAttempt(() => jsonNotFound('NOT_FOUND'));
+    renderScreen();
+    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    expect(calls.count).toBe(1);
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    const card = await screen.findByTestId('payment-method-card');
+    await waitFor(() =>
+      expect(within(card).getByRole('button', { name: 'Update payment method' })).toBeEnabled(),
+    );
+  });
+
+  it.each(['stopped', 'fulfilled'])(
+    'a hold whose attempt the server reports %s clears',
+    async (state) => {
+      // A stopped latest attempt, so the only cache reset is this hold's.
+      stubSubscription(() =>
+        jsonOk({ data: { ...PLUS_SUB, checkoutAttempt: { ...latest, state: 'stopped' } } }),
+      );
+      holdPass({ bound: false, minutesAgo: 2 });
+      stubHeldAttempt(() => heldAttempt(state));
+      const { client } = renderScreen();
+      client.setQueryData(['entitlement-before'], { allowed: false });
+      await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+      expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+      // Only a finished purchase can have changed what this browser may use.
+      expect(client.getQueryState(['entitlement-before'])?.isInvalidated).toBe(
+        state === 'fulfilled',
+      );
+    },
+  );
+
+  it('an unbound hold survives a fresh 404 — its checkout may still be being created', async () => {
+    stubSubscription(() => jsonOk({ data: ATTEMPTS_READ }));
+    holdPass({ bound: false, minutesAgo: 2 });
+    const calls = stubHeldAttempt(() => jsonNotFound('NOT_FOUND'));
+    renderScreen();
+    expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(calls.count).toBe(1);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+  });
+
+  it('an unbound hold clears on a 404 once it is past the unconfirmed threshold', async () => {
+    stubSubscription(() => jsonOk({ data: ATTEMPTS_READ }));
+    holdPass({ bound: false, minutesAgo: 20 });
+    stubHeldAttempt(() => jsonNotFound('NOT_FOUND'));
+    renderScreen();
+    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['an unresolved attempt', () => heldAttempt('payment_in_progress')],
+    ['a failed check', () => jsonServerError()],
+    ['a 404 that is not the attempt', () => jsonNotFound('ROUTE_NOT_FOUND')],
+  ])('%s keeps the hold and shows it', async (_label, respond) => {
+    stubSubscription(() => jsonOk({ data: ATTEMPTS_READ }));
+    holdPass({ bound: true, minutesAgo: 20 });
+    stubHeldAttempt(respond);
+    renderScreen();
+    const notice = await screen.findByTestId('payment-processing-notice');
+    expect(notice).toHaveTextContent(/^Backlog Pass checkout from .+ isn’t confirmed yet\./);
+    expect(notice).toHaveTextContent('don’t pay again');
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+  });
+
+  it('shows no notice while the check is out', async () => {
+    stubSubscription(() => jsonOk({ data: ATTEMPTS_READ }));
+    holdPass({ bound: true, minutesAgo: 70 });
+    let answer: (r: Response) => void = () => undefined;
+    const calls = stubHeldAttempt(() => new Promise<Response>((resolve) => (answer = resolve)));
+    renderScreen();
+    await waitFor(() => expect(calls.count).toBe(1));
+    expect(screen.getByTestId('current-plan-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+    await act(async () => answer(jsonNotFound('NOT_FOUND')));
+    await waitFor(() => expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull());
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
+  it('an open attempt never flashes the ended-subscription notice behind "+1 more"', async () => {
+    const inserted: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records)
+        record.addedNodes.forEach((node) => {
+          if (!(node instanceof HTMLElement)) return;
+          for (const el of [node, ...node.querySelectorAll('[data-testid]')])
+            inserted.push(el.getAttribute('data-testid') ?? '');
+        });
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    stubSubscription(() =>
+      jsonOk({
+        data: {
+          ...FREE_BODY,
+          subscription: { ...SUB, tier: 'plus', status: 'canceled', currentPeriodEnd: null },
+          checkoutAttempt: { ...latest, id: held, state: 'open', canResume: true },
+        },
+      }),
+    );
+    renderScreen();
+    await screen.findByTestId('current-plan-card');
+    await waitFor(() => expect(inserted).toContain('checkout-attempt-notice'));
+    observer.disconnect();
+    expect(inserted).not.toContain('non-backing-subscription-notice');
+    expect(inserted).not.toContain('notice-slot-toggle');
+  });
+
+  it('an API that reports no attempts is never asked, and the hold stays', async () => {
+    stubSubscription(() => jsonOk({ data: PLUS_SUB }));
+    holdPass({ bound: true, minutesAgo: 70 });
+    const calls = stubHeldAttempt(() => jsonNotFound('NOT_FOUND'));
+    renderScreen();
+    expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(calls.count).toBe(0);
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
+  });
 });
 
 describe('BillingScreen — launch layout (D119 redesign)', () => {

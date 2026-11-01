@@ -28,7 +28,7 @@ describe('server-owned checkout recovery controls', () => {
   it('names the purchase and checks its exact identity automatically', async () => {
     const updated = vi.fn();
     render(<CheckoutAttemptNotice attempt={attempt} ownerId="w" onUpdated={updated} />);
-    expect(screen.getByText(/Backlog Pass checkout is ready/)).toBeInTheDocument();
+    expect(screen.getByText(/Backlog Pass checkout is still open/)).toBeInTheDocument();
     await waitFor(() => expect(updated).toHaveBeenCalled());
     expect(apiPost).toHaveBeenCalledWith(
       '/api/billing/reconcile',

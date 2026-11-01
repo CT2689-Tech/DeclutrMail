@@ -29,6 +29,7 @@ import type {
   BillingSubscription,
   BillingInvoiceList,
   CancelRequest,
+  CheckoutAttempt,
 } from '@declutrmail/shared/contracts';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import {
@@ -45,7 +46,7 @@ import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
 import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
-import { ApiError } from '@/lib/api/client';
+import { ApiError, apiGet } from '@/lib/api/client';
 import { useHydrated } from '@/lib/use-hydrated';
 import { track } from '@/lib/posthog';
 
@@ -106,7 +107,22 @@ const CancelModal = dynamic(() => import('./cancel-modal').then((m) => m.CancelM
 });
 const CheckoutAttemptNotice = dynamic(
   () => import('./checkout-attempt-notice').then((m) => m.CheckoutAttemptNotice),
-  { ssr: false },
+  {
+    ssr: false,
+    // Holds the notice's place while its chunk loads: an empty first
+    // slot left the NoticeSlot's "+1 more" toggle standing alone.
+    loading: () => (
+      <div
+        aria-hidden
+        data-testid="checkout-attempt-notice-loading"
+        style={{
+          minHeight: 120,
+          background: tokens.color.primarySoft,
+          borderRadius: tokens.radius.lg,
+        }}
+      />
+    ),
+  },
 );
 const CheckoutRecovery = dynamic(
   () => import('./checkout-recovery').then((m) => m.CheckoutRecovery).catch(() => () => null),
@@ -154,6 +170,9 @@ const PAYMENT_PROCESSING_SLOW_AFTER_MS = 90_000;
  */
 const PAYMENT_UNCONFIRMED_AFTER_MS = 15 * 60_000;
 const PAYMENT_UNCONFIRMED_POLL_MS = 30_000;
+
+/** A durable checkout attempt's id (the browser mints it; the server adopts it). */
+const UUID_PATTERN = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 
 /** How far along the webhook wait is — drives the notice + poll pace. */
 type ProcessingPhase = 'fresh' | 'slow' | 'unconfirmed';
@@ -647,6 +666,107 @@ export function BillingScreen({
       .catch(() => undefined);
   }, [data?.complimentary?.source, returnTo, initialIntent?.from]);
 
+  // A browser hold names ONE checkout attempt, but the subscription read
+  // reports only the workspace's LATEST. The server refuses a new
+  // checkout while any attempt is unresolved, so once that read shows
+  // nothing in flight, an older hold can only be finished or gone — and
+  // no later read would ever mention it. That left a notice with no way
+  // out that also locked the payment-method card (a Pass started on one
+  // device, Plus bought on another). Ask the server about that exact
+  // attempt and let its own record release the hold.
+  const heldAttemptId =
+    pending !== null &&
+    pending.workspaceId === workspaceId &&
+    (pending.kind === 'checkout' || pending.kind === 'checkout_intent') &&
+    activeServerAttempt === null &&
+    data?.checkoutAttempt !== undefined &&
+    !data.pendingCheckout
+      ? (pending.serverAttemptId ??
+        (pending.attemptId !== undefined && UUID_PATTERN.test(pending.attemptId)
+          ? pending.attemptId
+          : undefined))
+      : undefined;
+  const staleAttemptId =
+    heldAttemptId !== undefined && heldAttemptId !== data?.checkoutAttempt?.id
+      ? heldAttemptId
+      : undefined;
+  // A bound hold proves the server created the attempt. An unbound one
+  // may still be mid-request, so its absence counts only once the hold
+  // is old enough to be unconfirmed: the server writes the attempt row
+  // before it ever contacts Paddle, so an attempt still missing then was
+  // never created and nothing could have charged.
+  const absenceIsFinal =
+    staleAttemptId !== undefined &&
+    (pending?.serverAttemptId === staleAttemptId || processingPhase === 'unconfirmed');
+  const askedStaleAttempt = useRef<string | null>(null);
+  // The attempt whose check came back and kept the hold. Until then the
+  // hold renders no notice: it is usually stale, and a "not confirmed"
+  // flash that vanishes a moment later reads as a billing problem.
+  const [staleKept, setStaleKept] = useState<string | null>(null);
+  const holdAwaitingCheck =
+    staleAttemptId !== undefined && staleKept !== staleAttemptId && !subscriptionQuery.isError;
+  const refetchSubscription = subscriptionQuery.refetch;
+  useEffect(() => {
+    if (staleAttemptId === undefined || subscriptionQuery.isFetching || subscriptionQuery.isError)
+      return;
+    const key = `${workspaceId}:${staleAttemptId}:${absenceIsFinal}`;
+    if (askedStaleAttempt.current === key) return;
+    askedStaleAttempt.current = key;
+    const controller = new AbortController();
+    let settled = false;
+    const release = (fulfilled: boolean) => {
+      if (!mounted.current || currentOwner.current !== workspaceId) return;
+      const record = readPendingCheckout(workspaceId);
+      if (record === null || (record.serverAttemptId ?? record.attemptId) !== staleAttemptId)
+        return;
+      clearPendingCheckout(workspaceId);
+      setPending(null);
+      // A finished purchase may have changed entitlements this browser
+      // never saw (§8 scope-change ⇒ cache reset).
+      if (fulfilled) {
+        void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+        void queryClient.invalidateQueries();
+      }
+    };
+    apiGet<CheckoutAttempt>(`/api/billing/checkout/${staleAttemptId}`, {
+      signal: controller.signal,
+    }).then(
+      ({ data: attempt }) => {
+        settled = true;
+        if (controller.signal.aborted) return;
+        if (attempt.state === 'fulfilled' || attempt.state === 'stopped') {
+          release(attempt.state === 'fulfilled');
+          return;
+        }
+        // Still unresolved: the read that said otherwise is stale.
+        setStaleKept(staleAttemptId);
+        void refetchSubscription();
+      },
+      (error: unknown) => {
+        settled = true;
+        if (controller.signal.aborted) return;
+        if (absenceIsFinal && apiErrorCode(error) === 'NOT_FOUND') {
+          release(false);
+          return;
+        }
+        // Anything else proves nothing; the hold stays.
+        setStaleKept(staleAttemptId);
+      },
+    );
+    return () => {
+      if (!settled) askedStaleAttempt.current = null;
+      controller.abort();
+    };
+  }, [
+    staleAttemptId,
+    absenceIsFinal,
+    workspaceId,
+    subscriptionQuery.isFetching,
+    subscriptionQuery.isError,
+    queryClient,
+    refetchSubscription,
+  ]);
+
   // "Usually within a minute" needs a state for when it isn't (§8 —
   // every promise in copy gets its elapsed branch). Elapsed counts
   // from the PAYMENT (pending.at), not from mount — a reload mid-wait
@@ -937,7 +1057,7 @@ export function BillingScreen({
         />
       ),
     });
-  } else if (pending !== null) {
+  } else if (pending !== null && !holdAwaitingCheck) {
     notices.push({
       key: 'payment-processing',
       node: (
@@ -974,6 +1094,7 @@ export function BillingScreen({
           <PaymentProcessingNotice
             phase={processingPhase}
             kind={pending.kind}
+            startedAt={pending.at}
             {...(pending.offer !== undefined ? { offer: pending.offer } : {})}
             {...(pending.kind !== 'checkout' && pending.kind !== 'checkout_intent'
               ? { onRelease: onReleasePendingLock }
@@ -1050,7 +1171,9 @@ export function BillingScreen({
       ),
     });
   }
-  if (nonBacking) {
+  // An open server attempt becomes a pending wait one effect later, which
+  // hides this anyway; gating here keeps it from flashing for that frame.
+  if (nonBacking && activeServerAttempt === null) {
     notices.push({
       key: 'non-backing',
       node: (
@@ -1111,7 +1234,9 @@ export function BillingScreen({
         isPastDue={paymentMethodSub.status === 'past_due'}
         disabled={pending !== null}
         disabledReason={
-          pending !== null ? 'Available once the payment above finishes confirming.' : null
+          pending !== null && !holdAwaitingCheck
+            ? 'Available once the payment above finishes confirming.'
+            : null
         }
       />
     ) : null;
@@ -1567,8 +1692,12 @@ export function PaymentProcessingNotice({
   releasing = false,
   releaseError = null,
   onProviderCheck,
+  startedAt,
 }: {
   phase?: 'fresh' | 'slow' | 'unconfirmed';
+  /** Epoch ms the hold began. An unconfirmed notice names it: a
+   *  checkout from an hour ago is not one the reader remembers. */
+  startedAt?: number;
   /** What started the wait — a new checkout payment, a plan change on
    *  the existing subscription, or a pause resume. The copy must state
    *  only what actually happened (a plan change/resume made no new
@@ -1669,7 +1798,7 @@ export function PaymentProcessingNotice({
     kind === 'checkout'
       ? 'Payment received.'
       : kind === 'checkout_intent'
-        ? 'We do not yet know whether a payment completed.'
+        ? 'If you paid, it appears here once the payment provider confirms it — don’t pay again.'
         : kind === 'resume'
           ? 'No charge was started; your existing paid period continues.'
           : kind === 'change'
@@ -1677,13 +1806,20 @@ export function PaymentProcessingNotice({
             : null;
   const next =
     phase !== 'fresh'
-      ? 'you can wait here or return later.'
+      ? null
       : kind === 'checkout_intent'
         ? 'continue in the checkout window if it’s still open.'
         : kind === 'checkout'
           ? `your ${isPass ? passName : 'new plan'} will show here in a minute.`
           : 'confirmation usually arrives within a minute.';
-  const body = [known, `Billing changes stay paused; ${next}`].filter(Boolean).join(' ');
+  const body = [
+    known,
+    next === null
+      ? 'Plan and payment changes stay paused until it’s confirmed.'
+      : `Billing changes stay paused; ${next}`,
+  ]
+    .filter(Boolean)
+    .join(' ');
   const recoveryButtonStyle = {
     maxWidth: '100%',
     minWidth: 0,
@@ -1712,11 +1848,13 @@ export function PaymentProcessingNotice({
       }}
     >
       <h2 style={{ margin: 0, fontSize: text.md, fontWeight: 600 }}>
-        {phase === 'unconfirmed'
-          ? `${acted} — your ${awaited} hasn’t come through yet.`
-          : phase === 'slow'
-            ? 'Still confirming — this is taking longer than usual.'
-            : `${acted} — confirming your ${isPass ? passName : 'plan'}.`}
+        {phase === 'unconfirmed' && kind === 'checkout_intent' && startedAt !== undefined
+          ? `${awaited.charAt(0).toUpperCase()}${awaited.slice(1)} checkout from ${heldSince(startedAt)} isn’t confirmed yet.`
+          : phase === 'unconfirmed'
+            ? `${acted} — your ${awaited} hasn’t come through yet.`
+            : phase === 'slow'
+              ? 'Still confirming — this is taking longer than usual.'
+              : `${acted} — confirming your ${isPass ? passName : 'plan'}.`}
       </h2>
       {releasing ? <p style={{ margin: 0 }}>Releasing hold…</p> : null}
       {releaseError ? (
@@ -1725,15 +1863,6 @@ export function PaymentProcessingNotice({
         </p>
       ) : null}
       <p style={{ margin: 0, color: color.fgSoft }}>{body}</p>
-      {phase !== 'fresh' || onRelease === undefined ? (
-        <p style={{ margin: 0, fontSize: text.sm }}>
-          Need help?{' '}
-          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
-            Contact billing support
-          </a>
-          .
-        </p>
-      ) : null}
       {reconcilable && providerCheck !== 'idle' ? (
         // D249 — the server's own answer, stated before any customer
         // question. Each line asserts only what the check verified.
@@ -1742,9 +1871,8 @@ export function PaymentProcessingNotice({
           style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
           aria-live="polite"
         >
-          <strong>Last checked: </strong>
           {providerCheck === 'checking' ? (
-            'Checking with the payment provider…'
+            'Checking payment status…'
           ) : providerCheck === 'none_found' ? (
             isChangeWait ? (
               // The provider answered and the awaited plan exists
@@ -1771,11 +1899,11 @@ export function PaymentProcessingNotice({
               'Neither DeclutrMail nor the payment provider has a pending payment to confirm for this checkout.'
             )
           ) : providerCheck === 'payment_in_progress' ? (
-            'The payment provider shows this checkout still in progress — for example awaiting bank confirmation. Waiting is safe; this page keeps checking.'
+            'The payment provider shows this checkout still in progress. Waiting is safe; this page keeps checking.'
           ) : providerCheck === 'provider_unavailable' ? (
             // Also every rejection of OUR check request — a 429, a 5xx, a
             // network drop — so it names no failure to reach the provider.
-            'We couldn’t check with the payment provider automatically.'
+            'Couldn’t check payment status just now.'
           ) : providerCheck === 'unresolved' ? (
             <>
               We found payment activity that needs a manual look — email{' '}
@@ -1906,8 +2034,25 @@ export function PaymentProcessingNotice({
           </div>
         )
       ) : null}
+      {phase !== 'fresh' || onRelease === undefined ? (
+        <p style={{ margin: 0, fontSize: text.sm }}>
+          Need help?{' '}
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
+            Contact billing support
+          </a>
+          .
+        </p>
+      ) : null}
     </div>
   );
+}
+
+/** "10:40 PM" today, "Oct 29" before — when this browser's hold began. */
+function heldSince(at: number): string {
+  const started = new Date(at);
+  return started.toDateString() === new Date().toDateString()
+    ? started.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : started.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 /** Non-metered Free chip. A missing reset is omitted, not invented. */
