@@ -8,7 +8,7 @@
  * outcome is a refusal.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
@@ -249,27 +249,49 @@ describe('InvoiceHistory', () => {
     }
   });
 
-  it('shows a real error state — never an empty list — when the read fails', async () => {
-    apiGet.mockRejectedValue(new Error('boom'));
+  // Our read failing and the provider not answering look the same to the
+  // customer: one calm line, a retry, and a way to a receipt meanwhile.
+  it.each([
+    ['our read fails', () => apiGet.mockRejectedValue(new Error('boom'))],
+    [
+      'the only rail we could ask was unreachable',
+      () =>
+        apiGet.mockResolvedValue({
+          data: {
+            invoices: [],
+            unavailableProviders: ['paddle'],
+            truncated: false,
+            omittedRows: 0,
+          },
+        }),
+    ],
+  ])('when %s, says history did not load — never "no invoices"', async (_label, arrange) => {
+    arrange();
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/couldn’t load your invoices/i)).toBeInTheDocument();
-    // A provider failure is a 200 with `unavailableProviders`, so this
-    // state is always OUR failure — never "the provider didn't answer".
-    expect(screen.queryByText(/provider didn.t answer/i)).toBeNull();
+    const section = await screen.findByTestId('invoice-history');
+    await waitFor(() => expect(section).toHaveTextContent('Not available right now.'));
+    expect(section).toHaveTextContent('Your plan isn’t affected.');
+    expect(within(section).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(
+      within(section).getByRole('link', { name: 'Ask support for a receipt' }),
+    ).toHaveAttribute('href', expect.stringMatching(/^mailto:support@declutrmail\.com/));
+    // Neither the provider jargon nor the big page-level error block.
+    expect(section).not.toHaveTextContent(/payment provider/i);
+    expect(within(section).queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
   });
 
-  it('does not claim "no invoices" when the only rail we could ask was unreachable', async () => {
-    apiGet.mockResolvedValue({
+  it('retries in place when asked', async () => {
+    apiGet.mockResolvedValueOnce({
       data: { invoices: [], unavailableProviders: ['paddle'], truncated: false, omittedRows: 0 },
     });
+    apiGet.mockResolvedValueOnce({
+      data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: false, omittedRows: 0 },
+    });
     wrap(<InvoiceHistory />);
-    // A provider that answered with an error was reached — the copy
-    // claims only that invoices did not come back.
-    expect(await screen.findByText(/didn’t return your invoices/i)).toBeInTheDocument();
-    // The partial state carries its own way out.
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-    expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('$19.00')).toBeInTheDocument();
+    expect(screen.queryByText('Not available right now.')).not.toBeInTheDocument();
   });
 
   it('says the list is partial when one rail failed but the other returned rows', async () => {
@@ -282,7 +304,10 @@ describe('InvoiceHistory', () => {
       },
     });
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/may be missing invoices/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Some invoices didn’t load/)).toBeInTheDocument();
+    // Retry stays on the page instead of asking for a reload.
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByText(/reload/i)).not.toBeInTheDocument();
   });
 
   it('renders no status word for a status it cannot map, rather than guessing "Paid"', async () => {

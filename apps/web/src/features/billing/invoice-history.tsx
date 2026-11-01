@@ -26,13 +26,7 @@ import linkStyles from './billing-links.module.css';
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import {
-  Button,
-  EmptyState,
-  ErrorState as RecoverableErrorState,
-  tokens,
-  useIsAtMost,
-} from '@declutrmail/shared';
+import { Button, EmptyState, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { BillingInvoice } from '@declutrmail/shared/contracts';
 
 import { SERVER_STREAM_PLACEHOLDER } from '@/lib/query-hydration-boundary';
@@ -58,6 +52,37 @@ const FILTER_STYLE = {
   width: '100%',
   boxSizing: 'border-box',
 } as const;
+
+/**
+ * Our read failing and the provider not answering are the same thing to
+ * the customer: the history is not here right now. The read is a GET, so
+ * the plan is untouched, and support can send a receipt in the meantime.
+ */
+function HistoryUnavailable({ retrying, onRetry }: { retrying: boolean; onRetry: () => void }) {
+  return (
+    <div
+      role="status"
+      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 16px' }}
+    >
+      <p style={{ margin: 0, flex: '1 1 260px', fontSize: text.md, color: color.fgSoft }}>
+        <strong style={{ fontWeight: 600, color: color.fg }}>Not available right now.</strong> Your
+        plan isn’t affected.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px' }}>
+        <Button tone="default" size="sm" disabled={retrying} onClick={onRetry}>
+          {retrying ? 'Trying…' : 'Try again'}
+        </Button>
+        <a
+          className={`${linkStyles.link} dm-tap-target`}
+          href="mailto:support@declutrmail.com?subject=Receipt%20request"
+          style={{ fontSize: text.sm }}
+        >
+          Ask support for a receipt
+        </a>
+      </div>
+    </div>
+  );
+}
 
 const SECTION_STYLE = {
   scrollMarginTop: 24,
@@ -156,11 +181,9 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         style={SECTION_STYLE}
       >
         <GroupTitle>Payment history</GroupTitle>
-        <RecoverableErrorState
-          headingLevel={3}
-          title="We couldn’t load your invoices"
-          description="Try again to load your invoices."
-          onRetry={() => invoices.refetch()}
+        <HistoryUnavailable
+          retrying={invoices.isFetching}
+          onRetry={() => void invoices.refetch()}
         />
       </section>
     );
@@ -169,8 +192,6 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const data = invoices.data;
   if (!data) return null;
   const partial = data.unavailableProviders.length > 0;
-  // Compact only a complete, successfully read empty history. An unavailable,
-  // omitted or truncated result is still a recovery state, never "no invoices".
   // A complete, successfully read empty history has nothing to show, so
   // the section stays out of the way — above all on a Free account deciding
   // what to buy. Unavailable, omitted or truncated reads still render below:
@@ -200,9 +221,11 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
       style={SECTION_STYLE}
     >
       <GroupTitle>Payment history</GroupTitle>
-      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
-        Payments and invoices from past subscriptions and one-time purchases.
-      </p>
+      {data.invoices.length > 0 ? (
+        <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
+          Payments and invoices from past subscriptions and one-time purchases.
+        </p>
+      ) : null}
       {filterable ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
@@ -265,21 +288,10 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         // Failed, omitted and capped reads cannot prove an account never paid.
         // Only a complete empty history can show "No invoices yet".
         partial ? (
-          <div
-            style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}
-          >
-            <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-              Your payment provider didn&rsquo;t return your invoices.
-            </p>
-            <Button
-              tone="default"
-              size="sm"
-              disabled={invoices.isFetching}
-              onClick={() => void invoices.refetch()}
-            >
-              Try again
-            </Button>
-          </div>
+          <HistoryUnavailable
+            retrying={invoices.isFetching}
+            onRetry={() => void invoices.refetch()}
+          />
         ) : data.omittedRows > 0 ? (
           <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
             We couldn&rsquo;t display this billing history. Email{' '}
@@ -440,8 +452,16 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
       {partial && data.invoices.length > 0 ? (
         <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
-          Some payment history couldn&rsquo;t be loaded, so this list may be missing invoices.
-          Reload to try again.
+          Some invoices didn’t load.{' '}
+          <button
+            type="button"
+            className={`${linkStyles.link} dm-tap-target`}
+            disabled={invoices.isFetching}
+            onClick={() => void invoices.refetch()}
+            style={{ padding: 0, border: 0, background: 'none', font: 'inherit' }}
+          >
+            {invoices.isFetching ? 'Trying…' : 'Try again'}
+          </button>
         </p>
       ) : null}
 

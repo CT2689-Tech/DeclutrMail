@@ -6496,6 +6496,24 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
     expect(screen.queryByRole('button', { name: 'Change plan' })).not.toBeInTheDocument();
   });
 
+  it('groups the billing questions under one heading with no rule between them', async () => {
+    mockPassEnabled = true;
+    mockPricingV2 = true;
+    stubSubscription(() => jsonOk({ data: FREE_BODY }));
+    renderScreen(null, undefined, { pricingV2: true });
+    const faq = await screen.findByTestId('billing-faq');
+    expect(within(faq).getByText('Questions')).toBeInTheDocument();
+    const rows = faq.querySelectorAll('details');
+    expect(rows).toHaveLength(4);
+    for (const row of [...rows, ...faq.querySelectorAll('summary')]) {
+      const style = (row as HTMLElement).style;
+      expect(style.borderTop + style.borderBottom).toBe('');
+    }
+    for (const summary of faq.querySelectorAll('summary')) {
+      expect((summary as HTMLElement).style.borderBlock).toBe('none');
+    }
+  });
+
   it('still tells a Free account above its Gmail limit that adding one is blocked', async () => {
     mockPricingV2 = true;
     mockMailboxCount = 3;

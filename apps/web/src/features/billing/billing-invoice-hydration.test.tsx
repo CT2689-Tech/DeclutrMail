@@ -262,7 +262,7 @@ it('keeps the streamed invoice skeleton when the fulfilled payload is already in
     });
     expect(errors).toEqual([]);
     expect(container.textContent).toContain('Try again');
-    expect(container.textContent).toContain('return your invoices');
+    expect(container.textContent).toContain('Not available right now');
   } finally {
     await act(async () => root?.unmount());
     container.remove();

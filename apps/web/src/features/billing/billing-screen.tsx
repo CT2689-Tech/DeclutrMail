@@ -2021,15 +2021,25 @@ function BillingFaq({ passEnabled }: { passEnabled: boolean }) {
     ...(passEnabled ? ([['pricing.faq.passEnds.q', 'pricing.faq.passEnds.a']] as const) : []),
     ['pricing.faq.taxes.q', 'pricing.faq.taxes.a'],
   ] as const;
+  // One framed group, like Payment history: the chevrons mark each row, so a
+  // rule between rows only adds lines (the disclosure class draws its own).
   return (
     <section
       aria-label="Billing questions"
       data-testid="billing-faq"
-      style={{ display: 'grid', borderTop: `1px solid ${color.border}` }}
+      style={{
+        display: 'grid',
+        gap: 2,
+        padding: 'clamp(16px, 3vw, 22px)',
+        background: color.card,
+        border: `1px solid ${color.border}`,
+        borderRadius: radius.lg,
+      }}
     >
+      <GroupTitle>Questions</GroupTitle>
       {items.map(([question, answer]) => (
-        <details key={question} style={{ borderBottom: `1px solid ${color.border}` }}>
-          <summary className="dm-disclosure" style={{ padding: '12px 0', minHeight: 44 }}>
+        <details key={question}>
+          <summary className="dm-disclosure" style={{ borderBlock: 'none', padding: '10px 0' }}>
             {fillStory(WS1_COPY[question])}
           </summary>
           <p
