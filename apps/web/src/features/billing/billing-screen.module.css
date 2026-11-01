@@ -31,14 +31,14 @@
   gap: 16px;
 }
 
-/* The current access panel is the visual anchor; financial warnings keep
-   their existing semantic colors and all controls retain their own styles. */
-.page :global(#plan) {
-  border-top: 3px solid var(--dm-primary) !important;
+/* Facts that belong to the plan row (status, Pass end, a pause in flight),
+   inside the same raised surface. Nothing to say renders nothing. */
+.planNotes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 16px;
 }
-.page :global(#plan) > div:first-of-type > div:first-child > span:first-child {
-  font-weight: 600 !important;
-}
-.page :is(:global(#plan), :global(#payment), :global(#invoices)) {
-  border-radius: 12px !important;
+.planNotes:empty {
+  display: none;
 }

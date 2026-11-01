@@ -503,6 +503,17 @@ describe('backingStatusNote', () => {
     });
   });
 
+  // The note names the card, not a direction: where it sits is the page's
+  // job, and the page moves it right under the plan when past due.
+  it.each(['paddle', 'razorpay'] as const)(
+    'points at the %s payment card without a direction',
+    (provider) => {
+      expect(backingStatusNote({ state: 'past_due', sub: { ...SUB, provider } })?.text).not.toMatch(
+        /below|above/,
+      );
+    },
+  );
+
   it('warns on cancel_scheduled with the period-end date', () => {
     const sub = { ...SUB, cancelAtPeriodEnd: true };
     expect(backingStatusNote({ state: 'cancel_scheduled', sub })).toMatchObject({

@@ -1,5 +1,10 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  dehydrate,
+  HydrationBoundary,
+  QueryClient,
+  QueryClientProvider,
+} from '@tanstack/react-query';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -95,6 +100,29 @@ describe('AccessDeadlineBanner', () => {
       'November 3, 2026',
     );
     expect(useBillingSubscription).not.toHaveBeenCalled();
+    client.clear();
+  });
+
+  it('picks up the page’s hydrated read without updating while another component renders', async () => {
+    pathname.current = '/billing';
+    const client = new QueryClient();
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const tree = (children?: React.ReactNode) => (
+      <QueryClientProvider client={client}>
+        <AccessDeadlineBanner />
+        {children}
+      </QueryClientProvider>
+    );
+    const { rerender } = render(tree());
+    const server = new QueryClient();
+    server.setQueryData(billingKeys.subscription(), billing('past_due').data);
+    // HydrationBoundary writes the page's read into the cache during its render.
+    rerender(tree(<HydrationBoundary state={dehydrate(server)}>{null}</HydrationBoundary>));
+    expect(await screen.findByTestId('access-deadline-banner')).toHaveTextContent(
+      'November 3, 2026',
+    );
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/Cannot update a component/);
+    errors.mockRestore();
     client.clear();
   });
 

@@ -3,13 +3,9 @@
 import linkStyles from './billing-links.module.css';
 import styles from './billing-screen.module.css';
 
-import {
-  editorialColumnStyle,
-  editorialTitleStyle,
-  EditorialContents,
-} from '@/features/editorial/page';
+import { editorialColumnStyle, editorialTitleStyle } from '@/features/editorial/page';
 
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -27,7 +23,6 @@ import type {
   BillingProviderId,
   BillingReconcileOutcome,
   BillingSubscription,
-  BillingInvoiceList,
   CancelRequest,
 } from '@declutrmail/shared/contracts';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
@@ -59,6 +54,7 @@ import { billingIntentPath, type BillingIntent } from './billing-intent';
 import type { HeldCheckout } from './checkout-recovery';
 import { useCancelSubscription } from './api/use-cancel-subscription';
 import { useChangePlan } from './api/use-change-plan';
+import { useCheckoutAttemptCheck } from './api/use-checkout-attempt-check';
 import { useReconcileCheckout } from './api/use-reconcile-checkout';
 import {
   backingStatusNote,
@@ -92,11 +88,11 @@ import {
   type PendingCheckout,
   type PendingKind,
 } from './pending-checkout';
-import { PlanCoverage } from './plan-coverage';
+import { OVER_LIMIT_NOTE, PlanCoverage } from './plan-coverage';
 import { QuotaChip } from './quota-chip';
 import { useCleanupSummary } from './use-cleanup-summary';
 import { PlanPicker } from './plan-picker';
-import { GroupTitle } from '@/features/settings/settings-list';
+import { DrillRow, SettingsGroup, SettingsRow } from '@/features/settings/settings-list';
 
 // Opens only after "Cancel plan" is pressed, and carries the shared
 // confirm sheet — loading it on demand keeps /billing inside its
@@ -106,7 +102,22 @@ const CancelModal = dynamic(() => import('./cancel-modal').then((m) => m.CancelM
 });
 const CheckoutAttemptNotice = dynamic(
   () => import('./checkout-attempt-notice').then((m) => m.CheckoutAttemptNotice),
-  { ssr: false },
+  {
+    ssr: false,
+    // Holds the notice's place while its chunk loads: an empty first
+    // slot left the NoticeSlot's "+1 more" toggle standing alone.
+    loading: () => (
+      <div
+        aria-hidden
+        data-testid="checkout-attempt-notice-loading"
+        style={{
+          minHeight: 120,
+          background: tokens.color.primarySoft,
+          borderRadius: tokens.radius.lg,
+        }}
+      />
+    ),
+  },
 );
 const CheckoutRecovery = dynamic(
   () => import('./checkout-recovery').then((m) => m.CheckoutRecovery).catch(() => () => null),
@@ -115,14 +126,20 @@ const CheckoutRecovery = dynamic(
 
 const { color, font, radius, text } = tokens;
 
-/** One-account plans use the approved planIncludes line. Plus keeps scope. */
-function billingAccountScope(plan: BillingPlanView): string {
-  const oneAccount = passCoversPlan(plan) || TIER_MANIFEST[plan.entitlementTier].inboxLimit === 1;
-  if (!oneAccount) return WS2_COPY.liveFix.billing.scope;
-  return fillStory(WS2_COPY.liveFix.billing.planIncludes.one, 'usd', {
-    name: passCoversPlan(plan)
-      ? fillStory(WS1_COPY['planName.pass'])
-      : TIER_MANIFEST[plan.entitlementTier].name,
+/**
+ * The approved planIncludes line, from the server's account ceiling.
+ * The manifest's legacy Plus limit (1) told every launch-price Plus
+ * subscriber their plan covered one account; launch Plus covers two.
+ */
+function billingAccountScope(plan: BillingPlanView, inboxLimit: number): string {
+  const name = passCoversPlan(plan)
+    ? fillStory(WS1_COPY['planName.pass'])
+    : TIER_MANIFEST[plan.entitlementTier].name;
+  if (passCoversPlan(plan) || inboxLimit === 1)
+    return fillStory(WS2_COPY.liveFix.billing.planIncludes.one, 'usd', { name });
+  return fillStory(WS2_COPY.liveFix.billing.planIncludes.other, 'usd', {
+    name,
+    k: String(inboxLimit),
   });
 }
 
@@ -148,6 +165,9 @@ const PAYMENT_PROCESSING_SLOW_AFTER_MS = 90_000;
  */
 const PAYMENT_UNCONFIRMED_AFTER_MS = 15 * 60_000;
 const PAYMENT_UNCONFIRMED_POLL_MS = 30_000;
+
+/** A durable checkout attempt's id (the browser mints it; the server adopts it). */
+const UUID_PATTERN = /^[a-f\d]{8}(?:-[a-f\d]{4}){3}-[a-f\d]{12}$/i;
 
 /** How far along the webhook wait is — drives the notice + poll pace. */
 type ProcessingPhase = 'fresh' | 'slow' | 'unconfirmed';
@@ -216,7 +236,7 @@ export function BillingScreen({
   invoiceHistory?: ReactNode;
 }) {
   const { me } = useAuth();
-  const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled } = useTier();
+  const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled, inboxLimit } = useTier();
   const visitorLocale = visitorPriceLocale({ country, indiaCheckoutOpen });
   const workspaceId = me.user.workspaceId;
   const currentOwner = useRef(workspaceId);
@@ -255,15 +275,6 @@ export function BillingScreen({
   // Cancel button — until some unrelated invalidate happened to fire.
   const [pauseConfirming, setPauseConfirming] = useState(false);
   const queryClient = useQueryClient();
-  // Read the history count without mounting another query observer: an observer
-  // would replace the streaming metadata InvoiceHistory needs for hydration.
-  // The server snapshot also keeps the first hydration render identical.
-  const invoiceCount = useSyncExternalStore(
-    (onChange) => queryClient.getQueryCache().subscribe(onChange),
-    () =>
-      queryClient.getQueryData<BillingInvoiceList>(billingKeys.invoices())?.invoices.length ?? 0,
-    () => 0,
-  );
   const subscriptionQuery = useBillingSubscription({
     // Three waits, and the pending-payment one outranks: it is measured
     // in seconds and its lock hides the other notices anyway.
@@ -294,6 +305,41 @@ export function BillingScreen({
   const pause = usePauseSubscription();
   const reconcileCheckout = useReconcileCheckout();
   const [cancelOpen, setCancelOpen] = useState(false);
+  // A subscriber's plan options open on request ("Change plan", or a
+  // #change-plan link), instead of sitting at the bottom of the page.
+  const [changeOpen, setChangeOpen] = useState(false);
+  const openChangePlan = () => {
+    setChangeOpen(true);
+    revealChangePlan();
+  };
+  useEffect(() => {
+    // A cold #change-plan link opens on mount; BillingSectionAnchor then
+    // scrolls to it once the billing read has replaced the loading state.
+    if (window.location.hash === '#change-plan') setChangeOpen(true);
+    const open = () => {
+      setChangeOpen(true);
+      revealChangePlan();
+    };
+    const onHashChange = () => {
+      if (window.location.hash === '#change-plan') open();
+    };
+    // Next's <Link> moves to a same-page hash with pushState, which fires
+    // no hashchange, so the account menu's link here would do nothing.
+    const onClick = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+        return;
+      const link = event.target instanceof Element ? event.target.closest('a[href]') : null;
+      if (!(link instanceof HTMLAnchorElement)) return;
+      const url = new URL(link.href);
+      if (url.pathname === window.location.pathname && url.hash === '#change-plan') open();
+    };
+    window.addEventListener('hashchange', onHashChange);
+    document.addEventListener('click', onClick);
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+      document.removeEventListener('click', onClick);
+    };
+  }, []);
   const isPhone = useIsAtMost('xs');
   // A 503 is a designed state, and it is not in the dehydrated snapshot.
   // The server therefore paints the loading placeholder. The browser can
@@ -622,6 +668,97 @@ export function BillingScreen({
       .catch(() => undefined);
   }, [data?.complimentary?.source, returnTo, initialIntent?.from]);
 
+  // A browser hold names ONE checkout attempt, but the subscription read
+  // reports only the workspace's LATEST. The server refuses a new
+  // checkout while any attempt is unresolved, so once that read shows
+  // nothing in flight, an older hold can only be finished or gone — and
+  // no later read would ever mention it. That left a notice with no way
+  // out that also locked the payment-method card (a Pass started on one
+  // device, Plus bought on another). Ask the server about that exact
+  // attempt and let its own record release the hold.
+  const heldAttemptId =
+    pending !== null &&
+    pending.workspaceId === workspaceId &&
+    (pending.kind === 'checkout' || pending.kind === 'checkout_intent') &&
+    activeServerAttempt === null &&
+    data?.checkoutAttempt !== undefined &&
+    !data.pendingCheckout
+      ? (pending.serverAttemptId ??
+        (pending.attemptId !== undefined && UUID_PATTERN.test(pending.attemptId)
+          ? pending.attemptId
+          : undefined))
+      : undefined;
+  const staleAttemptId =
+    heldAttemptId !== undefined && heldAttemptId !== data?.checkoutAttempt?.id
+      ? heldAttemptId
+      : undefined;
+  // A bound hold proves the server created the attempt. An unbound one
+  // may still be mid-request, so its absence counts only once the hold
+  // is old enough to be unconfirmed: the server writes the attempt row
+  // before it ever contacts Paddle, so an attempt still missing then was
+  // never created and nothing could have charged.
+  const absenceIsFinal =
+    staleAttemptId !== undefined &&
+    (pending?.serverAttemptId === staleAttemptId || processingPhase === 'unconfirmed');
+  // The attempt whose check came back and kept the hold. Until then the
+  // hold renders no notice: it is usually stale, and a "not confirmed"
+  // flash that vanishes a moment later reads as a billing problem.
+  const [staleKept, setStaleKept] = useState<string | null>(null);
+  const holdAwaitingCheck =
+    staleAttemptId !== undefined && staleKept !== staleAttemptId && !subscriptionQuery.isError;
+  const refetchSubscription = subscriptionQuery.refetch;
+  const staleCheck = useCheckoutAttemptCheck(workspaceId, staleAttemptId, absenceIsFinal);
+  useEffect(() => {
+    if (staleAttemptId === undefined) return;
+    const release = (fulfilled: boolean) => {
+      if (!mounted.current || currentOwner.current !== workspaceId) return;
+      const record = readPendingCheckout(workspaceId);
+      if (record !== null) {
+        if ((record.serverAttemptId ?? record.attemptId) !== staleAttemptId) return;
+        clearPendingCheckout(workspaceId);
+      }
+      // A hold built from the server's read lives only in memory, so
+      // there may be no record to clear.
+      setPending((current) =>
+        current !== null && (current.serverAttemptId ?? current.attemptId) === staleAttemptId
+          ? null
+          : current,
+      );
+      // A finished purchase may have changed entitlements this browser
+      // never saw (§8 scope-change ⇒ cache reset).
+      if (fulfilled) {
+        void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+        void queryClient.invalidateQueries();
+      }
+    };
+    const attempt = staleCheck.data;
+    if (attempt !== undefined) {
+      if (attempt.state === 'fulfilled' || attempt.state === 'stopped') {
+        release(attempt.state === 'fulfilled');
+        return;
+      }
+      // Still unresolved: the read that said otherwise is stale.
+      setStaleKept(staleAttemptId);
+      void refetchSubscription();
+      return;
+    }
+    if (staleCheck.error === null) return;
+    if (absenceIsFinal && apiErrorCode(staleCheck.error) === 'NOT_FOUND') {
+      release(false);
+      return;
+    }
+    // Anything else, a timeout included, proves nothing; the hold stays.
+    setStaleKept(staleAttemptId);
+  }, [
+    staleAttemptId,
+    absenceIsFinal,
+    staleCheck.data,
+    staleCheck.error,
+    workspaceId,
+    queryClient,
+    refetchSubscription,
+  ]);
+
   // "Usually within a minute" needs a state for when it isn't (§8 —
   // every promise in copy gets its elapsed branch). Elapsed counts
   // from the PAYMENT (pending.at), not from mount — a reload mid-wait
@@ -912,7 +1049,7 @@ export function BillingScreen({
         />
       ),
     });
-  } else if (pending !== null) {
+  } else if (pending !== null && !holdAwaitingCheck) {
     notices.push({
       key: 'payment-processing',
       node: (
@@ -949,6 +1086,7 @@ export function BillingScreen({
           <PaymentProcessingNotice
             phase={processingPhase}
             kind={pending.kind}
+            startedAt={pending.at}
             {...(pending.offer !== undefined ? { offer: pending.offer } : {})}
             {...(pending.kind !== 'checkout' && pending.kind !== 'checkout_intent'
               ? { onRelease: onReleasePendingLock }
@@ -1025,13 +1163,15 @@ export function BillingScreen({
       ),
     });
   }
-  if (nonBacking) {
+  // An open server attempt becomes a pending wait one effect later, which
+  // hides this anyway; gating here keeps it from flashing for that frame.
+  if (nonBacking && activeServerAttempt === null) {
     notices.push({
       key: 'non-backing',
       node: (
         <NonBackingSubscriptionNotice
           record={nonBacking}
-          entitlementTier={plan.entitlementTier}
+          entitlementName={currentPlanTitle(plan)}
           onResumeStarted={() => startPending('resume', nonBacking.sub.tier, nonBacking.sub.cycle)}
           onRequestCancel={() => setCancelOpen(true)}
         />
@@ -1060,22 +1200,205 @@ export function BillingScreen({
     notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
   }
 
+  // Who the page is for decides its order. With nothing billing, the
+  // job is choosing what to buy, so the offers lead. A subscriber's job is
+  // managing what they have: plan and card first, plan changes on request.
+  const currentAccessKind = passCoversPlan(plan)
+    ? ('pass' as const)
+    : backingSub === null &&
+        plan.complimentary?.source !== 'pass' &&
+        plan.complimentary?.tier === plan.entitlementTier
+      ? ('complimentary' as const)
+      : ('tier' as const);
+  const purchaseFirst =
+    pricingV2 &&
+    backingSub === null &&
+    (plan.entitlementTier === 'free' || currentAccessKind === 'pass');
+  const pickerShown = purchaseFirst || backingSub === null || changeOpen || initialIntent !== null;
+  // While a plan action awaits its webhook, a second one could
+  // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
+  // whose row doesn't exist yet. Withhold every affordance until
+  // the pending state resolves (the banner above says why).
+  // A non-backing row that is not CANCELED still occupies the
+  // server's one-live-subscription slot (SUBSCRIPTION_EXISTS keys
+  // on STATUS active/past_due/paused, not on backing) — offering
+  // checkout against it is a guaranteed 409 dead-end. Resume or
+  // cancel first; the notice above carries those verbs (A6).
+  const pickerDisabled =
+    billingDark ||
+    setupRequired ||
+    pending !== null ||
+    activeServerAttempt !== null ||
+    reviewPending ||
+    plan.backing.state === 'past_due' ||
+    plan.backing.state === 'cancel_scheduled' ||
+    plan.scheduledChange != null ||
+    nonBackingBlocksNewCheckout(nonBacking);
+  const showCancelLink =
+    !billingDark &&
+    !pauseConfirming &&
+    (plan.backing.state === 'active' || plan.backing.state === 'past_due');
+  const paymentMethodCard =
+    !billingDark && paymentMethodSub ? (
+      <PaymentMethodCard
+        provider={paymentMethodSub.provider}
+        isPastDue={paymentMethodSub.status === 'past_due'}
+        disabled={pending !== null}
+        disabledReason={
+          pending !== null && !holdAwaitingCheck
+            ? 'Available once the payment above finishes confirming.'
+            : null
+        }
+      />
+    ) : null;
+  const currentPlanCard = (
+    <CurrentPlanCard
+      plan={plan}
+      locale={visitorLocale}
+      cleanupRemaining={cleanupRemaining}
+      cleanupResetsAt={cleanupResetsAt}
+      billingDark={billingDark}
+      pauseConfirming={pauseConfirming}
+      reviewPending={reviewPending}
+      // A picker with every option disabled is a click that leads nowhere;
+      // the notes on the card already say what to do instead.
+      onChangePlan={pickerDisabled ? null : openChangePlan}
+      onReviewCancellation={showCancelLink ? () => setCancelOpen(true) : null}
+      onResumeCancellation={() =>
+        resumeCancellation.mutate(undefined, {
+          onSuccess: (next) => {
+            const end = formatBillingDate(next.subscription?.currentPeriodEnd ?? null);
+            toast(
+              end ? `Subscription restored — it renews on ${end}.` : 'Subscription restored.',
+              'success',
+            );
+          },
+        })
+      }
+      isResumingCancellation={resumeCancellation.isPending}
+      resumeCancellationError={
+        resumeCancellation.error ? resumeCancellationErrorMessage(resumeCancellation.error) : null
+      }
+    />
+  );
+  const planCoverage = (
+    <PlanCoverage
+      tier={plan.entitlementTier}
+      pass={passCoversPlan(plan)}
+      freeManualPass={freeManualPassGrant(plan.complimentary)}
+    />
+  );
+  const invoices = !billingDark ? (invoiceHistory ?? <InvoiceHistory />) : null;
+  const picker = (
+    <PlanPicker
+      currentTier={plan.entitlementTier}
+      currentAccess={{
+        kind: passCoversPlan(plan)
+          ? 'pass'
+          : backingSub === null &&
+              plan.complimentary?.source !== 'pass' &&
+              plan.complimentary?.tier === plan.entitlementTier
+            ? 'complimentary'
+            : 'tier',
+        priceLabel: currentPlanPriceLabel(plan, visitorLocale),
+        subscription: backingSub,
+      }}
+      grantingSub={grantingBackingSub}
+      disabled={pickerDisabled}
+      initialIntent={initialIntent}
+      initialProvider={initialProvider}
+      pricingV2={pricingV2}
+      passEnabled={passEnabled}
+      country={country}
+      indiaCheckoutOpen={indiaCheckoutOpen}
+      checkoutGeoToken={checkoutGeoToken}
+      onRequestCancel={() => setCancelOpen(true)}
+      onPaymentCompleted={(target, cycle, attemptId, offer) =>
+        // Own-id transition over this checkout's reservation: the
+        // overlay reported payment — the record becomes the visible
+        // "Payment received" lock+poll.
+        startPending('checkout', target, cycle, attemptId, offer)
+      }
+      onCheckoutRejected={releaseAttemptLock}
+      onCheckoutLoadFailed={(attemptId, session, target, cycle) => {
+        if (!mounted.current || currentOwner.current !== workspaceId) return;
+        const record = readPendingCheckout(workspaceId);
+        if (record?.attemptId !== attemptId) return;
+        if (session.provider === 'paddle' && session.attemptId) {
+          surfaceAttemptLock(attemptId);
+          void subscriptionQuery.refetch();
+          return;
+        }
+        setHeldCheckout({
+          workspaceId,
+          session,
+          target,
+          cycle,
+          attemptId,
+          expiresAt: record.at + 30 * 60_000,
+        });
+        surfaceAttemptLock(attemptId);
+      }}
+      onCheckoutSession={(attemptId) => {
+        const bound = bindPendingCheckoutAttempt(workspaceId, attemptId);
+        if (bound) setPending(bound);
+        void subscriptionQuery.refetch();
+      }}
+      onCheckoutAttempt={(target, cycle, offer) =>
+        attemptClaim('checkout_intent', target, cycle, offer)
+      }
+      onCheckoutAbandoned={surfaceAttemptLock}
+      onCheckoutClosed={(attemptId) => {
+        surfaceAttemptLock(attemptId);
+      }}
+      ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
+      mayOpenCheckout={(attemptId) => {
+        const record = readPendingCheckout(workspaceId);
+        return (
+          mounted.current &&
+          mayStartCheckout.current &&
+          currentOwner.current === workspaceId &&
+          record?.kind === 'checkout_intent' &&
+          record.attemptId === attemptId &&
+          Date.now() < record.at + 30 * 60 * 1000
+        );
+      }}
+      onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
+      onPlanChangeFailedKnown={releaseAttemptLock}
+      onPlanChangeAccepted={(next, target, cycle, attemptId) => {
+        if (!mounted.current || currentOwner.current !== workspaceId) return;
+        const scheduled = next.subscription?.scheduledChange ?? null;
+        if (scheduled) {
+          // Scheduled ($0) — release this attempt's lock (UUID-
+          // matched: never a concurrent attempt's unresolved lock).
+          releaseAttemptLock(attemptId);
+          queryClient.setQueryData(billingKeys.subscription(), next);
+          const date = formatBillingDate(scheduled.effectiveAt);
+          toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
+        } else {
+          startPending('change', target, cycle, attemptId);
+        }
+      }}
+      onPlanChangeUnconfirmed={(target, cycle, attemptId) =>
+        // Ambiguous provider outcome on an immediate upgrade: the
+        // prorated charge may have applied. Enter the SAME lock+poll
+        // machinery as checkout — no stale panel with an armed
+        // money-moving retry button.
+        startPending('change_unconfirmed', target, cycle, attemptId)
+      }
+    />
+  );
+
   return (
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
-      <BillingPageHeader description={billingAccountScope(plan)} />
+      {/* The coverage group states the account limit with a live count; only
+          the Free offers page leaves that group out, so only it says it here. */}
+      <BillingPageHeader
+        {...(purchaseFirst && plan.entitlementTier === 'free'
+          ? { description: billingAccountScope(plan, inboxLimit) }
+          : {})}
+      />
       <BillingSectionAnchor />
-      {!billingDark && (paymentMethodSub !== null || invoiceCount > 5) ? (
-        <EditorialContents
-          items={[
-            { href: '#plan', label: 'Your plan' },
-            ...(!billingDark && paymentMethodSub
-              ? [{ href: '#payment', label: 'Payment details' }]
-              : []),
-            ...(!billingDark ? [{ href: '#invoices', label: 'Payment history' }] : []),
-            { href: '#change-plan', label: 'Plans' },
-          ]}
-        />
-      ) : null}
       <ScreenIntro
         id="billing"
         title="Plan & billing"
@@ -1095,208 +1418,37 @@ export function BillingScreen({
         </p>
       )}
 
-      <CurrentPlanCard
-        plan={plan}
-        locale={visitorLocale}
-        cleanupRemaining={cleanupRemaining}
-        cleanupResetsAt={cleanupResetsAt}
-        billingDark={billingDark}
-        pauseConfirming={pauseConfirming}
-        reviewPending={reviewPending}
-        onCancel={() => setCancelOpen(true)}
-        onResumeCancellation={() =>
-          resumeCancellation.mutate(undefined, {
-            onSuccess: (next) => {
-              const end = formatBillingDate(next.subscription?.currentPeriodEnd ?? null);
-              toast(
-                end ? `Subscription restored — it renews on ${end}.` : 'Subscription restored.',
-                'success',
-              );
-            },
-          })
-        }
-        isResumingCancellation={resumeCancellation.isPending}
-        resumeCancellationError={
-          resumeCancellation.error ? resumeCancellationErrorMessage(resumeCancellation.error) : null
-        }
-      />
+      {purchaseFirst ? (
+        <>
+          {plan.entitlementTier === 'free' ? (
+            <FreePlanStatus cleanupRemaining={cleanupRemaining} cleanupResetsAt={cleanupResetsAt} />
+          ) : (
+            currentPlanCard
+          )}
+          {picker}
+          <BillingFaq passEnabled={passEnabled} />
+          {plan.entitlementTier === 'free' ? null : planCoverage}
+          {invoices}
+        </>
+      ) : (
+        <>
+          {currentPlanCard}
+          {/* Past due, fixing the card is the page's one job, so it comes first. */}
+          {paymentMethodSub?.status === 'past_due' ? paymentMethodCard : planCoverage}
+          {paymentMethodSub?.status === 'past_due' ? planCoverage : paymentMethodCard}
+          {invoices}
+          {pickerShown ? picker : null}
+        </>
+      )}
 
-      {!billingDark && paymentMethodSub && paymentMethodSub.status === 'past_due' ? (
-        <PaymentMethodCard
-          provider={paymentMethodSub.provider}
-          isPastDue={paymentMethodSub.status === 'past_due'}
-          disabled={pending !== null}
-          disabledReason={
-            pending !== null ? 'Available once the payment above finishes confirming.' : null
-          }
-        />
-      ) : null}
-
-      {/* D119/ADR-0035. Tied to the GRANTING record: the instrument
-          that matters is the one funding the current plan, and a
-          cancelled row's card is not something to send anyone to
-          update. On past_due this is the screen's primary action, which
-          is why it sits directly under the plan card rather than below
-          the picker. Withheld while a money action is unresolved — the
-          portal can start a payment, and arming two money paths at once
-          is the double-charge case this screen is built around. */}
-      <PlanCoverage
-        tier={plan.entitlementTier}
-        pass={passCoversPlan(plan)}
-        freeManualPass={freeManualPassGrant(plan.complimentary)}
-      />
-
-      {!billingDark && paymentMethodSub && paymentMethodSub.status !== 'past_due' ? (
-        <PaymentMethodCard
-          provider={paymentMethodSub.provider}
-          isPastDue={false}
-          disabled={pending !== null}
-          disabledReason={
-            pending !== null ? 'Available once the payment above finishes confirming.' : null
-          }
-        />
-      ) : null}
-
-      {/* Renders for anyone who has EVER paid, including a workspace
-          now back on Free: the tax need outlives the subscription, and
-          fetching last year's receipts is the commonest reason to open
-          this page after leaving. Billing-dark carries no rows to read
-          and never fetches. */}
-      {!billingDark ? (invoiceHistory ?? <InvoiceHistory />) : null}
-
-      <PlanPicker
-        currentTier={plan.entitlementTier}
-        currentAccess={{
-          kind: passCoversPlan(plan)
-            ? 'pass'
-            : backingSub === null &&
-                plan.complimentary?.source !== 'pass' &&
-                plan.complimentary?.tier === plan.entitlementTier
-              ? 'complimentary'
-              : 'tier',
-          priceLabel: currentPlanPriceLabel(plan, visitorLocale),
-          subscription: backingSub,
-        }}
-        grantingSub={grantingBackingSub}
-        // While a plan action awaits its webhook, a second one could
-        // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
-        // whose row doesn't exist yet. Withhold every affordance until
-        // the pending state resolves (the banner above says why).
-        // A non-backing row that is not CANCELED still occupies the
-        // server's one-live-subscription slot (SUBSCRIPTION_EXISTS keys
-        // on STATUS active/past_due/paused, not on backing) — offering
-        // checkout against it is a guaranteed 409 dead-end. Resume or
-        // cancel first; the notice above carries those verbs (A6).
-        disabled={
-          billingDark ||
-          setupRequired ||
-          pending !== null ||
-          activeServerAttempt !== null ||
-          reviewPending ||
-          plan.backing.state === 'past_due' ||
-          plan.backing.state === 'cancel_scheduled' ||
-          plan.scheduledChange != null ||
-          nonBackingBlocksNewCheckout(nonBacking)
-        }
-        initialIntent={initialIntent}
-        initialProvider={initialProvider}
-        pricingV2={pricingV2}
-        passEnabled={passEnabled}
-        country={country}
-        indiaCheckoutOpen={indiaCheckoutOpen}
-        checkoutGeoToken={checkoutGeoToken}
-        onRequestCancel={() => setCancelOpen(true)}
-        onPaymentCompleted={(target, cycle, attemptId, offer) =>
-          // Own-id transition over this checkout's reservation: the
-          // overlay reported payment — the record becomes the visible
-          // "Payment received" lock+poll.
-          startPending('checkout', target, cycle, attemptId, offer)
-        }
-        onCheckoutRejected={releaseAttemptLock}
-        onCheckoutLoadFailed={(attemptId, session, target, cycle) => {
-          if (!mounted.current || currentOwner.current !== workspaceId) return;
-          const record = readPendingCheckout(workspaceId);
-          if (record?.attemptId !== attemptId) return;
-          if (session.provider === 'paddle' && session.attemptId) {
-            surfaceAttemptLock(attemptId);
-            void subscriptionQuery.refetch();
-            return;
-          }
-          setHeldCheckout({
-            workspaceId,
-            session,
-            target,
-            cycle,
-            attemptId,
-            expiresAt: record.at + 30 * 60_000,
-          });
-          surfaceAttemptLock(attemptId);
-        }}
-        onCheckoutSession={(attemptId) => {
-          const bound = bindPendingCheckoutAttempt(workspaceId, attemptId);
-          if (bound) setPending(bound);
-          void subscriptionQuery.refetch();
-        }}
-        onCheckoutAttempt={(target, cycle, offer) =>
-          attemptClaim('checkout_intent', target, cycle, offer)
-        }
-        onCheckoutAbandoned={surfaceAttemptLock}
-        onCheckoutClosed={(attemptId) => {
-          surfaceAttemptLock(attemptId);
-        }}
-        ownsCheckout={() => mounted.current && currentOwner.current === workspaceId}
-        mayOpenCheckout={(attemptId) => {
-          const record = readPendingCheckout(workspaceId);
-          return (
-            mounted.current &&
-            mayStartCheckout.current &&
-            currentOwner.current === workspaceId &&
-            record?.kind === 'checkout_intent' &&
-            record.attemptId === attemptId &&
-            Date.now() < record.at + 30 * 60 * 1000
-          );
-        }}
-        onPlanChangeAttempt={(target, cycle) => attemptClaim('change_unconfirmed', target, cycle)}
-        onPlanChangeFailedKnown={releaseAttemptLock}
-        onPlanChangeAccepted={(next, target, cycle, attemptId) => {
-          if (!mounted.current || currentOwner.current !== workspaceId) return;
-          const scheduled = next.subscription?.scheduledChange ?? null;
-          if (scheduled) {
-            // Scheduled ($0) — release this attempt's lock (UUID-
-            // matched: never a concurrent attempt's unresolved lock).
-            releaseAttemptLock(attemptId);
-            queryClient.setQueryData(billingKeys.subscription(), next);
-            const date = formatBillingDate(scheduled.effectiveAt);
-            toast(date ? `Downgrade scheduled for ${date}.` : 'Downgrade scheduled.', 'success');
-          } else {
-            startPending('change', target, cycle, attemptId);
-          }
-        }}
-        onPlanChangeUnconfirmed={(target, cycle, attemptId) =>
-          // Ambiguous provider outcome on an immediate upgrade: the
-          // prorated charge may have applied. Enter the SAME lock+poll
-          // machinery as checkout — no stale panel with an armed
-          // money-moving retry button.
-          startPending('change_unconfirmed', target, cycle, attemptId)
-        }
-      />
-
-      <p style={{ fontSize: text.sm }}>
-        <a className={`${linkStyles.link} dm-tap-target`} href="/settings/help">
-          Billing help
-        </a>
+      <SettingsGroup title="Help">
+        <DrillRow href="/settings/help" label="Billing help" />
         {manualPassGrant(plan.complimentary) &&
         plan.backing.state === 'none' &&
         plan.nonBacking === null ? null : (
-          <>
-            {' '}
-            ·{' '}
-            <a className={`${linkStyles.link} dm-tap-target`} href="/refunds">
-              Refund policy
-            </a>
-          </>
+          <DrillRow href="/refunds" label="Refund policy" />
         )}
-      </p>
+      </SettingsGroup>
       <CancelModal
         open={cancelOpen}
         pricingV2={pricingV2}
@@ -1305,6 +1457,7 @@ export function BillingScreen({
         sub={backingSub ?? plan.nonBacking?.sub ?? null}
         backsEntitlement={backingSub !== null}
         entitlementTier={plan.entitlementTier}
+        entitlementName={currentPlanTitle(plan)}
         onClose={() => {
           setCancelOpen(false);
           // Clear a failed attempt so reopening the modal starts clean
@@ -1335,6 +1488,16 @@ export function BillingScreen({
       />
     </div>
   );
+}
+
+/** The plan options mount on the render that opens them; scroll once they have. */
+function revealChangePlan() {
+  window.requestAnimationFrame(() => {
+    const section = document.getElementById('change-plan');
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    section?.scrollIntoView({ behavior: still ? 'instant' : 'smooth', block: 'start' });
+    section?.focus({ preventScroll: true });
+  });
 }
 
 /** Restore a cold deep link after the billing read replaces its loading state. */
@@ -1486,8 +1649,12 @@ export function PaymentProcessingNotice({
   releasing = false,
   releaseError = null,
   onProviderCheck,
+  startedAt,
 }: {
   phase?: 'fresh' | 'slow' | 'unconfirmed';
+  /** Epoch ms the hold began. An unconfirmed notice names it: a
+   *  checkout from an hour ago is not one the reader remembers. */
+  startedAt?: number;
   /** What started the wait — a new checkout payment, a plan change on
    *  the existing subscription, or a pause resume. The copy must state
    *  only what actually happened (a plan change/resume made no new
@@ -1588,7 +1755,7 @@ export function PaymentProcessingNotice({
     kind === 'checkout'
       ? 'Payment received.'
       : kind === 'checkout_intent'
-        ? 'We do not yet know whether a payment completed.'
+        ? `If you already paid, don’t pay again — your ${isPass ? passName : 'plan'} shows here once it’s confirmed.`
         : kind === 'resume'
           ? 'No charge was started; your existing paid period continues.'
           : kind === 'change'
@@ -1596,13 +1763,20 @@ export function PaymentProcessingNotice({
             : null;
   const next =
     phase !== 'fresh'
-      ? 'you can wait here or return later.'
+      ? null
       : kind === 'checkout_intent'
-        ? 'continue in the checkout window if it’s still open.'
+        ? 'finish in the checkout window if it’s still open.'
         : kind === 'checkout'
           ? `your ${isPass ? passName : 'new plan'} will show here in a minute.`
           : 'confirmation usually arrives within a minute.';
-  const body = [known, `Billing changes stay paused; ${next}`].filter(Boolean).join(' ');
+  const body = [
+    known,
+    next === null
+      ? 'Plan and payment changes stay paused until it’s confirmed.'
+      : `Plan and payment changes stay paused; ${next}`,
+  ]
+    .filter(Boolean)
+    .join(' ');
   const recoveryButtonStyle = {
     maxWidth: '100%',
     minWidth: 0,
@@ -1631,28 +1805,21 @@ export function PaymentProcessingNotice({
       }}
     >
       <h2 style={{ margin: 0, fontSize: text.md, fontWeight: 600 }}>
-        {phase === 'unconfirmed'
-          ? `${acted} — your ${awaited} hasn’t come through yet.`
-          : phase === 'slow'
-            ? 'Still confirming — this is taking longer than usual.'
-            : `${acted} — confirming your ${isPass ? passName : 'plan'}.`}
+        {phase === 'unconfirmed' && kind === 'checkout_intent' && startedAt !== undefined
+          ? `Your ${isPass ? `${passName} ` : ''}checkout from ${heldSince(startedAt)} isn’t confirmed yet.`
+          : phase === 'unconfirmed'
+            ? `${acted} — your ${awaited} hasn’t come through yet.`
+            : phase === 'slow'
+              ? 'Still confirming — this is taking longer than usual.'
+              : `${acted} — confirming your ${isPass ? passName : 'plan'}.`}
       </h2>
       {releasing ? <p style={{ margin: 0 }}>Releasing hold…</p> : null}
       {releaseError ? (
-        <p role="alert" style={{ margin: 0, color: color.danger }}>
+        <p role="alert" style={{ margin: 0, color: color.dangerText }}>
           {releaseError}
         </p>
       ) : null}
       <p style={{ margin: 0, color: color.fgSoft }}>{body}</p>
-      {phase !== 'fresh' || onRelease === undefined ? (
-        <p style={{ margin: 0, fontSize: text.sm }}>
-          Need help?{' '}
-          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
-            Contact billing support
-          </a>
-          .
-        </p>
-      ) : null}
       {reconcilable && providerCheck !== 'idle' ? (
         // D249 — the server's own answer, stated before any customer
         // question. Each line asserts only what the check verified.
@@ -1661,9 +1828,8 @@ export function PaymentProcessingNotice({
           style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}
           aria-live="polite"
         >
-          <strong>Last checked: </strong>
           {providerCheck === 'checking' ? (
-            'Checking with the payment provider…'
+            'Checking payment status…'
           ) : providerCheck === 'none_found' ? (
             isChangeWait ? (
               // The provider answered and the awaited plan exists
@@ -1679,7 +1845,7 @@ export function PaymentProcessingNotice({
               // rows mid-change is a state worth a human look.
               <>
                 We found no live subscription to check against — email{' '}
-                <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                   support@declutrmail.com
                 </a>
                 .
@@ -1690,15 +1856,15 @@ export function PaymentProcessingNotice({
               'Neither DeclutrMail nor the payment provider has a pending payment to confirm for this checkout.'
             )
           ) : providerCheck === 'payment_in_progress' ? (
-            'The payment provider shows this checkout still in progress — for example awaiting bank confirmation. Waiting is safe; this page keeps checking.'
+            'The payment provider shows this checkout still in progress. Waiting is safe; this page keeps checking.'
           ) : providerCheck === 'provider_unavailable' ? (
             // Also every rejection of OUR check request — a 429, a 5xx, a
             // network drop — so it names no failure to reach the provider.
-            'We couldn’t check with the payment provider automatically.'
+            'Couldn’t check payment status just now.'
           ) : providerCheck === 'unresolved' ? (
             <>
               We found payment activity that needs a manual look — email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+              <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                 support@declutrmail.com
               </a>
               .
@@ -1825,8 +1991,25 @@ export function PaymentProcessingNotice({
           </div>
         )
       ) : null}
+      {phase !== 'fresh' || onRelease === undefined ? (
+        <p style={{ margin: 0, fontSize: text.sm }}>
+          Need help?{' '}
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
+            Contact billing support
+          </a>
+          .
+        </p>
+      ) : null}
     </div>
   );
+}
+
+/** "10:40 PM" today, "Oct 29" before — when this browser's hold began. */
+function heldSince(at: number): string {
+  const started = new Date(at);
+  return started.toDateString() === new Date().toDateString()
+    ? started.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : started.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 /** Non-metered Free chip. A missing reset is omitted, not invented. */
@@ -1843,6 +2026,117 @@ function freeEmailsLeftLine(remaining: number, resetAt: string | null): string {
   return at === -1 ? line : line.slice(0, at);
 }
 
+/**
+ * Free, at a glance: the plan and its monthly allowance on one line, so
+ * the offers below are the first real decision on the page.
+ */
+function FreePlanStatus({
+  cleanupRemaining,
+  cleanupResetsAt,
+}: {
+  cleanupRemaining: number | null;
+  cleanupResetsAt: string | null;
+}) {
+  const summary = useCleanupSummary().data;
+  const metered = summary?.metered && summary.limit > 0 ? summary : null;
+  const line = metered
+    ? meterChipLine({
+        remaining: metered.remaining,
+        limit: metered.limit,
+        resetAt: metered.resetAt,
+      }).text
+    : cleanupRemaining !== null
+      ? freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)
+      : null;
+  const share = metered ? Math.min(1, metered.used / metered.limit) : 0;
+  // Coverage is left off for Free, so an account still holding the Gmail
+  // accounts of a plan it left hears about the limit here.
+  const { connectedInboxes, inboxLimit } = useTier();
+  const overLimit = connectedInboxes > inboxLimit;
+  return (
+    <SettingsGroup
+      testId="current-plan-card"
+      id="plan"
+      title="Current plan"
+      footer={
+        overLimit ? (
+          <p style={{ margin: '10px 0 0', fontSize: text.sm, color: color.fgMuted }}>
+            {OVER_LIMIT_NOTE}
+          </p>
+        ) : null
+      }
+    >
+      <SettingsRow label={TIER_MANIFEST.free.name} {...(line ? { detail: line } : {})}>
+        {metered ? (
+          <div
+            role="progressbar"
+            aria-label="Free emails cleared this month"
+            aria-valuemin={0}
+            aria-valuemax={metered.limit}
+            aria-valuenow={metered.used}
+            style={{
+              width: 160,
+              height: 6,
+              borderRadius: radius.pill,
+              background: color.fill,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: `${share * 100}%`,
+                height: '100%',
+                background: share >= 0.8 ? color.amber : color.primary,
+              }}
+            />
+          </div>
+        ) : null}
+      </SettingsRow>
+      {overLimit ? (
+        <DrillRow
+          href="/settings#mailboxes"
+          label="Gmail accounts"
+          value={`${connectedInboxes} of ${inboxLimit} connected`}
+        />
+      ) : null}
+    </SettingsGroup>
+  );
+}
+
+/** The /pricing answers to "will I be charged again?", refunds and tax — reused verbatim. */
+function BillingFaq({ passEnabled }: { passEnabled: boolean }) {
+  // Renewal, refunds and tax are already on each offer card; only what
+  // happens after the Pass is not.
+  if (!passEnabled) return null;
+  const items = [['pricing.faq.passEnds.q', 'pricing.faq.passEnds.a']] as const;
+  // The Settings group grammar: one raised surface, one question per row,
+  // inset hairlines between them (the row class draws them, not borders).
+  return (
+    <SettingsGroup testId="billing-faq" title="Questions">
+      {items.map(([question, answer]) => (
+        <details key={question} className="dm-settings-row" style={{ padding: '0 16px' }}>
+          <summary
+            className="dm-disclosure"
+            style={{ borderBlock: 'none', padding: '16px 0', fontWeight: 600 }}
+          >
+            {fillStory(WS1_COPY[question])}
+          </summary>
+          <p
+            style={{
+              margin: '0 0 16px',
+              fontSize: text.sm,
+              lineHeight: 1.6,
+              color: color.fgSoft,
+            }}
+          >
+            {fillStory(WS1_COPY[answer])}
+          </p>
+        </details>
+      ))}
+    </SettingsGroup>
+  );
+}
+
 // ── Current plan card (D119 top block) ───────────────────────────────
 
 function CurrentPlanCard({
@@ -1853,7 +2147,8 @@ function CurrentPlanCard({
   billingDark,
   pauseConfirming,
   reviewPending,
-  onCancel,
+  onChangePlan,
+  onReviewCancellation,
   onResumeCancellation,
   isResumingCancellation,
   resumeCancellationError,
@@ -1871,7 +2166,10 @@ function CurrentPlanCard({
    *  for a subscription whose own fate is still unresolved. */
   pauseConfirming: boolean;
   reviewPending: boolean;
-  onCancel: () => void;
+  /** Opens the plan options in place. Null while they would open disabled. */
+  onChangePlan: (() => void) | null;
+  /** Opens the cancellation preview. Null when there is nothing to cancel. */
+  onReviewCancellation: (() => void) | null;
   /** D118 — revoke a scheduled cancel and go back on renewal. */
   onResumeCancellation: () => void;
   isResumingCancellation: boolean;
@@ -1909,227 +2207,179 @@ function CurrentPlanCard({
   // claim false the same way a scheduled change does — the confirming
   // note below says the plan's fate is unresolved, so this line must not
   // simultaneously assert a future renewal date for it.
+  // Past due, the note below says access ends unless payment is fixed, so
+  // a renewal date would contradict it.
   const renewal =
-    (backing.state === 'active' || backing.state === 'past_due') &&
+    backing.state === 'active' &&
     plan.scheduledChange === null &&
     !pauseConfirming &&
     !reviewPending
       ? formatBillingDate(backing.sub.currentPeriodEnd)
       : null;
 
+  const changePlanShown =
+    onChangePlan !== null &&
+    !billingDark &&
+    !pauseConfirming &&
+    !reviewPending &&
+    (backing.state === 'active' || backing.state === 'past_due');
+  // D118 — the way back. Without it a mis-clicked cancel was irreversible
+  // for up to a year: checkout answers SUBSCRIPTION_EXISTS and change-plan
+  // answers SUBSCRIPTION_CANCELING, so support had to PATCH the provider by
+  // hand (matrix E3, 2026-07-31). Only for a schedule the USER owns: a
+  // refund/chargeback row reaches `cancel_scheduled` too, and
+  // `resume-cancellation` refuses it with CANCELLATION_NOT_REVOCABLE — the
+  // status note names the reason instead of offering an undo that 409s.
+  const keepShown =
+    !billingDark &&
+    !reviewPending &&
+    backing.state === 'cancel_scheduled' &&
+    backing.sub.cancelSource !== 'refund' &&
+    backing.sub.cancelSource !== 'chargeback';
+  const summary = [priceLabel || null, renewal ? `Renews ${renewal}` : null]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
-    <section
-      id="plan"
-      tabIndex={-1}
-      aria-label="Current plan"
-      data-testid="current-plan-card"
-      style={{
-        background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: radius.lg,
-        padding: 'clamp(16px, 3vw, 24px)',
-        scrollMarginTop: 24,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-      }}
-    >
-      <GroupTitle>Current plan</GroupTitle>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: -4 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-          <span
+    <SettingsGroup testId="current-plan-card" id="plan" title="Current plan">
+      <SettingsRow
+        label={<span style={{ fontSize: text.lg }}>{currentPlanTitle(plan)}</span>}
+        {...(summary
+          ? { detail: <span style={{ fontVariantNumeric: 'tabular-nums' }}>{summary}</span> }
+          : {})}
+      >
+        {changePlanShown ? (
+          <Button tone="default" onClick={onChangePlan ?? undefined}>
+            Change plan
+          </Button>
+        ) : null}
+        {keepShown && !confirmKeep ? (
+          <Button tone="primary" onClick={() => setConfirmKeep(true)}>
+            Keep my subscription
+          </Button>
+        ) : null}
+      </SettingsRow>
+      <div className={styles.planNotes}>
+        {compNote ? (
+          <p
+            role="status"
+            data-testid="complimentary-note"
+            style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
+          >
+            {compNote}
+          </p>
+        ) : null}
+        {passCoversPlan(plan) && plan.complimentary?.expiresAt ? (
+          <p
+            data-testid="pass-status-detail"
+            style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
+          >
+            {fillStory(WS1_COPY['billing.pass.statusDetail'], locale, {
+              passEndDate: passEndLabel(plan.complimentary.expiresAt),
+            })}
+          </p>
+        ) : null}
+
+        {plan.entitlementTier === 'free' && cleanupSummary.data?.metered ? (
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+            <QuotaChip summary={cleanupSummary.data} />
+          </p>
+        ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+            <strong style={{ fontWeight: 600, color: color.fg }}>
+              {/* QA-billing-20260901-04: the reset is the signup
+                        anniversary, not the calendar month. The real date is
+                        already fetched by useTier(); state it instead. */}
+              {freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)}
+            </strong>
+          </p>
+        ) : null}
+
+        {note ? (
+          <p
+            role="status"
             style={{
-              ...tokens.typography.sectionTitle,
-              color: color.fg,
+              margin: 0,
+              fontSize: text.sm,
+              lineHeight: 1.5,
+              color: note.tone === 'warn' ? color.amber : color.fgMuted,
             }}
           >
-            {currentPlanTitle(plan)}
-          </span>
-          {priceLabel ? (
-            <span
-              style={{
-                fontSize: text.lg,
-                fontWeight: 600,
-                color: color.fg,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {plan.backing.state === 'active' ||
-              plan.backing.state === 'past_due' ||
-              plan.backing.state === 'cancel_scheduled' ? (
-                <span style={{ fontWeight: 400 }}>Plan price: </span>
-              ) : null}
-              <span>{priceLabel}</span>
-            </span>
-          ) : null}
-        </div>
-        {renewal ? (
-          <span
-            style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
-          >
-            Next renewal {renewal}
-          </span>
+            {note.text}
+          </p>
         ) : null}
-      </div>
 
-      {compNote ? (
-        <p
-          role="status"
-          data-testid="complimentary-note"
-          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
-        >
-          {compNote}
-        </p>
-      ) : null}
-      {passCoversPlan(plan) && plan.complimentary?.expiresAt ? (
-        <p
-          data-testid="pass-status-detail"
-          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
-        >
-          {fillStory(WS1_COPY['billing.pass.statusDetail'], locale, {
-            passEndDate: passEndLabel(plan.complimentary.expiresAt),
-          })}
-        </p>
-      ) : null}
+        {pauseConfirming ? (
+          <p
+            role="status"
+            data-testid="pause-confirming-note"
+            style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
+          >
+            Confirming your pause with the payment provider — this page updates automatically,
+            usually within a minute.
+          </p>
+        ) : null}
 
-      {plan.entitlementTier === 'free' && cleanupSummary.data?.metered ? (
-        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-          <QuotaChip summary={cleanupSummary.data} />
-        </p>
-      ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
-        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-          <strong style={{ fontWeight: 600, color: color.fg }}>
-            {/* QA-billing-20260901-04: the reset is the signup
-                    anniversary, not the calendar month. The real date is
-                    already fetched by useTier(); state it instead. */}
-            {freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)}
-          </strong>
-        </p>
-      ) : null}
-
-      {note ? (
-        <p
-          role="status"
-          style={{
-            margin: 0,
-            fontSize: text.sm,
-            lineHeight: 1.5,
-            color: note.tone === 'warn' ? color.amber : color.fgMuted,
-          }}
-        >
-          {note.text}
-        </p>
-      ) : null}
-
-      {pauseConfirming ? (
-        <p
-          role="status"
-          data-testid="pause-confirming-note"
-          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
-        >
-          Confirming your pause with the payment provider — this page updates automatically, usually
-          within a minute.
-        </p>
-      ) : null}
-
-      {!billingDark &&
-      !pauseConfirming &&
-      (backing.state === 'active' || backing.state === 'past_due') ? (
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          {!reviewPending ? (
-            <a className={linkStyles.link} href="#change-plan">
-              Manage plan
-            </a>
-          ) : null}
-          {/* QA-billing-20260901-06: this opens the preview; the modal's
-              own destructive confirm keeps "Cancel subscription" so the
-              two clicks read as two different things — matching the
-              resume flow's "Review resume" one component over. */}
-          <Button tone="default" onClick={onCancel}>
-            Review cancellation
-          </Button>
-        </div>
-      ) : null}
-
-      {/* D118 — the way back. Without it a mis-clicked cancel was
-          irreversible for up to a year: checkout answers
-          SUBSCRIPTION_EXISTS and change-plan answers
-          SUBSCRIPTION_CANCELING, so support had to PATCH the provider
-          by hand (matrix E3, 2026-07-31).
-
-          Only for a schedule the USER owns. A refund/chargeback row now
-          reaches `cancel_scheduled` too (the projector pins the flag
-          under a local verdict), and `resume-cancellation` refuses it
-          with CANCELLATION_NOT_REVOCABLE — rendering the button anyway
-          would offer an undo whose only possible answer is a 409. The
-          status note above names the reason instead. */}
-      {!billingDark &&
-      !reviewPending &&
-      backing.state === 'cancel_scheduled' &&
-      backing.sub.cancelSource !== 'refund' &&
-      backing.sub.cancelSource !== 'chargeback' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {confirmKeep ? (
-            <div
-              data-testid="keep-subscription-confirm"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                padding: '14px 16px',
-                background: color.fill,
-                borderRadius: radius.lg,
-              }}
-            >
-              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
-                <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your
-                cancellation is called off and {manifest.name} keeps renewing
-                {formatBillingDate(backing.sub.currentPeriodEnd)
-                  ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
-                  : ' on its normal schedule'}
-                {priceLabel ? ` at ${priceLabel}` : ''}. You can cancel again at any time.
-              </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Button
-                  tone="primary"
-                  onClick={onResumeCancellation}
-                  disabled={isResumingCancellation}
-                >
-                  {isResumingCancellation ? 'Restoring…' : 'Yes, keep my subscription'}
-                </Button>
-                <Button
-                  tone="default"
-                  onClick={() => setConfirmKeep(false)}
-                  disabled={isResumingCancellation}
-                >
-                  Never mind
-                </Button>
-              </div>
-              {resumeCancellationError != null ? (
-                <div
-                  role="alert"
-                  style={{
-                    fontSize: text.sm,
-                    color: color.dangerText,
-                    background: color.dangerBg,
-                    borderRadius: radius.md,
-                    padding: '8px 10px',
-                  }}
-                >
-                  {resumeCancellationError}
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button tone="primary" onClick={() => setConfirmKeep(true)}>
-                Keep my subscription
+        {keepShown && confirmKeep ? (
+          <div
+            data-testid="keep-subscription-confirm"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              padding: '14px 16px',
+              background: color.fill,
+              borderRadius: radius.lg,
+            }}
+          >
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
+              <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your
+              cancellation is called off and {manifest.name} keeps renewing
+              {formatBillingDate(backing.sub.currentPeriodEnd)
+                ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
+                : ' on its normal schedule'}
+              {priceLabel ? ` at ${priceLabel}` : ''}. You can cancel again at any time.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button
+                tone="primary"
+                onClick={onResumeCancellation}
+                disabled={isResumingCancellation}
+              >
+                {isResumingCancellation ? 'Restoring…' : 'Yes, keep my subscription'}
+              </Button>
+              <Button
+                tone="default"
+                onClick={() => setConfirmKeep(false)}
+                disabled={isResumingCancellation}
+              >
+                Never mind
               </Button>
             </div>
-          )}
-        </div>
+            {resumeCancellationError != null ? (
+              <div
+                role="alert"
+                style={{
+                  fontSize: text.sm,
+                  color: color.dangerText,
+                  background: color.dangerBg,
+                  borderRadius: radius.md,
+                  padding: '8px 10px',
+                }}
+              >
+                {resumeCancellationError}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      {onReviewCancellation ? (
+        // QA-billing-20260901-06: this opens the preview; the modal's own
+        // destructive confirm keeps "Cancel subscription" so the two
+        // clicks read as two different things.
+        <DrillRow onClick={onReviewCancellation} label="Review cancellation" />
       ) : null}
-    </section>
+    </SettingsGroup>
   );
 }
 
@@ -2206,7 +2456,7 @@ function ScheduledPlanChangeNotice({
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
             : 'We’re confirming what happened with your payment. Billing changes are paused until then.'}{' '}
           {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
           if this does not settle shortly.
@@ -2234,7 +2484,7 @@ function ScheduledPlanChangeNotice({
       ) : (
         <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           Plan changes aren&rsquo;t available on this subscription right now. Email{' '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
           if you want to keep {TIER_MANIFEST[currentTier].name}.
@@ -2300,13 +2550,13 @@ const UNCONFIRMED_KEEP_MESSAGE =
  */
 function NonBackingSubscriptionNotice({
   record,
-  entitlementTier,
+  entitlementName,
   onResumeStarted,
   onRequestCancel,
 }: {
   record: NonBackingRecord;
-  /** The workspace's server-resolved entitlement tier. */
-  entitlementTier: TierId;
+  /** The current plan's name, as the plan card titles it (a Pass is the Backlog Pass, not Plus). */
+  entitlementName: string;
   onResumeStarted: () => void;
   onRequestCancel: () => void;
 }) {
@@ -2314,7 +2564,6 @@ function NonBackingSubscriptionNotice({
   const [confirmingResume, setConfirmingResume] = useState(false);
   const { sub, reason } = record;
   const tierName = TIER_MANIFEST[sub.tier].name;
-  const entitlementName = TIER_MANIFEST[entitlementTier].name;
   const boxStyle = {
     display: 'flex',
     flexDirection: 'column',
@@ -2435,7 +2684,7 @@ function NonBackingSubscriptionNotice({
                 // exactly the gap the original finding named.
                 <>
                   It won&rsquo;t renew. If you still can’t choose another plan, email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>
                   .
@@ -2449,7 +2698,7 @@ function NonBackingSubscriptionNotice({
                       its period ends) — name the route this screen has
                       no other way to reach. */}
                   If you still can’t choose another plan after canceling, email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>
                   .
@@ -2458,7 +2707,7 @@ function NonBackingSubscriptionNotice({
                 <>
                   Cancel it if you&rsquo;re done with it. If you still can’t choose another plan,
                   email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>
                   .
@@ -2477,7 +2726,7 @@ function NonBackingSubscriptionNotice({
               {sub.cancelAtPeriodEnd ? (
                 <>
                   It won&rsquo;t renew. If you still can’t choose another plan, email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>
                   .
@@ -2485,7 +2734,7 @@ function NonBackingSubscriptionNotice({
               ) : (
                 <>
                   Resume to reactivate {tierName}, or cancel if you&rsquo;re done with it — email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>{' '}
                   if you still can’t choose another plan after canceling.
@@ -2506,7 +2755,7 @@ function NonBackingSubscriptionNotice({
         <p style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
           Payment past due on this subscription. Your current plan comes from a different
           subscription or offer, so email{' '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
           and we&rsquo;ll sort out which one you want to keep.
@@ -2517,7 +2766,7 @@ function NonBackingSubscriptionNotice({
           {sub.provider === 'razorpay'
             ? 'Restarting a plan paid in rupees could start a new charge. To avoid that, email '
             : 'We can’t confirm how much paid time remains, so we can’t restart this subscription here. Email '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
           and we&rsquo;ll help reactivate it safely.

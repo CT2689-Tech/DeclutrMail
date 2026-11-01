@@ -64,3 +64,38 @@ describe('CancelModal money-action lock', () => {
     expect(screen.getByRole('button', { name: 'Cancel subscription' })).toBeEnabled();
   });
 });
+
+describe('CancelModal on a record that does not grant the plan', () => {
+  it('names the plan the account is actually on', () => {
+    render(
+      <CancelModal
+        open
+        sub={{
+          provider: 'paddle',
+          tier: 'plus',
+          status: 'paused',
+          cycle: 'annual',
+          currentPeriodEnd: '2026-11-03T12:00:00Z',
+          cancelAtPeriodEnd: false,
+          cancelSource: null,
+          pauseUntil: '2026-11-03T12:00:00Z',
+          foundingMember: false,
+          scheduledChange: null,
+        }}
+        backsEntitlement={false}
+        entitlementTier="plus"
+        entitlementName="Backlog Pass"
+        onClose={vi.fn()}
+        onConfirm={vi.fn()}
+        isCanceling={false}
+        cancelError={null}
+        onPause={vi.fn()}
+        isPausing={false}
+        pauseError={null}
+      />,
+    );
+    expect(screen.getByTestId('cancel-modal')).toHaveTextContent(
+      'Your account is on Backlog Pass today',
+    );
+  });
+});

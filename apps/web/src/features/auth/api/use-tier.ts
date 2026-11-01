@@ -51,8 +51,11 @@ export function useTier(): TierEntitlements {
   // skew window `/api/auth/me` may predate the tier fields. Fall back
   // instead of crashing the shell on TIER_MANIFEST[undefined].
   const tier = me.tier ?? 'free';
-  const inboxLimit = me.inboxLimit ?? inboxLimitFor(tier);
   const pricingV2 = me.pricingV2 === true;
+  // The server's ceiling when it sends one. Otherwise read launch pricing
+  // from `me`: the browser has no PRICING_V2 env, so `inboxLimitFor`
+  // alone fell back to the legacy one-account Plus.
+  const inboxLimit = me.inboxLimit ?? inboxLimitFor(tier, pricingV2);
   const passEnabled = me.passEnabled === true;
   const connectedInboxes = me.mailboxes.filter((m) => m.status === 'active').length;
   return {

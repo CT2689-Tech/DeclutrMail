@@ -111,8 +111,6 @@ describe('PlanPicker current access and purchase offers', () => {
     name: string;
     props: Partial<ComponentProps<typeof PlanPicker>>;
   }> = [
-    { name: 'Free', props: { currentTier: 'free' } },
-    { name: 'paid Pro', props: { grantingSub: PRO_MONTHLY } },
     {
       name: 'included Pro',
       props: {
@@ -130,13 +128,6 @@ describe('PlanPicker current access and purchase offers', () => {
         currentAccess: { kind: 'complimentary', priceLabel: 'Complimentary', subscription: null },
       },
     },
-    {
-      name: 'Pass-only',
-      props: {
-        currentTier: 'plus',
-        currentAccess: { kind: 'pass', priceLabel: '$19 once', subscription: null },
-      },
-    },
   ];
   it.each(unchangedAccess)('keeps the original Pass placement for $name', ({ props }) => {
     picker({ passEnabled: true, ...props });
@@ -146,6 +137,37 @@ describe('PlanPicker current access and purchase offers', () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(pass).not.toHaveTextContent('optional purchase');
+  });
+
+  it.each([
+    { name: 'Free', props: { currentTier: 'free' } },
+    {
+      name: 'Pass-only',
+      props: {
+        currentTier: 'plus',
+        currentAccess: { kind: 'pass', priceLabel: '$19 once', subscription: null },
+      },
+    },
+  ] as Array<{ name: string; props: Partial<ComponentProps<typeof PlanPicker>> }>)(
+    'leads with Plus and puts the Pass beside it for $name',
+    ({ props }) => {
+      picker({ passEnabled: true, ...props });
+      const plus = screen.getByTestId('launch-offer-plus');
+      const pass = screen.getByTestId('launch-offer-pass');
+      expect(plus.compareDocumentPosition(pass) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(plus).toHaveTextContent('Recommended');
+      expect(screen.queryByTestId('pass-offer-card')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
+    },
+  );
+
+  it('withholds the Pass from a paying subscriber', () => {
+    picker({ passEnabled: true, grantingSub: PRO_MONTHLY });
+    // It read "Already included in Plus" to a Pro subscriber: wrong plan,
+    // and nothing to buy for someone already paying.
+    expect(screen.queryByTestId('pass-offer-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('launch-offer-pass')).not.toBeInTheDocument();
+    expect(screen.getByTestId('plan-option-pro')).toHaveTextContent('Current plan');
   });
 
   it('keeps included access distinct from complimentary access', () => {
@@ -163,12 +185,12 @@ describe('PlanPicker current access and purchase offers', () => {
       currentTier: 'plus',
       currentAccess: { kind: 'pass', priceLabel: '$19 once', subscription: null },
     });
-    const plus = screen.getByTestId('plan-option-plus');
-    expect(plus).toHaveTextContent('$59/yr');
+    const plus = screen.getByTestId('launch-offer-plus');
+    expect(plus).toHaveTextContent('$59');
     expect(plus).not.toHaveTextContent('Current plan');
     expect(plus).not.toHaveTextContent('Current access');
     expect(plus).not.toHaveAttribute('aria-current');
-    expect(within(plus).getByRole('button', { name: 'Buy Plus separately' })).toBeInTheDocument();
+    expect(within(plus).getByRole('button', { name: 'Get Plus' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Join the Pro waitlist' })).toBeInTheDocument();
   });
 

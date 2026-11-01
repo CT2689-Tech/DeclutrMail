@@ -225,9 +225,7 @@ it.each([0, 6])(
       expect(container.querySelectorAll('[data-testid="invoice-history"] button').length).toBe(
         invoiceCount,
       );
-      expect(container.querySelector('nav[aria-label="On this page"]') !== null).toBe(
-        invoiceCount > 5,
-      );
+      expect(container.querySelector('nav[aria-label="On this page"]')).toBeNull();
     } finally {
       await act(async () => root?.unmount());
       container.remove();

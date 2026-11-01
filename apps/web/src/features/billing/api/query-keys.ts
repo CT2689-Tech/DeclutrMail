@@ -18,4 +18,8 @@ export const billingKeys = {
    *  key: it's read-only workspace-agnostic data, not part of the
    *  subscription payload and must not ride its poll. */
   foundingRemaining: () => [...billingKeys.all, 'founding-remaining'] as const,
+  /** One checkout attempt by id, asked once per hold. `absenceIsFinal`
+   *  is in the key because a 404 means something new once it flips. */
+  checkoutAttempt: (workspaceId: string, attemptId: string, absenceIsFinal: boolean) =>
+    [...billingKeys.all, 'checkout-attempt', workspaceId, attemptId, absenceIsFinal] as const,
 };

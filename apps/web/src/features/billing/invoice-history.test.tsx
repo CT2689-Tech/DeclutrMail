@@ -8,7 +8,7 @@
  * outcome is a refusal.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { ReactNode } from 'react';
@@ -55,19 +55,36 @@ beforeEach(() => {
 });
 
 describe('InvoiceHistory', () => {
-  it('compacts only a verified empty history and keeps its section target', async () => {
+  it('renders nothing for a verified empty history', async () => {
     apiGet.mockResolvedValue({
       data: { invoices: [], unavailableProviders: [], truncated: false, omittedRows: 0 },
     });
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText('No invoices yet')).toBeInTheDocument();
-    const section = screen.getByRole('region', { name: 'Payment history' });
-    expect(section).toHaveAttribute('id', 'invoices');
-    expect(section).toHaveAttribute('tabindex', '-1');
-    expect(
-      screen.queryByText('Payments and invoices from past subscriptions and one-time purchases.'),
-    ).not.toBeInTheDocument();
+    await waitFor(() => expect(apiGet).toHaveBeenCalled());
+    // No section, no "No invoices yet": nothing to show, so nothing in the way.
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Payment history' })).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText('No invoices yet')).not.toBeInTheDocument();
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+  });
+
+  it('shows filters only once the history is longer than five rows', async () => {
+    const rows = (count: number) =>
+      Array.from({ length: count }, (_, index) => ({ ...PAID_ROW, id: `txn_${index}` }));
+    apiGet.mockResolvedValue({
+      data: { invoices: rows(5), unavailableProviders: [], truncated: false, omittedRows: 0 },
+    });
+    const first = wrap(<InvoiceHistory />);
+    expect(await screen.findAllByRole('button', { name: 'Download' })).toHaveLength(5);
+    expect(screen.queryByRole('combobox', { name: 'Status' })).not.toBeInTheDocument();
+    first.unmount();
+    apiGet.mockResolvedValue({
+      data: { invoices: rows(6), unavailableProviders: [], truncated: false, omittedRows: 0 },
+    });
+    wrap(<InvoiceHistory />);
+    expect(await screen.findByRole('combobox', { name: 'Status' })).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Year' })).toBeInTheDocument();
   });
 
   it('keeps a one-unit difference in large refund totals', async () => {
@@ -104,13 +121,7 @@ describe('InvoiceHistory', () => {
       wrap(<InvoiceHistory />);
       expect(await screen.findByText(label)).toBeInTheDocument();
       expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(2);
-      fireEvent.change(screen.getByRole('combobox', { name: 'Status' }), {
-        target: { value: refundedAmount === '1900' ? 'refunded' : 'partially_refunded' },
-      });
-      expect(screen.getByRole('status')).toHaveTextContent('1 of 2 loaded invoices');
-      expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(1);
-      expect(screen.queryByText('Paid', { exact: true })).not.toBeInTheDocument();
-      expect(screen.getByRole('listitem')).toHaveAccessibleName(
+      expect(screen.getAllByRole('listitem')[0]).toHaveAccessibleName(
         new RegExp(`status ${label}, refunded \\$${refundedAmount === '1900' ? '19.00' : '5.00'}`),
       );
     },
@@ -149,28 +160,31 @@ describe('InvoiceHistory', () => {
     },
   );
 
-  it('filters only loaded invoice history by status and inclusive date, with recovery and older-history help', async () => {
+  it('filters only loaded invoice history by status and year, with recovery and older-history help', async () => {
     apiGet.mockResolvedValue({
       data: {
         invoices: [
           PAID_ROW,
           { ...PAID_ROW, id: 'txn_2', status: 'due', issuedAt: '2026-06-01T00:00:00.000Z' },
+          { ...PAID_ROW, id: 'txn_3', issuedAt: '2025-11-01T00:00:00.000Z' },
         ],
         unavailableProviders: [],
+        // Capped: more history exists than loaded, so filters show early.
         truncated: true,
         omittedRows: 0,
       },
     });
     wrap(<InvoiceHistory />);
-    await screen.findByText('2 of 2 loaded invoices. Filters apply to this loaded history only.');
+    await screen.findByText('3 of 3 loaded invoices. Filters apply to this loaded history only.');
     fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'due' } });
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
     expect(screen.getByRole('listitem')).toHaveAccessibleName(/status Due/);
-    fireEvent.change(screen.getByLabelText('Through'), { target: { value: '2026-05-31' } });
+    fireEvent.change(screen.getByLabelText('Year'), { target: { value: '2025' } });
     expect(screen.getByText('No loaded invoices match these filters.')).toBeInTheDocument();
     expect(screen.queryAllByRole('listitem')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-06-01' } });
+    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    fireEvent.change(screen.getByLabelText('Year'), { target: { value: '2025' } });
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
     expect(screen.getByRole('link', { name: 'Request older invoices' })).toHaveAttribute(
       'href',
@@ -235,27 +249,51 @@ describe('InvoiceHistory', () => {
     }
   });
 
-  it('shows a real error state — never an empty list — when the read fails', async () => {
-    apiGet.mockRejectedValue(new Error('boom'));
+  // Our read failing and the provider not answering look the same to the
+  // customer: one calm line, a retry, and a way to a receipt meanwhile.
+  it.each([
+    ['our read fails', () => apiGet.mockRejectedValue(new Error('boom'))],
+    [
+      'the only rail we could ask was unreachable',
+      () =>
+        apiGet.mockResolvedValue({
+          data: {
+            invoices: [],
+            unavailableProviders: ['paddle'],
+            truncated: false,
+            omittedRows: 0,
+          },
+        }),
+    ],
+  ])('when %s, says history did not load — never "no invoices"', async (_label, arrange) => {
+    arrange();
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/couldn’t load your invoices/i)).toBeInTheDocument();
-    // A provider failure is a 200 with `unavailableProviders`, so this
-    // state is always OUR failure — never "the provider didn't answer".
-    expect(screen.queryByText(/provider didn.t answer/i)).toBeNull();
+    const section = await screen.findByTestId('invoice-history');
+    await waitFor(() => expect(section).toHaveTextContent('Payment history didn’t load.'));
+    // A read failure says nothing about the plan, so it claims nothing about it.
+    expect(section).not.toHaveTextContent(/plan/i);
+    expect(within(section).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(within(section).getByRole('link', { name: 'Request a receipt' })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^mailto:support@declutrmail\.com/),
+    );
+    // Neither the provider jargon nor the big page-level error block.
+    expect(section).not.toHaveTextContent(/payment provider/i);
+    expect(within(section).queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
   });
 
-  it('does not claim "no invoices" when the only rail we could ask was unreachable', async () => {
-    apiGet.mockResolvedValue({
+  it('retries in place when asked', async () => {
+    apiGet.mockResolvedValueOnce({
       data: { invoices: [], unavailableProviders: ['paddle'], truncated: false, omittedRows: 0 },
     });
+    apiGet.mockResolvedValueOnce({
+      data: { invoices: [PAID_ROW], unavailableProviders: [], truncated: false, omittedRows: 0 },
+    });
     wrap(<InvoiceHistory />);
-    // A provider that answered with an error was reached — the copy
-    // claims only that invoices did not come back.
-    expect(await screen.findByText(/didn’t return your invoices/i)).toBeInTheDocument();
-    // The partial state carries its own way out.
-    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-    expect(screen.queryByText(/no invoices yet/i)).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('$19.00')).toBeInTheDocument();
+    expect(screen.queryByText('Payment history didn’t load.')).not.toBeInTheDocument();
   });
 
   it('says the list is partial when one rail failed but the other returned rows', async () => {
@@ -268,7 +306,10 @@ describe('InvoiceHistory', () => {
       },
     });
     wrap(<InvoiceHistory />);
-    expect(await screen.findByText(/may be missing invoices/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Some invoices didn’t load/)).toBeInTheDocument();
+    // Retry stays on the page instead of asking for a reload.
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByText(/reload/i)).not.toBeInTheDocument();
   });
 
   it('renders no status word for a status it cannot map, rather than guessing "Paid"', async () => {

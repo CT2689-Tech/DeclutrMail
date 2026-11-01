@@ -85,3 +85,4 @@ export const PassWithComplimentaryPro = { render: () => <RecoveryFixture /> };
 export const PaidPassAwaitingAccess = { render: () => <RecoveryFixture state="paid" /> };
 export const PaymentInProgress = { render: () => <RecoveryFixture state="payment_in_progress" /> };
 export const UnknownPayment = { render: () => <RecoveryFixture state="unknown" /> };
+export const Stopping = { render: () => <RecoveryFixture state="stopping" /> };

@@ -23,16 +23,10 @@ import linkStyles from './billing-links.module.css';
  *     open this page after leaving is to fetch last year's receipts.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import {
-  Button,
-  EmptyState,
-  ErrorState as RecoverableErrorState,
-  tokens,
-  useIsAtMost,
-} from '@declutrmail/shared';
+import { Button, EmptyState, tokens, useIsAtMost } from '@declutrmail/shared';
 import type { BillingInvoice } from '@declutrmail/shared/contracts';
 
 import { SERVER_STREAM_PLACEHOLDER } from '@/lib/query-hydration-boundary';
@@ -40,9 +34,12 @@ import { SERVER_STREAM_PLACEHOLDER } from '@/lib/query-hydration-boundary';
 import { formatProviderAmount, formatBillingDate } from './billing-model';
 import { billingKeys } from './api/query-keys';
 import { useInvoiceDocument, useInvoices } from './api/use-invoices';
-import { GroupTitle } from '@/features/settings/settings-list';
+import { SettingsGroup } from '@/features/settings/settings-list';
 
 const { color, radius, text } = tokens;
+/** Rows above which the status and year filters appear. */
+const FILTER_AFTER = 5;
+
 const FILTER_STYLE = {
   background: color.card,
   color: color.fg,
@@ -56,16 +53,54 @@ const FILTER_STYLE = {
   boxSizing: 'border-box',
 } as const;
 
-const SECTION_STYLE = {
-  scrollMarginTop: 24,
-  background: color.card,
-  border: `1px solid ${color.border}`,
-  borderRadius: radius.lg,
-  padding: 'clamp(16px, 3vw, 22px)',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-} as const;
+/**
+ * Our read failing and the provider not answering are the same thing to
+ * the customer: the history is not here right now. The read is a GET, so
+ * the plan is untouched, and support can send a receipt in the meantime.
+ */
+function HistoryUnavailable({ retrying, onRetry }: { retrying: boolean; onRetry: () => void }) {
+  return (
+    <div
+      role="status"
+      style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 16px' }}
+    >
+      <p style={{ margin: 0, flex: '1 1 260px', fontSize: text.md, color: color.fgSoft }}>
+        <strong style={{ fontWeight: 600, color: color.fg }}>Payment history didn’t load.</strong>
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px' }}>
+        <Button tone="default" size="sm" disabled={retrying} onClick={onRetry}>
+          {retrying ? 'Trying…' : 'Try again'}
+        </Button>
+        <a
+          className={`${linkStyles.link} dm-tap-target`}
+          href="mailto:support@declutrmail.com?subject=Receipt%20request"
+          style={{ fontSize: text.sm }}
+        >
+          Request a receipt
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/** Settings group grammar: title above, one raised surface holding the history. */
+function HistoryFrame({ children }: { children: ReactNode }) {
+  return (
+    <SettingsGroup testId="invoice-history" id="invoices" title="Payment history">
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          padding: 'clamp(14px, 2.5vw, 18px) 16px',
+          minWidth: 0,
+        }}
+      >
+        {children}
+      </div>
+    </SettingsGroup>
+  );
+}
 
 /**
  * Row status → the word a customer recognizes on a statement.
@@ -120,93 +155,59 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   const mint = useInvoiceDocument();
   const isPhone = useIsAtMost('xs');
   const [status, setStatus] = useState('all');
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [year, setYear] = useState('');
 
   if (!enabled) return null;
 
   if ((holdStreamPlaceholder && !streamRevealed) || invoices.isLoading) {
     return (
-      <section
-        id="invoices"
-        tabIndex={-1}
-        aria-label="Payment history"
-        data-testid="invoice-history"
-        style={SECTION_STYLE}
-      >
-        <GroupTitle>Payment history</GroupTitle>
+      <HistoryFrame>
         <div
           aria-hidden="true"
           style={{ height: 72, background: color.fill, borderRadius: radius.lg }}
         />
         <span style={{ position: 'absolute', left: -9999 }}>Loading invoices…</span>
-      </section>
+      </HistoryFrame>
     );
   }
 
   if (invoices.isError) {
     return (
-      <section
-        id="invoices"
-        tabIndex={-1}
-        aria-label="Payment history"
-        data-testid="invoice-history"
-        style={SECTION_STYLE}
-      >
-        <GroupTitle>Payment history</GroupTitle>
-        <RecoverableErrorState
-          headingLevel={3}
-          title="We couldn’t load your invoices"
-          description="Try again to load your invoices."
-          onRetry={() => invoices.refetch()}
+      <HistoryFrame>
+        <HistoryUnavailable
+          retrying={invoices.isFetching}
+          onRetry={() => void invoices.refetch()}
         />
-      </section>
+      </HistoryFrame>
     );
   }
 
   const data = invoices.data;
   if (!data) return null;
   const partial = data.unavailableProviders.length > 0;
-  // Compact only a complete, successfully read empty history. An unavailable,
-  // omitted or truncated result is still a recovery state, never "no invoices".
+  // A complete, successfully read empty history has nothing to show, so
+  // the section stays out of the way — above all on a Free account deciding
+  // what to buy. Unavailable, omitted or truncated reads still render below:
+  // those are recovery states, never "no invoices".
   if (data.invoices.length === 0 && !partial && data.omittedRows === 0 && !data.truncated) {
-    return (
-      <section
-        id="invoices"
-        tabIndex={-1}
-        aria-label="Payment history"
-        data-testid="invoice-history"
-        style={{ borderTop: `1px solid ${color.border}`, paddingTop: 16, scrollMarginTop: 24 }}
-      >
-        <GroupTitle>Payment history</GroupTitle>
-        <p style={{ margin: '8px 0 0', color: color.fgMuted, fontSize: text.sm }}>
-          No invoices yet
-        </p>
-      </section>
-    );
+    return null;
   }
-  const filtered = data.invoices.filter((invoice) => {
-    const date = invoice.issuedAt.slice(0, 10);
-    return (
+  const filtered = data.invoices.filter(
+    (invoice) =>
       (status === 'all' || status === invoiceStatus(invoice)) &&
-      (!from || date >= from) &&
-      (!to || date <= to)
-    );
-  });
+      (!year || invoice.issuedAt.startsWith(year)),
+  );
+  // Filters earn their space once the list is long — or capped, since a
+  // capped read means more history exists than loaded. Receipts are
+  // looked up by tax year, so a year beats a from/through date range.
+  const filterable = data.invoices.length > FILTER_AFTER || data.truncated;
+  const years = [...new Set(data.invoices.map((invoice) => invoice.issuedAt.slice(0, 4)))].sort(
+    (a, b) => b.localeCompare(a),
+  );
 
   return (
-    <section
-      id="invoices"
-      tabIndex={-1}
-      aria-label="Payment history"
-      data-testid="invoice-history"
-      style={SECTION_STYLE}
-    >
-      <GroupTitle>Payment history</GroupTitle>
-      <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
-        Payments and invoices from past subscriptions and one-time purchases.
-      </p>
-      {data.invoices.length > 0 ? (
+    <HistoryFrame>
+      {filterable ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
@@ -228,35 +229,28 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
               </CleanupSelect>
             </label>
             <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
-              From{' '}
-              <input
-                type="date"
-                name="invoice-from"
+              Year{' '}
+              <CleanupSelect
+                name="invoice-year"
                 autoComplete="off"
                 style={FILTER_STYLE}
-                value={from}
-                onChange={(event) => setFrom(event.target.value)}
-              />
+                value={year}
+                onChange={(event) => setYear(event.target.value)}
+              >
+                <option value="">All years</option>
+                {years.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </CleanupSelect>
             </label>
-            <label style={{ display: 'grid', gap: 6, flex: '1 1 145px', minWidth: 0 }}>
-              Through{' '}
-              <input
-                type="date"
-                name="invoice-through"
-                autoComplete="off"
-                style={FILTER_STYLE}
-                value={to}
-                min={from || undefined}
-                onChange={(event) => setTo(event.target.value)}
-              />
-            </label>
-            {status !== 'all' || from || to ? (
+            {status !== 'all' || year ? (
               <Button
                 size="sm"
                 onClick={() => {
                   setStatus('all');
-                  setFrom('');
-                  setTo('');
+                  setYear('');
                 }}
               >
                 Clear filters
@@ -275,25 +269,14 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         // Failed, omitted and capped reads cannot prove an account never paid.
         // Only a complete empty history can show "No invoices yet".
         partial ? (
-          <div
-            style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}
-          >
-            <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-              Your payment provider didn&rsquo;t return your invoices.
-            </p>
-            <Button
-              tone="default"
-              size="sm"
-              disabled={invoices.isFetching}
-              onClick={() => void invoices.refetch()}
-            >
-              Try again
-            </Button>
-          </div>
+          <HistoryUnavailable
+            retrying={invoices.isFetching}
+            onRetry={() => void invoices.refetch()}
+          />
         ) : data.omittedRows > 0 ? (
           <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
             We couldn&rsquo;t display this billing history. Email{' '}
-            <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            <a className={linkStyles.link} href="mailto:support@declutrmail.com">
               support@declutrmail.com
             </a>{' '}
             for help with your invoices.
@@ -331,7 +314,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
             </div>
           ) : null}
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
-            {filtered.map((invoice) => {
+            {filtered.map((invoice, index) => {
               const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
               const date = formatBillingDate(invoice.issuedAt);
               const displayStatus = invoiceStatus(invoice);
@@ -371,7 +354,9 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     minHeight: 52,
                     boxSizing: 'border-box',
                     padding: '10px 0',
-                    borderBottom: `1px solid ${color.lineSoft}`,
+                    // Rules between rows only: the card's own edge closes the list.
+                    borderBottom:
+                      index < filtered.length - 1 ? `1px solid ${color.lineSoft}` : undefined,
                     fontSize: text.md,
                   }}
                 >
@@ -450,8 +435,16 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
       {partial && data.invoices.length > 0 ? (
         <p role="status" style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
-          Some payment history couldn&rsquo;t be loaded, so this list may be missing invoices.
-          Reload to try again.
+          Some invoices didn’t load.{' '}
+          <button
+            type="button"
+            className={`${linkStyles.link} dm-tap-target`}
+            disabled={invoices.isFetching}
+            onClick={() => void invoices.refetch()}
+            style={{ padding: 0, border: 0, background: 'none', font: 'inherit' }}
+          >
+            {invoices.isFetching ? 'Trying…' : 'Try again'}
+          </button>
         </p>
       ) : null}
 
@@ -489,6 +482,6 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           again, or email support@declutrmail.com.
         </div>
       ) : null}
-    </section>
+    </HistoryFrame>
   );
 }

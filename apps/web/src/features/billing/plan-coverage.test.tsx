@@ -28,7 +28,7 @@ vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => auth,
 }));
 
-import { PlanCoverage } from './plan-coverage';
+import { PlanConsequences, PlanCoverage } from './plan-coverage';
 
 const UNIT = 'cleanup' + ' action';
 
@@ -44,7 +44,7 @@ describe('PlanCoverage', () => {
   it('states the free email allowance when the plan is Free', () => {
     render(<PlanCoverage tier="free" />);
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
-    expect(coverage).toHaveTextContent('1 of 1 connected Gmail accounts');
+    expect(coverage).toHaveTextContent('1 of 1 connected');
     expect(coverage).toHaveTextContent(
       'Clear 1,000 emails a month free. Unsubscribe, Keep, Later and Undo stay free.',
     );
@@ -78,7 +78,7 @@ describe('PlanCoverage', () => {
     'shows %s benefits as text and keeps account management linked',
     (tier) => {
       render(<PlanCoverage tier={tier} />);
-      expect(screen.getByRole('link', { name: 'Manage Gmail accounts' })).toHaveAttribute(
+      expect(screen.getByRole('link', { name: /Gmail accounts/ })).toHaveAttribute(
         'href',
         '/settings#mailboxes',
       );
@@ -134,5 +134,20 @@ describe('PlanCoverage', () => {
     expect(coverage).toHaveTextContent(
       'Then you’re back on Free. Email you cleared stays where you put it.',
     );
+  });
+});
+
+describe('PlanConsequences', () => {
+  it('states the destination plan’s allowance as its own sentence', () => {
+    const { container } = render(<PlanConsequences fromTier="plus" toTier="free" pricingV2 />);
+    // It once read "1 connected Gmail account and Clear 1,000 emails … stay free.."
+    expect(container.textContent).toContain('Free includes 1 connected Gmail account. Clear');
+    expect(container.textContent).not.toContain(' and Clear');
+    expect(container.textContent).not.toContain('..');
+  });
+
+  it('warns about the account limit when launch Plus (2 accounts) moves to Free (1)', () => {
+    render(<PlanConsequences fromTier="plus" toTier="free" pricingV2 />);
+    expect(screen.getByText(/Existing connected Gmail accounts keep working/)).toBeInTheDocument();
   });
 });
