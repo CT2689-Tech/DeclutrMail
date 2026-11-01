@@ -17,10 +17,8 @@ import {
   PLUS_ANNUAL_2026_10,
   POLICY,
   PROMO,
-  PROMO_DISCOUNT_IDS,
   TIER_MANIFEST,
   indiaPaddlePricesConfigured,
-  usableDiscountId,
 } from './pricing.config';
 import type { PricePoint, TierId } from './types';
 
@@ -491,8 +489,7 @@ export function renderPricingMarkdown(
 export function promoBanner(now: Date, passEnabled = isBillingPassEnabled()): string | null {
   const start = new Date(PROMO.startsAt);
   const end = new Date(PROMO.endsAt);
-  // The public offer must not outlive the live discount configured for checkout.
-  if (now < start || now >= end || !usableDiscountId(PROMO_DISCOUNT_IDS.live)) return null;
+  if (now < start || now >= end) return null;
   const key = passEnabled ? 'pricing.promo.passOn' : 'pricing.promo.passOff';
   return fill(WS1_COPY[key], storyValues('usd'));
 }

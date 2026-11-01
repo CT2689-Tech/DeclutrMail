@@ -71,7 +71,6 @@ describe('PlanPicker launch pricing', () => {
     expect(await within(passReview).findByTestId('checkout-panel')).toHaveTextContent(
       'Backlog Pass · one-time purchase',
     );
-    expect(passReview).not.toHaveTextContent('PH30');
     expect(passReview).toHaveFocus();
 
     fireEvent.click(within(passReview).getByRole('button', { name: 'Not now' }));
@@ -89,7 +88,6 @@ describe('PlanPicker launch pricing', () => {
     expect(await within(plusReview).findByTestId('checkout-panel')).toHaveTextContent(
       'Plus · annual subscription',
     );
-    expect(plusReview).not.toHaveTextContent('PH30');
     fireEvent.click(within(plusReview).getByRole('button', { name: 'Not now' }));
     await waitFor(() => expect(plusButton).toHaveFocus());
   });

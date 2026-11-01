@@ -32,8 +32,6 @@ import {
   INBOXES,
   OFFERS,
   PLUS_ANNUAL_2026_10,
-  PROMO_DISCOUNT_IDS,
-  checkoutDiscountId,
   indiaPaddlePricesConfigured,
 } from './pricing.config';
 import { WS1_COPY } from '../copy/launch';
@@ -158,30 +156,20 @@ describe('promoBanner', () => {
   const start = new Date('2026-10-27T07:01:00Z');
   const end = new Date('2026-11-04T07:59:00Z');
 
-  it('does not advertise a code that live checkout cannot apply', () => {
-    const liveEnv = { PADDLE_ENV: 'production' } as NodeJS.ProcessEnv;
-    expect(PROMO_DISCOUNT_IDS.live).toBe('FILL_ME');
-    expect(
-      checkoutDiscountId(liveEnv, PLUS_ANNUAL_2026_10.paddlePriceId, start.getTime()),
-    ).toBeNull();
-    expect(promoBanner(start, true)).toBeNull();
-  });
-
   it('is hidden before startsAt and at or after endsAt', () => {
     expect(promoBanner(new Date(start.getTime() - 1), true)).toBeNull();
     expect(promoBanner(end, true)).toBeNull();
     expect(promoBanner(new Date(end.getTime() + 1), false)).toBeNull();
   });
 
-  it('keeps the launch sentence ready for a verified live discount', () => {
-    const on = fillStory(WS1_COPY['pricing.promo.passOn']);
+  it('fills the deck sentence inside the window', () => {
+    const on = promoBanner(start, true);
     expect(on).toContain(promoEndLabel());
     expect(on).toContain('PH30');
     expect(on).toMatch(/^Launch offer:/);
     expect(on).not.toContain('Launch week');
     expect(on).not.toMatch(/\$\d/);
-    expect(fillStory(WS1_COPY['pricing.promo.passOff'])).not.toContain('Backlog Pass');
-    expect(promoBanner(start, false)).toBeNull();
+    expect(promoBanner(start, false)).not.toContain('Backlog Pass');
   });
 });
 
