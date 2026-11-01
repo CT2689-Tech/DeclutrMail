@@ -1,6 +1,7 @@
 # PromQL semantics for the routing expressions at check_id=worker-check.
 # Absent, sparse, mixed, and one failing location do not inhibit coverage.
-# Two failing locations do. Reconnect means of zero and one do not fire; two does.
+# Two failing locations do. Reconnect: fewer than two new incidents in 24 hours do not fire;
+# two do, a late tick does not clear it, and a deploy overlap counts one incident once.
 rule_files:
   - alert-promql.rules.yml
 evaluation_interval: 1m
@@ -70,38 +71,80 @@ tests:
   - name: reconnect-zero
     interval: 1m
     input_series:
-      - series: 'logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
-        values: '0 0 0 0 0 0'
-      - series: 'logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
-        values: '0 0 0 0 0 0'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="pending"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="pending"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
     promql_expr_test:
       - expr: |-
-          (sum(increase(logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m])) / sum(increase(logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m]))) >= 2
-        eval_time: 5m
+          sum(sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m])) / sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m]))) >= 2
+        eval_time: 30m
         exp_samples: []
   - name: reconnect-one
     interval: 1m
     input_series:
-      - series: 'logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
-        values: '0 1 1 1 1 1'
-      - series: 'logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
-        values: '0 1 1 1 1 1'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="pending"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="pending"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
     promql_expr_test:
       - expr: |-
-          (sum(increase(logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m])) / sum(increase(logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m]))) >= 2
-        eval_time: 5m
+          sum(sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m])) / sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m]))) >= 2
+        eval_time: 30m
         exp_samples: []
   - name: reconnect-two
     interval: 1m
     input_series:
-      - series: 'logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
-        values: '0 2 2 2 2 2'
-      - series: 'logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}'
-        values: '0 1 1 1 1 1'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="pending"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="pending"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 7'
     promql_expr_test:
       - expr: |-
-          (sum(increase(logging_googleapis_com:user_ops_mailbox_affected_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m])) / sum(increase(logging_googleapis_com:user_ops_mailbox_affected_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",reason="needs_reconnect"}[5m]))) >= 2
-        eval_time: 5m
+          sum(sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m])) / sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m]))) >= 2
+        eval_time: 30m
         exp_samples:
           - labels: '{}'
             value: 2
+  - name: reconnect-late-tick
+    interval: 1m
+    input_series:
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '2 2 2 2 2 4 4 4 4 4 6 6 6 6 6 6 8 8 8 8 8 10 10 10 10 10 12 12 12 12 12'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6'
+    promql_expr_test:
+      - expr: |-
+          sum(sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m])) / sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m]))) >= 2
+        eval_time: 30m
+        exp_samples:
+          - labels: '{}'
+            value: 2
+  - name: reconnect-deploy-overlap
+    interval: 1m
+    input_series:
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 _'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r1",status="dispatched"}'
+        values: '1 1 1 1 1 2 2 2 2 2 3 3 3 3 3 4 4 4 4 4 5 5 5 5 5 6 6 6 6 6 _'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r2",status="dispatched"}'
+        values: '_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1 1 1 1 1 2 2 2 2 2 3 3 3 3'
+      - series: 'logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker",revision_name="r2",status="dispatched"}'
+        values: '_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 1 1 1 1 1 2 2 2 2 2 3 3 3 3'
+    promql_expr_test:
+      - expr: |-
+          sum(sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_sum{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m])) / sum by (status) (increase(logging_googleapis_com:user_ops_reconnect_incidents_count{monitored_resource="cloud_run_revision",service_name="declutrmail-worker"}[15m]))) >= 2
+        eval_time: 30m
+        exp_samples: []
