@@ -1,5 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const route = vi.hoisted(() => ({ pathname: '/senders' }));
+vi.mock('next/navigation', () => ({ usePathname: () => route.pathname }));
 
 import type { CleanupSummaryDto } from '@declutrmail/shared/contracts';
 
@@ -31,6 +34,14 @@ describe('QuotaChip', () => {
 
     render(<QuotaChip summary={{ ...METERED, used: 800, remaining: 200 }} />);
     expect(screen.getAllByTestId('quota-chip')[1]).toHaveAttribute('data-tone', 'amber');
+  });
+
+  it('drops the plans link on Billing, where the plans already are', () => {
+    route.pathname = '/billing';
+    render(<QuotaChip summary={METERED} />);
+    expect(screen.getByTestId('quota-chip')).toHaveTextContent('640 emails left');
+    expect(screen.queryByRole('link', { name: 'See plans' })).toBeNull();
+    route.pathname = '/senders';
   });
 });
 

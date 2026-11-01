@@ -1,8 +1,5 @@
 'use client';
 
-import linkStyles from './billing-links.module.css';
-
-import Link from 'next/link';
 import { tokens } from '@declutrmail/shared';
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
@@ -13,11 +10,12 @@ import {
   type TierId,
 } from '@declutrmail/shared/entitlements';
 import { useTier } from '@/features/auth/api/use-tier';
+import { DrillRow, SettingsGroup, SettingsRow } from '@/features/settings/settings-list';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 
 import { tierInboxLimit } from './billing-model';
 
-const { color } = tokens;
+const { color, text } = tokens;
 const tools = [
   ['senders', 'Sender cleanup'],
   ['screener', 'New-sender review'],
@@ -41,46 +39,60 @@ export function PlanCoverage({
   // one-account limit, which the manifest's legacy value does not.
   const { connectedInboxes, inboxLimit, pricingV2 } = useTier();
   const plan = TIER_MANIFEST[tier];
+  const connected = connectedInboxes ?? 0;
+  const included = tools.filter(([capability]) => plan.capabilities.includes(capability));
   return (
-    <section
-      aria-label="Your plan includes"
-      style={{ borderTop: `1px solid ${color.border}`, paddingTop: 16, display: 'grid', gap: 12 }}
+    <SettingsGroup
+      title="Your plan includes"
+      footer={
+        connected > inboxLimit ? (
+          <p style={{ margin: '10px 0 0', fontSize: text.sm, color: color.fgMuted }}>
+            Existing connections continue working. Adding a Gmail account is blocked while you are
+            at or above this plan’s limit.
+          </p>
+        ) : null
+      }
     >
-      <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Your plan includes</h2>
-      <div>
-        {connectedInboxes ?? 0} of {inboxLimit} connected Gmail accounts ·{' '}
-        <Link className={`${linkStyles.link} dm-tap-target`} href="/settings#mailboxes">
-          Manage Gmail accounts
-        </Link>
-      </div>
-      {(connectedInboxes ?? 0) > inboxLimit ? (
-        <p style={{ margin: 0 }}>
-          Existing connections continue working. Adding a Gmail account is blocked while you are at
-          or above this plan’s limit.
-        </p>
-      ) : null}
-      <div>
-        {pricingV2 && pass
-          ? fillStoryList(
-              freeManualPass
-                ? WS1_COPY['pricing.pass.features.granted']
-                : WS1_COPY['pricing.pass.features'],
-            ).map((line) => <div key={line}>{line}</div>)
-          : plan.cleanupActionsPerMonth === null
-            ? `${WS2_COPY.liveFix.billing.limit.unlimited.replace(/\.$/, '')} on emails cleared.`
-            : fillStory(WS2_COPY.liveFix.billing.limit.free)}
-      </div>
-      <ul
-        aria-label="Included features"
-        style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 24px', margin: 0, paddingLeft: 20 }}
-      >
-        {tools
-          .filter(([capability]) => plan.capabilities.includes(capability))
-          .map(([capability, label]) => (
-            <li key={capability}>{label}</li>
-          ))}
-      </ul>
-    </section>
+      <DrillRow
+        href="/settings#mailboxes"
+        label="Gmail accounts"
+        value={`${connected} of ${inboxLimit} connected`}
+      />
+      <SettingsRow
+        label="Cleanup"
+        detail={
+          pricingV2 && pass
+            ? fillStoryList(
+                freeManualPass
+                  ? WS1_COPY['pricing.pass.features.granted']
+                  : WS1_COPY['pricing.pass.features'],
+              ).map((line) => <div key={line}>{line}</div>)
+            : plan.cleanupActionsPerMonth === null
+              ? `${WS2_COPY.liveFix.billing.limit.unlimited.replace(/\.$/, '')} on emails cleared.`
+              : fillStory(WS2_COPY.liveFix.billing.limit.free)
+        }
+      />
+      <SettingsRow
+        label="Features"
+        detail={
+          <ul
+            aria-label="Included features"
+            style={{ display: 'flex', flexWrap: 'wrap', margin: 0, padding: 0, listStyle: 'none' }}
+          >
+            {included.map(([capability, label], index) => (
+              <li key={capability}>
+                {index > 0 ? (
+                  <span aria-hidden="true" style={{ margin: '0 8px' }}>
+                    ·
+                  </span>
+                ) : null}
+                <span>{label}</span>
+              </li>
+            ))}
+          </ul>
+        }
+      />
+    </SettingsGroup>
   );
 }
 

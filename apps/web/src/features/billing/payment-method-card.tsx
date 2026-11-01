@@ -21,11 +21,13 @@
 
 import { useState } from 'react';
 
+import linkStyles from './billing-links.module.css';
+
 import { Button, tokens } from '@declutrmail/shared';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import { usePaymentMethodSession } from './api/use-payment-method';
-import { GroupTitle } from '@/features/settings/settings-list';
+import { SettingsGroup, SettingsRow } from '@/features/settings/settings-list';
 
 const { color, radius, text } = tokens;
 
@@ -59,94 +61,85 @@ export function PaymentMethodCard({
   const showSupportPath = supportProvider !== null;
   const mandateExplains = supportProvider === 'razorpay';
 
+  const supportText = mandateExplains ? (
+    <>
+      Subscriptions billed in India are collected against an authorized mandate, so the card
+      can&rsquo;t be changed from here. Email{' '}
+      <a className={linkStyles.link} href="mailto:support@declutrmail.com">
+        support@declutrmail.com
+      </a>{' '}
+      and we&rsquo;ll send you a link to re-authorize it.
+    </>
+  ) : (
+    // A non-Razorpay rail answered `unsupported` — a state we don't
+    // expect, so no mechanism is claimed for it. Only the support path
+    // itself is asserted.
+    <>
+      Your payment method can&rsquo;t be changed from here right now. Email{' '}
+      <a className={linkStyles.link} href="mailto:support@declutrmail.com">
+        support@declutrmail.com
+      </a>{' '}
+      and we&rsquo;ll sort it out with you.
+    </>
+  );
+
   return (
-    <section
-      id="payment"
-      tabIndex={-1}
-      aria-label="Payment method"
-      data-testid="payment-method-card"
-      style={{
-        scrollMarginTop: 24,
-        background: color.card,
-        // Past due is said in amber lettering below; the ring only marks
-        // which surface needs attention.
-        border: `1px solid ${isPastDue ? color.amber : color.border}`,
-        flexDirection: isPastDue || showSupportPath ? 'column' : 'row',
-        flexWrap: 'wrap',
-        alignItems: isPastDue || showSupportPath ? undefined : 'center',
-        borderRadius: radius.md,
-        padding: isPastDue ? '20px' : '16px',
-        display: 'flex',
-        gap: 10,
-      }}
-    >
-      <GroupTitle>Payment method</GroupTitle>
-
-      <p style={{ margin: 0, fontSize: text.md, lineHeight: 1.55, color: color.fgMuted }}>
-        {showSupportPath ? (
-          mandateExplains ? (
-            <>
-              Subscriptions billed in India are collected against an authorized mandate, so the card
-              can&rsquo;t be changed from here. Email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-                support@declutrmail.com
-              </a>{' '}
-              and we&rsquo;ll send you a link to re-authorize it.
-            </>
-          ) : (
-            // A non-Razorpay rail answered `unsupported` — a state we
-            // don't expect, so no mechanism is claimed for it. Only the
-            // support path itself is asserted.
-            <>
-              Your payment method can&rsquo;t be changed from here right now. Email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-                support@declutrmail.com
-              </a>{' '}
-              and we&rsquo;ll sort it out with you.
-            </>
-          )
-        ) : (
-          <>Managed securely by Paddle. Update your payment method in their secure form.</>
-        )}
-      </p>
-
-      {isPastDue ? (
+    <SettingsGroup testId="payment-method-card" id="payment" title="Payment method">
+      {showSupportPath ? (
         <p
-          role="status"
-          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
+          style={{
+            margin: 0,
+            padding: 16,
+            fontSize: text.md,
+            lineHeight: 1.55,
+            color: color.fgMuted,
+          }}
         >
-          <strong style={{ fontWeight: 600 }}>Your last payment didn&rsquo;t go through.</strong>{' '}
-          {showSupportPath
-            ? 'Contact support to update your payment method.'
-            : 'Updating your card is what restores the plan — the provider retries automatically once it succeeds.'}
+          {supportText}
         </p>
-      ) : null}
-
-      {!showSupportPath ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Button
-              tone={isPastDue ? 'primary' : 'default'}
-              disabled={disabled || session.isPending}
-              onClick={() =>
-                session.mutate(undefined, {
-                  onSuccess: (result) => {
-                    // `url` navigates inside the hook. Only the refusal
-                    // needs local state — and reaching it here means the
-                    // rail changed under us, so tell the truth rather
-                    // than leaving a button that did nothing.
-                    if (result.kind === 'unsupported') setRefusedBy(result.provider);
-                  },
-                })
-              }
+      ) : (
+        <SettingsRow
+          label="Managed by Paddle"
+          detail="Change your payment method in Paddle’s secure form."
+        >
+          <Button
+            tone={isPastDue ? 'primary' : 'default'}
+            disabled={disabled || session.isPending}
+            onClick={() =>
+              session.mutate(undefined, {
+                onSuccess: (result) => {
+                  // `url` navigates inside the hook. Only the refusal
+                  // needs local state — and reaching it here means the
+                  // rail changed under us, so tell the truth rather
+                  // than leaving a button that did nothing.
+                  if (result.kind === 'unsupported') setRefusedBy(result.provider);
+                },
+              })
+            }
+          >
+            {session.isPending ? 'Opening…' : 'Update payment method'}
+          </Button>
+        </SettingsRow>
+      )}
+      {isPastDue || (!showSupportPath && ((disabled && disabledReason) || session.error)) ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 16px 16px' }}>
+          {isPastDue ? (
+            <p
+              role="status"
+              style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
             >
-              {session.isPending ? 'Opening…' : 'Update payment method'}
-            </Button>
-          </div>
-          {disabled && disabledReason ? (
+              <strong style={{ fontWeight: 600 }}>
+                Your last payment didn&rsquo;t go through.
+              </strong>{' '}
+              {showSupportPath
+                ? 'Contact support to update your payment method.'
+                : 'Updating your card is what restores the plan — the provider retries automatically once it succeeds.'}
+            </p>
+          ) : null}
+          {!showSupportPath && disabled && disabledReason ? (
             <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{disabledReason}</p>
           ) : null}
-          {session.error ? (
+          {!showSupportPath && session.error ? (
             <div
               role="alert"
               style={{
@@ -163,6 +156,6 @@ export function PaymentMethodCard({
           ) : null}
         </div>
       ) : null}
-    </section>
+    </SettingsGroup>
   );
 }

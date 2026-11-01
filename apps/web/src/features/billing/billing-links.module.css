@@ -1,13 +1,16 @@
+/* Inline links read as the text around them with a faint underline, so a
+   support address inside a sentence never outshouts the sentence. */
 .link,
 .link:visited {
-  color: var(--dm-primary);
+  color: inherit;
   text-decoration: underline;
-  text-underline-offset: 0.2em;
+  text-decoration-color: var(--dm-line);
+  text-underline-offset: 0.22em;
   text-decoration-thickness: 1px;
 }
 
 .link:hover {
-  text-decoration-thickness: 2px;
+  text-decoration-color: currentColor;
 }
 
 .link:focus-visible {

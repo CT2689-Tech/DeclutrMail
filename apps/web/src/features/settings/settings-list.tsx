@@ -112,6 +112,7 @@ export function SettingsGroup({
   children,
   footer,
   style,
+  testId,
 }: {
   /** Anchor id — emails and OAuth returns deep-link to these. */
   id?: string;
@@ -124,10 +125,12 @@ export function SettingsGroup({
   /** Rendered under the rows — a failed-save line, a limit note. */
   footer?: ReactNode;
   style?: CSSProperties;
+  testId?: string;
 }) {
   return (
     <section
       id={id}
+      data-testid={testId}
       tabIndex={focusable || id ? -1 : undefined}
       aria-label={title}
       style={{ scrollMarginTop: 24, fontFamily: font.sans, minWidth: 0, ...style }}
@@ -205,22 +208,19 @@ export function SettingsRow({
   );
 }
 
-/** A row that drills into another page: label, optional value, chevron. */
+/**
+ * A row that drills into another page: label, optional value, chevron.
+ * With `onClick` instead of `href` it opens something in place (a sheet).
+ */
 export function DrillRow({
-  href,
   label,
   value,
-}: {
-  href: string;
-  label: string;
-  value?: ReactNode;
-}) {
-  return (
-    <Link
-      href={href}
-      className="dm-settings-row dm-settings-drill"
-      style={{ ...rowStyle, flexWrap: 'nowrap', textDecoration: 'none', color: color.fg }}
-    >
+  ...target
+}: { label: string; value?: ReactNode } & (
+  { href: string; onClick?: never } | { onClick: () => void; href?: never }
+)) {
+  const content = (
+    <>
       <span style={{ fontSize: text.md, fontWeight: 600, minWidth: 0 }}>{label}</span>
       <span
         style={{
@@ -237,7 +237,35 @@ export function DrillRow({
         {value}
         <Chevron />
       </span>
+    </>
+  );
+  const style = {
+    ...rowStyle,
+    flexWrap: 'nowrap',
+    textDecoration: 'none',
+    color: color.fg,
+  } as const;
+  return target.href !== undefined ? (
+    <Link href={target.href} className="dm-settings-row dm-settings-drill" style={style}>
+      {content}
     </Link>
+  ) : (
+    <button
+      type="button"
+      onClick={target.onClick}
+      className="dm-settings-row dm-settings-drill"
+      style={{
+        ...style,
+        width: '100%',
+        border: 0,
+        background: 'none',
+        font: 'inherit',
+        textAlign: 'left',
+        cursor: 'pointer',
+      }}
+    >
+      {content}
+    </button>
   );
 }
 

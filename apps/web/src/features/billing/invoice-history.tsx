@@ -23,7 +23,7 @@ import linkStyles from './billing-links.module.css';
  *     open this page after leaving is to fetch last year's receipts.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { Button, EmptyState, tokens, useIsAtMost } from '@declutrmail/shared';
@@ -34,7 +34,7 @@ import { SERVER_STREAM_PLACEHOLDER } from '@/lib/query-hydration-boundary';
 import { formatProviderAmount, formatBillingDate } from './billing-model';
 import { billingKeys } from './api/query-keys';
 import { useInvoiceDocument, useInvoices } from './api/use-invoices';
-import { GroupTitle } from '@/features/settings/settings-list';
+import { SettingsGroup } from '@/features/settings/settings-list';
 
 const { color, radius, text } = tokens;
 /** Rows above which the status and year filters appear. */
@@ -84,16 +84,24 @@ function HistoryUnavailable({ retrying, onRetry }: { retrying: boolean; onRetry:
   );
 }
 
-const SECTION_STYLE = {
-  scrollMarginTop: 24,
-  background: color.card,
-  border: `1px solid ${color.border}`,
-  borderRadius: radius.lg,
-  padding: 'clamp(16px, 3vw, 22px)',
-  display: 'flex',
-  flexDirection: 'column',
-  gap: 12,
-} as const;
+/** Settings group grammar: title above, one raised surface holding the history. */
+function HistoryFrame({ children }: { children: ReactNode }) {
+  return (
+    <SettingsGroup testId="invoice-history" id="invoices" title="Payment history">
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
+          padding: 'clamp(14px, 2.5vw, 18px) 16px',
+          minWidth: 0,
+        }}
+      >
+        {children}
+      </div>
+    </SettingsGroup>
+  );
+}
 
 /**
  * Row status → the word a customer recognizes on a statement.
@@ -154,38 +162,24 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
   if ((holdStreamPlaceholder && !streamRevealed) || invoices.isLoading) {
     return (
-      <section
-        id="invoices"
-        tabIndex={-1}
-        aria-label="Payment history"
-        data-testid="invoice-history"
-        style={SECTION_STYLE}
-      >
-        <GroupTitle>Payment history</GroupTitle>
+      <HistoryFrame>
         <div
           aria-hidden="true"
           style={{ height: 72, background: color.fill, borderRadius: radius.lg }}
         />
         <span style={{ position: 'absolute', left: -9999 }}>Loading invoices…</span>
-      </section>
+      </HistoryFrame>
     );
   }
 
   if (invoices.isError) {
     return (
-      <section
-        id="invoices"
-        tabIndex={-1}
-        aria-label="Payment history"
-        data-testid="invoice-history"
-        style={SECTION_STYLE}
-      >
-        <GroupTitle>Payment history</GroupTitle>
+      <HistoryFrame>
         <HistoryUnavailable
           retrying={invoices.isFetching}
           onRetry={() => void invoices.refetch()}
         />
-      </section>
+      </HistoryFrame>
     );
   }
 
@@ -213,14 +207,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
   );
 
   return (
-    <section
-      id="invoices"
-      tabIndex={-1}
-      aria-label="Payment history"
-      data-testid="invoice-history"
-      style={SECTION_STYLE}
-    >
-      <GroupTitle>Payment history</GroupTitle>
+    <HistoryFrame>
       {data.invoices.length > 0 ? (
         <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
           Payments and invoices from past subscriptions and one-time purchases.
@@ -295,7 +282,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
         ) : data.omittedRows > 0 ? (
           <p role="status" style={{ margin: 0, fontSize: text.md, color: color.amber }}>
             We couldn&rsquo;t display this billing history. Email{' '}
-            <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+            <a className={linkStyles.link} href="mailto:support@declutrmail.com">
               support@declutrmail.com
             </a>{' '}
             for help with your invoices.
@@ -333,7 +320,7 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
             </div>
           ) : null}
           <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 2 }}>
-            {filtered.map((invoice) => {
+            {filtered.map((invoice, index) => {
               const amount = formatProviderAmount(invoice.amount, invoice.currencyCode);
               const date = formatBillingDate(invoice.issuedAt);
               const displayStatus = invoiceStatus(invoice);
@@ -373,7 +360,9 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
                     minHeight: 52,
                     boxSizing: 'border-box',
                     padding: '10px 0',
-                    borderBottom: `1px solid ${color.lineSoft}`,
+                    // Rules between rows only: the card's own edge closes the list.
+                    borderBottom:
+                      index < filtered.length - 1 ? `1px solid ${color.lineSoft}` : undefined,
                     fontSize: text.md,
                   }}
                 >
@@ -499,6 +488,6 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
           again, or email support@declutrmail.com.
         </div>
       ) : null}
-    </section>
+    </HistoryFrame>
   );
 }

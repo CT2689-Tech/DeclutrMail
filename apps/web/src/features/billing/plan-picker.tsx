@@ -1030,15 +1030,28 @@ export function PlanPicker({
       {/* The money-back note lives in the confirm panel — the point where
           money moves — and nowhere else on this screen. */}
       <details
-        style={{ width: '100%' }}
+        style={{
+          width: '100%',
+          boxSizing: 'border-box',
+          padding: '0 16px',
+          background: color.card,
+          border: `1px solid ${color.border}`,
+          borderRadius: radius.lg,
+        }}
         onToggle={(event) => setComparisonOpen(event.currentTarget.open)}
       >
-        <summary className="dm-disclosure">Compare included features</summary>
+        {/* One raised row like the questions below it — no rules above and under. */}
+        <summary
+          className="dm-disclosure"
+          style={{ borderBlock: 'none', padding: '16px 0', fontWeight: 600 }}
+        >
+          Compare included features
+        </summary>
         <div
           role="region"
           aria-label="Plan feature comparison"
           tabIndex={0}
-          style={{ overflowX: 'auto', marginTop: 12 }}
+          style={{ overflowX: 'auto', marginBottom: 16 }}
         >
           {comparisonOpen ? <BillingComparison pricingV2={pricingV2} /> : null}
         </div>
@@ -1057,8 +1070,6 @@ export function PlanPicker({
         flexDirection: 'column',
         gap: 16,
         scrollMarginTop: 24,
-        paddingTop: 24,
-        borderTop: `1px solid ${color.border}`,
       }}
     >
       {currentAccess?.kind === 'complimentary' && includedAccess ? (

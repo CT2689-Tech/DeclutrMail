@@ -47,16 +47,21 @@ export function QuotaChip(props: {
       >
         {line.text}
       </span>
-      {' \u00b7 '}
-      <a
-        className="dm-tap-target"
-        href={`/billing?from=${encodeURIComponent(from)}`}
-        onClick={() => {
-          void track('upgrade_cta_clicked', { source: 'quota_chip', plan: 'plus' });
-        }}
-      >
-        {fillStory(WS1_COPY['meter.chip.link'])}
-      </a>
+      {/* On Billing the plans are this page: a link to it only adds noise. */}
+      {pathname === '/billing' ? null : (
+        <>
+          {' \u00b7 '}
+          <a
+            className="dm-tap-target"
+            href={`/billing?from=${encodeURIComponent(from)}`}
+            onClick={() => {
+              void track('upgrade_cta_clicked', { source: 'quota_chip', plan: 'plus' });
+            }}
+          >
+            {fillStory(WS1_COPY['meter.chip.link'])}
+          </a>
+        </>
+      )}
     </>
   );
 }

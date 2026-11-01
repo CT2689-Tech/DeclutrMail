@@ -2527,8 +2527,8 @@ describe('BillingScreen — paid subscriber', () => {
 
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Pro')).toBeInTheDocument();
-    expect(within(card).getByText('$19/mo')).toBeInTheDocument();
-    expect(within(card).getByText('Next renewal Jul 1, 2026')).toBeInTheDocument();
+    expect(card).toHaveTextContent('$19/mo');
+    expect(card).toHaveTextContent('Renews Jul 1, 2026');
     // The provider is plumbing, not plan facts — never on the card.
     expect(within(card).queryByText(/via Paddle/)).not.toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Change plan' })).toBeInTheDocument();
@@ -3733,9 +3733,9 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
     const current = await screen.findByTestId('current-plan-card');
-    expect(current).toHaveTextContent('Plan price: $19/mo');
+    expect(current).toHaveTextContent('$19/mo');
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
-    expect(coverage).toHaveTextContent('1 of 5 connected Gmail accounts');
+    expect(coverage).toHaveTextContent('1 of 5 connected');
     expect(within(coverage).getByText('Daily Brief')).toBeInTheDocument();
     expect(within(coverage).getAllByRole('link')).toHaveLength(1);
     // A subscriber's plan options stay closed until asked for, then open
@@ -5850,7 +5850,7 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     expect(screen.getByText('Compare included features')).toBeInTheDocument();
   });
 
-  it('retains section shortcuts and downloads for a long historical invoice list without a subscription', async () => {
+  it('shows every download for a long history without adding jump links', async () => {
     stubBillingReads(FREE_BODY);
     const { client } = renderScreen();
     await screen.findByTestId('current-plan-card');
@@ -5871,23 +5871,9 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
         omittedRows: 0,
       }),
     );
-    const contents = await screen.findByRole('navigation', { name: 'On this page' });
-    expect(within(contents).getByRole('link', { name: 'Payment history' })).toHaveAttribute(
-      'href',
-      '#invoices',
-    );
-    expect(within(contents).getByRole('link', { name: 'Plans' })).toHaveAttribute(
-      'href',
-      '#change-plan',
-    );
-    expect(
-      within(contents).queryByRole('link', { name: 'Payment details' }),
-    ).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(6);
-    act(() => client.setQueryData(billingKeys.invoices(), EMPTY_INVOICES));
-    await waitFor(() =>
-      expect(screen.queryByRole('navigation', { name: 'On this page' })).not.toBeInTheDocument(),
-    );
+    expect(await screen.findAllByRole('button', { name: 'Download' })).toHaveLength(6);
+    // The page is short and sectioned like Settings; it carries no jump links.
+    expect(screen.queryByRole('navigation', { name: 'On this page' })).not.toBeInTheDocument();
   });
 
   it('free-but-PREVIOUSLY-paid keeps invoices reachable — the tax need outlives the subscription', async () => {
@@ -5907,23 +5893,15 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     expect(screen.queryByTestId('payment-method-card')).not.toBeInTheDocument();
   });
 
-  it('keeps plan, payment and invoices visible together with working section shortcuts', async () => {
+  it('stacks plan, payment, history and plans as deep-linkable titled sections, no jump links', async () => {
     stubBillingReads(PRO_SUB, ONE_INVOICE);
     renderScreen();
     await screen.findByTestId('current-plan-card');
     await screen.findByTestId('invoice-history');
-    // Plans open on request; their shortcut is the request.
     fireEvent.click(await screen.findByRole('button', { name: 'Change plan' }));
-    const contents = screen.getByRole('navigation', { name: 'On this page' });
-    const shortcuts = within(contents).getAllByRole('link');
-    expect(shortcuts.map((link) => link.textContent)).toEqual([
-      'Your plan',
-      'Payment details',
-      'Payment history',
-      'Plans',
-    ]);
-    const targets = shortcuts.map((link) => {
-      const target = document.getElementById(link.getAttribute('href')!.slice(1));
+    expect(screen.queryByRole('navigation', { name: 'On this page' })).not.toBeInTheDocument();
+    const targets = ['plan', 'payment', 'invoices', 'change-plan'].map((id) => {
+      const target = document.getElementById(id);
       expect(target).toBeVisible();
       expect(target).toHaveAttribute('tabindex', '-1');
       expect(within(target!).getByRole('heading', { level: 2 })).toBeInTheDocument();
@@ -5935,11 +5913,9 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     }
-    expect(screen.queryByRole('tab')).not.toBeInTheDocument();
-    // The existing checkout-intent deep link reaches the picker itself.
+    expect(targets[0]).toBe(screen.getByTestId('current-plan-card'));
+    expect(targets[1]).toBe(screen.getByTestId('payment-method-card'));
     expect(targets.at(-1)).toBe(screen.getByTestId('plan-picker'));
-    expect(await screen.findByTestId('payment-method-card')).toBeInTheDocument();
-    expect(await screen.findByTestId('invoice-history')).toBeInTheDocument();
   });
 
   it('cancel_scheduled + past_due keeps the payment-method affordance — dunning continues to period end', async () => {
@@ -6649,7 +6625,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
       renderScreen(null, undefined, { pricingV2: true });
       const coverage = await screen.findByRole('region', { name: 'Your plan includes' });
       // The legacy manifest still lists one account for Plus; launch Plus has two.
-      expect(coverage).toHaveTextContent('1 of 2 connected Gmail accounts');
+      expect(coverage).toHaveTextContent('1 of 2 connected');
       expect(screen.getByText('Plus covers up to 2 Gmail accounts.')).toBeInTheDocument();
     },
   );
@@ -6699,7 +6675,11 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen(null, undefined, { pricingV2: true });
     const status = await screen.findByTestId('current-plan-card');
-    expect(status).toHaveTextContent('3 of 1 connected Gmail accounts');
+    expect(status).toHaveTextContent('3 of 1 connected');
+    expect(within(status).getByRole('link', { name: /Gmail accounts/ })).toHaveAttribute(
+      'href',
+      '/settings#mailboxes',
+    );
     expect(status).toHaveTextContent('Adding a Gmail account is blocked');
   });
 
@@ -6761,12 +6741,14 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
   });
 
-  it('keeps the Free status to one line at or under the Gmail limit', async () => {
+  it('keeps the Free status to one row at or under the Gmail limit', async () => {
     mockPricingV2 = true;
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen(null, undefined, { pricingV2: true });
     const status = await screen.findByTestId('current-plan-card');
-    expect(status).not.toHaveTextContent('connected Gmail accounts');
+    expect(status).toHaveTextContent('Free');
+    expect(status).not.toHaveTextContent('connected');
+    expect(within(status).queryByRole('link')).toBeNull();
   });
 
   it('opens checkout from one click on Get Plus, with the terms already on the card', async () => {

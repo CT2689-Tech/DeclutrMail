@@ -3,13 +3,9 @@
 import linkStyles from './billing-links.module.css';
 import styles from './billing-screen.module.css';
 
-import {
-  editorialColumnStyle,
-  editorialTitleStyle,
-  EditorialContents,
-} from '@/features/editorial/page';
+import { editorialColumnStyle, editorialTitleStyle } from '@/features/editorial/page';
 
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import dynamic from 'next/dynamic';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -27,7 +23,6 @@ import type {
   BillingProviderId,
   BillingReconcileOutcome,
   BillingSubscription,
-  BillingInvoiceList,
   CancelRequest,
   CheckoutAttempt,
 } from '@declutrmail/shared/contracts';
@@ -97,7 +92,7 @@ import { PlanCoverage } from './plan-coverage';
 import { QuotaChip } from './quota-chip';
 import { useCleanupSummary } from './use-cleanup-summary';
 import { PlanPicker } from './plan-picker';
-import { GroupTitle } from '@/features/settings/settings-list';
+import { DrillRow, SettingsGroup, SettingsRow } from '@/features/settings/settings-list';
 
 // Opens only after "Cancel plan" is pressed, and carries the shared
 // confirm sheet — loading it on demand keeps /billing inside its
@@ -280,15 +275,6 @@ export function BillingScreen({
   // Cancel button — until some unrelated invalidate happened to fire.
   const [pauseConfirming, setPauseConfirming] = useState(false);
   const queryClient = useQueryClient();
-  // Read the history count without mounting another query observer: an observer
-  // would replace the streaming metadata InvoiceHistory needs for hydration.
-  // The server snapshot also keeps the first hydration render identical.
-  const invoiceCount = useSyncExternalStore(
-    (onChange) => queryClient.getQueryCache().subscribe(onChange),
-    () =>
-      queryClient.getQueryData<BillingInvoiceList>(billingKeys.invoices())?.invoices.length ?? 0,
-    () => 0,
-  );
   const subscriptionQuery = useBillingSubscription({
     // Three waits, and the pending-payment one outranks: it is measured
     // in seconds and its lock hides the other notices anyway.
@@ -1398,21 +1384,6 @@ export function BillingScreen({
     <div className={styles.page} style={{ ...editorialColumnStyle, maxWidth: 1120 }}>
       <BillingPageHeader description={billingAccountScope(plan, inboxLimit)} />
       <BillingSectionAnchor />
-      {!billingDark && (paymentMethodSub !== null || invoiceCount > 5) ? (
-        <EditorialContents
-          items={[
-            { href: '#plan', label: 'Your plan' },
-            ...(!billingDark && paymentMethodSub
-              ? [{ href: '#payment', label: 'Payment details' }]
-              : []),
-            // Only a history that exists gets a shortcut: an empty one renders nothing.
-            ...(!billingDark && invoiceCount > 0
-              ? [{ href: '#invoices', label: 'Payment history' }]
-              : []),
-            { href: '#change-plan', label: 'Plans' },
-          ]}
-        />
-      ) : null}
       <ScreenIntro
         id="billing"
         title="Plan & billing"
@@ -1446,53 +1417,28 @@ export function BillingScreen({
         </>
       ) : (
         <>
-          {paymentMethodCard ? (
-            <div className={styles.manageGrid}>
-              {currentPlanCard}
-              {paymentMethodCard}
-            </div>
-          ) : (
-            currentPlanCard
-          )}
+          {currentPlanCard}
           {planCoverage}
+          {paymentMethodCard}
           {invoices}
           {pickerShown ? picker : null}
         </>
       )}
 
-      <p style={{ fontSize: text.sm }}>
-        <a className={`${linkStyles.link} dm-tap-target`} href="/settings/help">
-          Billing help
-        </a>
+      <SettingsGroup title="Help">
+        <DrillRow href="/settings/help" label="Billing help" />
         {manualPassGrant(plan.complimentary) &&
         plan.backing.state === 'none' &&
         plan.nonBacking === null ? null : (
-          <>
-            {' '}
-            ·{' '}
-            <a className={`${linkStyles.link} dm-tap-target`} href="/refunds">
-              Refund policy
-            </a>
-          </>
+          <DrillRow href="/refunds" label="Refund policy" />
         )}
         {showCancelLink ? (
-          <>
-            {' '}
-            ·{' '}
-            {/* QA-billing-20260901-06: this opens the preview; the modal's
-                own destructive confirm keeps "Cancel subscription" so the
-                two clicks read as two different things. */}
-            <button
-              type="button"
-              className={`${linkStyles.link} dm-tap-target`}
-              onClick={() => setCancelOpen(true)}
-              style={{ padding: 0, border: 0, background: 'none', font: 'inherit' }}
-            >
-              Review cancellation
-            </button>
-          </>
+          // QA-billing-20260901-06: this opens the preview; the modal's own
+          // destructive confirm keeps "Cancel subscription" so the two
+          // clicks read as two different things.
+          <DrillRow onClick={() => setCancelOpen(true)} label="Review cancellation" />
         ) : null}
-      </p>
+      </SettingsGroup>
       <CancelModal
         open={cancelOpen}
         pricingV2={pricingV2}
@@ -1888,7 +1834,7 @@ export function PaymentProcessingNotice({
               // rows mid-change is a state worth a human look.
               <>
                 We found no live subscription to check against — email{' '}
-                <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                   support@declutrmail.com
                 </a>
                 .
@@ -1907,7 +1853,7 @@ export function PaymentProcessingNotice({
           ) : providerCheck === 'unresolved' ? (
             <>
               We found payment activity that needs a manual look — email{' '}
-              <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+              <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                 support@declutrmail.com
               </a>
               .
@@ -2095,63 +2041,55 @@ function FreePlanStatus({
   // Coverage is left off for Free, so an account still holding the Gmail
   // accounts of a plan it left hears about the limit here.
   const { connectedInboxes, inboxLimit } = useTier();
+  const overLimit = connectedInboxes > inboxLimit;
   return (
-    <section
+    <SettingsGroup
+      testId="current-plan-card"
       id="plan"
-      tabIndex={-1}
-      aria-label="Current plan"
-      data-testid="current-plan-card"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        flexWrap: 'wrap',
-        gap: '8px 20px',
-        padding: '14px clamp(16px, 3vw, 24px)',
-        background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: radius.lg,
-        scrollMarginTop: 24,
-      }}
+      title="Current plan"
+      footer={
+        overLimit ? (
+          <p style={{ margin: '10px 0 0', fontSize: text.sm, color: color.fgMuted }}>
+            Existing connections continue working. Adding a Gmail account is blocked while you are
+            at or above this plan’s limit.
+          </p>
+        ) : null
+      }
     >
-      <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-        <strong style={{ fontWeight: 600, color: color.fg }}>{TIER_MANIFEST.free.name}</strong>
-        {line ? ` · ${line}` : null}
-      </p>
-      {metered ? (
-        <div
-          role="progressbar"
-          aria-label="Free emails cleared this month"
-          aria-valuemin={0}
-          aria-valuemax={metered.limit}
-          aria-valuenow={metered.used}
-          style={{
-            flex: '1 1 160px',
-            minWidth: 140,
-            height: 6,
-            borderRadius: radius.pill,
-            background: color.fill,
-            overflow: 'hidden',
-          }}
-        >
+      <SettingsRow label={TIER_MANIFEST.free.name} {...(line ? { detail: line } : {})}>
+        {metered ? (
           <div
+            role="progressbar"
+            aria-label="Free emails cleared this month"
+            aria-valuemin={0}
+            aria-valuemax={metered.limit}
+            aria-valuenow={metered.used}
             style={{
-              width: `${share * 100}%`,
-              height: '100%',
-              background: share >= 0.8 ? color.amber : color.primary,
+              width: 160,
+              height: 6,
+              borderRadius: radius.pill,
+              background: color.fill,
+              overflow: 'hidden',
             }}
-          />
-        </div>
+          >
+            <div
+              style={{
+                width: `${share * 100}%`,
+                height: '100%',
+                background: share >= 0.8 ? color.amber : color.primary,
+              }}
+            />
+          </div>
+        ) : null}
+      </SettingsRow>
+      {overLimit ? (
+        <DrillRow
+          href="/settings#mailboxes"
+          label="Gmail accounts"
+          value={`${connectedInboxes} of ${inboxLimit} connected`}
+        />
       ) : null}
-      {connectedInboxes > inboxLimit ? (
-        <p style={{ margin: 0, flexBasis: '100%', fontSize: text.sm, color: color.fgSoft }}>
-          {connectedInboxes} of {inboxLimit} connected Gmail accounts. Existing connections continue
-          working. Adding a Gmail account is blocked while you are at or above this plan’s limit.{' '}
-          <a className={`${linkStyles.link} dm-tap-target`} href="/settings#mailboxes">
-            Manage Gmail accounts
-          </a>
-        </p>
-      ) : null}
-    </section>
+    </SettingsGroup>
   );
 }
 
@@ -2166,35 +2104,31 @@ function BillingFaq({ passEnabled }: { passEnabled: boolean }) {
     ...(passEnabled ? ([['pricing.faq.passEnds.q', 'pricing.faq.passEnds.a']] as const) : []),
     ['pricing.faq.taxes.q', 'pricing.faq.taxes.a'],
   ] as const;
-  // One framed group, like Payment history: the chevrons mark each row, so a
-  // rule between rows only adds lines (the disclosure class draws its own).
+  // The Settings group grammar: one raised surface, one question per row,
+  // inset hairlines between them (the row class draws them, not borders).
   return (
-    <section
-      aria-label="Billing questions"
-      data-testid="billing-faq"
-      style={{
-        display: 'grid',
-        gap: 2,
-        padding: 'clamp(16px, 3vw, 22px)',
-        background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: radius.lg,
-      }}
-    >
-      <GroupTitle>Questions</GroupTitle>
+    <SettingsGroup testId="billing-faq" title="Questions">
       {items.map(([question, answer]) => (
-        <details key={question}>
-          <summary className="dm-disclosure" style={{ borderBlock: 'none', padding: '10px 0' }}>
+        <details key={question} className="dm-settings-row" style={{ padding: '0 16px' }}>
+          <summary
+            className="dm-disclosure"
+            style={{ borderBlock: 'none', padding: '16px 0', fontWeight: 600 }}
+          >
             {fillStory(WS1_COPY[question])}
           </summary>
           <p
-            style={{ margin: '0 0 12px', fontSize: text.sm, lineHeight: 1.6, color: color.fgSoft }}
+            style={{
+              margin: '0 0 16px',
+              fontSize: text.sm,
+              lineHeight: 1.6,
+              color: color.fgSoft,
+            }}
           >
             {fillStory(WS1_COPY[answer])}
           </p>
         </details>
       ))}
-    </section>
+    </SettingsGroup>
   );
 }
 
@@ -2273,211 +2207,162 @@ function CurrentPlanCard({
       ? formatBillingDate(backing.sub.currentPeriodEnd)
       : null;
 
+  const changePlanShown =
+    !billingDark &&
+    !pauseConfirming &&
+    !reviewPending &&
+    (backing.state === 'active' || backing.state === 'past_due');
+  // D118 — the way back. Without it a mis-clicked cancel was irreversible
+  // for up to a year: checkout answers SUBSCRIPTION_EXISTS and change-plan
+  // answers SUBSCRIPTION_CANCELING, so support had to PATCH the provider by
+  // hand (matrix E3, 2026-07-31). Only for a schedule the USER owns: a
+  // refund/chargeback row reaches `cancel_scheduled` too, and
+  // `resume-cancellation` refuses it with CANCELLATION_NOT_REVOCABLE — the
+  // status note names the reason instead of offering an undo that 409s.
+  const keepShown =
+    !billingDark &&
+    !reviewPending &&
+    backing.state === 'cancel_scheduled' &&
+    backing.sub.cancelSource !== 'refund' &&
+    backing.sub.cancelSource !== 'chargeback';
+  const summary = [priceLabel || null, renewal ? `Renews ${renewal}` : null]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
-    <section
-      id="plan"
-      tabIndex={-1}
-      aria-label="Current plan"
-      data-testid="current-plan-card"
-      style={{
-        background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: radius.lg,
-        padding: 'clamp(16px, 3vw, 24px)',
-        scrollMarginTop: 24,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 14,
-      }}
-    >
-      <GroupTitle>Current plan</GroupTitle>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: -4 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
-          <span
-            style={{
-              ...tokens.typography.sectionTitle,
-              color: color.fg,
-            }}
-          >
-            {currentPlanTitle(plan)}
-          </span>
-          {priceLabel ? (
-            <span
-              style={{
-                fontSize: text.lg,
-                fontWeight: 600,
-                color: color.fg,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {plan.backing.state === 'active' ||
-              plan.backing.state === 'past_due' ||
-              plan.backing.state === 'cancel_scheduled' ? (
-                <span style={{ fontWeight: 400 }}>Plan price: </span>
-              ) : null}
-              <span>{priceLabel}</span>
-            </span>
-          ) : null}
-        </div>
-        {renewal ? (
-          <span
-            style={{ fontSize: text.sm, color: color.fgMuted, fontVariantNumeric: 'tabular-nums' }}
-          >
-            Next renewal {renewal}
-          </span>
-        ) : null}
-      </div>
-
-      {compNote ? (
-        <p
-          role="status"
-          data-testid="complimentary-note"
-          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
-        >
-          {compNote}
-        </p>
-      ) : null}
-      {passCoversPlan(plan) && plan.complimentary?.expiresAt ? (
-        <p
-          data-testid="pass-status-detail"
-          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
-        >
-          {fillStory(WS1_COPY['billing.pass.statusDetail'], locale, {
-            passEndDate: passEndLabel(plan.complimentary.expiresAt),
-          })}
-        </p>
-      ) : null}
-
-      {plan.entitlementTier === 'free' && cleanupSummary.data?.metered ? (
-        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-          <QuotaChip summary={cleanupSummary.data} />
-        </p>
-      ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
-        <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
-          <strong style={{ fontWeight: 600, color: color.fg }}>
-            {/* QA-billing-20260901-04: the reset is the signup
-                    anniversary, not the calendar month. The real date is
-                    already fetched by useTier(); state it instead. */}
-            {freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)}
-          </strong>
-        </p>
-      ) : null}
-
-      {note ? (
-        <p
-          role="status"
-          style={{
-            margin: 0,
-            fontSize: text.sm,
-            lineHeight: 1.5,
-            color: note.tone === 'warn' ? color.amber : color.fgMuted,
-          }}
-        >
-          {note.text}
-        </p>
-      ) : null}
-
-      {pauseConfirming ? (
-        <p
-          role="status"
-          data-testid="pause-confirming-note"
-          style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
-        >
-          Confirming your pause with the payment provider — this page updates automatically, usually
-          within a minute.
-        </p>
-      ) : null}
-
-      {!billingDark &&
-      !pauseConfirming &&
-      !reviewPending &&
-      (backing.state === 'active' || backing.state === 'past_due') ? (
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+    <SettingsGroup testId="current-plan-card" id="plan" title="Current plan">
+      <SettingsRow
+        label={<span style={{ fontSize: text.lg }}>{currentPlanTitle(plan)}</span>}
+        {...(summary
+          ? { detail: <span style={{ fontVariantNumeric: 'tabular-nums' }}>{summary}</span> }
+          : {})}
+      >
+        {changePlanShown ? (
           <Button tone="default" onClick={onChangePlan}>
             Change plan
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+        {keepShown && !confirmKeep ? (
+          <Button tone="primary" onClick={() => setConfirmKeep(true)}>
+            Keep my subscription
+          </Button>
+        ) : null}
+      </SettingsRow>
+      <div className={styles.planNotes}>
+        {compNote ? (
+          <p
+            role="status"
+            data-testid="complimentary-note"
+            style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
+          >
+            {compNote}
+          </p>
+        ) : null}
+        {passCoversPlan(plan) && plan.complimentary?.expiresAt ? (
+          <p
+            data-testid="pass-status-detail"
+            style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.fgMuted }}
+          >
+            {fillStory(WS1_COPY['billing.pass.statusDetail'], locale, {
+              passEndDate: passEndLabel(plan.complimentary.expiresAt),
+            })}
+          </p>
+        ) : null}
 
-      {/* D118 — the way back. Without it a mis-clicked cancel was
-          irreversible for up to a year: checkout answers
-          SUBSCRIPTION_EXISTS and change-plan answers
-          SUBSCRIPTION_CANCELING, so support had to PATCH the provider
-          by hand (matrix E3, 2026-07-31).
+        {plan.entitlementTier === 'free' && cleanupSummary.data?.metered ? (
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+            <QuotaChip summary={cleanupSummary.data} />
+          </p>
+        ) : plan.entitlementTier === 'free' && cleanupRemaining !== null ? (
+          <p style={{ margin: 0, fontSize: text.md, color: color.fgSoft }}>
+            <strong style={{ fontWeight: 600, color: color.fg }}>
+              {/* QA-billing-20260901-04: the reset is the signup
+                        anniversary, not the calendar month. The real date is
+                        already fetched by useTier(); state it instead. */}
+              {freeEmailsLeftLine(cleanupRemaining, cleanupResetsAt)}
+            </strong>
+          </p>
+        ) : null}
 
-          Only for a schedule the USER owns. A refund/chargeback row now
-          reaches `cancel_scheduled` too (the projector pins the flag
-          under a local verdict), and `resume-cancellation` refuses it
-          with CANCELLATION_NOT_REVOCABLE — rendering the button anyway
-          would offer an undo whose only possible answer is a 409. The
-          status note above names the reason instead. */}
-      {!billingDark &&
-      !reviewPending &&
-      backing.state === 'cancel_scheduled' &&
-      backing.sub.cancelSource !== 'refund' &&
-      backing.sub.cancelSource !== 'chargeback' ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {confirmKeep ? (
-            <div
-              data-testid="keep-subscription-confirm"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 8,
-                padding: '14px 16px',
-                background: color.fill,
-                borderRadius: radius.lg,
-              }}
-            >
-              <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
-                <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your
-                cancellation is called off and {manifest.name} keeps renewing
-                {formatBillingDate(backing.sub.currentPeriodEnd)
-                  ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
-                  : ' on its normal schedule'}
-                {priceLabel ? ` at ${priceLabel}` : ''}. You can cancel again at any time.
-              </p>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <Button
-                  tone="primary"
-                  onClick={onResumeCancellation}
-                  disabled={isResumingCancellation}
-                >
-                  {isResumingCancellation ? 'Restoring…' : 'Yes, keep my subscription'}
-                </Button>
-                <Button
-                  tone="default"
-                  onClick={() => setConfirmKeep(false)}
-                  disabled={isResumingCancellation}
-                >
-                  Never mind
-                </Button>
-              </div>
-              {resumeCancellationError != null ? (
-                <div
-                  role="alert"
-                  style={{
-                    fontSize: text.sm,
-                    color: color.dangerText,
-                    background: color.dangerBg,
-                    borderRadius: radius.md,
-                    padding: '8px 10px',
-                  }}
-                >
-                  {resumeCancellationError}
-                </div>
-              ) : null}
-            </div>
-          ) : (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <Button tone="primary" onClick={() => setConfirmKeep(true)}>
-                Keep my subscription
+        {note ? (
+          <p
+            role="status"
+            style={{
+              margin: 0,
+              fontSize: text.sm,
+              lineHeight: 1.5,
+              color: note.tone === 'warn' ? color.amber : color.fgMuted,
+            }}
+          >
+            {note.text}
+          </p>
+        ) : null}
+
+        {pauseConfirming ? (
+          <p
+            role="status"
+            data-testid="pause-confirming-note"
+            style={{ margin: 0, fontSize: text.sm, lineHeight: 1.5, color: color.amber }}
+          >
+            Confirming your pause with the payment provider — this page updates automatically,
+            usually within a minute.
+          </p>
+        ) : null}
+
+        {keepShown && confirmKeep ? (
+          <div
+            data-testid="keep-subscription-confirm"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              padding: '14px 16px',
+              background: color.fill,
+              borderRadius: radius.lg,
+            }}
+          >
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft, lineHeight: 1.5 }}>
+              <strong style={{ fontWeight: 600, color: color.fg }}>$0 today.</strong> Your
+              cancellation is called off and {manifest.name} keeps renewing
+              {formatBillingDate(backing.sub.currentPeriodEnd)
+                ? ` — next charge ${formatBillingDate(backing.sub.currentPeriodEnd)}`
+                : ' on its normal schedule'}
+              {priceLabel ? ` at ${priceLabel}` : ''}. You can cancel again at any time.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button
+                tone="primary"
+                onClick={onResumeCancellation}
+                disabled={isResumingCancellation}
+              >
+                {isResumingCancellation ? 'Restoring…' : 'Yes, keep my subscription'}
+              </Button>
+              <Button
+                tone="default"
+                onClick={() => setConfirmKeep(false)}
+                disabled={isResumingCancellation}
+              >
+                Never mind
               </Button>
             </div>
-          )}
-        </div>
-      ) : null}
-    </section>
+            {resumeCancellationError != null ? (
+              <div
+                role="alert"
+                style={{
+                  fontSize: text.sm,
+                  color: color.dangerText,
+                  background: color.dangerBg,
+                  borderRadius: radius.md,
+                  padding: '8px 10px',
+                }}
+              >
+                {resumeCancellationError}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </SettingsGroup>
   );
 }
 
@@ -2554,7 +2439,7 @@ function ScheduledPlanChangeNotice({
             ? 'Paddle has not confirmed whether your renewal was restored. Retry before renewal or contact support.'
             : 'We’re confirming what happened with your payment. Billing changes are paused until then.'}{' '}
           {restoring ? '' : 'Your current plan and renewal remain unchanged. '}Email{' '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
           if this does not settle shortly.
@@ -2582,7 +2467,7 @@ function ScheduledPlanChangeNotice({
       ) : (
         <span style={{ color: color.fgMuted, fontSize: text.sm }}>
           Plan changes aren&rsquo;t available on this subscription right now. Email{' '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
           if you want to keep {TIER_MANIFEST[currentTier].name}.
@@ -2782,7 +2667,7 @@ function NonBackingSubscriptionNotice({
                 // exactly the gap the original finding named.
                 <>
                   It won&rsquo;t renew. If you still can’t choose another plan, email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>
                   .
@@ -2796,7 +2681,7 @@ function NonBackingSubscriptionNotice({
                       its period ends) — name the route this screen has
                       no other way to reach. */}
                   If you still can’t choose another plan after canceling, email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>
                   .
@@ -2805,7 +2690,7 @@ function NonBackingSubscriptionNotice({
                 <>
                   Cancel it if you&rsquo;re done with it. If you still can’t choose another plan,
                   email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>
                   .
@@ -2824,7 +2709,7 @@ function NonBackingSubscriptionNotice({
               {sub.cancelAtPeriodEnd ? (
                 <>
                   It won&rsquo;t renew. If you still can’t choose another plan, email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>
                   .
@@ -2832,7 +2717,7 @@ function NonBackingSubscriptionNotice({
               ) : (
                 <>
                   Resume to reactivate {tierName}, or cancel if you&rsquo;re done with it — email{' '}
-                  <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+                  <a className={linkStyles.link} href="mailto:support@declutrmail.com">
                     support@declutrmail.com
                   </a>{' '}
                   if you still can’t choose another plan after canceling.
@@ -2853,7 +2738,7 @@ function NonBackingSubscriptionNotice({
         <p style={{ margin: 0, fontSize: text.sm, color: color.amber }}>
           Payment past due on this subscription. Your current plan comes from a different
           subscription or offer, so email{' '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
           and we&rsquo;ll sort out which one you want to keep.
@@ -2864,7 +2749,7 @@ function NonBackingSubscriptionNotice({
           {sub.provider === 'razorpay'
             ? 'Restarting a plan paid in rupees could start a new charge. To avoid that, email '
             : 'We can’t confirm how much paid time remains, so we can’t restart this subscription here. Email '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
+          <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
           and we&rsquo;ll help reactivate it safely.
