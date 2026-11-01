@@ -18,9 +18,7 @@ export function CheckoutAttemptNotice({
 }) {
   const { busy, error, autoStopped, act } = useCheckoutAttemptRecovery(attempt, ownerId, onUpdated);
   const name =
-    attempt.offer === 'pass_onetime'
-      ? 'Backlog Pass'
-      : `${attempt.tier === 'pro' ? 'Pro' : 'Plus'} subscription`;
+    attempt.offer === 'pass_onetime' ? 'Backlog Pass' : attempt.tier === 'pro' ? 'Pro' : 'Plus';
   const [heading, detail] =
     attempt.state === 'open'
       ? [`Your ${name} checkout is still open.`, 'Resume it to finish this purchase.']
@@ -55,7 +53,7 @@ export function CheckoutAttemptNotice({
           : 'Payment status is checked automatically while this page is open.'}
       </p>
       {error && (
-        <p role="alert" style={{ margin: 0, color: color.danger }}>
+        <p role="alert" style={{ margin: 0, color: color.dangerText }}>
           {error}
         </p>
       )}

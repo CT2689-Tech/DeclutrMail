@@ -29,8 +29,9 @@ export function minimumTierForCapability(capability: Capability): TierId {
 }
 
 /** Connected-Gmail-account limit. `PRICING_V2` uses `INBOXES` (Plus is 2). */
-export function inboxLimitFor(id: TierId): number {
-  if (isPricingV2() && (id === 'free' || id === 'plus' || id === 'pro')) return INBOXES[id];
+/** `pricingV2` defaults to this process's flag; the browser has none, so it passes `me`'s. */
+export function inboxLimitFor(id: TierId, pricingV2: boolean = isPricingV2()): number {
+  if (pricingV2 && (id === 'free' || id === 'plus' || id === 'pro')) return INBOXES[id];
   return TIER_MANIFEST[id].inboxLimit;
 }
 

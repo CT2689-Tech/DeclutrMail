@@ -65,8 +65,7 @@ function HistoryUnavailable({ retrying, onRetry }: { retrying: boolean; onRetry:
       style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '10px 16px' }}
     >
       <p style={{ margin: 0, flex: '1 1 260px', fontSize: text.md, color: color.fgSoft }}>
-        <strong style={{ fontWeight: 600, color: color.fg }}>Not available right now.</strong> Your
-        plan isn’t affected.
+        <strong style={{ fontWeight: 600, color: color.fg }}>Payment history didn’t load.</strong>
       </p>
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 16px' }}>
         <Button tone="default" size="sm" disabled={retrying} onClick={onRetry}>
@@ -77,7 +76,7 @@ function HistoryUnavailable({ retrying, onRetry }: { retrying: boolean; onRetry:
           href="mailto:support@declutrmail.com?subject=Receipt%20request"
           style={{ fontSize: text.sm }}
         >
-          Ask support for a receipt
+          Request a receipt
         </a>
       </div>
     </div>
@@ -208,11 +207,6 @@ export function InvoiceHistory({ enabled = true }: { enabled?: boolean }) {
 
   return (
     <HistoryFrame>
-      {data.invoices.length > 0 ? (
-        <p style={{ margin: 0, color: color.fgMuted, fontSize: text.sm }}>
-          Payments and invoices from past subscriptions and one-time purchases.
-        </p>
-      ) : null}
       {filterable ? (
         <>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>

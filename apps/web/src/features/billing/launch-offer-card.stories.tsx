@@ -34,8 +34,8 @@ const plus = {
     'Autopilot rules for new email from senders you’ve decided on',
   ],
   terms: [
-    '$59 billed yearly, starting today. Renews automatically. Cancel any time.',
-    'Taxes and the final amount are confirmed at checkout.',
+    '$59 billed yearly from today until you cancel.',
+    'Final amount with tax shown at checkout.',
     '14-day money-back on any purchase, once per customer.',
   ],
   ctaLabel: 'Get Plus',
@@ -49,6 +49,9 @@ export const Highlighted: Story<typeof LaunchOfferCard> = { args: { ...plus, hig
 export const Opening: Story<typeof LaunchOfferCard> = {
   args: { ...plus, pending: true, ctaLabel: 'Opening checkout…' },
 };
+
+/** Another checkout or plan change is still settling, so this one waits. */
+export const Disabled: Story<typeof LaunchOfferCard> = { args: { ...plus, disabled: true } };
 
 export const CheckoutFailed: Story<typeof LaunchOfferCard> = {
   args: {
@@ -71,7 +74,7 @@ export const PayOnce: Story<typeof LaunchOfferCard> = {
       'The Screener and Autopilot while it lasts',
     ],
     terms: [
-      'Taxes and the final amount are confirmed at checkout.',
+      'Final amount with tax shown at checkout.',
       '14-day money-back on any purchase, once per customer.',
     ],
     ctaLabel: 'Get Backlog Pass',

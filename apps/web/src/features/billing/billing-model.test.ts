@@ -503,8 +503,8 @@ describe('backingStatusNote', () => {
     });
   });
 
-  // The payment card sits beside the plan card on desktop and below it on
-  // a phone, so the note cannot name a direction.
+  // The note names the card, not a direction: where it sits is the page's
+  // job, and the page moves it right under the plan when past due.
   it.each(['paddle', 'razorpay'] as const)(
     'points at the %s payment card without a direction',
     (provider) => {

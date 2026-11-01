@@ -121,8 +121,12 @@ export const WithInvoices: Story<typeof InvoiceHistory> = {
   ),
 };
 
-/** First period, nothing collected yet — an empty state, not an error. */
-export const NoInvoicesYet: Story<typeof InvoiceHistory> = {
+/**
+ * First period, nothing collected yet. A complete, empty history renders
+ * nothing: the section stays out of the way, above all on a Free account
+ * deciding what to buy. This canvas is blank on purpose.
+ */
+export const NoInvoicesYetHidden: Story<typeof InvoiceHistory> = {
   render: () => (
     <Frame
       client={clientWith({

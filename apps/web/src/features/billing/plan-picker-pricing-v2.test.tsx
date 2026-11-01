@@ -4,12 +4,13 @@
  * passes in as `passEnabled`.
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory } from '@declutrmail/shared/entitlements';
 
+import { installFetchStub, jsonServerError } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { PlanPicker } from './plan-picker';
@@ -50,6 +51,17 @@ function renderPicker(
 }
 
 describe('PlanPicker launch pricing', () => {
+  it('says so when joining the Pro waitlist fails', async () => {
+    installFetchStub([
+      { method: 'POST', path: '/api/v1/waitlist', respond: () => jsonServerError() },
+    ]);
+    renderPicker({ pricingV2: true, passEnabled: true });
+    fireEvent.click(
+      screen.getByRole('button', { name: fillStory(WS1_COPY['pricing.proRow.link']) }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(WS2_COPY.pro.error);
+  });
+
   it('hides the cycle toggle when only one cycle is listed', () => {
     renderPicker({ pricingV2: true, passEnabled: false });
     expect(screen.queryByRole('button', { name: 'Monthly' })).not.toBeInTheDocument();

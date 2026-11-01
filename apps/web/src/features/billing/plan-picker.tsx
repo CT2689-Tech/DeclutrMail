@@ -32,7 +32,7 @@ import {
   TIER_RANK,
   type TierId,
 } from '@declutrmail/shared/entitlements';
-import { WS1_COPY } from '@declutrmail/shared/copy/launch';
+import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { apiPost } from '@/lib/api/client';
 
 import {
@@ -805,6 +805,7 @@ export function PlanPicker({
   const launchLayout = launchOffers ? (
     <LaunchOffers
       passEnabled={passEnabled}
+      passHolder={currentAccess?.kind === 'pass'}
       country={country}
       indiaCheckoutOpen={indiaCheckoutOpen}
       isPhone={isPhone}
@@ -836,7 +837,8 @@ export function PlanPicker({
         )}
       </div>
 
-      {currentTier !== 'free' && displayedSubscription === null ? (
+      {/* The launch cards carry their own terms, and the Pass is not a subscription. */}
+      {currentTier !== 'free' && displayedSubscription === null && !launchOffers ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
           Your current access is shown above. Buying a subscription starts a separate recurring
           payment. Review the price and renewal details before checkout.
@@ -1196,6 +1198,7 @@ function launchPlusLine(
 /** Plus and the Backlog Pass side by side, each its own preview + checkout. */
 function LaunchOffers({
   passEnabled,
+  passHolder,
   country,
   indiaCheckoutOpen,
   isPhone,
@@ -1207,6 +1210,8 @@ function LaunchOffers({
   onBuy,
 }: {
   passEnabled: boolean;
+  /** A second Pass extends the first, so the card says so. */
+  passHolder: boolean;
   country: string | null;
   indiaCheckoutOpen: boolean;
   isPhone: boolean;
@@ -1236,10 +1241,10 @@ function LaunchOffers({
       ? [WS1_COPY['pricing.inrPaused.checkout']]
       : [
           ...(summary ? [summary] : []),
-          fillStory(WS1_COPY['checkout.taxNote']),
+          fillStory(WS1_COPY['launch.taxNote']),
           ...(currency === 'INR' ? [fillStory(WS1_COPY['checkout.inr'], 'inr')] : []),
           moneyBackNote(true),
-          ...(promo ? [`${promo} Enter it at checkout.`] : []),
+          ...(promo ? [`${promo} ${WS1_COPY['checkout.codeEnter']}`] : []),
         ];
   const plusMonthly = formatMoney(
     {
@@ -1270,7 +1275,7 @@ function LaunchOffers({
           hint={`about ${plusMonthly} a month`}
           features={fillStoryList(WS1_COPY['pricing.plus.features'], plusLocale).slice(0, 4)}
           terms={termsFor(
-            fillStory(WS1_COPY['checkout.plus.summary'], plusLocale),
+            fillStory(WS1_COPY['launch.plus.terms'], plusLocale),
             plusCurrency,
             plusPaused,
             promoBanner(new Date(), false),
@@ -1295,7 +1300,10 @@ function LaunchOffers({
             name={fillStory(WS1_COPY['pricing.pass.name'])}
             amount={passAmount(passLocale)}
             per={fillStory(WS1_COPY['pricing.pass.priceSuffix'], passLocale)}
-            hint={fillStory(WS1_COPY['pricing.pass.renewal'], passLocale)}
+            hint={fillStory(
+              WS1_COPY[passHolder ? 'launch.pass.extend' : 'pricing.pass.renewal'],
+              passLocale,
+            )}
             features={fillStoryList(WS1_COPY['pricing.pass.features'], passLocale).slice(0, 3)}
             terms={termsFor(null, passCurrency, passPaused, promoBanner(new Date(), true))}
             ctaLabel={
@@ -1318,23 +1326,35 @@ function LaunchOffers({
   );
 }
 
-/** Pro is not for sale at launch: one quiet line, never a second filled button. */
-function ProWaitlistLine({ disabled }: { disabled: boolean }) {
+/** One Pro waitlist join for both layouts. A failed request says so. */
+function useProWaitlistJoin(disabled: boolean) {
   const [joined, setJoined] = useState(false);
   const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
   async function join() {
     if (pending || joined || disabled) return;
     setPending(true);
+    setFailed(false);
     try {
       await apiPost<{ status: 'joined' | 'already_joined' }>('/api/v1/waitlist', {
         kind: 'pro',
         source: 'billing',
       });
       setJoined(true);
+    } catch {
+      setFailed(true);
     } finally {
       setPending(false);
     }
   }
+  return { joined, pending, failed, join };
+}
+
+const waitlistErrorStyle = { margin: 0, fontSize: text.sm, color: color.dangerText } as const;
+
+/** Pro is not for sale at launch: one quiet line, never a second filled button. */
+function ProWaitlistLine({ disabled }: { disabled: boolean }) {
+  const { joined, pending, failed, join } = useProWaitlistJoin(disabled);
   return (
     <p data-testid="plan-option-pro" style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
       {fillStory(WS1_COPY['pricing.proRow'])}{' '}
@@ -1362,26 +1382,17 @@ function ProWaitlistLine({ disabled }: { disabled: boolean }) {
           {fillStory(WS1_COPY['pricing.proRow.link'])}
         </button>
       )}
+      {failed ? (
+        <span role="alert" style={{ ...waitlistErrorStyle, display: 'block', marginTop: 4 }}>
+          {WS2_COPY.pro.error}
+        </span>
+      ) : null}
     </p>
   );
 }
 
 function ProWaitlistCard({ disabled }: { disabled: boolean }) {
-  const [joined, setJoined] = useState(false);
-  const [pending, setPending] = useState(false);
-  async function join() {
-    if (pending || joined) return;
-    setPending(true);
-    try {
-      await apiPost<{ status: 'joined' | 'already_joined' }>('/api/v1/waitlist', {
-        kind: 'pro',
-        source: 'billing',
-      });
-      setJoined(true);
-    } finally {
-      setPending(false);
-    }
-  }
+  const { joined, pending, failed, join } = useProWaitlistJoin(disabled);
   return (
     <div
       data-testid="plan-option-pro"
@@ -1417,6 +1428,11 @@ function ProWaitlistCard({ disabled }: { disabled: boolean }) {
           >
             {proWaitlistCta()}
           </Button>
+          {failed ? (
+            <p role="alert" style={{ ...waitlistErrorStyle, marginTop: 8 }}>
+              {WS2_COPY.pro.error}
+            </p>
+          ) : null}
         </div>
       )}
     </div>

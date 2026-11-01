@@ -98,10 +98,7 @@ export function PaymentMethodCard({
           {supportText}
         </p>
       ) : (
-        <SettingsRow
-          label="Managed by Paddle"
-          detail="Change your payment method in Paddle’s secure form."
-        >
+        <SettingsRow label="Managed by Paddle">
           <Button
             tone={isPastDue ? 'primary' : 'default'}
             disabled={disabled || session.isPending}

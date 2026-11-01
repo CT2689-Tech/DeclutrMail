@@ -527,7 +527,7 @@ export const LaunchFree: Story<typeof BillingScreen> = {
     ),
 };
 
-/** A launch-price Plus subscriber: plan and card side by side; plan options open on request. */
+/** A launch-price Plus subscriber: plan, coverage and card in one column; plan options open on request. */
 export const LaunchPlusSubscriber: Story<typeof BillingScreen> = {
   render: () =>
     frame(
@@ -551,6 +551,85 @@ export const LaunchPlusSubscriber: Story<typeof BillingScreen> = {
       ),
       { pricingV2: true },
     ),
+};
+
+const LAUNCH_PLUS_SUB = PRO_SUB.subscription
+  ? {
+      ...PRO_SUB.subscription,
+      tier: 'plus' as const,
+      cycle: 'annual' as const,
+      chargedUsdCents: 5900,
+      chargedCurrency: 'USD' as const,
+    }
+  : null;
+
+/**
+ * Launch Plus, payment failed: the card comes right under the plan, with
+ * no renewal date and no "Change plan" while the picker could not be used.
+ */
+export const LaunchPlusPastDue: Story<typeof BillingScreen> = {
+  render: () =>
+    frame(
+      makeClient(
+        { ...meFixture('plus', null), pricingV2: true, passEnabled: true, inboxLimit: 2 },
+        {
+          complimentary: null,
+          tier: 'plus',
+          foundingMember: false,
+          pendingCheckout: null,
+          subscription: LAUNCH_PLUS_SUB ? { ...LAUNCH_PLUS_SUB, status: 'past_due' } : null,
+        },
+      ),
+      { pricingV2: true },
+    ),
+};
+
+/** A Backlog Pass holder: their plan first, then the offers; buying again adds days. */
+export const LaunchPassHolder: Story<typeof BillingScreen> = {
+  render: () =>
+    frame(
+      makeClient(
+        { ...meFixture('plus', null), pricingV2: true, passEnabled: true, inboxLimit: 1 },
+        {
+          checkoutSetupComplete: true,
+          complimentary: { tier: 'plus', expiresAt: '2026-11-30T00:00:00.000Z', source: 'pass' },
+          tier: 'plus',
+          foundingMember: false,
+          pendingCheckout: null,
+          subscription: null,
+        },
+      ),
+      { pricingV2: true },
+    ),
+};
+
+/** Free with two Gmail accounts after a downgrade: both keep working, adding waits. */
+export const LaunchFreeOverLimit: Story<typeof BillingScreen> = {
+  render: () => {
+    const me = meFixture('free', 640);
+    return frame(
+      makeClient(
+        {
+          ...me,
+          mailboxes: [
+            ...me.mailboxes,
+            {
+              id: 'mb-2',
+              email: 'me.work@example.com',
+              status: 'active',
+              connectedAt: null,
+              readiness: 'ready',
+            },
+          ],
+          pricingV2: true,
+          passEnabled: true,
+          inboxLimit: 1,
+        },
+        FREE_BODY,
+      ),
+      { pricingV2: true },
+    );
+  },
 };
 
 /** Complimentary Pro: extra purchases stay secondary to current access. */

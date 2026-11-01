@@ -148,8 +148,6 @@ describe('PlanConsequences', () => {
 
   it('warns about the account limit when launch Plus (2 accounts) moves to Free (1)', () => {
     render(<PlanConsequences fromTier="plus" toTier="free" pricingV2 />);
-    expect(
-      screen.getByText(/Existing connected Gmail accounts continue working/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Existing connected Gmail accounts keep working/)).toBeInTheDocument();
   });
 });

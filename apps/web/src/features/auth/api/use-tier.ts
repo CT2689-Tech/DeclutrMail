@@ -1,6 +1,6 @@
 'use client';
 
-import { INBOXES, inboxLimitFor } from '@declutrmail/shared/entitlements';
+import { inboxLimitFor } from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { Tier } from './use-me';
@@ -55,11 +55,7 @@ export function useTier(): TierEntitlements {
   // The server's ceiling when it sends one. Otherwise read launch pricing
   // from `me`: the browser has no PRICING_V2 env, so `inboxLimitFor`
   // alone fell back to the legacy one-account Plus.
-  const inboxLimit =
-    me.inboxLimit ??
-    (pricingV2 && (tier === 'free' || tier === 'plus' || tier === 'pro')
-      ? INBOXES[tier]
-      : inboxLimitFor(tier));
+  const inboxLimit = me.inboxLimit ?? inboxLimitFor(tier, pricingV2);
   const passEnabled = me.passEnabled === true;
   const connectedInboxes = me.mailboxes.filter((m) => m.status === 'active').length;
   return {

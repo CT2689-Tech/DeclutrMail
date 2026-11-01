@@ -1483,7 +1483,10 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
-    expect(screen.getByText('Free covers 1 Gmail account.')).toBeInTheDocument();
+    // The coverage group states the limit with a live count, so the subtitle does not.
+    expect(screen.getByRole('region', { name: 'Your plan includes' })).toHaveTextContent(
+      '1 of 1 connected',
+    );
     expect(within(notice).queryByText('What we know')).not.toBeInTheDocument();
     expect(within(notice).queryByText('What happens next')).not.toBeInTheDocument();
     expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
@@ -2500,13 +2503,32 @@ describe('BillingScreen — checkout funnel events', () => {
 });
 
 describe('BillingScreen — paid subscriber', () => {
+  it('past due: the card comes first, with no renewal date and no Change plan', async () => {
+    mockTier = 'pro';
+    stubSubscription(() =>
+      jsonOk({ data: { ...PRO_SUB, subscription: { ...SUB, status: 'past_due' } } }),
+    );
+    renderScreen();
+    const card = await screen.findByTestId('current-plan-card');
+    // The note says access ends unless payment is fixed; a renewal date would contradict it.
+    expect(card).toHaveTextContent('Payment past due');
+    expect(card).not.toHaveTextContent('Renews');
+    // Every plan option is disabled while past due, so the button would lead nowhere.
+    expect(within(card).queryByRole('button', { name: 'Change plan' })).toBeNull();
+    const payment = screen.getByTestId('payment-method-card');
+    const coverage = screen.getByRole('region', { name: 'Your plan includes' });
+    expect(
+      payment.compareDocumentPosition(coverage) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('keeps refund review visible across reload, suppresses renewal and allows cancellation', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: { ...PRO_SUB, billingReviewPending: true } }));
     const mounted = renderScreen();
     const card = await screen.findByTestId('current-plan-card');
     expect(await screen.findByText(/confirming your payment/)).toBeInTheDocument();
-    expect(card).not.toHaveTextContent('Next renewal');
+    expect(card).not.toHaveTextContent('Renews');
     // Cancellation stays reachable from the footer; plan changes wait for the review.
     expect(screen.getByRole('button', { name: 'Review cancellation' })).toBeEnabled();
     expect(within(card).queryByRole('button', { name: 'Change plan' })).toBeNull();
@@ -2532,9 +2554,8 @@ describe('BillingScreen — paid subscriber', () => {
     // The provider is plumbing, not plan facts — never on the card.
     expect(within(card).queryByText(/via Paddle/)).not.toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Change plan' })).toBeInTheDocument();
-    // Cancellation moved off the plan card into the page footer.
-    expect(within(card).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
+    // Cancellation sits with the plan it ends, as the card's last row.
+    expect(within(card).getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
   });
 
   it('a deep link naming the subscriber’s own current tier does not auto-open the confirm panel', async () => {
@@ -2936,7 +2957,7 @@ describe('BillingScreen — paid subscriber', () => {
   // the card read "Pro · $190/yr · Next renewal Jul 30, 2027" — but what
   // happens that day is Plus MONTHLY at $9. The line claims this plan at
   // this price renews then, which a scheduled change makes false.
-  it('current-plan card drops "Next renewal" while a plan change is scheduled', async () => {
+  it('current-plan card drops its renewal date while a plan change is scheduled', async () => {
     mockTier = 'pro';
     installFetchStub([
       {
@@ -2963,7 +2984,7 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     const card = await screen.findByTestId('current-plan-card');
-    expect(within(card).queryByText(/Next renewal/)).toBeNull();
+    expect(within(card).queryByText(/Renews/)).toBeNull();
     // The notice below still states what actually happens.
     expect(await screen.findByText(/Downgrade scheduled/)).toBeInTheDocument();
   });
@@ -3223,7 +3244,7 @@ describe('BillingScreen — paid subscriber', () => {
     // nothing has changed yet — but a *future renewal date* claim next
     // to that same note asserts a fate ("this will renew") the pause
     // request has put in question.
-    expect(card).not.toHaveTextContent('Next renewal');
+    expect(card).not.toHaveTextContent('Renews');
   });
 
   // Offering a control the API would refuse is the assert-what-we-don't-
@@ -3750,7 +3771,7 @@ describe('BillingScreen — paid subscriber', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Switch to Plus' }));
     const panel = await screen.findByTestId('change-plan-panel');
     expect(panel).toHaveTextContent('No longer included after the change: Daily Brief, Follow-ups');
-    expect(panel).toHaveTextContent('Existing connected Gmail accounts continue working');
+    expect(panel).toHaveTextContent('Existing connected Gmail accounts keep working');
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );
@@ -5225,7 +5246,9 @@ describe('BillingScreen — one billing story (A6)', () => {
 
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Backlog Pass')).toBeInTheDocument();
-    expect(screen.getByText('Backlog Pass covers 1 Gmail account.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Your plan includes' })).toHaveTextContent(
+      '1 of 1 connected',
+    );
     expect(
       screen.queryByText('Your plan covers every Gmail account you connect.'),
     ).not.toBeInTheDocument();
@@ -5264,7 +5287,9 @@ describe('BillingScreen — one billing story (A6)', () => {
 
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Backlog Pass')).toBeInTheDocument();
-    expect(screen.getByText('Backlog Pass covers 1 Gmail account.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Your plan includes' })).toHaveTextContent(
+      '1 of 1 connected',
+    );
     expect(within(card).queryByText('$19 once')).not.toBeInTheDocument();
     expect(within(card).queryByText('Complimentary')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Refund policy' })).not.toBeInTheDocument();
@@ -5356,7 +5381,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     await waitFor(() => expect(plus).toHaveFocus());
     expect(within(plus).getByRole('button', { name: 'Get Plus' })).toBeEnabled();
     const terms = screen.getByTestId('launch-offer-plus-terms');
-    expect(terms).toHaveTextContent(fillStory(WS1_COPY['checkout.plus.summary']));
+    expect(terms).toHaveTextContent(fillStory(WS1_COPY['launch.plus.terms']));
     expect(terms).not.toHaveTextContent(fillStory(WS1_COPY['checkout.pass.summary']));
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(launchCheckout).not.toHaveBeenCalled();
@@ -5762,7 +5787,32 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
     omittedRows: 0,
   };
 
-  it.each(['payment', 'invoices', 'change-plan'])(
+  it('opens the plan options from a same-page link that moves with pushState, as Next does', async () => {
+    const previousUrl = window.location.href;
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView').mockImplementation(() => {});
+    window.history.replaceState(null, '', '/billing');
+    stubSubscription(() => jsonOk({ data: PRO_SUB }));
+    renderScreen();
+    await screen.findByTestId('current-plan-card');
+    expect(screen.queryByTestId('plan-picker')).not.toBeInTheDocument();
+    // The account menu's <Link href="/billing#change-plan">. Next calls
+    // pushState, which fires no hashchange in a browser. happy-dom does
+    // fire one, so this stand-in leaves history alone.
+    const link = document.createElement('a');
+    link.href = '/billing#change-plan';
+    link.addEventListener('click', (event) => event.preventDefault());
+    document.body.append(link);
+    try {
+      fireEvent.click(link);
+      expect(await screen.findByTestId('plan-picker')).toBeInTheDocument();
+    } finally {
+      link.remove();
+      scroll.mockRestore();
+      window.history.replaceState(null, '', previousUrl);
+    }
+  });
+
+  it.each(['plan', 'payment', 'invoices', 'change-plan'])(
     'restores a cold #%s deep link after a delayed billing read without moving focus on later refreshes',
     async (sectionId) => {
       const previousUrl = window.location.href;
@@ -5781,11 +5831,13 @@ describe('D119 billing-artifact render gates (screen-level)', () => {
         expect(document.getElementById(sectionId)).toBeNull();
         await act(async () => completeRead(jsonOk({ data: PRO_SUB })));
         const section = await screen.findByTestId(
-          sectionId === 'payment'
-            ? 'payment-method-card'
-            : sectionId === 'invoices'
-              ? 'invoice-history'
-              : 'plan-picker',
+          sectionId === 'plan'
+            ? 'current-plan-card'
+            : sectionId === 'payment'
+              ? 'payment-method-card'
+              : sectionId === 'invoices'
+                ? 'invoice-history'
+                : 'plan-picker',
         );
         await waitFor(() => expect(scroll.mock.contexts).toContain(section));
         expect(section).toHaveFocus();
@@ -6524,14 +6576,13 @@ describe('BillingScreen — a hold on a checkout the latest read no longer names
   it.each([
     ['an unresolved attempt', () => heldAttempt('payment_in_progress')],
     ['a failed check', () => jsonServerError()],
-    ['a 404 that is not the attempt', () => jsonNotFound('ROUTE_NOT_FOUND')],
   ])('%s keeps the hold and shows it', async (_label, respond) => {
     stubSubscription(() => jsonOk({ data: ATTEMPTS_READ }));
     holdPass({ bound: true, minutesAgo: 20 });
     stubHeldAttempt(respond);
     renderScreen();
     const notice = await screen.findByTestId('payment-processing-notice');
-    expect(notice).toHaveTextContent(/^Backlog Pass checkout from .+ isn’t confirmed yet\./);
+    expect(notice).toHaveTextContent(/^Your Backlog Pass checkout from .+ isn’t confirmed yet\./);
     expect(notice).toHaveTextContent('don’t pay again');
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
   });
@@ -6577,6 +6628,62 @@ describe('BillingScreen — a hold on a checkout the latest read no longer names
     expect(inserted).not.toContain('non-backing-subscription-notice');
     expect(inserted).not.toContain('notice-slot-toggle');
   });
+
+  it('releases a hold this device built from the server read, with nothing stored', async () => {
+    // Phone starts the Pass (X), so the laptop builds its hold from the
+    // read. The hidden laptop tab misses X stopping, then reads Plus (Y)
+    // already bought on the phone.
+    let reads = 0;
+    stubSubscription(() => {
+      reads++;
+      return jsonOk({
+        data:
+          reads === 1
+            ? {
+                ...FREE_BODY,
+                checkoutAttempt: { ...latest, id: held, state: 'open', canResume: true },
+              }
+            : ATTEMPTS_READ,
+      });
+    });
+    const calls = stubHeldAttempt(() => heldAttempt('stopped'));
+    const { client } = renderScreen();
+    await screen.findByTestId('checkout-attempt-notice');
+    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
+    await act(async () => {
+      await client.refetchQueries({ queryKey: billingKeys.subscription() });
+    });
+    const card = await screen.findByTestId('payment-method-card');
+    await waitFor(() =>
+      expect(within(card).getByRole('button', { name: 'Update payment method' })).toBeEnabled(),
+    );
+    expect(calls.count).toBe(1);
+    expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
+  });
+
+  it(
+    'a check slower than the poll is not cut off, and its answer lands',
+    { timeout: 15_000 },
+    async () => {
+      // A fresh hold polls every 3s; each tick used to abort the check.
+      stubSubscription(
+        () =>
+          new Promise<Response>((r) => setTimeout(() => r(jsonOk({ data: ATTEMPTS_READ })), 150)),
+      );
+      holdPass({ bound: true, minutesAgo: 2 });
+      const calls = stubHeldAttempt(
+        () =>
+          new Promise<Response>((r) =>
+            setTimeout(() => r(heldAttempt('payment_in_progress')), 3_500),
+          ),
+      );
+      renderScreen();
+      expect(
+        await screen.findByTestId('payment-processing-notice', {}, { timeout: 8_000 }),
+      ).toBeInTheDocument();
+      expect(calls.count).toBe(1);
+    },
+  );
 
   it('an API that reports no attempts is never asked, and the hold stays', async () => {
     stubSubscription(() => jsonOk({ data: PLUS_SUB }));
@@ -6626,7 +6733,8 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
       const coverage = await screen.findByRole('region', { name: 'Your plan includes' });
       // The legacy manifest still lists one account for Plus; launch Plus has two.
       expect(coverage).toHaveTextContent('1 of 2 connected');
-      expect(screen.getByText('Plus covers up to 2 Gmail accounts.')).toBeInTheDocument();
+      // Said once, with the live count; the subtitle does not repeat it.
+      expect(screen.queryByText('Plus covers up to 2 Gmail accounts.')).not.toBeInTheDocument();
     },
   );
 
@@ -6644,7 +6752,11 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
     expect(following(status, plus)).toBe(true);
     expect(following(plus, pass)).toBe(true);
     expect(following(pass, faq)).toBe(true);
-    expect(within(faq).getByText(fillStory(WS1_COPY['pricing.faq.refunds.q']))).toBeInTheDocument();
+    // Renewal, refunds and tax are on the cards; the one question left is the Pass's end.
+    expect(
+      within(faq).getByText(fillStory(WS1_COPY['pricing.faq.passEnds.q'])),
+    ).toBeInTheDocument();
+    expect(within(faq).queryByText(fillStory(WS1_COPY['pricing.faq.refunds.q']))).toBeNull();
     // Free is summed up in one line; coverage and an empty history stay out of the way.
     expect(screen.queryByRole('region', { name: 'Your plan includes' })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.queryByTestId('invoice-history')).not.toBeInTheDocument());
@@ -6659,7 +6771,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
     const faq = await screen.findByTestId('billing-faq');
     expect(within(faq).getByText('Questions')).toBeInTheDocument();
     const rows = faq.querySelectorAll('details');
-    expect(rows).toHaveLength(4);
+    expect(rows).toHaveLength(1);
     for (const row of [...rows, ...faq.querySelectorAll('summary')]) {
       const style = (row as HTMLElement).style;
       expect(style.borderTop + style.borderBottom).toBe('');
@@ -6680,7 +6792,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
       'href',
       '/settings#mailboxes',
     );
-    expect(status).toHaveTextContent('Adding a Gmail account is blocked');
+    expect(status).toHaveTextContent('You can add another once you’re under this plan’s limit.');
   });
 
   it('an ambiguous checkout failure locks the offers without a stale "Try again"', async () => {
@@ -6772,7 +6884,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
     renderScreen(null, undefined, { pricingV2: true });
     const plus = await screen.findByTestId('launch-offer-plus');
     expect(screen.getByTestId('launch-offer-plus-terms')).toHaveTextContent(
-      fillStory(WS1_COPY['checkout.plus.summary']),
+      fillStory(WS1_COPY['launch.plus.terms']),
     );
     expect(posts).toBe(0);
     fireEvent.click(within(plus).getByRole('button', { name: 'Get Plus' }));

@@ -6,6 +6,7 @@ import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import {
   fillStory,
   fillStoryList,
+  inboxLimitFor,
   TIER_MANIFEST,
   type TierId,
 } from '@declutrmail/shared/entitlements';
@@ -13,9 +14,11 @@ import { useTier } from '@/features/auth/api/use-tier';
 import { DrillRow, SettingsGroup, SettingsRow } from '@/features/settings/settings-list';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 
-import { tierInboxLimit } from './billing-model';
-
 const { color, text } = tokens;
+
+/** Shown only above the limit: what still works, then how adding comes back. */
+export const OVER_LIMIT_NOTE =
+  'Your connected Gmail accounts keep working. You can add another once you’re under this plan’s limit.';
 const tools = [
   ['senders', 'Sender cleanup'],
   ['screener', 'New-sender review'],
@@ -47,8 +50,7 @@ export function PlanCoverage({
       footer={
         connected > inboxLimit ? (
           <p style={{ margin: '10px 0 0', fontSize: text.sm, color: color.fgMuted }}>
-            Existing connections continue working. Adding a Gmail account is blocked while you are
-            at or above this plan’s limit.
+            {OVER_LIMIT_NOTE}
           </p>
         ) : null
       }
@@ -107,8 +109,8 @@ export function PlanConsequences({
 }) {
   const from = TIER_MANIFEST[fromTier];
   const to = TIER_MANIFEST[toTier];
-  const fromLimit = tierInboxLimit(fromTier, pricingV2);
-  const toLimit = tierInboxLimit(toTier, pricingV2);
+  const fromLimit = inboxLimitFor(fromTier, pricingV2);
+  const toLimit = inboxLimitFor(toTier, pricingV2);
   const lost = from.capabilities.filter((cap) => !to.capabilities.includes(cap));
   const gained = to.capabilities.filter((cap) => !from.capabilities.includes(cap));
   const labelsFor = (capabilities: typeof lost) =>
@@ -120,15 +122,15 @@ export function PlanConsequences({
       {gained.length ? <p>Added: {labelsFor(gained)}.</p> : null}
       {lost.length ? <p>No longer included after the change: {labelsFor(lost)}.</p> : null}
       <p>
-        {to.name} includes {toLimit} connected Gmail {toLimit === 1 ? 'account' : 'accounts'}.{' '}
+        {to.name} includes {toLimit} connected Gmail {toLimit === 1 ? 'account' : 'accounts'}
         {to.cleanupActionsPerMonth === null
-          ? WS2_COPY.liveFix.billing.limit.unlimited
-          : fillStory(WS2_COPY.liveFix.billing.limit.free)}
+          ? `, with ${WS2_COPY.liveFix.billing.limit.unlimited.replace(/\.$/, '').toLowerCase()} on emails cleared.`
+          : `. ${fillStory(WS2_COPY.liveFix.billing.limit.free)}`}
       </p>
       {toLimit < fromLimit ? (
         <p>
-          Existing connected Gmail accounts continue working, even above the new limit. You cannot
-          add another while at or above {toLimit}. Completed email actions stay in place.
+          Existing connected Gmail accounts keep working, even above the new limit. You can’t add
+          another while at or above {toLimit}.
         </p>
       ) : null}
     </div>

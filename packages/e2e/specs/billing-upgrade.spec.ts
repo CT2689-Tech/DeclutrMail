@@ -357,10 +357,10 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // QA-billing-20260901-06: the opener button was renamed from "Cancel
   // subscription" so the two clicks (open preview vs. the modal's own
   // destructive confirm) read as two different things. The D119 redesign
-  // moved it off the plan card into the Help group; the card keeps
-  // "Change plan".
+  // keeps both on the plan card: "Change plan" on the plan row, "Review
+  // cancellation" as the group's last row.
   await expect(proCard.getByRole('button', { name: 'Change plan' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Review cancellation' })).toBeVisible();
+  await expect(proCard.getByRole('button', { name: 'Review cancellation' })).toBeVisible();
   const sub = await api.get<SubscriptionView>('/api/billing/subscription');
   expect(sub.tier).toBe('pro');
   expect(sub.foundingMember, 'pro_monthly is not the founding price').toBe(false);

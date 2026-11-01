@@ -9,7 +9,6 @@
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
-  INBOXES,
   launchPriceDisplay,
   passEndLabel,
   PLUS_ANNUAL_2026_10,
@@ -547,11 +546,6 @@ export function freeManualPassGrant(grant: BillingSubscription['complimentary'])
  * `TIER_MANIFEST[tier].inboxLimit` directly told every Plus subscriber
  * their plan covered a single account.
  */
-export function tierInboxLimit(tier: TierId, pricingV2: boolean): number {
-  if (pricingV2 && (tier === 'free' || tier === 'plus' || tier === 'pro')) return INBOXES[tier];
-  return TIER_MANIFEST[tier].inboxLimit;
-}
-
 /** The live grant is a Backlog Pass and it is the plan on the card. */
 export function passCoversPlan(view: BillingPlanView): boolean {
   const grant = view.complimentary;
@@ -661,8 +655,7 @@ export function backingStatusNote(
     // section says the card CANNOT be changed self-serve, so "update your
     // payment method" would point at a refusal (gate network
     // 2026-08-16). The note promises only what its rail can deliver.
-    // No direction: that card sits beside this one on desktop and below
-    // it on a phone.
+    // No direction: past due, that card comes right after this one.
     return {
       tone: 'warn',
       text:

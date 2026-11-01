@@ -269,12 +269,14 @@ describe('InvoiceHistory', () => {
     arrange();
     wrap(<InvoiceHistory />);
     const section = await screen.findByTestId('invoice-history');
-    await waitFor(() => expect(section).toHaveTextContent('Not available right now.'));
-    expect(section).toHaveTextContent('Your plan isn’t affected.');
+    await waitFor(() => expect(section).toHaveTextContent('Payment history didn’t load.'));
+    // A read failure says nothing about the plan, so it claims nothing about it.
+    expect(section).not.toHaveTextContent(/plan/i);
     expect(within(section).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
-    expect(
-      within(section).getByRole('link', { name: 'Ask support for a receipt' }),
-    ).toHaveAttribute('href', expect.stringMatching(/^mailto:support@declutrmail\.com/));
+    expect(within(section).getByRole('link', { name: 'Request a receipt' })).toHaveAttribute(
+      'href',
+      expect.stringMatching(/^mailto:support@declutrmail\.com/),
+    );
     // Neither the provider jargon nor the big page-level error block.
     expect(section).not.toHaveTextContent(/payment provider/i);
     expect(within(section).queryByRole('alert')).not.toBeInTheDocument();
@@ -291,7 +293,7 @@ describe('InvoiceHistory', () => {
     wrap(<InvoiceHistory />);
     fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('$19.00')).toBeInTheDocument();
-    expect(screen.queryByText('Not available right now.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Payment history didn’t load.')).not.toBeInTheDocument();
   });
 
   it('says the list is partial when one rail failed but the other returned rows', async () => {
