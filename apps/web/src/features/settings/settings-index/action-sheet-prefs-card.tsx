@@ -57,8 +57,7 @@ export function ActionSheetPrefsCard({
           lineHeight: 1.5,
         }}
       >
-        Archive, Unsubscribe and Later show a preview before anything changes. Choose where it opens
-        in Guided Review.
+        Choose where Guided Review shows the preview before Archive, Unsubscribe or Later.
       </p>
       {state.kind === 'ready' ? (
         VERB_ROWS.map(({ wire, verb }) => (
@@ -69,7 +68,7 @@ export function ActionSheetPrefsCard({
             style={{ paddingBlock: 12 }}
           >
             <fieldset
-              aria-label={`${verb} preview placement`}
+              aria-label={`Where the ${verb} preview opens`}
               disabled={pendingWire !== null}
               className="dm-preview-placement"
               style={{
@@ -84,7 +83,7 @@ export function ActionSheetPrefsCard({
               }}
             >
               {[
-                { value: true, label: 'In the row' },
+                { value: true, label: 'On the page' },
                 { value: false, label: 'Pop-up' },
               ].map((choice) => (
                 <label key={choice.label} className="dm-preview-choice">

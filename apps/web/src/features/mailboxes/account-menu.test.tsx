@@ -138,6 +138,7 @@ describe('AccountMenu Gmail reconnect health', () => {
       cleanupRemaining: null,
       cleanupResetsAt: null,
       inboxLimit: 2,
+      inboxLimitOwner: 'Pro',
       pricingV2: false,
       passEnabled: false,
       connectedInboxes: 2,
@@ -380,7 +381,9 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(within(row).getByText('Disconnected · history kept')).toBeInTheDocument();
     expect(reconnect).toBeDisabled();
     expect(reconnect).toHaveAttribute('aria-describedby', 'account-menu-inbox-limit-gate');
-    expect(screen.getByTestId('inbox-limit-gate')).toHaveTextContent(/2 of 2 inboxes connected/i);
+    expect(screen.getByTestId('inbox-limit-gate')).toHaveTextContent(
+      /Pro includes 2 Gmail accounts\./,
+    );
     expect(screen.getByRole('link', { name: 'Upgrade to connect another →' })).toHaveAttribute(
       'href',
       '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',

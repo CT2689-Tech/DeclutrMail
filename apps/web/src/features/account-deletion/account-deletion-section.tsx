@@ -15,6 +15,7 @@ import {
 } from './api/use-account-deletion';
 import { SettingsRow, SettingsRowStatus } from '@/features/settings/settings-list';
 import { formatDate } from './date-format';
+import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
 
 const DeleteAccountModal = dynamic(
   () => import('./delete-account-modal').then((module) => module.DeleteAccountModal),
@@ -94,7 +95,7 @@ export function AccountDeletionSection() {
           <DeletionBlockSentence text={blockCopy} />{' '}
           {blockKind === 'subscription' ? (
             <Link href="/billing" style={{ color: color.primary }}>
-              Open Billing
+              {BILLING_NAME}
             </Link>
           ) : null}{' '}
           <Button

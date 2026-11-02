@@ -263,7 +263,7 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(screen.getByText('Pro')).toBeInTheDocument());
     // Humanized last-synced stamps resolve from the per-mailbox
     // sync-status reads (one per active mailbox).
-    await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText(/^Updated .+ ago$/)).toHaveLength(2));
   });
 
   it.each([
@@ -350,7 +350,7 @@ describe('SettingsScreen', () => {
     expect(renderToString(node)).toBe(fallbackHtml);
     expect(fallbackHtml).toContain('Loading Settings…');
     expect(fallbackHtml).not.toContain('Founding member');
-    expect(fallbackHtml).not.toContain('In the row');
+    expect(fallbackHtml).not.toContain('On the page');
     expect(fallbackHtml).not.toContain('href="#ai"');
 
     const container = document.createElement('div');
@@ -474,7 +474,7 @@ describe('SettingsScreen', () => {
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
   });
 
-  it('states "Not synced yet" for a mailbox with no sync row (never a bare "Ready")', async () => {
+  it('states "Not scanned yet" for a mailbox with no sync row (never a bare "Ready")', async () => {
     // `readiness: null` = no sync row exists yet (D116). The card used to
     // fall through to "Ready", asserting a completed scan it cannot see.
     me = makeMe([{ ...mailbox(MAILBOX_B, 'chintan.a.thakkar.crypt@gmail.com'), readiness: null }]);
@@ -483,7 +483,7 @@ describe('SettingsScreen', () => {
     const row = (await screen.findByText('chintan.a.thakkar.crypt@gmail.com')).closest(
       'li',
     ) as HTMLElement;
-    expect(within(row).getByText('Not synced yet')).toBeInTheDocument();
+    expect(within(row).getByText('Not scanned yet')).toBeInTheDocument();
     expect(within(row).queryByText('Scan complete')).not.toBeInTheDocument();
   });
 
@@ -601,7 +601,8 @@ describe('SettingsScreen', () => {
     const describedBy = reconnect.getAttribute('aria-describedby');
     expect(describedBy).toBe('mailboxes-inbox-limit-explanation');
     expect(document.getElementById(describedBy!)).toHaveTextContent(
-      new RegExp(`^Pro includes ${TIER_MANIFEST.pro.inboxLimit} Gmail accounts\\. See plans$`),
+      // Nothing above Pro is for sale, so the line offers no plans.
+      new RegExp(`^Pro includes ${TIER_MANIFEST.pro.inboxLimit} Gmail accounts\\.$`),
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
@@ -627,8 +628,8 @@ describe('SettingsScreen', () => {
     ]);
     renderScreen();
 
-    const placement = await screen.findByRole('group', { name: 'Archive preview placement' });
-    const inline = within(placement).getByRole('radio', { name: 'In the row' });
+    const placement = await screen.findByRole('group', { name: 'Where the Archive preview opens' });
+    const inline = within(placement).getByRole('radio', { name: 'On the page' });
     const window = within(placement).getByRole('radio', { name: 'Pop-up' });
     expect(window).toBeChecked();
     expect(inline).not.toBeChecked();
@@ -665,8 +666,10 @@ describe('SettingsScreen', () => {
     ]);
     renderScreen();
 
-    const placement = await screen.findByRole('group', { name: 'Unsubscribe preview placement' });
-    const inline = within(placement).getByRole('radio', { name: 'In the row' });
+    const placement = await screen.findByRole('group', {
+      name: 'Where the Unsubscribe preview opens',
+    });
+    const inline = within(placement).getByRole('radio', { name: 'On the page' });
     expect(inline).not.toBeChecked();
     await userEvent.click(inline);
 
@@ -696,8 +699,8 @@ describe('SettingsScreen', () => {
       },
     ]);
     renderScreen();
-    const placement = await screen.findByRole('group', { name: 'Archive preview placement' });
-    const inline = within(placement).getByRole('radio', { name: 'In the row' });
+    const placement = await screen.findByRole('group', { name: 'Where the Archive preview opens' });
+    const inline = within(placement).getByRole('radio', { name: 'On the page' });
     const window = within(placement).getByRole('radio', { name: 'Pop-up' });
     await userEvent.click(inline);
     expect(
@@ -1177,7 +1180,7 @@ describe('SettingsScreen', () => {
       expect(announcement).toHaveAttribute('aria-atomic', 'true');
       expect(announcement).toHaveTextContent(message);
       expect(otherRegion).toBeEmptyDOMElement();
-      await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+      await waitFor(() => expect(screen.getAllByText(/^Updated .+ ago$/)).toHaveLength(2));
       expect(toast).toHaveBeenCalledTimes(1);
 
       const serializedCalls = JSON.stringify(vi.mocked(toast).mock.calls);
@@ -1270,7 +1273,7 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     await waitFor(() => expect(onboardingState).toHaveBeenCalled());
-    await waitFor(() => expect(screen.getAllByText(/^Synced .+ ago$/)).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText(/^Updated .+ ago$/)).toHaveLength(2));
     expect(toast).not.toHaveBeenCalled();
     expect(new URLSearchParams(window.location.search).get('reconnect_result')).toBe(
       'gmail_access_missing',
@@ -1470,13 +1473,22 @@ describe('SettingsScreen', () => {
     expect(useUpgradeGateStore.getState().hit?.reason).toBe('pass_second_account');
   });
 
-  it('disables connect-another at the tier inboxLimit with an upgrade pointer', async () => {
+  it('disables connect-another at the tier inboxLimit, with a plans pointer below Pro', async () => {
     // Occupy every slot the manifest allows → at limit.
     me = makeMe(mailboxesAtProLimit());
-    renderScreen();
+    const { unmount } = renderScreen();
 
     const connect = await screen.findByRole('button', { name: /add gmail account/i });
     await waitFor(() => expect(connect).toBeDisabled());
+    // Nothing above Pro is for sale: no pointer to a page with nothing to buy.
+    expect(screen.queryByRole('link', { name: 'See plans' })).not.toBeInTheDocument();
+    unmount();
+
+    me = { ...makeMe([mailbox(MAILBOX_A, 'only@example.com')]), tier: 'free' };
+    renderScreen();
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /add gmail account/i })).toBeDisabled(),
+    );
     expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
   });
 

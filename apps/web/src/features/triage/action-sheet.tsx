@@ -368,8 +368,8 @@ export function ActionSheet({
           ? []
           : [
               {
-                label: 'Don’t ask again',
-                value: 'Shows this preview in the row. Change in Settings',
+                label: 'Skip this pop-up',
+                value: 'The preview opens on the page instead. Change in Settings.',
               },
             ]),
       ]}
@@ -548,7 +548,7 @@ export function ActionSheet({
                 <CheckRow
                   checked={rememberPreference}
                   onToggle={() => setRememberPreference((v) => !v)}
-                  label={`Don’t ask again for ${verb}`}
+                  label={`Skip this pop-up for ${verb}`}
                   quiet
                 />
               )}

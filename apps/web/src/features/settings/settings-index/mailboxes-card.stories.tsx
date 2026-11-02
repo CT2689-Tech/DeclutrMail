@@ -89,6 +89,7 @@ const HEALTHY = {
 
 const baseArgs: CardArgs = {
   planName: 'Plus',
+  seePlans: true,
   mailboxes: [MAILBOX_A, MAILBOX_B],
   activeMailboxId: MAILBOX_A.id,
   inboxLimit: 2,

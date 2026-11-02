@@ -6,6 +6,7 @@ import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-li
 
 import { ERROR_CODES } from '@declutrmail/shared/contracts';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
+import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
 
 import { ApiError } from '@/lib/api/client';
 import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
@@ -96,7 +97,7 @@ describe('AccountDeletionSection', () => {
       'href',
       'mailto:support@declutrmail.com',
     );
-    expect(screen.queryByRole('link', { name: 'Open Billing' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: BILLING_NAME })).not.toBeInTheDocument();
   });
 
   it('tells an uncanceled subscription to cancel the plan first', async () => {
@@ -105,7 +106,7 @@ describe('AccountDeletionSection', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'Cancel your plan first, then delete your account.',
     );
-    expect(screen.getByRole('link', { name: 'Open Billing' })).toHaveAttribute('href', '/billing');
+    expect(screen.getByRole('link', { name: BILLING_NAME })).toHaveAttribute('href', '/billing');
     expect(screen.queryByRole('link', { name: 'support@declutrmail.com' })).not.toBeInTheDocument();
   });
 

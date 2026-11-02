@@ -39,6 +39,7 @@ function renderCard(healthById: Record<string, unknown> = {}) {
     <QueryWrapper client={createTestQueryClient()}>
       <MailboxesCard
         planName="Pro"
+        seePlans={false}
         mailboxes={MAILBOXES}
         activeMailboxId={ACTIVE_ID}
         inboxLimit={3}
@@ -103,6 +104,7 @@ describe('MailboxesCard — failed-sync retry', () => {
       <QueryWrapper client={createTestQueryClient()}>
         <MailboxesCard
           planName="Pro"
+          seePlans={false}
           mailboxes={
             [
               { id: ACTIVE_ID, email: 'primary@example.com', status: 'active', readiness: 'ready' },

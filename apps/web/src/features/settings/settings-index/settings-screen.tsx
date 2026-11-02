@@ -1,11 +1,10 @@
 'use client';
 
-import { editorialColumnStyle, EditorialDescription } from '@/features/editorial/page';
+import { editorialColumnStyle } from '@/features/editorial/page';
 
 import { useEffect, useRef, useState } from 'react';
 import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
-import { BACKLOG_PASS_NAME } from '@declutrmail/shared/copy/screen-decisions';
-import { hasCapability, inboxLimitFor, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { hasCapability, TIER_MANIFEST, TIER_RANK } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
@@ -296,7 +295,7 @@ export function SettingsScreen({
     inboxLimitReason,
     connectedInboxes,
     atInboxLimit,
-    pricingV2,
+    inboxLimitOwner,
   } = useTier();
   const briefUnlocked = hasCapability(entitledTier, 'brief');
   // A Backlog Pass can grant a Plus entitlement without being a Plus
@@ -311,15 +310,6 @@ export function SettingsScreen({
     pending: null,
   });
   const planName = planView.kind === 'plan' ? currentPlanTitle(planView) : null;
-  // `me.tier` and `me.inboxLimit` come from different reads: when a Pass
-  // lapses the limit drops to 1 hours before the stored tier follows. Name a
-  // plan only when the limit shown is that plan's; "Your plan" stays true.
-  const limitPlanName =
-    inboxLimitReason === 'pass'
-      ? BACKLOG_PASS_NAME
-      : inboxLimit === inboxLimitFor(entitledTier, pricingV2)
-        ? TIER_MANIFEST[entitledTier].name
-        : 'Your plan';
 
   function connectMailbox(reconnectMailboxId?: string) {
     if (inboxLimitReason === 'pass' && atInboxLimit && !reconnectMailboxId) {
@@ -372,20 +362,18 @@ export function SettingsScreen({
       </div>
       <div className={styles.header}>
         <PageHeader title="Settings" />
-        <EditorialDescription>
-          Gmail accounts, cleanup previews and email preferences.
-        </EditorialDescription>
       </div>
       <ScreenIntro
         id="settings"
         title="Settings"
-        body="Gmail accounts, previews, emails, privacy and your plan."
+        body="Gmail accounts, previews, emails, AI, privacy and your plan."
       />
 
       <div className={styles.layout}>
         <div className={styles.preferences}>
           <MailboxesCard
-            planName={limitPlanName}
+            planName={inboxLimitOwner}
+            seePlans={TIER_RANK[entitledTier] < TIER_RANK.pro}
             mailboxes={me.mailboxes}
             activeMailboxId={me.activeMailboxId}
             inboxLimit={inboxLimit}

@@ -23,12 +23,14 @@ const briefHelp = copy.settings.brief.help.replaceAll('{BRIEF_NAME}', BRIEF_NAME
 const retired = [
   copy.settings.label.withBrief,
   copy.settings.help.withBrief,
+  copy.settings.brief.help,
   copy.revoked.toast.withBrief,
 ].map((line) => line.replaceAll('{BRIEF_NAME}', BRIEF_NAME));
 
 function expectHelpLinks(): void {
+  // Once for the group, however many switches it holds.
   const links = screen.getAllByRole('link', { name: copy.link });
-  expect(links).toHaveLength(2);
+  expect(links).toHaveLength(1);
   for (const link of links) {
     expect(link).toHaveAttribute('href', '/privacy#ai-processing');
     expect(link).toHaveClass('dm-external-link');
@@ -76,7 +78,9 @@ describe('AiSettingsSection', () => {
       expect(explanations).toHaveTextContent(copy.settings.state.on);
       expect(screen.getByText(copy.settings.help.all)).toBeInTheDocument();
       expect(screen.getByText(briefLabel)).toBeInTheDocument();
-      expect(screen.getByText(briefHelp)).toBeInTheDocument();
+      expect(screen.queryByText(briefHelp)).not.toBeInTheDocument();
+      // The trust line lives in the consent card, at the decision; not on each row.
+      expect(screen.queryByText(/never fetch or store/i)).not.toBeInTheDocument();
       expectHelpLinks();
       for (const line of retired) expect(screen.queryByText(line)).not.toBeInTheDocument();
       expect(

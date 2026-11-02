@@ -294,7 +294,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
           onConfirm={() => {}}
         />,
       );
-      expect(html).toContain(`Don’t ask again for ${verb}`);
+      expect(html).toContain(`Skip this pop-up for ${verb}`);
     }
   });
 
@@ -311,7 +311,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     );
     // The toggle's body copy must mention the inline preview — that's
     // the D226 guarantee the toggle can't silently break.
-    expect(html.toLowerCase()).toContain('shows this preview in the row');
+    expect(html.toLowerCase()).toContain('the preview opens on the page instead');
   });
 
   it('keeps Delete in the full confirmation sheet and states both recovery paths', () => {
@@ -331,7 +331,7 @@ describe('ActionSheet — D34 remember-preference toggle copy', () => {
     expect(html).toContain('Undo from Activity');
     // Gmail's retention is stated once on the sheet, not three times.
     expect(html.match(/up to 30 days/g)).toHaveLength(1);
-    expect(html).not.toContain('Don’t ask again for');
+    expect(html).not.toContain('Skip this pop-up for');
   });
 
   it('states the undo window on a Delete sheet instead of hedging', () => {
@@ -403,7 +403,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
     },
   );
 
-  it('keeps Don’t ask again checked when the live preview resolves', () => {
+  it('keeps Skip this pop-up checked when the live preview resolves', () => {
     const onConfirm = vi.fn();
     const { rerender } = render(
       <ActionSheet
@@ -415,7 +415,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
         onConfirm={onConfirm}
       />,
     );
-    const remember = screen.getByRole('checkbox', { name: 'Don’t ask again for Archive' });
+    const remember = screen.getByRole('checkbox', { name: 'Skip this pop-up for Archive' });
     fireEvent.click(remember);
     expect(remember).toBeChecked();
 
@@ -430,7 +430,7 @@ describe('ActionSheet — live-preview confirm gate', () => {
       />,
     );
 
-    const still = screen.getByRole('checkbox', { name: 'Don’t ask again for Archive' });
+    const still = screen.getByRole('checkbox', { name: 'Skip this pop-up for Archive' });
     expect(still).toBeChecked();
     fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
     expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ rememberPreference: true }));
@@ -582,7 +582,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
     expect(screen.getByRole('radio', { name: 'Unsubscribe only' })).toBeChecked();
 
     const remember = screen.getByRole('checkbox', {
-      name: 'Don’t ask again for Unsubscribe',
+      name: 'Skip this pop-up for Unsubscribe',
     });
     expect(remember).toHaveAttribute('aria-checked', 'false');
     fireEvent.click(remember);
@@ -592,7 +592,7 @@ describe('ActionSheet — toggle a11y and checked parity (2026-08-12)', () => {
   it('a checked remember toggle fills', () => {
     renderUnsubSheet();
     const remember = screen.getByRole('checkbox', {
-      name: 'Don’t ask again for Unsubscribe',
+      name: 'Skip this pop-up for Unsubscribe',
     });
     fireEvent.click(remember);
     const glyph = (el: HTMLElement) => el.querySelector<HTMLElement>('span[aria-hidden="true"]')!;

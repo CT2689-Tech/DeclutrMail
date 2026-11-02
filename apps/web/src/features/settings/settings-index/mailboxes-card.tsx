@@ -31,6 +31,7 @@ const MAILBOX_LIMIT_EXPLANATION_ID = 'mailboxes-inbox-limit-explanation';
  */
 export function MailboxesCard({
   planName,
+  seePlans,
   mailboxes,
   activeMailboxId,
   inboxLimit,
@@ -42,6 +43,8 @@ export function MailboxesCard({
 }: {
   /** Whose limit the line states: a plan, the Backlog Pass, or "Your plan". */
   planName: string;
+  /** False on the top purchasable plan, where /billing has nothing more to sell. */
+  seePlans: boolean;
   mailboxes: MeMailbox[];
   activeMailboxId: string | null;
   /** The tier's connected-inbox allowance, or null while tier unknown. */
@@ -87,10 +90,15 @@ export function MailboxesCard({
               id={MAILBOX_LIMIT_EXPLANATION_ID}
               style={{ fontSize: text.sm, color: color.fgMuted }}
             >
-              {planName} includes {inboxLimit} {connectionTerm(inboxLimit)}.{' '}
-              <Link href="/billing" style={{ color: color.primary }}>
-                See plans
-              </Link>
+              {planName} includes {inboxLimit} {connectionTerm(inboxLimit)}.
+              {seePlans ? (
+                <>
+                  {' '}
+                  <Link href="/billing" style={{ color: color.primary }}>
+                    See plans
+                  </Link>
+                </>
+              ) : null}
             </span>
           )}
         </div>
@@ -191,7 +199,7 @@ export function MailboxesCard({
                       }}
                       title={new Date(health.lastSyncedAt).toLocaleString('en-US')}
                     >
-                      Synced {relAge(health.lastSyncedAt, now)}
+                      Updated {relAge(health.lastSyncedAt, now)}
                     </span>
                   )}
                 </span>
@@ -215,7 +223,7 @@ export function MailboxesCard({
                   ) : needsReconnect ? (
                     <StatusTag tone="danger">Needs reconnect</StatusTag>
                   ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
-                    <StatusTag tone="muted">Syncing…</StatusTag>
+                    <StatusTag tone="muted">Scanning…</StatusTag>
                   ) : m.readiness === 'failed' ? (
                     <>
                       {/* QA-sync-20260831-09: "scan" is this product's
@@ -244,7 +252,7 @@ export function MailboxesCard({
                     // readiness === null: no sync row exists yet (D116), so
                     // the first scan has not been recorded. Never fold this
                     // into "Ready" — that claims a scan we cannot see.
-                    <StatusTag tone="muted">Not synced yet</StatusTag>
+                    <StatusTag tone="muted">Not scanned yet</StatusTag>
                   )}
                   {showReconnect && (
                     <>
@@ -340,7 +348,7 @@ function ReconnectButton({
  * state. `useRetryInitialSync` names the row's mailbox explicitly via
  * `X-Active-Mailbox-Id` and invalidates the `SYNC_STATUS_KEY` prefix on
  * success — which is exactly the key family `useMailboxesHealth` reads,
- * so the tag flips to "Syncing…" from server truth, not optimism.
+ * so the tag flips to "Scanning…" from server truth, not optimism.
  */
 function RetrySyncButton({ mailboxId }: { mailboxId: string }) {
   const retry = useRetryInitialSync(mailboxId);
