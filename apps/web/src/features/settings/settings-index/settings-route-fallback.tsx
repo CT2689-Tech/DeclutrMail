@@ -16,6 +16,6 @@ export function SettingsRouteFallback({
   label?: string;
 } = {}) {
   return (
-    <RouteLoading gap={28} maxWidth={1120} title="Settings" label={label} rows={5} rowHeight={64} />
+    <RouteLoading gap={24} maxWidth={1120} title="Settings" label={label} rows={5} rowHeight={64} />
   );
 }

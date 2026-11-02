@@ -57,8 +57,8 @@ export function ActionSheetPrefsCard({
           lineHeight: 1.5,
         }}
       >
-        Archive, Unsubscribe and Later show a preview before anything changes. Choose where it
-        opens.
+        Archive, Unsubscribe and Later show a preview before anything changes. Choose where it opens
+        in Guided Review.
       </p>
       {state.kind === 'ready' ? (
         VERB_ROWS.map(({ wire, verb }) => (
@@ -84,7 +84,7 @@ export function ActionSheetPrefsCard({
               }}
             >
               {[
-                { value: true, label: 'In the list' },
+                { value: true, label: 'In the row' },
                 { value: false, label: 'Pop-up' },
               ].map((choice) => (
                 <label key={choice.label} className="dm-preview-choice">
@@ -104,8 +104,8 @@ export function ActionSheetPrefsCard({
       ) : (
         <SettingsRowStatus
           state={state}
-          loadingLabel="Loading action preferences…"
-          errorLabel="Could not load action preferences."
+          loadingLabel="Loading previews…"
+          errorLabel="Could not load previews."
         />
       )}
       <SettingsRow label="Delete" detail="Always opens in a pop-up." style={{ paddingBlock: 12 }} />

@@ -3,9 +3,9 @@
 import { editorialColumnStyle, EditorialDescription } from '@/features/editorial/page';
 
 import { useEffect, useRef, useState } from 'react';
-import { Button, ScreenIntro, toast, tokens } from '@declutrmail/shared';
-import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
-import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
+import { BACKLOG_PASS_NAME } from '@declutrmail/shared/copy/screen-decisions';
+import { hasCapability, inboxLimitFor, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
@@ -48,6 +48,7 @@ import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-s
 import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
+import { PlanGroup } from './plan-group';
 import { SettingsRouteFallback } from './settings-route-fallback';
 import { VerbTourCard } from './verb-tour-card';
 import { AiSettingsSection } from '@/features/ai-consent/ai-settings-section';
@@ -70,7 +71,7 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
  * right). Groups, in order:
  *
  *   1. Gmail accounts — health + reconnect (D115)          #mailboxes
- *   2. Actions        — D34 preview placement + D38 tour    #actions
+ *   2. Previews       — D34 preview placement + D38 tour    #actions
  *   3. Notifications  — D165 email toggles + D64 Brief hour #notifications
  *   4. AI             — consent controls when available     #ai
  *   5. Plan           — one row to Plan & billing
@@ -295,6 +296,7 @@ export function SettingsScreen({
     inboxLimitReason,
     connectedInboxes,
     atInboxLimit,
+    pricingV2,
   } = useTier();
   const briefUnlocked = hasCapability(entitledTier, 'brief');
   // A Backlog Pass can grant a Plus entitlement without being a Plus
@@ -309,6 +311,15 @@ export function SettingsScreen({
     pending: null,
   });
   const planName = planView.kind === 'plan' ? currentPlanTitle(planView) : null;
+  // `me.tier` and `me.inboxLimit` come from different reads: when a Pass
+  // lapses the limit drops to 1 hours before the stored tier follows. Name a
+  // plan only when the limit shown is that plan's; "Your plan" stays true.
+  const limitPlanName =
+    inboxLimitReason === 'pass'
+      ? BACKLOG_PASS_NAME
+      : inboxLimit === inboxLimitFor(entitledTier, pricingV2)
+        ? TIER_MANIFEST[entitledTier].name
+        : 'Your plan';
 
   function connectMailbox(reconnectMailboxId?: string) {
     if (inboxLimitReason === 'pass' && atInboxLimit && !reconnectMailboxId) {
@@ -374,7 +385,7 @@ export function SettingsScreen({
       <div className={styles.layout}>
         <div className={styles.preferences}>
           <MailboxesCard
-            planName={TIER_MANIFEST[entitledTier].name}
+            planName={limitPlanName}
             mailboxes={me.mailboxes}
             activeMailboxId={me.activeMailboxId}
             inboxLimit={inboxLimit}
@@ -433,7 +444,7 @@ export function SettingsScreen({
                 ? { kind: 'loading' }
                 : billingView.isError
                   ? isBillingDisabledError(billingView.error)
-                    ? { kind: 'disabled' }
+                    ? { kind: 'disabled', planName: TIER_MANIFEST[entitledTier].name }
                     : { kind: 'error', onRetry: () => void billing.refetch() }
                   : planName === null
                     ? { kind: 'error', onRetry: () => void billing.refetch() }
@@ -477,52 +488,6 @@ export function SettingsScreen({
         </div>
       </div>
     </div>
-  );
-}
-
-type PlanSummaryState =
-  | { kind: 'loading' }
-  /** 503 BILLING_DISABLED — the flag is off. Deterministic, so no retry. */
-  | { kind: 'disabled' }
-  | { kind: 'error'; onRetry: () => void }
-  | { kind: 'ready'; planName: string; foundingMember: boolean };
-
-/** One row to Plan & billing. A failed billing read never replaces account controls. */
-function PlanGroup({ state }: { state: PlanSummaryState }) {
-  const value =
-    state.kind === 'ready'
-      ? state.foundingMember
-        ? `${state.planName} · Founding member`
-        : state.planName
-      : state.kind === 'disabled'
-        ? 'Not enabled'
-        : null;
-  return (
-    <SettingsGroup
-      title="Plan"
-      footer={
-        state.kind === 'error' ? (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: 12,
-              marginTop: 12,
-            }}
-          >
-            <p role="alert" style={{ margin: 0, fontSize: text.sm, color: color.dangerText }}>
-              Could not load your plan.
-            </p>
-            <Button tone="default" onClick={state.onRetry} style={{ minHeight: 44 }}>
-              Retry
-            </Button>
-          </div>
-        ) : null
-      }
-    >
-      <DrillRow href="/billing" label={BILLING_NAME} {...(value ? { value } : {})} />
-    </SettingsGroup>
   );
 }
 

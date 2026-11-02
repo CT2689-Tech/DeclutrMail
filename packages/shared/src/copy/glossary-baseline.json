@@ -1255,18 +1255,6 @@
   },
   {
     "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
-    "line": 105,
-    "id": "action_word",
-    "text": "Loading action preferences\u2026"
-  },
-  {
-    "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
-    "line": 106,
-    "id": "action_word",
-    "text": "Could not load action preferences."
-  },
-  {
-    "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
     "line": 43,
     "id": "action_word",
     "text": "Action previews"

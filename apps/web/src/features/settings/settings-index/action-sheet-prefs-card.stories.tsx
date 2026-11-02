@@ -35,7 +35,7 @@ const meta: StoryMeta<typeof ActionSheetPrefsCard> = {
     docs: {
       description: {
         component:
-          'Settings → Actions (D34). Per-verb preview placement for Archive / Unsubscribe / Later. The action preview is NEVER skippable (D226) — the In the list / Pop-up choices say where it opens during Cleanup review. Persisted under users.preferences.actionSheetPrefs so the choice roams devices.',
+          'Settings → Actions (D34). Per-verb preview placement for Archive / Unsubscribe / Later. The action preview is NEVER skippable (D226) — the In the row / Pop-up choices say where it opens in Guided Review; Senders always uses the pop-up. Persisted under users.preferences.actionSheetPrefs so the choice roams devices.',
       },
     },
   },

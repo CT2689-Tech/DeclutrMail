@@ -5,7 +5,7 @@ import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync'
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import { WS6_COPY } from '@declutrmail/shared/copy/launch';
-import { CONNECTION_TERM, CONNECTION_TERM_PLURAL } from '@declutrmail/shared/copy/screen-decisions';
+import { connectionTerm } from '@declutrmail/shared/entitlements';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import type { MailboxHealth } from '../api/use-mailbox-health';
 import { SettingsGroup } from '../settings-list';
@@ -40,7 +40,7 @@ export function MailboxesCard({
   onConnect,
   onReactivate,
 }: {
-  /** The entitled tier's name, for the account-limit line. */
+  /** Whose limit the line states: a plan, the Backlog Pass, or "Your plan". */
   planName: string;
   mailboxes: MeMailbox[];
   activeMailboxId: string | null;
@@ -80,13 +80,14 @@ export function MailboxesCard({
           <Button tone="default" onClick={() => onConnect()} disabled={atLimit && !passAtLimit}>
             {mailboxes.length === 0 ? 'Connect Gmail' : 'Add Gmail account'}
           </Button>
-          {atLimit && !passAtLimit && (
+          {/* Every limit-disabled control points here, so a Pass at its
+              limit states it too; its Add button opens the Pass gate. */}
+          {atLimit && inboxLimit !== null && (
             <span
               id={MAILBOX_LIMIT_EXPLANATION_ID}
               style={{ fontSize: text.sm, color: color.fgMuted }}
             >
-              {planName} includes {inboxLimit}{' '}
-              {inboxLimit === 1 ? CONNECTION_TERM : CONNECTION_TERM_PLURAL}.{' '}
+              {planName} includes {inboxLimit} {connectionTerm(inboxLimit)}.{' '}
               <Link href="/billing" style={{ color: color.primary }}>
                 See plans
               </Link>
