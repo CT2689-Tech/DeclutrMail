@@ -10,7 +10,7 @@
     "home": "Home",
     "quiet": "Quiet hours",
     "quietFields": ["Quiet hours start", "Quiet hours end", "Time zone"],
-    "previewsSetting": "Preview layout",
+    "previewsSetting": "Previews",
     "homeNextSteps": "Suggested next steps",
     "finish": "Finish review"
   },

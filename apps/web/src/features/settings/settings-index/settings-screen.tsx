@@ -1,16 +1,11 @@
 'use client';
 
-import {
-  editorialColumnStyle,
-  EditorialDescription,
-  EditorialContents,
-} from '@/features/editorial/page';
+import { editorialColumnStyle, EditorialDescription } from '@/features/editorial/page';
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { Button, ScreenIntro, toast, tokens } from '@declutrmail/shared';
-import { SETTINGS_PREVIEWS_TITLE } from '@declutrmail/shared/copy/screen-decisions';
-import { hasCapability } from '@declutrmail/shared/entitlements';
+import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
+import { hasCapability, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
@@ -78,11 +73,12 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
  *   2. Actions        — D34 preview placement + D38 tour    #actions
  *   3. Notifications  — D165 email toggles + D64 Brief hour #notifications
  *   4. AI             — consent controls when available     #ai
- *   5. Privacy & data — protected senders, privacy, help     #more
- *   6. Account        — signed-in row + deletion last        #account
+ *   5. Plan           — one row to Plan & billing
+ *   6. Privacy & data — protected senders, privacy, help     #more
+ *   7. Account        — signed-in row + deletion last        #account
  *
- * The quiet plan rail uses the existing billing read and stays independent
- * of preference errors. The header always links to Plan & billing.
+ * The plan is one row to Plan & billing, above Privacy & data. It uses the
+ * existing billing read and stays independent of preference errors.
  *
  * The group ids are deep-link targets (OAuth returns, notification
  * emails, the no-active-mailbox gate) — renaming one breaks a link
@@ -341,7 +337,7 @@ export function SettingsScreen({
         ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
-        gap: 28,
+        gap: 24,
         maxWidth: 1120,
       }}
     >
@@ -364,11 +360,7 @@ export function SettingsScreen({
         {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
       </div>
       <div className={styles.header}>
-        <PageHeader title="Settings">
-          <Link className={styles.billingLink} href="/billing">
-            Plan &amp; billing
-          </Link>
-        </PageHeader>
+        <PageHeader title="Settings" />
         <EditorialDescription>
           Gmail accounts, cleanup previews and email preferences.
         </EditorialDescription>
@@ -381,17 +373,8 @@ export function SettingsScreen({
 
       <div className={styles.layout}>
         <div className={styles.preferences}>
-          <EditorialContents
-            items={[
-              { href: '#mailboxes', label: 'Gmail accounts' },
-              { href: '#actions', label: SETTINGS_PREVIEWS_TITLE },
-              { href: '#notifications', label: 'Email notifications' },
-              ...(settingsView?.data?.aiConsent ? [{ href: '#ai', label: 'AI' }] : []),
-              { href: '#more', label: 'Privacy and data' },
-              { href: '#account', label: 'Your account' },
-            ]}
-          />
           <MailboxesCard
+            planName={TIER_MANIFEST[entitledTier].name}
             mailboxes={me.mailboxes}
             activeMailboxId={me.activeMailboxId}
             inboxLimit={inboxLimit}
@@ -444,29 +427,30 @@ export function SettingsScreen({
             <AiSettingsSection view={settingsView.data.aiConsent} briefCapable={briefUnlocked} />
           )}
 
+          <PlanGroup
+            state={
+              billingView == null || billingView.isPending
+                ? { kind: 'loading' }
+                : billingView.isError
+                  ? isBillingDisabledError(billingView.error)
+                    ? { kind: 'disabled' }
+                    : { kind: 'error', onRetry: () => void billing.refetch() }
+                  : planName === null
+                    ? { kind: 'error', onRetry: () => void billing.refetch() }
+                    : {
+                        kind: 'ready',
+                        planName,
+                        foundingMember: billingView.data.foundingMember,
+                      }
+            }
+          />
+
           <SettingsGroup id="more" title="Privacy and data">
             <DrillRow href="/settings/senders" label="Protected senders" />
             <DrillRow href="/settings/privacy" label="Privacy & data" />
             <DrillRow href="/settings/help" label="Help & glossary" />
           </SettingsGroup>
         </div>
-        <PlanSummary
-          state={
-            billingView == null || billingView.isPending
-              ? { kind: 'loading' }
-              : billingView.isError
-                ? isBillingDisabledError(billingView.error)
-                  ? { kind: 'disabled' }
-                  : { kind: 'error', onRetry: () => void billing.refetch() }
-                : planName === null
-                  ? { kind: 'error', onRetry: () => void billing.refetch() }
-                  : {
-                      kind: 'ready',
-                      planName,
-                      foundingMember: billingView.data.foundingMember,
-                    }
-          }
-        />
 
         <div
           ref={accountRef}
@@ -503,32 +487,42 @@ type PlanSummaryState =
   | { kind: 'error'; onRetry: () => void }
   | { kind: 'ready'; planName: string; foundingMember: boolean };
 
-/** A scoped readout; billing failure never replaces account controls. */
-function PlanSummary({ state }: { state: PlanSummaryState }) {
+/** One row to Plan & billing. A failed billing read never replaces account controls. */
+function PlanGroup({ state }: { state: PlanSummaryState }) {
+  const value =
+    state.kind === 'ready'
+      ? state.foundingMember
+        ? `${state.planName} · Founding member`
+        : state.planName
+      : state.kind === 'disabled'
+        ? 'Not enabled'
+        : null;
   return (
-    <aside className={styles.plan} aria-labelledby="settings-plan-title">
-      <h2 id="settings-plan-title">Your plan</h2>
-      {state.kind === 'loading' ? (
-        <p role="status">Loading plan…</p>
-      ) : state.kind === 'disabled' ? (
-        <p>Not enabled</p>
-      ) : state.kind === 'ready' ? (
-        <>
-          <strong className={styles.planName}>{state.planName}</strong>
-          {state.foundingMember ? <p>Founding member</p> : null}
-        </>
-      ) : (
-        <>
-          <p role="alert">Could not load your plan.</p>
-          <Button tone="default" onClick={state.onRetry} style={{ marginTop: 12, minHeight: 44 }}>
-            Retry
-          </Button>
-        </>
-      )}
-      <Link className={styles.planLink} href="/billing">
-        View plan &amp; billing
-      </Link>
-    </aside>
+    <SettingsGroup
+      title="Plan"
+      footer={
+        state.kind === 'error' ? (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 12,
+              marginTop: 12,
+            }}
+          >
+            <p role="alert" style={{ margin: 0, fontSize: text.sm, color: color.dangerText }}>
+              Could not load your plan.
+            </p>
+            <Button tone="default" onClick={state.onRetry} style={{ minHeight: 44 }}>
+              Retry
+            </Button>
+          </div>
+        ) : null
+      }
+    >
+      <DrillRow href="/billing" label={BILLING_NAME} {...(value ? { value } : {})} />
+    </SettingsGroup>
   );
 }
 

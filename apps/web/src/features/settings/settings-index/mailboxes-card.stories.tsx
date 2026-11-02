@@ -18,6 +18,8 @@
 //   • Disconnected     — one account disconnected (Reconnect)
 //   • DisconnectedAtLimit — reactivation remains limit-gated
 //   • AtLimit          — connect-another disabled at the tier's inboxLimit
+//   • FreeOneAccount   — the Free limit line with one link, and no
+//                        "Selected" tag while only one account exists
 //   • Empty            — zero mailboxes connected
 
 import type { ComponentProps } from 'react';
@@ -86,6 +88,7 @@ const HEALTHY = {
 };
 
 const baseArgs: CardArgs = {
+  planName: 'Plus',
   mailboxes: [MAILBOX_A, MAILBOX_B],
   activeMailboxId: MAILBOX_A.id,
   inboxLimit: 2,
@@ -221,6 +224,16 @@ export const DisconnectedAtLimit: Story<typeof MailboxesCard> = {
 
 export const AtLimit: Story<typeof MailboxesCard> = {
   args: baseArgs,
+};
+
+export const FreeOneAccount: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    planName: 'Free',
+    inboxLimit: 1,
+    mailboxes: [MAILBOX_A],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
+  },
 };
 
 export const Empty: Story<typeof MailboxesCard> = {

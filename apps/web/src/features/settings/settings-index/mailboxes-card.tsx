@@ -5,6 +5,7 @@ import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync'
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import { WS6_COPY } from '@declutrmail/shared/copy/launch';
+import { CONNECTION_TERM, CONNECTION_TERM_PLURAL } from '@declutrmail/shared/copy/screen-decisions';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import type { MailboxHealth } from '../api/use-mailbox-health';
 import { SettingsGroup } from '../settings-list';
@@ -29,6 +30,7 @@ const MAILBOX_LIMIT_EXPLANATION_ID = 'mailboxes-inbox-limit-explanation';
  * because it is already counted and does not consume another slot.
  */
 export function MailboxesCard({
+  planName,
   mailboxes,
   activeMailboxId,
   inboxLimit,
@@ -38,6 +40,8 @@ export function MailboxesCard({
   onConnect,
   onReactivate,
 }: {
+  /** The entitled tier's name, for the account-limit line. */
+  planName: string;
   mailboxes: MeMailbox[];
   activeMailboxId: string | null;
   /** The tier's connected-inbox allowance, or null while tier unknown. */
@@ -81,11 +85,11 @@ export function MailboxesCard({
               id={MAILBOX_LIMIT_EXPLANATION_ID}
               style={{ fontSize: text.sm, color: color.fgMuted }}
             >
-              Your plan includes {inboxLimit} connected {inboxLimit === 1 ? 'inbox' : 'inboxes'} —{' '}
+              {planName} includes {inboxLimit}{' '}
+              {inboxLimit === 1 ? CONNECTION_TERM : CONNECTION_TERM_PLURAL}.{' '}
               <Link href="/billing" style={{ color: color.primary }}>
-                upgrade for more
+                See plans
               </Link>
-              .
             </span>
           )}
         </div>
@@ -201,7 +205,8 @@ export function MailboxesCard({
                     minWidth: 0,
                   }}
                 >
-                  {isSelected && <StatusTag tone="primary">Selected</StatusTag>}
+                  {/* Which account the app is showing only matters once there are two. */}
+                  {isSelected && activeCount > 1 && <StatusTag tone="primary">Selected</StatusTag>}
                   {m.status === 'disconnected' ? (
                     <StatusTag tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}>
                       {mailboxDataStatusLabel(indexedDataState)}

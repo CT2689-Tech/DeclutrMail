@@ -225,8 +225,9 @@ describe('SettingsScreen', () => {
 
     for (const name of [
       'Gmail accounts',
-      'Preview layout',
+      'Previews',
       'Email notifications',
+      'Plan',
       'Privacy and data',
       'Your account',
     ]) {
@@ -238,10 +239,15 @@ describe('SettingsScreen', () => {
       ['Protected senders', '/settings/senders'],
       ['Privacy & data', '/settings/privacy'],
       ['Help & glossary', '/settings/help'],
-      ['Plan & billing', '/billing'],
     ] as const) {
       expect(screen.getByRole('link', { name })).toHaveAttribute('href', href);
     }
+    // One way to Plan & billing on this page: the Plan row, which names the plan.
+    expect(screen.getAllByRole('link', { name: /plan & billing/i })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: /^Plan & billing/ })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
     expect(screen.queryByRole('link', { name: /autopilot/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /quiet hours/i })).not.toBeInTheDocument();
     // Deep-link targets that emails and OAuth returns point at.
@@ -306,12 +312,12 @@ describe('SettingsScreen', () => {
         },
       ]);
       renderScreen();
-      const summary = screen.getByRole('complementary', { name: 'Your plan' });
+      const summary = screen.getByRole('region', { name: 'Plan' });
       expect(await within(summary).findByText(expected)).toBeInTheDocument();
       expect(
         within(summary).queryByText(paidTier === null ? 'Plus' : 'Backlog Pass'),
       ).not.toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Plan & billing' })).toHaveAttribute(
+      expect(within(summary).getByRole('link', { name: /^Plan & billing/ })).toHaveAttribute(
         'href',
         '/billing',
       );
@@ -345,7 +351,7 @@ describe('SettingsScreen', () => {
     expect(renderToString(node)).toBe(fallbackHtml);
     expect(fallbackHtml).toContain('Loading Settings…');
     expect(fallbackHtml).not.toContain('Founding member');
-    expect(fallbackHtml).not.toContain('Inline');
+    expect(fallbackHtml).not.toContain('In the list');
     expect(fallbackHtml).not.toContain('href="#ai"');
 
     const container = document.createElement('div');
@@ -596,7 +602,7 @@ describe('SettingsScreen', () => {
     const describedBy = reconnect.getAttribute('aria-describedby');
     expect(describedBy).toBe('mailboxes-inbox-limit-explanation');
     expect(document.getElementById(describedBy!)).toHaveTextContent(
-      new RegExp(`your plan includes ${TIER_MANIFEST.pro.inboxLimit} connected inboxes`, 'i'),
+      new RegExp(`^Pro includes ${TIER_MANIFEST.pro.inboxLimit} Gmail accounts\\. See plans$`),
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
@@ -623,8 +629,8 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     const placement = await screen.findByRole('group', { name: 'Archive preview placement' });
-    const inline = within(placement).getByRole('radio', { name: 'Inline' });
-    const window = within(placement).getByRole('radio', { name: 'Separate window' });
+    const inline = within(placement).getByRole('radio', { name: 'In the list' });
+    const window = within(placement).getByRole('radio', { name: 'Pop-up' });
     expect(window).toBeChecked();
     expect(inline).not.toBeChecked();
 
@@ -637,7 +643,7 @@ describe('SettingsScreen', () => {
     await waitFor(() => expect(patches).toEqual([{ archive: true }, { archive: false }]));
     await waitFor(() => expect(window).toBeChecked());
     expect(inline).not.toBeChecked();
-    expect(screen.getByText('Always opens a separate confirmation window.')).toBeInTheDocument();
+    expect(screen.getByText('Always opens in a pop-up.')).toBeInTheDocument();
   });
 
   it('D34 choice PATCHes the single changed key and mirrors into the triage store', async () => {
@@ -661,7 +667,7 @@ describe('SettingsScreen', () => {
     renderScreen();
 
     const placement = await screen.findByRole('group', { name: 'Unsubscribe preview placement' });
-    const inline = within(placement).getByRole('radio', { name: 'Inline' });
+    const inline = within(placement).getByRole('radio', { name: 'In the list' });
     expect(inline).not.toBeChecked();
     await userEvent.click(inline);
 
@@ -692,8 +698,8 @@ describe('SettingsScreen', () => {
     ]);
     renderScreen();
     const placement = await screen.findByRole('group', { name: 'Archive preview placement' });
-    const inline = within(placement).getByRole('radio', { name: 'Inline' });
-    const window = within(placement).getByRole('radio', { name: 'Separate window' });
+    const inline = within(placement).getByRole('radio', { name: 'In the list' });
+    const window = within(placement).getByRole('radio', { name: 'Pop-up' });
     await userEvent.click(inline);
     expect(
       await screen.findByText('Could not save the preference. Try again.'),
@@ -963,14 +969,14 @@ describe('SettingsScreen', () => {
 
     await waitFor(() =>
       expect(
-        within(screen.getByRole('complementary', { name: 'Your plan' })).getByText('Not enabled'),
+        within(screen.getByRole('region', { name: 'Plan' })).getByText('Not enabled'),
       ).toBeInTheDocument(),
     );
     expect(screen.queryByText('Pro')).not.toBeInTheDocument();
     // The flag being off is deterministic — a retry would be noise.
     expect(screen.queryByRole('button', { name: /retry/i })).not.toBeInTheDocument();
     // The billing link still works — /billing owns the rest.
-    expect(screen.getByRole('link', { name: 'Plan & billing' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Plan & billing/ })).toHaveAttribute(
       'href',
       '/billing',
     );
@@ -1053,20 +1059,13 @@ describe('SettingsScreen', () => {
     expect(screen.getAllByRole('button', { name: /retry/i }).length).toBeGreaterThanOrEqual(2);
   });
 
-  it('keeps every preference visible in the anchor order, with account deletion last', async () => {
+  it('keeps every deep-link section visible in order, with account deletion last', async () => {
     renderScreen();
     await screen.findByText('Pro');
-    const contents = screen.getByRole('navigation', { name: 'On this page' });
-    const anchors = within(contents).getAllByRole('link');
-    expect(anchors.map((link) => link.getAttribute('href'))).toEqual([
-      '#mailboxes',
-      '#actions',
-      '#notifications',
-      '#more',
-      '#account',
-    ]);
-    const sections = anchors.map((link) =>
-      document.getElementById(link.getAttribute('href')!.slice(1))!,
+    // Six short groups need no table of contents; the ids stay for deep links.
+    expect(screen.queryByRole('navigation', { name: 'On this page' })).not.toBeInTheDocument();
+    const sections = ['mailboxes', 'actions', 'notifications', 'more', 'account'].map((id) =>
+      document.getElementById(id)!,
     );
     for (const [index, section] of sections.entries()) {
       expect(section).toBeVisible();
@@ -1329,7 +1328,11 @@ describe('SettingsScreen', () => {
     setSettingsLocation('source=oauth&reconnect_result=success', `#mailbox-${MAILBOX_A}`);
     renderScreen();
 
-    expect(screen.getByText('Loading plan…')).toBeInTheDocument();
+    // The plan read is still out: the row is there, naming no plan yet.
+    expect(screen.getByRole('link', { name: 'Plan & billing' })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
     await waitFor(() => expect(toast).toHaveBeenCalledTimes(1));
     expect(screen.getByTestId('reconnect-result-status')).toHaveTextContent('Gmail reconnected.');
     expect(screen.getByTestId('reconnect-result-alert')).toBeEmptyDOMElement();
@@ -1339,7 +1342,11 @@ describe('SettingsScreen', () => {
     expect(window.location.hash).toBe('#mailboxes');
     // Both unrelated reads are still unresolved when the return has
     // already been acknowledged and removed from the address bar.
-    expect(screen.getByText('Loading plan…')).toBeInTheDocument();
+    // The plan read is still out: the row is there, naming no plan yet.
+    expect(screen.getByRole('link', { name: 'Plan & billing' })).toHaveAttribute(
+      'href',
+      '/billing',
+    );
   });
 
   it('scrolls and highlights the exact reconnect row, then scrubs only transient URL context', async () => {
@@ -1474,10 +1481,7 @@ describe('SettingsScreen', () => {
 
     const connect = await screen.findByRole('button', { name: /add gmail account/i });
     await waitFor(() => expect(connect).toBeDisabled());
-    expect(screen.getByRole('link', { name: /upgrade for more/i })).toHaveAttribute(
-      'href',
-      '/billing',
-    );
+    expect(screen.getByRole('link', { name: 'See plans' })).toHaveAttribute('href', '/billing');
   });
 
   it.each(['BILLING_DISABLED', 'SERVICE_UNAVAILABLE'])(
@@ -1509,9 +1513,20 @@ describe('SettingsScreen', () => {
       expect(
         screen.getByRole('button', { name: 'Reconnect disconnected@example.com' }),
       ).toBeDisabled();
-      expect(screen.getByRole('link', { name: /upgrade for more/i })).toBeInTheDocument();
+      // Named plan, the app's noun for an account, and one link.
+      expect(document.getElementById('mailboxes-inbox-limit-explanation')).toHaveTextContent(
+        /^Free includes 1 Gmail account\. See plans$/,
+      );
+      expect(screen.getByRole('link', { name: 'See plans' })).toBeInTheDocument();
     },
   );
+
+  it('marks the selected account only when there are two to choose between', async () => {
+    me = { ...makeMe([mailbox(MAILBOX_A, 'only@example.com')]), tier: 'free' };
+    renderScreen();
+    await screen.findByText('only@example.com');
+    expect(screen.queryByText('Selected')).not.toBeInTheDocument();
+  });
 
   it('stays reachable with NO active mailbox and fires no session-scoped sync poll (D216 reachability)', async () => {
     // A user who disconnected their last Gmail: the layout now renders
@@ -1547,7 +1562,7 @@ describe('SettingsScreen', () => {
       await screen.findByRole('heading', { name: 'Delete account and data' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Privacy & data' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Plan & billing' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /^Plan & billing/ })).toBeInTheDocument();
     // The empty Gmail-accounts state, not a broken list.
     expect(screen.getByText('No Gmail accounts connected yet.')).toBeInTheDocument();
     // No active mailbox ⇒ no session-scoped sync poll ⇒ no 409 risk.
