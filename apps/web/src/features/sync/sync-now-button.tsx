@@ -40,9 +40,10 @@ const SYNC_BUTTON_CLASS = 'dm-sync-round';
  *     the failure needs reauthorization — never a doomed Sync-now CTA.
  *   - **Idle** — ready + not in-flight. Click → mutation fires. A round
  *     36px icon button; its tooltip (hover or keyboard focus) carries
- *     "Synced Xm ago · Scan now" plus the absolute time.
+ *     "Updated Xm ago · Scan now" plus the absolute time (the Gmail
+ *     accounts card says "Updated" too; "sync" is a banned UI word).
  *   - **Pending/Watching** — request in flight OR completion watch
- *     running. `aria-busy`, icon spins, tooltip reads "Syncing…", disabled.
+ *     running. `aria-busy`, icon spins, tooltip reads "Scanning…", disabled.
  *
  * Completion watch: the 202 from `POST /v1/sync/incremental` only means
  * "queued" — it says nothing about the run finishing. Before the
@@ -253,14 +254,14 @@ function MailboxSyncNowButton({ mailboxId }: { mailboxId: string | undefined }) 
 
   // One quiet round control. Freshness lives in its tooltip (hover or
   // keyboard focus) instead of a standing label beside it.
-  const action = busy ? 'Syncing…' : 'Scan now';
+  const action = busy ? 'Scanning…' : 'Scan now';
   return (
     <Tooltip
       placement="bottom"
       content={
         lastSyncedAt !== null && now !== null ? (
           <>
-            Synced {relAge(lastSyncedAt, now)} · {action}
+            Updated {relAge(lastSyncedAt, now)} · {action}
             <span
               style={{
                 display: 'block',

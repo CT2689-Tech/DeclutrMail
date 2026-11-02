@@ -1,6 +1,7 @@
 'use client';
 
-import { inboxLimitFor } from '@declutrmail/shared/entitlements';
+import { BACKLOG_PASS_NAME } from '@declutrmail/shared/copy/screen-decisions';
+import { inboxLimitFor, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { useAuth } from '@/features/auth/auth-provider';
 import type { Tier } from './use-me';
@@ -22,6 +23,13 @@ export interface TierEntitlements {
   inboxLimit: number;
   /** Present when a live Backlog Pass is what set the one-account ceiling. */
   inboxLimitReason?: 'pass';
+  /**
+   * Whose ceiling `inboxLimit` is, for "<name> includes N Gmail accounts":
+   * the Backlog Pass, the stored plan when the limit is that plan's, else
+   * "Your plan". `tier` and `inboxLimit` are separate server reads — a
+   * lapsed Pass drops the limit hours before the stored tier follows.
+   */
+  inboxLimitOwner: string;
   /** Launch pricing flag, from `/api/auth/me`. */
   pricingV2: boolean;
   /** Backlog Pass checkout flag, from `/api/auth/me`. Absent means hidden. */
@@ -56,6 +64,12 @@ export function useTier(): TierEntitlements {
   // from `me`: the browser has no PRICING_V2 env, so `inboxLimitFor`
   // alone fell back to the legacy one-account Plus.
   const inboxLimit = me.inboxLimit ?? inboxLimitFor(tier, pricingV2);
+  const inboxLimitOwner =
+    me.inboxLimitReason === 'pass'
+      ? BACKLOG_PASS_NAME
+      : inboxLimit === inboxLimitFor(tier, pricingV2)
+        ? TIER_MANIFEST[tier].name
+        : 'Your plan';
   const passEnabled = me.passEnabled === true;
   const connectedInboxes = me.mailboxes.filter((m) => m.status === 'active').length;
   return {
@@ -64,6 +78,7 @@ export function useTier(): TierEntitlements {
     cleanupResetsAt: me.cleanupResetsAt ?? null,
     inboxLimit,
     ...(me.inboxLimitReason === 'pass' ? { inboxLimitReason: 'pass' as const } : {}),
+    inboxLimitOwner,
     pricingV2,
     passEnabled,
     connectedInboxes,

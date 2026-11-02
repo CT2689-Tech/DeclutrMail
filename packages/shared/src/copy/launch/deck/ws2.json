@@ -10,7 +10,7 @@
     "home": "Home",
     "quiet": "Quiet hours",
     "quietFields": ["Quiet hours start", "Quiet hours end", "Time zone"],
-    "previewsSetting": "Preview layout",
+    "previewsSetting": "Previews",
     "homeNextSteps": "Suggested next steps",
     "finish": "Finish review"
   },
@@ -470,6 +470,7 @@
       "upgrade.decline",
       "settings.label.withBrief",
       "settings.help.withBrief",
+      "settings.brief.help",
       "revoked.toast.withBrief"
     ],
     "title": {
@@ -534,7 +535,7 @@
         "help": "Anthropic’s AI writes your {BRIEF_NAME}. We never fetch or store full email contents."
       },
       "help": {
-        "all": "Anthropic’s AI writes each explanation. We never fetch or store full email contents.",
+        "all": "Uses Anthropic’s AI.",
         "withBrief": "Anthropic’s AI writes your explanations and {BRIEF_NAME}. We never fetch or store full email contents."
       },
       "state": {

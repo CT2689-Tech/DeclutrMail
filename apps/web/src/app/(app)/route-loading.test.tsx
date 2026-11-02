@@ -21,8 +21,8 @@ const routes = [
   { View: Later, title: 'Later', kicker: 'Catch up', gap: 32 },
   { View: Quiet, title: 'Autopilot settings', kicker: 'Autopilot / Settings', gap: 24 },
   { View: Screener, title: 'Screener', kicker: 'Clean up / New senders', gap: 24 },
-  { View: Settings, title: 'Settings', kicker: null, gap: 28, maxWidth: 1120 },
-  { View: Billing, title: 'Plan & billing', kicker: null, gap: 28, maxWidth: 1120 },
+  { View: Settings, title: 'Settings', kicker: null, gap: 24, maxWidth: 1120 },
+  { View: Billing, title: 'Plan & billing', kicker: null, gap: 24, maxWidth: 1120 },
 ];
 
 describe('Route loading continuity', () => {

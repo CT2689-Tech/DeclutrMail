@@ -5,7 +5,7 @@ export default function Loading() {
     <RouteLoading
       title="Plan & billing"
       maxWidth={1120}
-      gap={28}
+      gap={24}
       label="Loading billing"
       rows={3}
       rowHeight={64}

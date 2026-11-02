@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useUpgradeReturnTo } from '@/features/billing/use-upgrade-return-to';
 import { billingIntentPath } from '@/features/billing/billing-intent';
 import {
+  connectionTerm,
   planName,
   plusConnectCta,
   plusInboxLimitTitle,
@@ -79,8 +80,15 @@ export function AccountMenu() {
   // D19/D81 inbox limit — gates ADDING (or reactivating) a Gmail
   // account; existing connections keep working even over-limit. The BE
   // mirror is InboxLimitGuard on connect-mailbox/start (402).
-  const { tier, inboxLimit, inboxLimitReason, connectedInboxes, atInboxLimit, pricingV2 } =
-    useTier();
+  const {
+    tier,
+    inboxLimit,
+    inboxLimitReason,
+    inboxLimitOwner,
+    connectedInboxes,
+    atInboxLimit,
+    pricingV2,
+  } = useTier();
   const passInboxLimit = inboxLimitReason === 'pass';
   // Keep the closed disclosure cheap. Opening enables the mailbox-keyed
   // health reads: the selected mailbox dedupes with banner/Sync-now, while
@@ -366,7 +374,7 @@ export function AccountMenu() {
                       m.readiness &&
                       m.readiness !== 'ready' && (
                         <MenuStatus tone={m.readiness === 'failed' ? 'danger' : 'muted'}>
-                          {m.readiness === 'failed' ? 'Scan failed' : 'Syncing…'}
+                          {m.readiness === 'failed' ? 'Scan failed' : 'Scanning…'}
                         </MenuStatus>
                       )}
                     {/* QA-sync-20260831-04: `readiness` stays `ready` for a
@@ -511,8 +519,8 @@ export function AccountMenu() {
                   {connectedInboxes > inboxLimit
                     ? // Over-limit (e.g. after a downgrade) — existing
                       // connections keep working; only adding is blocked.
-                      `${connectedInboxes} inboxes connected — your ${tierLabel(tier)} plan includes ${inboxLimit}.`
-                    : `${connectedInboxes} of ${inboxLimit} ${inboxLimit === 1 ? 'inbox' : 'inboxes'} connected — your ${tierLabel(tier)} plan’s limit.`}
+                      `${connectedInboxes} ${connectionTerm(connectedInboxes)} connected — ${inboxLimitOwner} includes ${inboxLimit}.`
+                    : `${inboxLimitOwner} includes ${inboxLimit} ${connectionTerm(inboxLimit)}.`}
                 </span>
                 {pricingV2 && tier === 'plus' ? (
                   <Link
@@ -726,11 +734,6 @@ function mailboxActionStyle(tone: 'primary' | 'muted' | 'disabled') {
     minWidth: 44,
     whiteSpace: 'nowrap' as const,
   };
-}
-
-/** Display name for the tier in the inbox-limit gate copy. */
-function tierLabel(tier: string): string {
-  return tier === 'free' ? 'Free' : tier.charAt(0).toUpperCase() + tier.slice(1);
 }
 
 // No `background` here: `.dm-nav-row` (tokens.css) owns the resting and

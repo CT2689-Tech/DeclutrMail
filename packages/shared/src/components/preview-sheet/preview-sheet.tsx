@@ -56,7 +56,7 @@ export type PreviewSheetProps = {
     busyLabel?: string | undefined;
   };
   cancelLabel?: string;
-  /** A quiet row under the buttons — e.g. "Don't ask again for Archive". */
+  /** A quiet row under the buttons — e.g. "Skip this pop-up for Archive". */
   footer?: ReactNode;
   /** `aria-live` status line (submitting / failed). */
   status?: ReactNode;

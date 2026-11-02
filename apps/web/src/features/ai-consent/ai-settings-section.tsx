@@ -21,11 +21,12 @@ function fillBrief(template: string): string {
   return template.replaceAll('{BRIEF_NAME}', BRIEF_NAME);
 }
 
-function SwitchHelp({ text, note }: { text: string; note?: string | undefined }): ReactNode {
+/** Once for the group: the provider, and where the details live. The
+ *  consent card carries the trust line, at the decision. */
+function AiFooter(): ReactNode {
   return (
-    <span style={{ display: 'block', lineHeight: 1.45 }}>
-      {note ? <span style={{ display: 'block' }}>{note}</span> : null}
-      {text}{' '}
+    <p style={{ margin: '10px 0 0', fontSize: text.sm, lineHeight: 1.45, color: color.fgMuted }}>
+      {copy.settings.help.all}{' '}
       <Link
         className="dm-external-link"
         href="/privacy#ai-processing"
@@ -33,7 +34,7 @@ function SwitchHelp({ text, note }: { text: string; note?: string | undefined })
       >
         {copy.link}
       </Link>
-    </span>
+    </p>
   );
 }
 
@@ -63,9 +64,9 @@ export function AiSettingsSection({
     : view.explanations === 'review' || (view.reask && !explanationsOn)
       ? copy.settings.state.review
       : undefined;
-  const explanationsNote =
-    [view.reask ? copy.reask : null, stateNote].filter((part) => part != null).join(' ') ||
-    undefined;
+  // "Updated" (`reask`) belongs to the consent card's own line; prefixed to
+  // a state here it read "Updated Off until you choose again."
+  const explanationsNote = stateNote;
 
   async function revoke(scope: 'explanations' | 'brief'): Promise<void> {
     setFailed(false);
@@ -83,10 +84,10 @@ export function AiSettingsSection({
   }
 
   return (
-    <SettingsGroup id="ai" title={copy.settings.title} focusable>
+    <SettingsGroup id="ai" title={copy.settings.title} focusable footer={<AiFooter />}>
       <SettingsRow
         label={explanationsLabel}
-        detail={<SwitchHelp text={copy.settings.help.all} note={explanationsNote} />}
+        {...(explanationsNote ? { detail: explanationsNote } : {})}
       >
         <SettingsSwitch
           ariaLabel={explanationsLabel}
@@ -103,12 +104,7 @@ export function AiSettingsSection({
       {briefCapable && (
         <SettingsRow
           label={briefLabel}
-          detail={
-            <SwitchHelp
-              text={fillBrief(copy.settings.brief.help)}
-              note={briefPaused ? fillBrief(copy.killSwitch) : undefined}
-            />
-          }
+          {...(briefPaused ? { detail: fillBrief(copy.killSwitch) } : {})}
         >
           <SettingsSwitch
             ariaLabel={briefLabel}

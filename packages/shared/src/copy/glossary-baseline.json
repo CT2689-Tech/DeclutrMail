@@ -1254,46 +1254,10 @@
     "text": "@/features/onboarding/api/use-sync-status"
   },
   {
-    "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
-    "line": 105,
-    "id": "action_word",
-    "text": "Loading action preferences\u2026"
-  },
-  {
-    "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
-    "line": 106,
-    "id": "action_word",
-    "text": "Could not load action preferences."
-  },
-  {
-    "file": "apps/web/src/features/settings/settings-index/action-sheet-prefs-card.tsx",
-    "line": 43,
-    "id": "action_word",
-    "text": "Action previews"
-  },
-  {
     "file": "apps/web/src/features/settings/settings-index/mailboxes-card.tsx",
     "line": 4,
     "id": "sync_word",
     "text": "@/features/sync/api/use-retry-initial-sync"
-  },
-  {
-    "file": "apps/web/src/features/settings/settings-index/settings-screen.tsx",
-    "line": 283,
-    "id": "action_word",
-    "text": "#actions"
-  },
-  {
-    "file": "apps/web/src/features/settings/settings-index/settings-screen.tsx",
-    "line": 283,
-    "id": "action_word",
-    "text": "Action previews"
-  },
-  {
-    "file": "apps/web/src/features/settings/settings-index/settings-screen.tsx",
-    "line": 292,
-    "id": "action_word",
-    "text": "Mailboxes, action previews, notifications, privacy and plan."
   },
   {
     "file": "apps/web/src/features/snoozed/snoozed-screen.tsx",

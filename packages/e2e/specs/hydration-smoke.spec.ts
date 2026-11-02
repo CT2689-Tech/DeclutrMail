@@ -50,7 +50,9 @@ test('account navigation preserves desktop grouping, tablet access and section l
 }) => {
   await page.setViewportSize({ width: 1280, height: 480 });
   await page.goto('/settings');
-  await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Gmail accounts', exact: true })).toBeVisible();
+  // One column of short groups, like Plan & billing: no table of contents.
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toHaveCount(0);
   const sidebar = page.getByRole('complementary', { name: 'Workspace navigation' });
   expect((await sidebar.boundingBox())?.width).toBe(220);
   await expect(sidebar.locator('.dm-sidebar-label').first()).toBeVisible();
@@ -67,10 +69,8 @@ test('account navigation preserves desktop grouping, tablet access and section l
   expect(footer).not.toBeNull();
   expect(footer!.y + footer!.height).toBeLessThanOrEqual(480);
 
-  await page
-    .getByRole('navigation', { name: 'On this page' })
-    .getByRole('link', { name: 'Privacy and data' })
-    .click();
+  // Section links still land: emails and OAuth returns deep-link by id.
+  await page.goto('/settings#more');
   await expect(page.locator('#more')).toBeFocused();
   await expect(page.locator('#more')).toBeInViewport();
   await billing.click();
@@ -93,12 +93,16 @@ test('phone account drawer reaches billing and keeps contextual help inside the 
 }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/settings');
-  await expect(page.getByRole('navigation', { name: 'On this page' })).toBeVisible();
-  for (const link of await page
-    .getByRole('navigation', { name: 'On this page' })
-    .getByRole('link')
-    .all()) {
-    const bounds = await link.boundingBox();
+  await expect(page.getByRole('navigation', { name: 'On this page' })).toHaveCount(0);
+  // The page's own targets stay thumb-sized: the Plan row and each preview choice.
+  await expect(page.locator('.dm-preview-choice span').first()).toBeVisible();
+  const targets = [
+    page.getByRole('link', { name: /^Plan & billing/ }),
+    ...(await page.locator('.dm-preview-choice span').all()),
+  ];
+  expect(targets.length).toBeGreaterThan(1);
+  for (const target of targets) {
+    const bounds = await target.boundingBox();
     expect(bounds!.width).toBeGreaterThanOrEqual(44);
     expect(bounds!.height).toBeGreaterThanOrEqual(44);
   }

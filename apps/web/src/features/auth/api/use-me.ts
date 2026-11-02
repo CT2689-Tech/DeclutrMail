@@ -113,7 +113,7 @@ export const ME_ERROR_RETRY_MS = 15_000;
  *
  * While any mailbox is `queued`/`syncing` (e.g. a freshly-connected second
  * account), `me` polls every {@link ME_SYNC_POLL_MS} so the account
- * switcher's "Syncing…→Ready" badge + the ready toast update without a
+ * switcher's "Scanning…→Ready" badge + the ready toast update without a
  * manual refresh (D116). `failed` is ALSO in that set (QA-sync-20260831-05)
  * — deliberately, so the toast + every surface reading `readiness` off
  * `me` can still notice a later recovery — which means polling does NOT

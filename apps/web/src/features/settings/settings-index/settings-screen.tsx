@@ -1,16 +1,10 @@
 'use client';
 
-import {
-  editorialColumnStyle,
-  EditorialDescription,
-  EditorialContents,
-} from '@/features/editorial/page';
+import { editorialColumnStyle } from '@/features/editorial/page';
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
-import { Button, ScreenIntro, toast, tokens } from '@declutrmail/shared';
-import { SETTINGS_PREVIEWS_TITLE } from '@declutrmail/shared/copy/screen-decisions';
-import { hasCapability } from '@declutrmail/shared/entitlements';
+import { ScreenIntro, toast, tokens } from '@declutrmail/shared';
+import { hasCapability, TIER_MANIFEST, TIER_RANK } from '@declutrmail/shared/entitlements';
 import { DEFAULT_BRIEF_PREFS } from '@declutrmail/shared/contracts';
 import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts';
 
@@ -53,6 +47,7 @@ import { ActionSheetPrefsCard, type ActionSheetPrefsCardState } from './action-s
 import { BriefPrefsCard, type BriefPrefsCardState } from './brief-prefs-card';
 import { EmailPrefsCard, type EmailPrefsCardState } from './email-prefs-card';
 import { MailboxesCard } from './mailboxes-card';
+import { PlanGroup } from './plan-group';
 import { SettingsRouteFallback } from './settings-route-fallback';
 import { VerbTourCard } from './verb-tour-card';
 import { AiSettingsSection } from '@/features/ai-consent/ai-settings-section';
@@ -75,14 +70,15 @@ function reconnectMailboxIdFromHash(hash: string): string | null {
  * right). Groups, in order:
  *
  *   1. Gmail accounts — health + reconnect (D115)          #mailboxes
- *   2. Actions        — D34 preview placement + D38 tour    #actions
+ *   2. Previews       — D34 preview placement + D38 tour    #actions
  *   3. Notifications  — D165 email toggles + D64 Brief hour #notifications
  *   4. AI             — consent controls when available     #ai
- *   5. Privacy & data — protected senders, privacy, help     #more
- *   6. Account        — signed-in row + deletion last        #account
+ *   5. Plan           — one row to Plan & billing
+ *   6. Privacy & data — protected senders, privacy, help     #more
+ *   7. Account        — signed-in row + deletion last        #account
  *
- * The quiet plan rail uses the existing billing read and stays independent
- * of preference errors. The header always links to Plan & billing.
+ * The plan is one row to Plan & billing, above Privacy & data. It uses the
+ * existing billing read and stays independent of preference errors.
  *
  * The group ids are deep-link targets (OAuth returns, notification
  * emails, the no-active-mailbox gate) — renaming one breaks a link
@@ -299,6 +295,7 @@ export function SettingsScreen({
     inboxLimitReason,
     connectedInboxes,
     atInboxLimit,
+    inboxLimitOwner,
   } = useTier();
   const briefUnlocked = hasCapability(entitledTier, 'brief');
   // A Backlog Pass can grant a Plus entitlement without being a Plus
@@ -341,7 +338,7 @@ export function SettingsScreen({
         ...editorialColumnStyle,
         display: 'flex',
         flexDirection: 'column',
-        gap: 28,
+        gap: 24,
         maxWidth: 1120,
       }}
     >
@@ -364,34 +361,19 @@ export function SettingsScreen({
         {reconnectAnnouncement?.liveRole === 'alert' ? reconnectAnnouncement.message : ''}
       </div>
       <div className={styles.header}>
-        <PageHeader title="Settings">
-          <Link className={styles.billingLink} href="/billing">
-            Plan &amp; billing
-          </Link>
-        </PageHeader>
-        <EditorialDescription>
-          Gmail accounts, cleanup previews and email preferences.
-        </EditorialDescription>
+        <PageHeader title="Settings" />
       </div>
       <ScreenIntro
         id="settings"
         title="Settings"
-        body="Gmail accounts, previews, emails, privacy and your plan."
+        body="Gmail accounts, previews, emails, AI, privacy and your plan."
       />
 
       <div className={styles.layout}>
         <div className={styles.preferences}>
-          <EditorialContents
-            items={[
-              { href: '#mailboxes', label: 'Gmail accounts' },
-              { href: '#actions', label: SETTINGS_PREVIEWS_TITLE },
-              { href: '#notifications', label: 'Email notifications' },
-              ...(settingsView?.data?.aiConsent ? [{ href: '#ai', label: 'AI' }] : []),
-              { href: '#more', label: 'Privacy and data' },
-              { href: '#account', label: 'Your account' },
-            ]}
-          />
           <MailboxesCard
+            planName={inboxLimitOwner}
+            seePlans={TIER_RANK[entitledTier] < TIER_RANK.pro}
             mailboxes={me.mailboxes}
             activeMailboxId={me.activeMailboxId}
             inboxLimit={inboxLimit}
@@ -444,29 +426,30 @@ export function SettingsScreen({
             <AiSettingsSection view={settingsView.data.aiConsent} briefCapable={briefUnlocked} />
           )}
 
+          <PlanGroup
+            state={
+              billingView == null || billingView.isPending
+                ? { kind: 'loading' }
+                : billingView.isError
+                  ? isBillingDisabledError(billingView.error)
+                    ? { kind: 'disabled', planName: TIER_MANIFEST[entitledTier].name }
+                    : { kind: 'error', onRetry: () => void billing.refetch() }
+                  : planName === null
+                    ? { kind: 'error', onRetry: () => void billing.refetch() }
+                    : {
+                        kind: 'ready',
+                        planName,
+                        foundingMember: billingView.data.foundingMember,
+                      }
+            }
+          />
+
           <SettingsGroup id="more" title="Privacy and data">
             <DrillRow href="/settings/senders" label="Protected senders" />
             <DrillRow href="/settings/privacy" label="Privacy & data" />
             <DrillRow href="/settings/help" label="Help & glossary" />
           </SettingsGroup>
         </div>
-        <PlanSummary
-          state={
-            billingView == null || billingView.isPending
-              ? { kind: 'loading' }
-              : billingView.isError
-                ? isBillingDisabledError(billingView.error)
-                  ? { kind: 'disabled' }
-                  : { kind: 'error', onRetry: () => void billing.refetch() }
-                : planName === null
-                  ? { kind: 'error', onRetry: () => void billing.refetch() }
-                  : {
-                      kind: 'ready',
-                      planName,
-                      foundingMember: billingView.data.foundingMember,
-                    }
-          }
-        />
 
         <div
           ref={accountRef}
@@ -493,42 +476,6 @@ export function SettingsScreen({
         </div>
       </div>
     </div>
-  );
-}
-
-type PlanSummaryState =
-  | { kind: 'loading' }
-  /** 503 BILLING_DISABLED — the flag is off. Deterministic, so no retry. */
-  | { kind: 'disabled' }
-  | { kind: 'error'; onRetry: () => void }
-  | { kind: 'ready'; planName: string; foundingMember: boolean };
-
-/** A scoped readout; billing failure never replaces account controls. */
-function PlanSummary({ state }: { state: PlanSummaryState }) {
-  return (
-    <aside className={styles.plan} aria-labelledby="settings-plan-title">
-      <h2 id="settings-plan-title">Your plan</h2>
-      {state.kind === 'loading' ? (
-        <p role="status">Loading plan…</p>
-      ) : state.kind === 'disabled' ? (
-        <p>Not enabled</p>
-      ) : state.kind === 'ready' ? (
-        <>
-          <strong className={styles.planName}>{state.planName}</strong>
-          {state.foundingMember ? <p>Founding member</p> : null}
-        </>
-      ) : (
-        <>
-          <p role="alert">Could not load your plan.</p>
-          <Button tone="default" onClick={state.onRetry} style={{ marginTop: 12, minHeight: 44 }}>
-            Retry
-          </Button>
-        </>
-      )}
-      <Link className={styles.planLink} href="/billing">
-        View plan &amp; billing
-      </Link>
-    </aside>
   );
 }
 

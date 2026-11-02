@@ -42,7 +42,7 @@ describe('screen decision defaults', () => {
     expect(SCREENER_NAME).toBe('Screener');
     expect(BACKLOG_PASS_NAME).toBe('Backlog Pass');
     expect(CATCH_UP_GROUP).toBe('keep');
-    expect(SETTINGS_PREVIEWS_TITLE).toBe('Preview layout');
+    expect(SETTINGS_PREVIEWS_TITLE).toBe('Previews');
     expect(REPORT_TRUST_LINE_WRITTEN_TO).toBe(true);
     expect(PRO_PURCHASABLE).toBe(false);
     expect(CATCH_UP_LATER_FIRST).toBe(true);

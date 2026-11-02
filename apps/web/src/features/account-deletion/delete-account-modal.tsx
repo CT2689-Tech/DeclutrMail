@@ -14,6 +14,7 @@ import { formatDate } from './date-format';
 export { formatDate } from './date-format';
 
 import { useUserTimeZone } from '@/features/auth/api/use-me';
+import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
 
 const { color, font, motion, radius, text } = tokens;
 
@@ -230,7 +231,7 @@ export function DeleteAccountModal({
                 <>
                   {' '}
                   <a href="/billing" style={{ color: color.primary }}>
-                    Open Billing
+                    {BILLING_NAME}
                   </a>{' '}
                   or{' '}
                   <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>

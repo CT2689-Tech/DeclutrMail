@@ -101,7 +101,9 @@ export function EmailPrefsCard({
               </SettingsRow>
             );
           })}
-          <SettingsRow label="Account notices" detail="Deletion confirmations and receipts.">
+          {/* Billing, reconnect, failed-scan and deletion emails all send
+              regardless; a list here named only some of them. */}
+          <SettingsRow label="Account notices">
             <span style={{ fontSize: text.sm, color: color.fgMuted }}>Always on</span>
           </SettingsRow>
         </>

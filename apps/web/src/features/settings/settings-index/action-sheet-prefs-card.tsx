@@ -57,8 +57,7 @@ export function ActionSheetPrefsCard({
           lineHeight: 1.5,
         }}
       >
-        Choose where previews open during guided review. Senders and sender details use a separate
-        window.
+        Choose where Guided Review shows the preview before Archive, Unsubscribe or Later.
       </p>
       {state.kind === 'ready' ? (
         VERB_ROWS.map(({ wire, verb }) => (
@@ -69,7 +68,7 @@ export function ActionSheetPrefsCard({
             style={{ paddingBlock: 12 }}
           >
             <fieldset
-              aria-label={`${verb} preview placement`}
+              aria-label={`Where the ${verb} preview opens`}
               disabled={pendingWire !== null}
               className="dm-preview-placement"
               style={{
@@ -84,8 +83,8 @@ export function ActionSheetPrefsCard({
               }}
             >
               {[
-                { value: true, label: 'Inline' },
-                { value: false, label: 'Separate window' },
+                { value: true, label: 'On the page' },
+                { value: false, label: 'Pop-up' },
               ].map((choice) => (
                 <label key={choice.label} className="dm-preview-choice">
                   <input
@@ -104,15 +103,11 @@ export function ActionSheetPrefsCard({
       ) : (
         <SettingsRowStatus
           state={state}
-          loadingLabel="Loading action preferences…"
-          errorLabel="Could not load action preferences."
+          loadingLabel="Loading previews…"
+          errorLabel="Could not load previews."
         />
       )}
-      <SettingsRow
-        label="Delete"
-        detail="Always opens a separate confirmation window."
-        style={{ paddingBlock: 12 }}
-      />
+      <SettingsRow label="Delete" detail="Always opens in a pop-up." style={{ paddingBlock: 12 }} />
       <style>{`
         .dm-preview-choice { position: relative; cursor: pointer; }
         .dm-preview-choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }

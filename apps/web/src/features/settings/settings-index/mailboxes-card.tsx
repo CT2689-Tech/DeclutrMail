@@ -5,6 +5,7 @@ import { useRetryInitialSync } from '@/features/sync/api/use-retry-initial-sync'
 import { useNow } from '@/lib/use-now';
 import { Button, Pill, tokens } from '@declutrmail/shared';
 import { WS6_COPY } from '@declutrmail/shared/copy/launch';
+import { connectionTerm } from '@declutrmail/shared/entitlements';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import type { MailboxHealth } from '../api/use-mailbox-health';
 import { SettingsGroup } from '../settings-list';
@@ -29,6 +30,8 @@ const MAILBOX_LIMIT_EXPLANATION_ID = 'mailboxes-inbox-limit-explanation';
  * because it is already counted and does not consume another slot.
  */
 export function MailboxesCard({
+  planName,
+  seePlans,
   mailboxes,
   activeMailboxId,
   inboxLimit,
@@ -38,6 +41,10 @@ export function MailboxesCard({
   onConnect,
   onReactivate,
 }: {
+  /** Whose limit the line states: a plan, the Backlog Pass, or "Your plan". */
+  planName: string;
+  /** False on the top purchasable plan, where /billing has nothing more to sell. */
+  seePlans: boolean;
   mailboxes: MeMailbox[];
   activeMailboxId: string | null;
   /** The tier's connected-inbox allowance, or null while tier unknown. */
@@ -76,16 +83,22 @@ export function MailboxesCard({
           <Button tone="default" onClick={() => onConnect()} disabled={atLimit && !passAtLimit}>
             {mailboxes.length === 0 ? 'Connect Gmail' : 'Add Gmail account'}
           </Button>
-          {atLimit && !passAtLimit && (
+          {/* Every limit-disabled control points here, so a Pass at its
+              limit states it too; its Add button opens the Pass gate. */}
+          {atLimit && inboxLimit !== null && (
             <span
               id={MAILBOX_LIMIT_EXPLANATION_ID}
               style={{ fontSize: text.sm, color: color.fgMuted }}
             >
-              Your plan includes {inboxLimit} connected {inboxLimit === 1 ? 'inbox' : 'inboxes'} —{' '}
-              <Link href="/billing" style={{ color: color.primary }}>
-                upgrade for more
-              </Link>
-              .
+              {planName} includes {inboxLimit} {connectionTerm(inboxLimit)}.
+              {seePlans ? (
+                <>
+                  {' '}
+                  <Link href="/billing" style={{ color: color.primary }}>
+                    See plans
+                  </Link>
+                </>
+              ) : null}
             </span>
           )}
         </div>
@@ -186,7 +199,7 @@ export function MailboxesCard({
                       }}
                       title={new Date(health.lastSyncedAt).toLocaleString('en-US')}
                     >
-                      Synced {relAge(health.lastSyncedAt, now)}
+                      Updated {relAge(health.lastSyncedAt, now)}
                     </span>
                   )}
                 </span>
@@ -201,7 +214,8 @@ export function MailboxesCard({
                     minWidth: 0,
                   }}
                 >
-                  {isSelected && <StatusTag tone="primary">Selected</StatusTag>}
+                  {/* Which account the app is showing only matters once there are two. */}
+                  {isSelected && activeCount > 1 && <StatusTag tone="primary">Selected</StatusTag>}
                   {m.status === 'disconnected' ? (
                     <StatusTag tone={indexedDataState === 'deletion_delayed' ? 'danger' : 'muted'}>
                       {mailboxDataStatusLabel(indexedDataState)}
@@ -209,7 +223,7 @@ export function MailboxesCard({
                   ) : needsReconnect ? (
                     <StatusTag tone="danger">Needs reconnect</StatusTag>
                   ) : m.readiness === 'queued' || m.readiness === 'syncing' ? (
-                    <StatusTag tone="muted">Syncing…</StatusTag>
+                    <StatusTag tone="muted">Scanning…</StatusTag>
                   ) : m.readiness === 'failed' ? (
                     <>
                       {/* QA-sync-20260831-09: "scan" is this product's
@@ -238,7 +252,7 @@ export function MailboxesCard({
                     // readiness === null: no sync row exists yet (D116), so
                     // the first scan has not been recorded. Never fold this
                     // into "Ready" — that claims a scan we cannot see.
-                    <StatusTag tone="muted">Not synced yet</StatusTag>
+                    <StatusTag tone="muted">Not scanned yet</StatusTag>
                   )}
                   {showReconnect && (
                     <>
@@ -334,7 +348,7 @@ function ReconnectButton({
  * state. `useRetryInitialSync` names the row's mailbox explicitly via
  * `X-Active-Mailbox-Id` and invalidates the `SYNC_STATUS_KEY` prefix on
  * success — which is exactly the key family `useMailboxesHealth` reads,
- * so the tag flips to "Syncing…" from server truth, not optimism.
+ * so the tag flips to "Scanning…" from server truth, not optimism.
  */
 function RetrySyncButton({ mailboxId }: { mailboxId: string }) {
   const retry = useRetryInitialSync(mailboxId);

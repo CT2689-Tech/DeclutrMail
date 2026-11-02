@@ -843,7 +843,7 @@ export const EDGE_STATE_INVENTORY: Record<ScreenId, EdgeStateCoverage> = {
     offline: { required: false, status: 'todo' },
     unauthorized: { required: false, status: 'todo' },
     'sync-in-progress': {
-      // Per-mailbox "Syncing…" tag in the Mailboxes card.
+      // Per-mailbox "Scanning…" tag in the Mailboxes card.
       required: false,
       implementation: 'apps/web/src/features/settings/settings-index/mailboxes-card.tsx',
       status: 'implemented',
