@@ -4,9 +4,9 @@
 // Variants covered:
 //   • TwoConnected     — both accounts active, one marked Active,
 //                        humanized last-synced stamps
-//   • Syncing          — second account mid initial-sync
-//   • SyncFailed       — readiness failed tag
-//   • NotSyncedYet     — readiness null (no sync row yet), stated as
+//   • Scanning         — second account mid first scan
+//   • SyncFailed       — readiness failed tag ("Scan failed")
+//   • NotScannedYet    — readiness null (no sync row yet), stated as
 //                        unknown rather than folded into "Ready"
 //   • ReconnectBlockedByDeletion — disabled Reconnect states its reason
 //                        in visible text beside the control
@@ -20,6 +20,9 @@
 //   • AtLimit          — connect-another disabled at the tier's inboxLimit
 //   • FreeOneAccount   — the Free limit line with one link, and no
 //                        "Selected" tag while only one account exists
+//   • ProAtLimit       — the top plan states its limit with no plans link
+//   • PassAtLimit      — a Backlog Pass states its limit; Add stays enabled
+//                        and opens the Pass gate
 //   • Empty            — zero mailboxes connected
 
 import type { ComponentProps } from 'react';
@@ -102,7 +105,7 @@ export const TwoConnected: Story<typeof MailboxesCard> = {
   args: { ...baseArgs, inboxLimit: 3 },
 };
 
-export const Syncing: Story<typeof MailboxesCard> = {
+export const Scanning: Story<typeof MailboxesCard> = {
   args: {
     ...baseArgs,
     inboxLimit: 3,
@@ -125,7 +128,7 @@ export const SyncFailed: Story<typeof MailboxesCard> = {
  * rather than fall through to "Ready", which would assert a completed
  * scan it has no evidence of.
  */
-export const NotSyncedYet: Story<typeof MailboxesCard> = {
+export const NotScannedYet: Story<typeof MailboxesCard> = {
   args: {
     ...baseArgs,
     inboxLimit: 3,
@@ -232,6 +235,21 @@ export const FreeOneAccount: Story<typeof MailboxesCard> = {
     ...baseArgs,
     planName: 'Free',
     inboxLimit: 1,
+    mailboxes: [MAILBOX_A],
+    healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
+  },
+};
+
+export const ProAtLimit: Story<typeof MailboxesCard> = {
+  args: { ...baseArgs, planName: 'Pro', seePlans: false },
+};
+
+export const PassAtLimit: Story<typeof MailboxesCard> = {
+  args: {
+    ...baseArgs,
+    planName: 'Backlog Pass',
+    inboxLimit: 1,
+    inboxLimitReason: 'pass',
     mailboxes: [MAILBOX_A],
     healthById: { [MAILBOX_A.id]: HEALTHY[MAILBOX_A.id] },
   },

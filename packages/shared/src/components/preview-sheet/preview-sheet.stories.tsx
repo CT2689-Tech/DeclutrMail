@@ -102,7 +102,7 @@ export const Archive: Story = {
       note="Undo from Activity for 30 days."
       details={details}
       primary={{ label: 'Archive 174', onClick: noop }}
-      footer="Don't ask again for Archive"
+      footer="Skip this pop-up for Archive"
     />
   ),
 };

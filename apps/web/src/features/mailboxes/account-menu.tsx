@@ -374,7 +374,7 @@ export function AccountMenu() {
                       m.readiness &&
                       m.readiness !== 'ready' && (
                         <MenuStatus tone={m.readiness === 'failed' ? 'danger' : 'muted'}>
-                          {m.readiness === 'failed' ? 'Scan failed' : 'Syncing…'}
+                          {m.readiness === 'failed' ? 'Scan failed' : 'Scanning…'}
                         </MenuStatus>
                       )}
                     {/* QA-sync-20260831-04: `readiness` stays `ready` for a
@@ -735,8 +735,6 @@ function mailboxActionStyle(tone: 'primary' | 'muted' | 'disabled') {
     whiteSpace: 'nowrap' as const,
   };
 }
-
-/** Display name for the tier in the inbox-limit gate copy. */
 
 // No `background` here: `.dm-nav-row` (tokens.css) owns the resting and
 // hover fills, and an inline value would outrank its hover.
