@@ -448,3 +448,24 @@ body.dm-public-menu-open {
   outline: 2px solid var(--dm-primary);
   outline-offset: 5px;
 }
+
+/* Signed-out phones show logo + Start free + Menu in one row. The
+   masthead block above re-widens Start free after the phone rules, so
+   the row needed 389px and pushed Menu off a 360px screen. */
+@media (max-width: 880px) {
+  .dm-public-mobile-cta {
+    padding-inline: 12px;
+  }
+}
+@media (max-width: 372px) {
+  .dm-public-mobile-cta {
+    padding-inline: 8px;
+    font-size: 13px;
+  }
+}
+/* Below this the row cannot hold both; Start free stays in the menu. */
+@media (max-width: 350px) {
+  .dm-public-mobile-cta {
+    display: none;
+  }
+}

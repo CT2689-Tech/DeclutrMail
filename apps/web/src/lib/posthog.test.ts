@@ -5,6 +5,7 @@ import {
   __resetForTests,
   __setSdkPromiseForTests,
   identifyUser,
+  setTrackGate,
   track,
   withdrawAnalyticsConsent,
   resetIdentity,
@@ -391,5 +392,34 @@ describe('withdrawal stops the SDK, not just the stored choice (GDPR Art. 7(3))'
       'page_viewed',
       expect.objectContaining({ page: 'triage' }),
     );
+  });
+});
+
+describe('setTrackGate() — the public demo holds back app events', () => {
+  afterEach(() => setTrackGate(null));
+
+  it('drops a refused event before the SDK is touched, and passes the rest', async () => {
+    storeConsent('all');
+    const gate = vi.fn((eventName: string) => eventName !== 'action_confirmed');
+    setTrackGate(gate);
+
+    await track('action_confirmed', { journey: 'daily', verb: 'archive' });
+    expect(posthogMock.init).not.toHaveBeenCalled();
+    expect(posthogMock.capture).not.toHaveBeenCalled();
+
+    await track('page_viewed', { page: 'landing', mailbox_id: null });
+    expect(gate).toHaveBeenLastCalledWith('page_viewed', { page: 'landing', mailbox_id: null });
+    expect(posthogMock.capture).toHaveBeenCalledWith(
+      'page_viewed',
+      expect.objectContaining({ page: 'landing' }),
+    );
+  });
+
+  it('captures everything again once the gate is cleared', async () => {
+    storeConsent('all');
+    setTrackGate(() => false);
+    setTrackGate(null);
+    await track('action_confirmed', { journey: 'daily', verb: 'archive' });
+    expect(posthogMock.capture).toHaveBeenCalledWith('action_confirmed', expect.anything());
   });
 });

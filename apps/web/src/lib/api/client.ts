@@ -204,6 +204,17 @@ export async function apiDelete<T>(
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/**
+ * Where requests go. `null` is the network. The public Senders demo is the
+ * only caller: it renders the real screen over an in-memory API, and
+ * `transport-seam.test.ts` fails if anything else imports this.
+ */
+let apiTransport: typeof fetch | null = null;
+
+export function setApiTransport(transport: typeof fetch | null): void {
+  apiTransport = transport;
+}
+
 /** One try plus two retries. Enough to ride out a blip, not a hung tab. */
 const NETWORK_ATTEMPTS = 3;
 const NETWORK_BACKOFF_MS = [200, 400] as const;
@@ -290,7 +301,7 @@ async function fetchWithNetworkRetry(
 ): Promise<Response> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      return await fetch(url, init);
+      return await (apiTransport ?? fetch)(url, init);
     } catch (error) {
       if (!isRetryableFetchFailure(error) || attempt === attempts - 1) throw error;
       await pauseForBackoff(attempt, init.signal ?? undefined);

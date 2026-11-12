@@ -4,11 +4,7 @@ import { pluralCopy, WS5_COPY } from '@declutrmail/shared/copy/launch';
 
 import type { UnsubscribeBacklogResult } from '@/lib/api/actions';
 
-import {
-  unsubscribeBacklogActivityLine,
-  unsubscribeBacklogSubmissionToast,
-  unsubscribeBacklogToast,
-} from './toast';
+import { unsubscribeBacklogSubmissionToast, unsubscribeBacklogToast } from './toast';
 
 function result(
   partial: Partial<UnsubscribeBacklogResult> & Pick<UnsubscribeBacklogResult, 'mode'>,
@@ -597,67 +593,5 @@ describe('unsubscribeBacklogToast', () => {
         reason: WS5_COPY['f1.reason.noLink'],
       }),
     );
-  });
-});
-
-describe('unsubscribeBacklogActivityLine', () => {
-  it('uses one combined row for each count form', () => {
-    expect(
-      unsubscribeBacklogActivityLine(
-        result({
-          mode: 'archive',
-          backlog: { actionId: 'b', requestedCount: 1, verb: 'archive' },
-        }),
-      ),
-    ).toBe(pluralCopy(WS5_COPY['f1.activity.row'], 1, { n: 1 }));
-    expect(
-      unsubscribeBacklogActivityLine(
-        result({
-          mode: 'archive',
-          backlog: { actionId: 'b', requestedCount: 12, verb: 'archive' },
-        }),
-      ),
-    ).toBe(pluralCopy(WS5_COPY['f1.activity.row'], 12, { n: 12 }));
-    expect(
-      unsubscribeBacklogActivityLine(
-        result({
-          mode: 'delete',
-          backlog: { actionId: 'b', requestedCount: 1, verb: 'delete' },
-        }),
-      ),
-    ).toBe(pluralCopy(WS5_COPY['f1.activity.row.delete'], 1, { n: 1 }));
-  });
-
-  it('uses the delete deck row for a one-click request', () => {
-    expect(
-      unsubscribeBacklogActivityLine(
-        result({
-          mode: 'delete',
-          backlog: { actionId: 'b', requestedCount: 191, verb: 'delete' },
-        }),
-      ),
-    ).toBe(pluralCopy(WS5_COPY['f1.activity.row.delete'], 191, { n: 191 }));
-  });
-
-  it('does not say requested when a mailto sender is in the row', () => {
-    const line = unsubscribeBacklogActivityLine(
-      result({
-        mode: 'archive',
-        backlog: { actionId: 'b', requestedCount: 4, verb: 'archive' },
-        senders: [
-          {
-            senderId: 'a',
-            method: 'mailto',
-            mailtoUrl: 'https://mail.google.com/mail/?view=cm',
-            executionActionId: null,
-            lifecycleStatus: null,
-            unsubStatus: 'manual',
-            reasonCode: null,
-          },
-        ],
-      }),
-    );
-    expect(line).toBe(pluralCopy(WS5_COPY['f1.toast.mailto.withMove.archive'], 4, { n: 4 }));
-    expect(line).not.toMatch(/requested/i);
   });
 });

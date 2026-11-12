@@ -61,6 +61,18 @@ type PosthogSdk = {
 
 let sdkPromise: Promise<PosthogSdk | null> | null = null;
 
+/**
+ * Drops events the gate refuses. Unset in the app. The public Senders demo
+ * renders app screens for a visitor, and their product events (a confirmed
+ * action, an Undo) would count sample clicks as real use.
+ */
+export type TrackGate = (eventName: EventName, props: unknown) => boolean;
+let trackGate: TrackGate | null = null;
+
+export function setTrackGate(gate: TrackGate | null): void {
+  trackGate = gate;
+}
+
 /** Installed-app display mode. Missing matchMedia stays `browser`. */
 function readDisplayMode(): 'standalone' | 'browser' {
   if (typeof window.matchMedia !== 'function') return 'browser';
@@ -201,6 +213,7 @@ export async function track<E extends EventName>(
   eventName: E,
   props: EventProps<E>,
 ): Promise<void> {
+  if (trackGate && !trackGate(eventName, props)) return;
   const sdk = await loadSdk();
   if (!sdk) return;
   // First-line defense: scrub props at the caller boundary too.

@@ -8,7 +8,8 @@ async function follow(page: Page, path: string) {
   await expect(page).toHaveURL(new RegExp(`${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`), {
     timeout: 60_000,
   });
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  // The demo embeds the product's Senders screen, which brings its own h1.
+  await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
 }
 
 async function consent(page: Page) {
@@ -92,18 +93,17 @@ test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then 
     await expect(annual).toHaveAttribute('aria-pressed', 'true');
   }
   await follow(page, '/inbox-simulator?workspace=senders');
-  await page.getByRole('checkbox', { name: 'Select all visible senders' }).check();
-  await page.locator('.dm-senders-demo-selection').getByRole('button', { name: 'Archive' }).click();
+  // The demo is the product's Senders screen over a sample mailbox.
+  await page.getByRole('button', { name: /^Select \d+ shown$/ }).click();
+  await page.getByRole('button', { name: /^Archive \d+ of \d+ selected senders/ }).click();
   const preview = page.getByRole('dialog');
   await expect(preview).toBeVisible();
-  await preview.getByRole('button', { name: /^Archive [\d,]+$/ }).click();
+  await preview.getByRole('button', { name: /^Archive/ }).click();
   await expect(preview).toHaveCount(0);
-  const undoButtons = page.getByRole('button', { name: 'Undo', exact: true });
-  const undo = undoButtons.first();
+  const undo = page.getByRole('button', { name: /^Undo Archive/ });
   await expect(undo).toBeVisible();
-  const undoableBefore = await undoButtons.count();
   await undo.click();
-  await expect(undoButtons).toHaveCount(undoableBefore - 1);
+  await expect(undo).toHaveCount(0);
   expect(errors).toEqual([]);
   await assertSignupRef(page, 'reddit');
 });
