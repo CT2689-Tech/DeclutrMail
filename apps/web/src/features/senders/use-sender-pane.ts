@@ -12,11 +12,20 @@
  * filter or sort change.
  */
 
-import { useCallback, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { senderDetailHref } from './sender-detail-navigation';
 
 export const SENDER_PANE_PARAM = 'sender';
+
+/**
+ * Replaces the route change to `/senders/<id>` on narrow layouts. Unset in
+ * the app. The public demo sets it to show the sender in place, because a
+ * visitor has no session for that route.
+ */
+export const SenderPageNavigationContext = createContext<
+  ((id: string, mode: 'push' | 'replace') => void) | null
+>(null);
 
 /** Vitest renders without an AppRouterContext — fall back to local state. */
 function useOptionalAppRouter() {
@@ -40,14 +49,15 @@ export function useSenderPane(): {
   navigateTo: (id: string, mode?: 'push' | 'replace') => void;
 } {
   const appRouter = useOptionalAppRouter();
+  const openInPlace = useContext(SenderPageNavigationContext);
   const [localId, setLocalId] = useState<string | null>(null);
   const urlId = appRouter?.params.get(SENDER_PANE_PARAM) ?? null;
   const senderId = appRouter ? urlId : localId;
 
   // The router hooks hand back fresh objects every render; reading them
   // through a ref keeps the callbacks below stable for effect deps.
-  const latest = useRef({ appRouter, senderId });
-  latest.current = { appRouter, senderId };
+  const latest = useRef({ appRouter, senderId, openInPlace });
+  latest.current = { appRouter, senderId, openInPlace };
 
   const write = useCallback((id: string | null, mode: 'push' | 'replace') => {
     const { appRouter: r } = latest.current;
@@ -79,6 +89,10 @@ export function useSenderPane(): {
   );
   const close = useCallback(() => write(null, 'replace'), [write]);
   const navigateTo = useCallback((id: string, mode: 'push' | 'replace' = 'push') => {
+    if (latest.current.openInPlace) {
+      latest.current.openInPlace(id, mode);
+      return;
+    }
     latest.current.appRouter?.router[mode](senderDetailHref(id, window.location.search));
   }, []);
 

@@ -38,6 +38,7 @@ import { permissionEntryUrl, siteUrl } from '@/features/marketing/landing/urls';
 import { simulatorShareUrl } from '@/features/marketing/signup-ref';
 import { track } from '@/lib/posthog';
 import { replaceUrl } from '@/lib/replace-url';
+import { SENDERS_DEMO_URL_KEYS } from './senders-demo-url';
 import {
   buildSyntheticBulkPreview,
   buildSyntheticRulePreview,
@@ -48,11 +49,11 @@ import {
 
 const { color } = tokens;
 
-// Keep the richer synthetic Senders workspace out of Triage's first-load chunk.
-const SendersSimulator = dynamic(
-  () => import('./senders-simulator').then((module) => module.SendersSimulator),
-  { ssr: false },
-);
+// The product's Senders screen over a sample mailbox. Loaded on demand so
+// the app screen stays out of this page's first-load chunk.
+const SendersDemo = dynamic(() => import('./senders-demo').then((module) => module.SendersDemo), {
+  ssr: false,
+});
 
 // The FULL fixture queue on purpose (was slice(0,7)): the last two
 // rows are the demo's most instructive states — a reply-protected
@@ -890,6 +891,8 @@ export function InboxSimulatorScreen() {
         url.searchParams.set('workspace', 'triage');
         url.searchParams.delete('step');
         url.searchParams.delete('tour');
+        // The Senders screen keeps its filters and open sender in the URL.
+        for (const key of SENDERS_DEMO_URL_KEYS) url.searchParams.delete(key);
       }
     });
   };
@@ -972,7 +975,7 @@ export function InboxSimulatorScreen() {
       </nav>
 
       {workspace === 'senders' ? (
-        <SendersSimulator />
+        <SendersDemo />
       ) : (
         <>
           <header className="dm-simulator-triage-head">

@@ -236,19 +236,3 @@ export function unsubscribeBacklogSubmissionToast(result: UnsubscribeBacklogResu
   );
   return parts.join(' · ');
 }
-
-/**
- * Activity summary for the same confirmation. One row covers every
- * sender, so any mailto handoff uses the neutral Send wording.
- */
-export function unsubscribeBacklogActivityLine(result: UnsubscribeBacklogResult): string {
-  if (!result.backlog) return unsubscribeBacklogToast(result);
-  const n = result.backlog.requestedCount;
-  const verb = result.backlog.verb;
-  if (result.senders.some((sender) => sender.unsubStatus === 'manual')) {
-    return withMoveLine(verb, n);
-  }
-  const forms =
-    verb === 'delete' ? WS5_COPY['f1.activity.row.delete'] : WS5_COPY['f1.activity.row'];
-  return isPluralCopy(forms) ? pluralCopy(forms, n, { n: shownCount(n) }) : '';
-}

@@ -20,6 +20,8 @@ export interface SampleReportSender {
   unsubscribe: 'one_click' | 'mailto' | 'none';
   inboxCount: number;
   kept?: boolean;
+  /** An unsubscribe decision already stands for this sender. */
+  handledByBacklog?: boolean;
 }
 
 function markedReadCount(sender: SampleReportSender): number {
@@ -62,7 +64,7 @@ export function sampleInboxReport(
       wroteToCount: sender.wroteTo,
       isProtected: sender.protected,
       isKeep: sender.kept === true,
-      handledByBacklog: false,
+      handledByBacklog: sender.handledByBacklog === true,
       inboxCount: sender.inboxCount,
     })),
   };

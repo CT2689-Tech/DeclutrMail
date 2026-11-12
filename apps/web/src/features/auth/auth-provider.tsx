@@ -60,6 +60,14 @@ export function useOptionalAuth(): AuthContextValue | null {
   return useContext(AuthContext);
 }
 
+/**
+ * The same context with a fixed `Me` and no session read. For the public
+ * Senders demo, which renders app screens for a visitor with no account.
+ */
+export function StaticAuthProvider({ me, children }: { me: Me; children: ReactNode }) {
+  return <AuthContext.Provider value={{ me }}>{children}</AuthContext.Provider>;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const me = useMe();
   const queryClient = useQueryClient();

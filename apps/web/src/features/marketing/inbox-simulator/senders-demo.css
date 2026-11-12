@@ -1,0 +1,12 @@
+.dm-senders-demo {
+  margin-top: 18px;
+  color: var(--dm-fg);
+}
+.dm-senders-demo-note {
+  padding: 10px 14px;
+  border: 1px solid var(--dm-primary-border);
+  border-radius: 8px;
+  background: var(--dm-primary-soft);
+  color: var(--dm-fg-soft);
+  font-size: 13px;
+}

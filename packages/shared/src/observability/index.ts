@@ -31,3 +31,5 @@ export type {
   Verb,
 } from './events/index.js';
 export { OPS_SUPER_PROPERTIES } from './events/ops.js';
+// The public demo lets only these through while it renders app screens.
+export { GROWTH_EVENT_NAMES } from './events/growth.js';

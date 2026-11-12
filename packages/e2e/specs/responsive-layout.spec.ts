@@ -76,12 +76,17 @@ for (const path of APP_ROUTES) {
   });
 }
 
-for (const path of PUBLIC_ROUTES) {
-  test(`${path} stays inside the compact public viewport`, async ({ page }) => {
-    await openSettled(page, path);
-    await expectResponsiveLayout(page);
-  });
-}
+test.describe('signed-out visitor', () => {
+  // The header shows Start free only without a session; with the
+  // shared signed-in state this never measured the row visitors get.
+  test.use({ storageState: { cookies: [], origins: [] } });
+  for (const path of PUBLIC_ROUTES) {
+    test(`${path} stays inside the compact public viewport`, async ({ page }) => {
+      await openSettled(page, path);
+      await expectResponsiveLayout(page);
+    });
+  }
+});
 
 test('the compact navigation drawer remains fully reachable', async ({ page }) => {
   await openSettled(page, '/senders');

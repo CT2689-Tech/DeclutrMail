@@ -72,7 +72,9 @@ describe('manual Backlog Pass grants', () => {
 
   it('inserts one Plus pass for the manifest duration and does not stack a second', async () => {
     const { sql, db } = await harness();
-    const now = new Date('2026-10-13T12:00:00.000Z');
+    // Liveness is judged by the database clock, so a fixed date here
+    // expires the grant once the real date passes it (2026-11-12).
+    const now = new Date();
     const first = await grantManualPass(sql, {
       email: 'ada@example.test',
       reason: 'support',

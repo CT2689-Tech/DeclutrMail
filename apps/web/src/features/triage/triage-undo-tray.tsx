@@ -119,9 +119,12 @@ function useUndoEntries(mailboxId?: string) {
 export function ProductUndoTray({
   enableShortcut = false,
   mailboxId,
+  onViewActivity,
 }: {
   enableShortcut?: boolean;
   mailboxId?: string | undefined;
+  /** Defaults to opening Activity. The public demo has no Activity route. */
+  onViewActivity?: (() => void) | undefined;
 }) {
   const qc = useQueryClient();
   const router = useRouter();
@@ -564,7 +567,7 @@ export function ProductUndoTray({
   return (
     <UndoTray
       dataSource={dataSource}
-      onViewActivity={() => router.push('/activity')}
+      onViewActivity={onViewActivity ?? (() => router.push('/activity'))}
       style={{
         bottom: bottomClearOfCookieBanner(
           `${floatingSurfaceLayout.undoTrayBottom}px + var(--dm-tabbar-inset, 0px)`,

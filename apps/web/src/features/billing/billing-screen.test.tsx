@@ -5236,7 +5236,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           pendingCheckout: null,
           complimentary: {
             tier: 'plus',
-            expiresAt: '2026-11-12T00:00:00.000Z',
+            expiresAt: '2099-11-12T00:00:00.000Z',
             source: 'pass',
           },
         },
@@ -5276,7 +5276,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           pendingCheckout: null,
           complimentary: {
             tier: 'plus',
-            expiresAt: '2026-11-12T00:00:00.000Z',
+            expiresAt: '2099-11-12T00:00:00.000Z',
             source: 'pass',
             provider: null,
           },
@@ -5311,7 +5311,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           pendingCheckout: null,
           complimentary: {
             tier: 'plus',
-            expiresAt: '2026-11-12T00:00:00.000Z',
+            expiresAt: '2099-11-12T00:00:00.000Z',
             source: 'pass',
             provider: 'paddle',
             providerTransactionId: 'txn_01paid',
@@ -5339,7 +5339,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           pendingCheckout: null,
           complimentary: {
             tier: 'plus',
-            expiresAt: '2026-11-12T00:00:00.000Z',
+            expiresAt: '2099-11-12T00:00:00.000Z',
             source: 'pass',
             provider: null,
             providerTransactionId: 'manual-pass:abc',
@@ -5367,7 +5367,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           pendingCheckout: null,
           complimentary: {
             tier: 'plus',
-            expiresAt: '2026-11-12T00:00:00.000Z',
+            expiresAt: '2099-11-12T00:00:00.000Z',
             source: 'pass',
           },
         },
@@ -5410,7 +5410,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           pendingCheckout: null,
           complimentary: {
             tier: 'plus',
-            expiresAt: '2026-11-12T00:00:00.000Z',
+            expiresAt: '2099-11-12T00:00:00.000Z',
             source: 'pass',
           },
         },
@@ -5459,7 +5459,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           pendingCheckout: null,
           complimentary: {
             tier: 'plus',
-            expiresAt: '2026-11-12T00:00:00.000Z',
+            expiresAt: '2099-11-12T00:00:00.000Z',
             source: 'pass',
           },
         },
@@ -5500,7 +5500,7 @@ describe('BillingScreen — one billing story (A6)', () => {
               pendingCheckout: null,
               complimentary: {
                 tier: 'plus',
-                expiresAt: '2026-11-12T00:00:00.000Z',
+                expiresAt: '2099-11-12T00:00:00.000Z',
                 source: 'pass',
               },
             }
@@ -5565,7 +5565,7 @@ describe('BillingScreen — one billing story (A6)', () => {
               pendingCheckout: null,
               complimentary: {
                 tier: 'plus',
-                expiresAt: '2026-11-12T00:00:00.000Z',
+                expiresAt: '2099-11-12T00:00:00.000Z',
                 source: 'pass',
               },
             }
@@ -6708,7 +6708,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
           tier: 'plus',
           foundingMember: false,
           pendingCheckout: null,
-          complimentary: { tier: 'plus', expiresAt: '2026-11-12T00:00:00.000Z', source: 'pass' },
+          complimentary: { tier: 'plus', expiresAt: '2099-11-12T00:00:00.000Z', source: 'pass' },
           subscription: { ...SUB, tier: 'plus', status: 'canceled', currentPeriodEnd: null },
         },
       }),
