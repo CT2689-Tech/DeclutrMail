@@ -1,10 +1,10 @@
 # ADR-0036: Brand logo — mark, wordmark and the surfaces that carry them
 
-- **Status:** Proposed — the compact-cut geometry in §Two cuts is
-  **Accepted** (D255 legibility audit, 2026-08-17 — both cuts
-  corrected). The card
-  lockup (see §Open) is still unresolved.
-- **Date:** 2026-08-17
+- **Status:** **Accepted** — locked by the founder on 2026-11-16 after
+  reviewing the mark beside two alternatives (see §Alternatives). Both
+  cuts were corrected in the D255 legibility audit (2026-08-17), and the
+  card lockup was resolved in PR #557 (see §Resolved — the card lockup).
+- **Date:** 2026-08-17 (proposed) · 2026-11-16 (accepted)
 - **Deciders:** chintan.a.thakkar@gmail.com
 - **Related D-decisions:** D255 (this identity), D1/D2 (typography +
   palette), D220 (promoted-component allowlist), D134 (SEO icon set)
@@ -212,7 +212,7 @@ rendered pixels — 250 is clean paper, lower is ink:
 | regular | 209       | **250**   |
 
 The corrected regular cut is the only geometry that reaches paper
-inside the break at 32px. Neither cut reaches it at 16px — see §Open.
+inside the break at 32px. Neither cut reaches it at 16px; see §Resolved — the card lockup.
 
 Every figure above is measured, not hand-derived — three hand-computed
 numbers in earlier revisions of the audit were wrong. `logo.test.tsx`
@@ -230,6 +230,15 @@ asserted, so a silent redraw fails the suite instead of shipping.
   it competes with the monogram avatars ADR-0024 already ships.
 - **Keeping the letter-`D` square.** Rejected: it is a placeholder, and
   it collides visually with the sender monogram avatars.
+- **A lowercase `d.` monogram ("The Full Stop").** Reviewed against this
+  mark on 2026-11-16 and rejected. The full stop reads as "done", but the
+  letter says nothing about mail. The homepage had been drawing it as a
+  stand-in in two places, the illustrative app rail and the Gmail
+  companion tile, so the site showed two identities. Both now draw this
+  mark, and `page.test.tsx` checks that they do.
+- **Three rows shortening to a dot ("Thinning Rows").** Reviewed on
+  2026-11-16 and rejected. It is clear at 16px, but it reads as a
+  utility icon rather than a brand.
 - **Raising the stroke to fix the small cut.** Rejected, and it was the
   first instinct. Weight grows on the frame cap and the tail together,
   so a 1u increase spends 1u of clearance — measured on the corrected
@@ -317,19 +326,21 @@ What was wrong was never the count. It was that the compact cut had
 been _derived_ from the large drawing by nudging coordinates, instead
 of being solved on its own grid. It is now solved on its own grid.
 
-## Open — the card lockup is not yet specified
+## Resolved — the card lockup
 
-The app-icon lockup (mark inside a filled teal card) is a **third
-cut**, and it has not been tuned. The proposed `icon.svg` draws the
-heavy-cut path at `stroke-width 6.5` inside `scale(0.74)` — roughly
-4.8u effective in a 64u viewBox, or **1.2px at 16px**, paper-on-teal.
-Rasterized and inspected at 8x, it is less legible than the D134
-placeholder it replaces, which still resolves as two rows and a check.
+This section used to read "Open". The concern was that the app-icon
+lockup (the mark inside a filled card) would need a **third cut**: the
+first proposed `icon.svg` drew the heavy path at about 1.2px at 16px,
+and that was less legible than the D134 placeholder it replaced.
 
-The two-cut rule exists to prevent exactly this and was not applied
-here. The card lockup needs its own stroke weight (and possibly no
-card at all below 32px) before the icon PR ships. Until then this ADR
-specifies the mark and the wordmark only.
+PR #557 found that verdict had been measured against the **welded**
+compact cut, which kept only 0.18px of clearance inside a tile. The
+redrawn 16-unit compact cut keeps 1.50px inside a tile, so the lockup
+needs no third drawing. It is the existing cut at 75% of a plum tile,
+and the 24px boundary picks the cut by mark size, not tile size.
+`scripts/generate-brand-icons.mjs` draws it, and `pnpm check:icons`
+(in the CI lint job) fails when a raster on disk drifts from the
+geometry.
 
 ## Implementation notes
 
@@ -343,15 +354,22 @@ specifies the mark and the wordmark only.
 - [x] `<Logo>` row added to the ADR-0007 pre-promotion pointer list
 - [ ] CLAUDE.md §4 D220 launch-allowlist amendment (founder-only edit)
 - [ ] D255 row in the plan + `IMPLEMENTATION-LOG.md`
-- [ ] `public-shell.tsx` header and footer use `<Logo size={27} label={null} />`
+- [x] `public-shell.tsx` header and footer use `<Logo size={27} label={null} />`
       inside the existing `aria-label`ed `<Link>`; footer link has no
-      `aria-label`, so `<Logo size={27} />` there
-- [ ] `.dm-public-brand-mark` deleted from `public-shell.css`;
-      `font` / `letter-spacing` dropped from `.dm-public-brand`
-- [ ] Card lockup specified (see Open, above), then `app/icon.svg`
-      replaced and the PNG set re-rasterized from it by a script
-- [ ] `docs/brand/oauth-consent-logo-120.png` replaced, then Google
-      brand verification re-run and **published inside 7 days**
+      `aria-label`, so `<Logo size={27} />` there (PR #557)
+- [x] `.dm-public-brand-mark` deleted from `public-shell.css`;
+      `font` / `letter-spacing` dropped from `.dm-public-brand` (PR #557)
+- [x] Card lockup resolved (see above), then `app/icon.svg` replaced and
+      the PNG set re-rasterized by `scripts/generate-brand-icons.mjs`
+      (PR #557)
+- [x] `docs/brand/oauth-consent-logo-120.png` replaced. PR #557 reports
+      the Google consent-screen logo as uploaded, re-verified and live
+      on 2026-08-18. That was not re-checked in the Google console when
+      this ADR was accepted.
+- [x] Homepage stand-ins replaced: the illustrative app rail and the
+      Gmail companion tile drew a `d.` monogram. Both now draw the
+      mark with `tone="reversed"` on the always-dark `--dm-nav-bg`
+      ground (2026-11-16)
 
 ## References
 

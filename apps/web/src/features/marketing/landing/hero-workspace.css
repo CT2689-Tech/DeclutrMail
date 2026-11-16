@@ -64,13 +64,8 @@
 
 .dm-mkt-hero-workspace-monogram {
   margin-bottom: 19px;
-  font-family: var(--dm-font-display);
-  color: var(--dm-nav-fg);
-  font-size: 23px;
-  line-height: 1;
 }
 
-.dm-mkt-hero-workspace-monogram span,
 .dm-mkt-hero-workspace-rail-active {
   color: var(--dm-lilac);
 }
