@@ -94,8 +94,7 @@ export function PricingTeaserStory({
               <span>{plan.tagline}</span>
             </div>
             <p className="dm-home-plan-price">
-              <span className="dm-home-num">{plan.price}</span>
-              <span>{plan.terms}</span>
+              <span className="dm-home-num">{plan.price}</span> <span>{plan.terms}</span>
             </p>
             <ul>
               {plan.features.map((feature) => (

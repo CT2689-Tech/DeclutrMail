@@ -83,7 +83,12 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
             </div>
             <p className="dm-home-plan-price">
               <span className="dm-home-num">{plan.price}</span>
-              {plan.terms ? <span>{plan.terms}</span> : null}
+              {plan.terms ? (
+                <>
+                  {' '}
+                  <span>{plan.terms}</span>
+                </>
+              ) : null}
             </p>
             <ul>
               {plan.features.map((feature) => (

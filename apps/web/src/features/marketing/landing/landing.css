@@ -702,6 +702,18 @@
   .dm-home-verbs {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  /* Phones: one row per decision, the key beside its name and effect. */
+  .dm-home-verbs li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 4px 14px;
+    padding: 16px;
+  }
+
+  .dm-home-verbs kbd {
+    grid-row: span 2;
+  }
 }
 
 /* ── A companion to Gmail ───────────────────────────────────── */
@@ -755,11 +767,17 @@
   stroke-width: 1.8;
 }
 
-/* Always-dark ground in both themes: the mark inside is pinned `reversed`. */
+/* A dark ground in both themes (plum in light, the nav ground in dark,
+   where the primary turns lilac), so the mark is pinned `reversed`. */
 .dm-home-companion-tile-product {
   border-color: transparent;
-  background: var(--dm-nav-bg);
+  background: var(--dm-primary);
   color: var(--dm-nav-fg);
+}
+
+[data-theme='dark'] .dm-home-companion-tile-product {
+  border-color: var(--mkt-line);
+  background: var(--dm-nav-bg);
 }
 
 .dm-home-companion-tile-product p {
@@ -868,6 +886,11 @@
   padding-bottom: clamp(72px, 9vw, 104px);
   background: var(--dm-nav-bg);
   color: var(--dm-nav-fg);
+}
+
+/* In dark the nav ground sits close to the page; a hairline marks the band. */
+[data-theme='dark'] .dm-home-dark {
+  border-block: 1px solid var(--mkt-line);
 }
 
 .dm-home-dark .dm-mkt-shell {
@@ -1198,6 +1221,12 @@
   color: inherit;
   font-size: 17px;
   font-weight: 600;
+  text-decoration: none;
+}
+
+.dm-home-final-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
 }
 
 .dm-home-final .dm-mkt-scope {
@@ -1243,7 +1272,10 @@
   max-width: 62ch;
 }
 
-.dm-home-final .dm-mkt-scope :is(a, summary, summary:hover, summary::after) {
+/* Pseudo-elements are invalid inside :is(), so the marker gets its own
+   rule; otherwise it keeps the accent colour on the accent card. */
+.dm-home-final .dm-mkt-scope :is(a, summary, summary:hover),
+.dm-home-final .dm-mkt-scope summary::after {
   color: inherit;
 }
 

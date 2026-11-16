@@ -63,8 +63,7 @@ export function HeroPreview() {
         <span className="dm-home-visually-hidden">Keyboard shortcuts: </span>
         {VERB_REGISTRY.map((verb) => (
           <span key={verb.id} data-active={verb.id === 'archive' ? 'true' : undefined}>
-            <kbd>{verb.shortcut}</kbd>
-            {verb.label}
+            <kbd>{verb.shortcut}</kbd> {verb.label}
           </span>
         ))}
       </figcaption>

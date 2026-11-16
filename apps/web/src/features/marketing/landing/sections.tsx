@@ -3,6 +3,8 @@ import { fillWs3, WS1_COPY, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { BRIEF_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import { fillStory, MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
+  CASA_VERIFICATION_APPROVED_ON,
+  formatVerificationDate,
   Logo,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_NEVER_ITEMS,
@@ -114,7 +116,7 @@ export function HowItWorks() {
                   {index + 1}
                 </span>
                 {step.title}
-              </span>
+              </span>{' '}
               <span>{step.body}</span>
             </li>
           ))}
@@ -122,8 +124,7 @@ export function HowItWorks() {
         <ul className="dm-home-verbs" aria-label="The five decisions">
           {VERB_REGISTRY.map((verb) => (
             <li key={verb.id}>
-              <kbd>{verb.shortcut}</kbd>
-              <strong>{verb.label}</strong>
+              <kbd>{verb.shortcut}</kbd> <strong>{verb.label}</strong>{' '}
               <span>{actionHelpCopy(verb.id)}</span>
             </li>
           ))}
@@ -251,7 +252,9 @@ export function EverydayTools() {
  * already states once.
  */
 export function PrivacyDesk() {
-  const verification = fillWs3(WS3_COPY['ws3.trust.long'])
+  const verification = fillWs3(WS3_COPY['ws3.trust.long'], {
+    OAUTH_DATE: formatVerificationDate(CASA_VERIFICATION_APPROVED_ON),
+  })
     .replace(PRIVACY_BADGE_HEADLINE, '')
     .trim();
   return (
