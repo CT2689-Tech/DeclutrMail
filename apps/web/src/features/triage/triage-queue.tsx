@@ -40,6 +40,8 @@ export function inlinePreviewFor(
     onRetryPreview?: (() => void) | undefined;
     detail: ActionPreviewDetail | undefined;
     quotaRemaining: number | null | undefined;
+    needsReconnect?: boolean | undefined;
+    onReconnect?: (() => void) | undefined;
   },
 ): InlinePreview | null {
   if (pendingAction == null || pendingAction.rowId !== rowId || pendingAction.surface !== 'inline')
@@ -97,6 +99,8 @@ export function inlinePreviewFor(
     wakeAt: pendingAction.wakeAt,
     onWakeAtChange: useTriageStore.getState().setPendingWakeAt,
     quotaRemaining: preview.quotaRemaining,
+    needsReconnect: preview.needsReconnect,
+    onReconnect: preview.onReconnect,
     detailSlot:
       preview.detail !== undefined &&
       actionMovesMail(pendingAction.verb, backlogMode !== 'unsub_only') ? (
@@ -138,6 +142,8 @@ export function TriageQueue({
   onRetryPreview,
   previewDetail,
   previewQuotaRemaining,
+  needsReconnect = false,
+  onReconnect,
   allowBatching = true,
   offerUnprotect = false,
   onBatchVerb,
@@ -163,6 +169,8 @@ export function TriageQueue({
   previewDetail?: ActionPreviewDetail | undefined;
   /** Cleanup allowance — independent of the preview, see `ActionSheet`. */
   previewQuotaRemaining?: number | null | undefined;
+  needsReconnect?: boolean | undefined;
+  onReconnect?: (() => void) | undefined;
   /** Disable multi-sender shortcuts for finite guided sessions. */
   allowBatching?: boolean;
   /** Show a direct Unprotect control on Protected rows (D245 review). */
@@ -220,6 +228,8 @@ export function TriageQueue({
           onRetryPreview,
           detail: previewDetail,
           quotaRemaining: previewQuotaRemaining,
+          needsReconnect,
+          onReconnect,
         });
         return (
           <div key={row.id} role="listitem">

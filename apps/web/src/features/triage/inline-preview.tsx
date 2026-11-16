@@ -67,6 +67,8 @@ export interface InlinePreview {
   onWakeAtChange?: ((wakeAt: string | null) => void) | undefined;
   onCancel?: (() => void) | undefined;
   onRetryPreview?: (() => void) | undefined;
+  needsReconnect?: boolean | undefined;
+  onReconnect?: (() => void) | undefined;
 }
 
 /**
@@ -148,6 +150,9 @@ export function InlinePreviewBlock({
     preview.verb === 'Unsubscribe'
       ? (preview.backlogMode ?? (preview.archiveHistoric ? 'archive' : 'unsub_only'))
       : 'unsub_only';
+  const reconnectBlocksConfirm =
+    preview.needsReconnect === true &&
+    (preview.verb !== 'Unsubscribe' || backlogMode !== 'unsub_only');
   // Confirm ONLY. Switching to a different verb stays live, as it does in
   // the sheet where `confirmDisabled` gates the button and nothing else —
   // a zero Archive count must not trap the row out of Delete or Later.
@@ -157,7 +162,13 @@ export function InlinePreviewBlock({
     preview.verb === 'Unsubscribe' &&
     backlogMode === 'unsub_only' &&
     preview.inboxCount === 'loading';
-  const confirmDisabled = busy || blocked || nothingToActOn || returnInvalid || unsubOnlyLoading;
+  const confirmDisabled =
+    busy ||
+    blocked ||
+    nothingToActOn ||
+    returnInvalid ||
+    unsubOnlyLoading ||
+    reconnectBlocksConfirm;
   const isCleanupAction =
     preview.verb === 'Archive' || preview.verb === 'Delete' || preview.verb === 'Later';
   const previewUnavailable =
@@ -367,6 +378,26 @@ export function InlinePreviewBlock({
           />
         </div>
       )}
+      {reconnectBlocksConfirm && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: space[2],
+            marginTop: space[3],
+            color: color.dangerText,
+          }}
+        >
+          DeclutrMail lost access to this Gmail account. Reconnect before changing email.
+          {preview.onReconnect && (
+            <Button tone="default" size="sm" onClick={preview.onReconnect}>
+              Reconnect Gmail
+            </Button>
+          )}
+        </div>
+      )}
       {/* Explicit confirm affordance (2026-07-16 audit): before this bar,
           confirming meant an UNDOCUMENTED second click on the same verb —
           users read the preview and believed the action fired. Fails
@@ -403,7 +434,7 @@ export function InlinePreviewBlock({
               dispatch, so no key fires it either. */}
           {nothingToActOn ? (
             <>Esc cancels</>
-          ) : shortcutLive && !busy && !blocked ? (
+          ) : shortcutLive && !confirmDisabled ? (
             <>Press {VERB_SHORTCUT[preview.verb]} again to confirm · Esc cancels</>
           ) : (
             <>Esc cancels</>

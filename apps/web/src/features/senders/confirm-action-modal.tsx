@@ -199,6 +199,8 @@ export function ConfirmActionModal({
   onRefreshSenders,
   mailboxEmail,
   cleanupQuota,
+  needsReconnect = false,
+  onReconnect,
 }: {
   request: ActionRequest | null;
   onCancel: () => void;
@@ -261,6 +263,9 @@ export function ConfirmActionModal({
   cleanupQuota?: { remaining: number | null; resetsAt: string | null } | undefined;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
   mailboxEmail?: string | undefined;
+  /** Gmail-moving actions pause while this mailbox needs a new grant. */
+  needsReconnect?: boolean | undefined;
+  onReconnect?: (() => void) | undefined;
 }) {
   const verb = request?.verb;
   useActionPreviewAnalytics(
@@ -306,6 +311,7 @@ export function ConfirmActionModal({
   const isArchiveVerb = verb === 'Archive';
   const isDeleteVerb = verb === 'Delete';
   const isCleanupVerb = isArchiveVerb || isDeleteVerb || verb === 'Later';
+  const reconnectBlocksConfirm = needsReconnect && isCleanupVerb;
   const isUnsubVerb = verb === 'Unsubscribe';
   const isLaterVerb = verb === 'Later';
   // Every A/L/D primary moves the inbox mail matching its selected age.
@@ -724,6 +730,7 @@ export function ConfirmActionModal({
   const selectedCountUnavailable =
     isCleanupVerb && livePreviewReady && compositeCount === undefined;
   const confirmDisabled =
+    reconnectBlocksConfirm ||
     selectedCountUnavailable ||
     livePreviewBlocksConfirm ||
     nothingToActOn ||
@@ -843,6 +850,8 @@ export function ConfirmActionModal({
         onRefreshSenders={onRefreshSenders}
         preferredInboxCount={knownInboxTotal(request.senders)}
         submitting={submitting}
+        needsReconnect={needsReconnect}
+        onReconnect={onReconnect}
         onCancel={onCancel}
         onConfirm={onConfirm}
       />
@@ -1168,7 +1177,12 @@ export function ConfirmActionModal({
   // No sendable channel first: while it holds, nothing the preview could
   // return would make the batch runnable, so a "Loading…" line would only
   // promise a wait that ends in the same disabled button.
-  const status: ReactNode = unsubNothingToSend ? (
+  const status: ReactNode = reconnectBlocksConfirm ? (
+    <StatusWithAction
+      message="DeclutrMail lost access to this Gmail account. Reconnect before changing email."
+      action={onReconnect ? { label: 'Reconnect Gmail', onClick: onReconnect } : undefined}
+    />
+  ) : unsubNothingToSend ? (
     NO_SENDABLE_UNSUB
   ) : selectedCountUnavailable ? (
     <StatusWithAction

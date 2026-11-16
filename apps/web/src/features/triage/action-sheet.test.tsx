@@ -34,6 +34,29 @@ beforeEach(() => {
 const row = TRIAGE_QUEUE[0]!; // Groupon — high-confidence Archive
 
 describe('ActionSheet — D226 mandatory preview surface', () => {
+  it('explains the reconnect requirement and blocks Archive confirmation', () => {
+    const onConfirm = vi.fn();
+    const onReconnect = vi.fn();
+    render(
+      <ActionSheet
+        open
+        verb="Archive"
+        row={row}
+        inboxCount={2}
+        needsReconnect
+        onReconnect={onReconnect}
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/lost access to this Gmail account/i)).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+
   it('labels abstention evidence as context while retaining the selected preview action', () => {
     render(
       <ActionSheet
@@ -1257,6 +1280,32 @@ it('states inline Delete impact, recovery and future effect once outside Details
   expect(visible.textContent?.match(/Undo from Activity for 30 days\./g)).toHaveLength(1);
   expect(visible.textContent?.match(/84/g)).toHaveLength(1);
   expect(screen.getByRole('button', { name: 'Delete' })).toHaveTextContent(/^Delete$/);
+});
+
+it('warns and blocks a remembered inline Archive while reconnect is needed', () => {
+  const onConfirm = vi.fn();
+  const onReconnect = vi.fn();
+  render(
+    <InlinePreviewBlock
+      row={row}
+      preview={{
+        verb: 'Archive',
+        archiveHistoric: false,
+        inboxCount: 2,
+        needsReconnect: true,
+        onReconnect,
+      }}
+      busy={false}
+      shortcutLive
+      onConfirm={onConfirm}
+    />,
+  );
+  expect(screen.getByRole('alert')).toHaveTextContent(/lost access to this Gmail account/i);
+  expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
+  expect(screen.queryByText(/Press A again to confirm/)).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+  expect(onReconnect).toHaveBeenCalledTimes(1);
+  expect(onConfirm).not.toHaveBeenCalled();
 });
 
 describe('Triage empty Delete reasons', () => {

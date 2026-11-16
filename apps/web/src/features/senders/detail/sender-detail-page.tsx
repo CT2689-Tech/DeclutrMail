@@ -68,6 +68,7 @@ import { DecisionTimeline, type TimelineItem } from '../uplift-d';
 import { unsubscribeControlStatus, unsubscribeStatusCopy } from '../unsub-status';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
 import { UnsubMailtoCallout } from '../unsub-mailto-callout';
 import {
@@ -526,6 +527,8 @@ function ReadyState({
   const auth = useOptionalAuth();
   const actionMailboxId = auth?.me.activeMailboxId ?? undefined;
   const activeMailboxEmail = auth ? getActiveMailboxEmail(auth.me) : null;
+  const needsReconnect =
+    auth?.me.mailboxes.find((mailbox) => mailbox.id === actionMailboxId)?.needsReconnect === true;
   // Hydration-safe clock for the Decision Timeline's relative-time
   // labels (same reasoning as `recent-messages.tsx`'s `useNow()` gate)
   // — an ambient `Date.now()` read during render can put the server and
@@ -1192,9 +1195,14 @@ function ReadyState({
   }, []);
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
-      if (pendingAction) performAction(pendingAction.verb, pendingAction.senders, opts);
+      if (!pendingAction) return;
+      if (needsReconnect && (pendingAction.verb !== 'Unsubscribe' || opts.secondary != null)) {
+        toast('Reconnect Gmail before changing email.', 'warn');
+        return;
+      }
+      performAction(pendingAction.verb, pendingAction.senders, opts);
     },
-    [pendingAction, performAction],
+    [pendingAction, performAction, needsReconnect],
   );
 
   // Drive the action lifecycle off the polled status (mirrors
@@ -1813,6 +1821,8 @@ function ReadyState({
         onCancel={closePending}
         onConfirm={confirmPending}
         submitting={submitting}
+        needsReconnect={needsReconnect}
+        onReconnect={() => startMailboxConnect(actionMailboxId)}
         compositePreview={compositePreviewQuery.data}
         // isFetching, not isLoading — cached data during a reopen's
         // refetch must keep confirm locked (D226); see senders-screen.

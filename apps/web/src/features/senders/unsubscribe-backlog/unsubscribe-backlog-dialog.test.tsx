@@ -39,6 +39,30 @@ const preview: CompositeActionPreviewResult = {
 };
 
 describe('Unsubscribe default choice', () => {
+  it('blocks backlog cleanup while reconnect is needed but allows Unsubscribe only', () => {
+    const onConfirm = vi.fn();
+    const onReconnect = vi.fn();
+    render(
+      <ConfirmActionModal
+        request={request}
+        compositePreview={preview}
+        needsReconnect
+        onReconnect={onReconnect}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.getByText(/lost access to this Gmail account/i)).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('radio', { name: 'Unsubscribe only' }));
+    expect(screen.queryByText(/lost access to this Gmail account/i)).toBeNull();
+    const confirm = screen.getByRole('button', { name: /Unsubscribe/ });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({ secondary: null }));
+  });
+
   it('exposes the actual Senders choice as a standalone phone layout slot', () => {
     render(
       <ConfirmActionModal

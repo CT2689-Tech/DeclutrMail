@@ -60,6 +60,7 @@ import {
 import { useComposeState } from './use-compose-state';
 import { SelectionBar } from './selection-bar';
 import type { ConfirmOptions } from './confirm-action-modal';
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import type { ActionReceipt } from './action-receipt';
 import { KeyboardCheatsheet } from './keyboard-cheatsheet';
 import { isTypingTarget } from './keyboard';
@@ -2988,10 +2989,17 @@ function SendersScreenContent({
   const confirmPending = useCallback(
     (opts: ConfirmOptions) => {
       if (pendingAction && !resultsReadOnly) {
+        if (
+          activeMailbox?.needsReconnect === true &&
+          (pendingAction.verb !== 'Unsubscribe' || opts.secondary != null)
+        ) {
+          toast('Reconnect Gmail before changing email.', 'warn');
+          return;
+        }
         void performAction(pendingAction.verb, pendingAction.senders, opts);
       }
     },
-    [pendingAction, performAction, resultsReadOnly],
+    [pendingAction, performAction, resultsReadOnly, activeMailbox?.needsReconnect],
   );
 
   // D51 saved views — apply / save-current / delete. The contract's
@@ -3676,6 +3684,8 @@ function SendersScreenContent({
         compositePreviewLoading={compositePreviewQuery.isFetching}
         compositePreviewError={compositePreviewQuery.isError}
         mailboxEmail={activeEmail}
+        needsReconnect={activeMailbox?.needsReconnect === true}
+        onReconnect={() => startMailboxConnect(actionMailboxId)}
         cleanupQuota={{
           remaining: me.cleanupRemaining ?? null,
           resetsAt: me.cleanupResetsAt ?? null,
