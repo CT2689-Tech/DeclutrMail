@@ -23,6 +23,9 @@ const USE_CASE: Record<ComparisonSlug, string> = {
   mailstrom: WS3_COPY['ws3.vs.mailstrom.useCase'],
   inboxpurge: WS3_COPY['ws3.vs.inboxpurge.useCase'],
   mailmop: WS3_COPY['ws3.vs.mailmop.useCase'],
+  cleanfox: WS3_COPY['ws3.vs.cleanfox.useCase'],
+  'inbox-zapper': WS3_COPY['ws3.vs.inbox-zapper.useCase'],
+  chuck: WS3_COPY['ws3.vs.chuck.useCase'],
 };
 
 const FAQ_ANSWER: Record<Exclude<ComparisonSlug, 'inboxpurge'>, string> = {
@@ -36,6 +39,9 @@ const FAQ_ANSWER: Record<Exclude<ComparisonSlug, 'inboxpurge'>, string> = {
   'meta-muse': WS3_COPY['ws3.vs.meta-muse.faqAnswer'],
   mailstrom: WS3_COPY['ws3.vs.mailstrom.faqAnswer'],
   mailmop: WS3_COPY['ws3.vs.mailmop.faqAnswer'],
+  cleanfox: WS3_COPY['ws3.vs.cleanfox.faqAnswer'],
+  'inbox-zapper': WS3_COPY['ws3.vs.inbox-zapper.faqAnswer'],
+  chuck: WS3_COPY['ws3.vs.chuck.faqAnswer'],
 };
 
 function useCaseAnswer(slug: ComparisonSlug, passEnabled: boolean): string {
@@ -59,6 +65,9 @@ const VERDICT: Record<ComparisonSlug, string> = {
   mailstrom: WS3_COPY['ws3.vs.mailstrom.verdict'],
   inboxpurge: WS3_COPY['ws3.vs.inboxpurge.verdict'],
   mailmop: WS3_COPY['ws3.vs.mailmop.verdict'],
+  cleanfox: WS3_COPY['ws3.vs.cleanfox.verdict'],
+  'inbox-zapper': WS3_COPY['ws3.vs.inbox-zapper.verdict'],
+  chuck: WS3_COPY['ws3.vs.chuck.verdict'],
 };
 
 export function deckVerdict(slug: ComparisonSlug): string {

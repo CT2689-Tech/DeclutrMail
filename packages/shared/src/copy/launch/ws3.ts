@@ -176,6 +176,21 @@ export const WS3_COPY = {
   'ws3.vs.mailmop.useCase': 'finding the senders that fill your inbox',
   'ws3.vs.mailmop.faqAnswer':
     'Both rank Gmail senders by how much they send. MailMop analyzes in your browser and can be self-hosted. DeclutrMail scans on our servers without fetching full email contents, then lets you decide each sender with a preview and 30-day Undo.',
+  'ws3.vs.cleanfox.verdict':
+    'Choose Cleanfox if you want a free app that deletes newsletters and sends future ones to Trash, and you accept its market-research terms. Choose DeclutrMail to decide every Gmail sender with a preview first, 30-day Undo and no full email contents fetched.',
+  'ws3.vs.cleanfox.useCase': 'clearing newsletters',
+  'ws3.vs.cleanfox.faqAnswer':
+    'Cleanfox is free and sorts newsletters into delete, block or keep; its FAQ says it earns money by selling data for e-commerce research. DeclutrMail covers every sender in Gmail, shows the count and planned changes before you confirm, and never fetches or stores full email contents.',
+  'ws3.vs.inbox-zapper.verdict':
+    'Choose Inbox Zapper if you want one-click unsubscribe and bulk delete on the web or in a phone app, across Gmail and Outlook. Choose DeclutrMail to decide each Gmail sender with Keep, Archive, Later, Delete or Unsubscribe, a preview first and 30-day Undo.',
+  'ws3.vs.inbox-zapper.useCase': 'unsubscribing in bulk',
+  'ws3.vs.inbox-zapper.faqAnswer':
+    'Both list the senders filling Gmail and let you unsubscribe or delete by sender. Inbox Zapper also works with Outlook and has phone apps. DeclutrMail is Gmail only, adds Keep, Archive and Later, and lets you undo Archive, Later and Delete for 30 days.',
+  'ws3.vs.chuck.verdict':
+    'Choose Chuck if you want an iPhone email app that clears email in bulk on your device, across Gmail, Outlook, Yahoo, iCloud and IMAP. Choose DeclutrMail to decide Gmail sender by sender on the web, with a preview before email moves and 30-day Undo.',
+  'ws3.vs.chuck.useCase': 'clearing a full inbox from your phone',
+  'ws3.vs.chuck.faqAnswer':
+    'Chuck is an iPhone app that works on your device and covers several email services. DeclutrMail runs on the web, including on your phone, for Gmail only; it shows the count and planned changes before you confirm, and Archive, Later and Delete can be undone for 30 days.',
   'ws3.vsNew.mailstrom.meta': [
     'Mailstrom',
     'Bulk email management',
@@ -283,6 +298,125 @@ export const WS3_COPY = {
   'ws3.vsNew.mailmop.sources': [
     'MailMop home | https://www.mailmop.com/ | Browser processing; free hosted plan; self-hosting',
     'MailMop GitHub README | https://github.com/neilbhammar/mailmop | Source-available license; full Gmail access to read unsubscribe links',
+  ],
+  'ws3.vsNew.cleanfox.meta': [
+    'Cleanfox',
+    'Free newsletter removal',
+    'Cleanfox vs DeclutrMail',
+    'Cleanfox is a free newsletter remover funded by market research on commercial email. DeclutrMail is a Gmail review by sender with previews and 30-day Undo.',
+  ],
+  'ws3.vsNew.cleanfox.facts': [
+    'primaryUnit: Newsletter sender',
+    'providerScope: Gmail and Outlook or Hotmail documented in its FAQ; some providers are not compatible',
+    'publicEntryPoint: Free, with no subscription (its FAQ)',
+    'indexSummary: Free newsletter removal, funded by market research',
+  ],
+  'ws3.vsNew.cleanfox.chooseCompetitor': [
+    'Choose Cleanfox for free newsletter removal',
+    'You want a free tool; its FAQ says there are no subscriptions, trial periods or hidden fees.',
+    'You want to swipe through newsletters on iPhone or Android and delete, block or keep each one.',
+    'You have read its privacy notice and accept that data from your commercial email supports its market research.',
+  ],
+  'ws3.vsNew.cleanfox.chooseDeclutr': [
+    'Choose DeclutrMail for every kind of sender, with a preview',
+    'You want to decide every sender, not only newsletters, with Keep, Archive, Later, Delete or Unsubscribe.',
+    'You want a preview of the count and planned changes before email moves.',
+    'You want a Gmail-only tool that never fetches or stores full email contents.',
+  ],
+  'ws3.vsNew.cleanfox.cells': [
+    'focus: Sort newsletters: delete, block or keep | Its FAQ lists three choices for each newsletter: delete old email, delete old email and send future email to Trash, or keep.',
+    'providers: Gmail and Outlook or Hotmail documented | Its FAQ gives setup steps for Gmail and Microsoft addresses, and says custom-domain addresses and some providers are not compatible. It describes connecting Gmail with IMAP and an app password.',
+    'existingMail: Yes, for newsletters | Deleting moves a newsletter’s existing email to your Trash folder.',
+    'futureMail: Yes, future email to Trash | If you block a newsletter, its FAQ says future email from that sender is placed in Trash automatically.',
+    'unsubscribe: Sends future email to Trash instead | Its FAQ says it chose automatic deletion over unsubscribe requests, so that you no longer receive the newsletter. | limited',
+    'recovery: Trash folder; blocked newsletters can be restored | Its FAQ says deleted email stays in your Trash folder until your email service empties it, and blocked newsletters can be restored from a list in the app. A preview before deleting is not stated. | limited',
+    'data: Collects copies of commercial email | Its privacy notice says it collects copies of and information from the commercial email you receive, such as receipts and promotions. For Gmail it says access to email bodies and attachments is used only to provide the service, and that this Gmail data is not used for serving advertisements. | limited',
+    'funding: Selling data for e-commerce research | Its FAQ says “we sell data for statistical research purposes related to e-commerce” and that no data is shared for advertising, profiling or re-identification. For the USA, its privacy notice says panelist data may be sold or shared with customers including data brokers, and describes how to opt out. Its privacy notice calls Cleanfox a NielsenIQ company.',
+    'platform: iPhone, Android and web | Its FAQ lists apps for iPhone and Android and says computers use cleanfox.io in a browser.',
+    'price: Free | Its FAQ says Cleanfox is 100% free, with no subscriptions, trial periods or hidden fees.',
+  ],
+  'ws3.vsNew.cleanfox.sources': [
+    'Cleanfox FAQ | https://www.cleanfox.io/en-gb/faq.html | Free service, how it is paid for, sorting choices, Trash, connecting Gmail and Microsoft, apps',
+    'Cleanfox privacy notice | https://www.cleanfox.io/en-gb/privacy.html | Commercial-email collection, selling and sharing panelist data, extra limits on Gmail data',
+  ],
+  'ws3.vsNew.inbox-zapper.meta': [
+    'Inbox Zapper',
+    'One-click unsubscribe and bulk delete',
+    'Inbox Zapper vs DeclutrMail',
+    'Inbox Zapper unsubscribes and bulk-deletes by sender on Gmail and Outlook. DeclutrMail is a sender-by-sender Gmail review with previews and 30-day Undo.',
+  ],
+  'ws3.vsNew.inbox-zapper.facts': [
+    'primaryUnit: Mailing list or sender',
+    'providerScope: Gmail, Outlook, Hotmail and Live (its FAQ)',
+    'publicEntryPoint: Free to try; a paid service, with prices not publicly stated on the reviewed pages',
+    'indexSummary: One-click unsubscribe and bulk delete, on the web and in phone apps',
+  ],
+  'ws3.vsNew.inbox-zapper.chooseCompetitor': [
+    'Choose Inbox Zapper for quick unsubscribe and delete',
+    'You mainly want to unsubscribe from mailing lists and delete all email from a sender in one step.',
+    'You want iPhone and Android apps as well as a web app.',
+    'You need Outlook, Hotmail or Live accounts as well as Gmail.',
+  ],
+  'ws3.vsNew.inbox-zapper.chooseDeclutr': [
+    'Choose DeclutrMail for more choices per sender',
+    'You want Keep, Archive and Later alongside Unsubscribe and Delete.',
+    'You want Archive, Later and Delete recorded in Activity with 30-day Undo.',
+    'You want a suggested choice for each sender, and Autopilot rules for new email.',
+  ],
+  'ws3.vsNew.inbox-zapper.cells': [
+    'focus: Find mailing lists, then unsubscribe or delete | Its site says it scans your inbox for email lists and unwanted email, with one-click unsubscribe and delete-all by sender.',
+    'providers: Gmail, Outlook, Hotmail and Live | Its FAQ says you can connect several accounts and handle each one separately.',
+    'existingMail: Yes, by sender | Its site says you can delete all email from a sender with one click.',
+    'unsubscribe: Yes, one click | Its site says you can unsubscribe without opening the email.',
+    'recovery: Shown before it runs; Trash afterwards | Its FAQ says it shows what will be unsubscribed or deleted before anything happens, and that deleted email stays in Trash for 30 days. An undo record of its own is not stated. | limited',
+    'data: Sender, subject and date, not bodies (its claim) | Its privacy policy says it reads details such as sender, subject and date and never the body, and that email data is never sold or used for advertising. It also says its mobile apps share device identifiers with advertising partners to measure its own ad campaigns.',
+    'platform: Web app, iPhone and Android | Its download page lists a web app and iPhone and Android apps; a Chrome extension is marked coming soon.',
+    'price: Paid service; prices not publicly stated | Its FAQ says it charges for the service and its download page says you can try it free. No amount was shown on the reviewed pages. | unknown',
+  ],
+  'ws3.vsNew.inbox-zapper.sources': [
+    'Inbox Zapper home | https://www.inboxzapper.com/ | One-click unsubscribe, delete by sender, and its FAQ on providers, preview and Trash',
+    'Inbox Zapper privacy policy | https://www.inboxzapper.com/privacy | Details it reads, no sale or advertising use of email data, mobile app identifiers',
+    'Inbox Zapper download | https://www.inboxzapper.com/download | Web app, iPhone and Android apps, Chrome extension coming soon',
+  ],
+  'ws3.vsNew.chuck.meta': [
+    'Chuck',
+    'iPhone email app',
+    'Chuck vs DeclutrMail',
+    'Chuck is an iPhone email app that deletes, archives and moves email in bulk on your device. DeclutrMail is a Gmail review by sender on the web, with previews and 30-day Undo.',
+  ],
+  'ws3.vsNew.chuck.facts': [
+    'primaryUnit: Groups of email by sender, date or size',
+    'providerScope: Gmail, Outlook, Yahoo, iCloud, AOL and other IMAP services',
+    'publicEntryPoint: Free for one account and up to 10,000 emails; Chuck Pro subscription (see its site)',
+    'indexSummary: An iPhone email app with bulk swipes, processed on your device',
+  ],
+  'ws3.vsNew.chuck.chooseCompetitor': [
+    'Choose Chuck for bulk cleanup on iPhone',
+    'You want a full email app on iPhone that also deletes, archives and moves hundreds of emails with a swipe.',
+    'Its claim that all processing happens on your phone is your deciding requirement.',
+    'You need Outlook, Yahoo, iCloud, AOL or another IMAP account as well as Gmail.',
+  ],
+  'ws3.vsNew.chuck.chooseDeclutr': [
+    'Choose DeclutrMail for a Gmail review in any browser',
+    'You want a tool that runs on the web, including on your phone, rather than an iPhone app.',
+    'You want a suggested choice for each sender and a preview of exactly what will move.',
+    'You want Archive, Later and Delete recorded in Activity with 30-day Undo.',
+  ],
+  'ws3.vsNew.chuck.cells': [
+    'focus: Email app with bulk swipes | Its site says Chuck groups email by sender, date, size and more so you can delete, archive or move hundreds at once, and that it is also a full email app.',
+    'providers: Gmail, Outlook, Yahoo, iCloud, AOL and IMAP | Google, Microsoft and Yahoo accounts sign in with the provider; iCloud uses an app-specific password.',
+    'existingMail: Yes, in bulk | Swipe to delete, archive or move groups of email.',
+    'futureMail: Block senders on Chuck Pro | Its plan list includes Block senders on Chuck Pro. How blocking handles new email is not stated on the reviewed pages. | limited',
+    'unsubscribe: Yes | Per-email unsubscribe on the free plan; Global Unsubscribe on Chuck Pro.',
+    'recovery: Undo in the app | Its FAQ describes an immediate Undo after each change and an Undo list for older ones. How long older changes stay undoable, and a preview before a change, are not stated.',
+    'data: Processed on your phone (its claim) | Its security page says email content and details are not stored on its servers and all processing happens on your iPhone.',
+    'platform: iPhone app | Its site offers Chuck as a free iPhone download.',
+    'price: Free plan; Chuck Pro by month or year | The free plan covers 1 account, up to 10,000 emails and a monthly processing limit. See chuck.email for Chuck Pro prices.',
+  ],
+  'ws3.vsNew.chuck.sources': [
+    'Chuck home | https://chuck.email/ | Bulk swipes, supported providers, on-device claim, Free and Pro plans',
+    'Chuck support and FAQ | https://chuck.email/support | Plans, sign-in by provider, unsubscribe, Undo',
+    'Chuck security | https://chuck.email/security | On-device processing, no server storage of email, no data selling',
   ],
   'ws3.security.glance.title': 'At a glance',
   'ws3.security.glance.lines': [

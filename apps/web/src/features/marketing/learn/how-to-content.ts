@@ -829,6 +829,7 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/auto-archive-future-emails-in-gmail',
     '/how-to/unsubscribe-from-emails-gmail',
     '/vs/gmail',
+    '/vs/chuck',
     '/answers/how-undo-works-for-gmail-cleanup',
   ],
   'gmail-storage-full': [
@@ -853,6 +854,7 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/clean-gmail-by-sender',
     '/vs/unroll-me',
     '/vs/leave-me-alone',
+    '/vs/cleanfox',
     '/answers/is-it-safe-to-connect-gmail-app',
   ],
   'unsubscribe-from-emails-gmail': [
@@ -862,6 +864,7 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/auto-archive-future-emails-in-gmail',
     '/vs/unroll-me',
     '/vs/trimbox',
+    '/vs/inbox-zapper',
     '/answers/how-undo-works-for-gmail-cleanup',
   ],
 };

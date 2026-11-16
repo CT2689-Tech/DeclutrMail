@@ -62,6 +62,12 @@ Each page lists every tool we hold source-backed facts for, described by the job
 - [SaneBox alternatives](https://declutrmail.com/alternatives/sanebox)
 - [Leave Me Alone alternatives](https://declutrmail.com/alternatives/leave-me-alone)
 - [Trimbox alternatives](https://declutrmail.com/alternatives/trimbox)
+- [Mailstrom alternatives](https://declutrmail.com/alternatives/mailstrom)
+- [InboxPurge alternatives](https://declutrmail.com/alternatives/inboxpurge)
+- [MailMop alternatives](https://declutrmail.com/alternatives/mailmop)
+- [Cleanfox alternatives](https://declutrmail.com/alternatives/cleanfox)
+- [Inbox Zapper alternatives](https://declutrmail.com/alternatives/inbox-zapper)
+- [Chuck alternatives](https://declutrmail.com/alternatives/chuck)
 
 ## Gmail how-to guides
 

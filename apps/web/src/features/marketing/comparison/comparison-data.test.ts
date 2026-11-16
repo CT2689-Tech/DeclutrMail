@@ -25,11 +25,14 @@ const EXPECTED_SLUGS = [
   'mailstrom',
   'inboxpurge',
   'mailmop',
+  'cleanfox',
+  'inbox-zapper',
+  'chuck',
 ];
 
-const ORIGINAL_SLUGS = EXPECTED_SLUGS.filter(
-  (slug) => slug !== 'mailstrom' && slug !== 'inboxpurge' && slug !== 'mailmop',
-);
+const LAUNCH_SLUGS = ['mailstrom', 'inboxpurge', 'mailmop', 'cleanfox', 'inbox-zapper', 'chuck'];
+
+const ORIGINAL_SLUGS = EXPECTED_SLUGS.filter((slug) => !LAUNCH_SLUGS.includes(slug));
 
 describe('comparison data', () => {
   it('keeps vendor-specific caveats that change the purchase or privacy decision', () => {
@@ -83,6 +86,9 @@ describe('comparison data', () => {
       'www.inboxpurge.com',
       'www.mailmop.com',
       'github.com',
+      'www.cleanfox.io',
+      'www.inboxzapper.com',
+      'chuck.email',
     ]);
 
     for (const comparison of COMPARISONS) {
@@ -189,6 +195,46 @@ describe('comparison data', () => {
     expect(license?.declutrMail.state).toBe('supported');
   });
 
+  it('stamps the November pages with their own date and keeps their sourced caveats', () => {
+    for (const slug of ['cleanfox', 'inbox-zapper', 'chuck']) {
+      const page = comparisonBySlug(slug)!;
+      expect(page.verifiedIso, slug).toBe('2026-11-16');
+      expect(page.metaTitle, slug).toBe(`${page.name} vs DeclutrMail — compared, November 2026`);
+      const core = page.rows.find((row) => row.label === 'Core approach');
+      expect(core?.competitor.state, slug).toBe('supported');
+      expect(JSON.stringify(page), slug).not.toMatch(/\bsteals?\b|\bspyware\b|\bscam\b/i);
+    }
+    // The older launch pages keep the date their sources were read.
+    expect(comparisonBySlug('mailstrom')!.verifiedIso).toBe('2026-10-11');
+    expect(comparisonBySlug('mailstrom')!.metaTitle).toContain('October 2026');
+
+    // Cleanfox's funding is quoted from its own FAQ, not characterized.
+    const cleanfox = comparisonBySlug('cleanfox')!;
+    const funding = cleanfox.rows.find((row) => row.label === 'How the product is funded');
+    expect(funding?.competitor.detail).toContain(
+      'we sell data for statistical research purposes related to e-commerce',
+    );
+    expect(funding?.competitor.detail).toContain('opt out');
+    expect(cleanfox.rows.find((row) => row.label === 'Unsubscribe')?.competitor.state).toBe(
+      'limited',
+    );
+
+    // A price we could not read stays unknown rather than becoming a number.
+    const zapperPrice = comparisonBySlug('inbox-zapper')!.rows.find(
+      (row) => row.label === 'Public starting point',
+    );
+    expect(zapperPrice?.competitor.state).toBe('unknown');
+    expect(zapperPrice?.competitor.summary).toContain('not publicly stated');
+
+    const chuck = comparisonBySlug('chuck')!;
+    expect(chuck.rows.find((row) => row.label === 'Platform')?.competitor.summary).toBe(
+      'iPhone app',
+    );
+    expect(chuck.rows.find((row) => row.label === 'Preview and recovery')?.competitor.summary).toBe(
+      'Undo in the app',
+    );
+  });
+
   it('states the recovery window on the Gmail-filters "choose DeclutrMail" bullet instead of hedging (D245)', () => {
     const points = comparisonBySlug('gmail-filters')!.chooseDeclutrMail.points;
     expect(points.some((point) => point.includes('plan-based recovery window'))).toBe(false);
@@ -228,14 +274,22 @@ describe('alternatives round-ups stay honest', () => {
     // not for a cleanup tool. Ranking for it would win an intent this
     // product cannot serve.
     expect([...ALTERNATIVES_SLUGS].sort()).toEqual([
+      'chuck',
       'clean-email',
+      'cleanfox',
+      'inbox-zapper',
+      'inboxpurge',
       'leave-me-alone',
+      'mailmop',
+      'mailstrom',
       'sanebox',
       'trimbox',
       'unroll-me',
     ]);
     expect(alternativesFor('gmail')).toBeUndefined();
     expect(alternativesFor('gmail-filters')).toBeUndefined();
+    // Same reasoning: a search for another general AI agent.
+    expect(alternativesFor('meta-muse')).toBeUndefined();
     expect(alternativesFor('not-a-tool')).toBeUndefined();
   });
 
