@@ -60,7 +60,7 @@ export const WS3_COPY = {
   'ws3.faq.closing.links': ['Try the demo', 'Contact'],
   'ws3.cookies.dmAttr.name': 'dm_attr',
   'ws3.cookies.dmAttr.purpose':
-    'Remembers how you first found DeclutrMail (the campaign tags and referral code in the link, and the first page you landed on), so we can count which channels lead to sign-ups. It holds no ID from any other company.',
+    'Remembers how you first found DeclutrMail (the campaign tags and referral code in the link, the name of the search engine, AI assistant or directory that sent you, and the first page you landed on), so we can count which channels lead to sign-ups. It holds no ID from any other company.',
   'ws3.cookies.dmAttr.duration': '30 days',
   'ws3.cookies.dmAttr.category': 'Essential (first-party)',
   'ws3.notOnGmail.link': 'Not on Gmail?',

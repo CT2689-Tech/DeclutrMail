@@ -1,6 +1,8 @@
 /**
  * First-touch campaign cookie. Set once, 30 days, first-party.
  * Holds utm_source, utm_medium, utm_campaign, ref, and the landing path.
+ * A referrer contributes only a fixed source name (directory, search
+ * engine or AI assistant), never its URL or query.
  * No third-party ids and no email addresses.
  */
 import {
@@ -43,6 +45,47 @@ export function directorySourceFromReferrer(
   return undefined;
 }
 
+const SEARCH_HOSTS: Readonly<Record<string, string>> = {
+  'bing.com': 'bing',
+  'duckduckgo.com': 'duckduckgo',
+  'search.yahoo.com': 'yahoo',
+  'search.brave.com': 'brave',
+  'ecosia.org': 'ecosia',
+};
+const AI_HOSTS: Readonly<Record<string, string>> = {
+  'chatgpt.com': 'chatgpt',
+  'chat.openai.com': 'chatgpt',
+  'perplexity.ai': 'perplexity',
+  'claude.ai': 'claude',
+  'gemini.google.com': 'gemini',
+  'copilot.microsoft.com': 'copilot',
+};
+/** google.com and country domains (google.co.in, google.com.au). No subdomains. */
+const GOOGLE_SEARCH_HOST = /^google\.(?:[a-z]{2,3}|com?\.[a-z]{2})$/;
+
+/**
+ * Search engine or AI assistant that sent the visit, as a fixed name.
+ * Never the referring URL, its path or the search query.
+ */
+export function organicSourceFromReferrer(
+  referrer: unknown,
+): { source: string; medium: 'organic' | 'ai' } | undefined {
+  if (typeof referrer !== 'string') return undefined;
+  try {
+    const url = new URL(referrer);
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password)
+      return undefined;
+    const host = url.hostname.toLowerCase().replace(/^www\./, '');
+    const ai = AI_HOSTS[host];
+    if (ai) return { source: ai, medium: 'ai' };
+    const search = SEARCH_HOSTS[host] ?? (GOOGLE_SEARCH_HOST.test(host) ? 'google' : undefined);
+    if (search) return { source: search, medium: 'organic' };
+  } catch {
+    // Empty, relative and malformed referrers provide no attribution.
+  }
+  return undefined;
+}
+
 /** Parse a stored cookie. Undefined when it has no usable field. */
 export function parseDmAttr(value: unknown): SignupCampaign | undefined {
   if (typeof value !== 'string' || value.length === 0 || value.length > 512) return undefined;
@@ -77,17 +120,20 @@ export function resolveFirstTouchCampaign(input: {
   const utmCampaign = narrowUtm(input.searchParams.get('utm_campaign'));
   const queryRef = parseSignupAttributionRef(input.searchParams.get('ref'));
   const directorySource = directorySourceFromReferrer(input.referrer);
+  const inferred = directorySource
+    ? { source: directorySource, medium: 'referral' }
+    : organicSourceFromReferrer(input.referrer);
   const hasExplicitCampaign = Boolean(utmSource || utmMedium || utmCampaign || queryRef);
   const ref = resolveFirstTouchRef({
     existing: undefined,
     queryRef,
     pathname: input.pathname,
-    allowSimulatorFallback: !hasExplicitCampaign && !directorySource,
+    allowSimulatorFallback: !hasExplicitCampaign && !inferred,
   });
   const campaign = campaignOrUndefined(
     fields({
-      utmSource: utmSource ?? (!hasExplicitCampaign ? directorySource : undefined),
-      utmMedium: utmMedium ?? (!hasExplicitCampaign && directorySource ? 'referral' : undefined),
+      utmSource: utmSource ?? (!hasExplicitCampaign ? inferred?.source : undefined),
+      utmMedium: utmMedium ?? (!hasExplicitCampaign ? inferred?.medium : undefined),
       utmCampaign,
       ref,
     }),
