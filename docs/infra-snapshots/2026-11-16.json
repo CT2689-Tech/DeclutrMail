@@ -1,6 +1,6 @@
 {
   "snapshot_date": "2026-11-16",
-  "snapshot_ts": "2026-11-16T16:51:34Z",
+  "snapshot_ts": "2026-11-16T16:59:12Z",
   "gcp_project": "declutrmail-ai-prod",
   "cloud_run": {
     "api": {
@@ -198,13 +198,13 @@
       "latest_revision": [
         {
           "metadata": {
-            "creationTimestamp": "2026-11-12T22:48:56.827497Z",
-            "name": "declutrmail-worker-00317-vvh"
+            "creationTimestamp": "2026-11-16T16:57:12.760202Z",
+            "name": "declutrmail-worker-00318-t6x"
           },
           "spec": {
             "containers": [
               {
-                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:ce96640921d23c292200dcea9dc522427f201717c04dd9248252d4e4189ea809"
+                "image": "us-central1-docker.pkg.dev/declutrmail-ai-prod/declutrmail/api@sha256:f959ea6dea9c05c9cfe3fb04cc17062f3ce2171d5ca0e75797bd677e1947dec3"
               }
             ]
           },
