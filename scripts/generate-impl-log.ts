@@ -252,8 +252,26 @@ function main(): void {
     process.exit(2);
   }
 
-  const merged = readMergedPrs();
   const currentPr = readCurrentPr();
+
+  // A PR that closes no decision, edits no fragment and does not touch the
+  // log owns no row, so the narrowed check below could only ever pass it.
+  // Decide that before the merged-PR read: that read pages the whole PR
+  // history through GraphQL, and a GitHub 502 there failed PRs that had
+  // nothing to check (2026-11-16, PR #1199). Strict mode still reads it.
+  if (checkMode && !strict && currentPr !== null) {
+    const paths = currentPr.files.map((f) => f.path);
+    const ownsNothing = decisionsOwnedBy(currentPr.body ?? '', paths).size === 0;
+    if (ownsNothing && !paths.includes('IMPLEMENTATION-LOG.md')) {
+      console.log(
+        `✓ PR #${currentPr.number} owns no decision and does not edit the log; ` +
+          'merged-PR history not read.',
+      );
+      return;
+    }
+  }
+
+  const merged = readMergedPrs();
   const { rows, demotions } = compose(decisions, currentPr ? [...merged, currentPr] : merged);
   const next = renderLog(current, rows);
 
