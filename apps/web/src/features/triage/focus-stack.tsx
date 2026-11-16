@@ -52,6 +52,8 @@ export function TriageFocusStack({
   onRetryPreview,
   previewDetail,
   previewQuotaRemaining,
+  needsReconnect = false,
+  onReconnect,
   onBatchVerb,
   batchBusyDomain,
   unknownVerbs,
@@ -70,6 +72,8 @@ export function TriageFocusStack({
   onRetryPreview?: (() => void) | undefined;
   previewDetail: ActionPreviewDetail | undefined;
   previewQuotaRemaining: number | null | undefined;
+  needsReconnect?: boolean | undefined;
+  onReconnect?: (() => void) | undefined;
   onBatchVerb: (verb: BatchVerb, batch: DomainBatch) => void;
   batchBusyDomain: string | null;
   /** Held rows whose outcome is unknown, by the verb that may have started. */
@@ -119,6 +123,8 @@ export function TriageFocusStack({
           onRetryPreview,
           detail: previewDetail,
           quotaRemaining: previewQuotaRemaining,
+          needsReconnect,
+          onReconnect,
         })}
         inlinePreviewAccountContext={<MailboxActionContext />}
         // Constructed here (not inside the card) — same reason as the

@@ -6,6 +6,7 @@ import {
   mailMessages,
   mailboxAccounts,
   outboxEvents,
+  providerSyncState,
   senderPolicies,
   senders,
   undoJournal,
@@ -1648,6 +1649,16 @@ describe('LabelActionWorker', () => {
     expect(row!.status).toBe('failed');
     expect(row!.errorCode).toBe('InvalidGrantError');
     expect(row!.quotaUnits).toBe(0);
+    const [syncState] = await db
+      .select()
+      .from(providerSyncState)
+      .where(eq(providerSyncState.mailboxAccountId, mailboxId));
+    expect(syncState?.lastIncrementalErrorCode).toBe('InvalidGrantError');
+    const reconnectNotices = await db
+      .select()
+      .from(outboxEvents)
+      .where(eq(outboxEvents.topic, 'mailbox.reconnect_required'));
+    expect(reconnectNotices).toHaveLength(1);
   });
 
   /**

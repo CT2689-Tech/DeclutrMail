@@ -82,6 +82,8 @@ export function ActionSheet({
   inboxCount,
   wakeAt = null,
   mailboxEmail,
+  needsReconnect = false,
+  onReconnect,
   unprotectSlot,
   onCancel,
   onConfirm,
@@ -104,6 +106,8 @@ export function ActionSheet({
   wakeAt?: string | null;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
   mailboxEmail?: string | undefined;
+  needsReconnect?: boolean | undefined;
+  onReconnect?: (() => void) | undefined;
   /**
    * The Unprotect control, constructed by the caller (see
    * `unprotect-button.tsx`). This sheet stays pure presentation and never
@@ -195,6 +199,7 @@ export function ActionSheet({
     verb === 'Later' ||
     verb === 'Delete' ||
     (verb === 'Unsubscribe' && effectiveMode !== 'unsub_only');
+  const reconnectBlocksConfirm = needsReconnect && requiresLivePreview;
   const previewUnavailable = inboxCount === 'unavailable';
   const previewPending = inboxCount === 'loading';
   const returnTimeValid = useFutureReturnTime(selectedWakeAt, open && verb === 'Later').valid;
@@ -219,6 +224,7 @@ export function ActionSheet({
     detail.reachControl != null &&
     (verb === 'Delete' || (verb === 'Unsubscribe' && effectiveMode === 'delete'));
   const confirmDisabled =
+    reconnectBlocksConfirm ||
     previewSenderGone ||
     archivedUncounted ||
     unsubOnlyLoading ||
@@ -392,7 +398,12 @@ export function ActionSheet({
     onIncludeArchived: reachControl ? () => reachControl.onChange('all_mail') : undefined,
     onUnsubscribeOnly: () => chooseBacklogMode('unsub_only'),
   };
-  const status: ReactNode = previewSenderGone ? (
+  const status: ReactNode = reconnectBlocksConfirm ? (
+    <StatusWithAction
+      message="DeclutrMail lost access to this Gmail account. Reconnect before changing email."
+      action={onReconnect ? { label: 'Reconnect Gmail', onClick: onReconnect } : undefined}
+    />
+  ) : previewSenderGone ? (
     <StatusWithAction
       message={WS2_COPY.simplify.senders.gone}
       action={onRefreshTriage ? { label: 'Refresh triage', onClick: onRefreshTriage } : undefined}

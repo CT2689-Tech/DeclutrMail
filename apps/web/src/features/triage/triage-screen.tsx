@@ -67,6 +67,7 @@ import { captureFeatureException } from '@/lib/sentry';
 // (same precedent as `sendersKeys` above).
 import { UnsubMailtoCallout } from '@/features/senders/unsub-mailto-callout';
 import { getActiveMailboxEmail, useOptionalAuth } from '@/features/auth/auth-provider';
+import { startMailboxConnect } from '@/features/mailboxes/connect-mailbox-url';
 import { mailLocationCopy } from '@declutrmail/shared/actions';
 import { GmailOpenLinkService } from '@/lib/gmail/open-link';
 import { shortDate } from '@/features/senders/data';
@@ -1084,6 +1085,18 @@ export function TriageScreen({
         return false;
       }
 
+      const movesMail =
+        verb === 'Archive' ||
+        verb === 'Delete' ||
+        verb === 'Later' ||
+        (verb === 'Unsubscribe' &&
+          (details?.backlogMode ?? (details?.archiveHistoric ? 'archive' : 'unsub_only')) !==
+            'unsub_only');
+      if (mailboxNeedsReconnect && movesMail) {
+        toast('Reconnect Gmail before changing email.', 'warn');
+        return false;
+      }
+
       if (
         (verb === 'Archive' || verb === 'Delete' || verb === 'Later') &&
         (pendingAction?.verb !== verb ||
@@ -1365,6 +1378,7 @@ export function TriageScreen({
       journey,
       activeReach,
       pendingAction,
+      mailboxNeedsReconnect,
     ],
   );
 
@@ -1537,6 +1551,10 @@ export function TriageScreen({
    */
   const onBatchConfirm = useCallback(() => {
     if (pendingBatch == null) return;
+    if (mailboxNeedsReconnect) {
+      toast('Reconnect Gmail before changing email.', 'warn');
+      return;
+    }
     const { verb, batch, wakeAt } = pendingBatch;
     const selectedCount = pickBucketCount(
       bulkPreview.data?.totals,
@@ -1639,6 +1657,7 @@ export function TriageScreen({
     );
   }, [
     pendingBatch,
+    mailboxNeedsReconnect,
     enqueueBulk,
     bulkPreview.data,
     bulkPreview.isFetching,
@@ -1896,6 +1915,8 @@ export function TriageScreen({
                 onRetryPreview={() => void compositePreview.refetch()}
                 previewDetail={previewDetail}
                 previewQuotaRemaining={cleanupRemaining}
+                needsReconnect={mailboxNeedsReconnect}
+                onReconnect={() => startMailboxConnect(actionMailboxId)}
                 onBatchVerb={onBatchVerb}
                 batchBusyDomain={batchBusyDomain}
               />
@@ -1911,6 +1932,8 @@ export function TriageScreen({
             onRetryPreview={() => void compositePreview.refetch()}
             previewDetail={previewDetail}
             previewQuotaRemaining={cleanupRemaining}
+            needsReconnect={mailboxNeedsReconnect}
+            onReconnect={() => startMailboxConnect(actionMailboxId)}
             allowBatching={journey === 'daily'}
             offerUnprotect={offerUnprotect}
             onBatchVerb={onBatchVerb}
@@ -1944,6 +1967,8 @@ export function TriageScreen({
         }}
         wakeAt={pendingAction?.wakeAt ?? null}
         mailboxEmail={activeEmail}
+        needsReconnect={mailboxNeedsReconnect}
+        onReconnect={() => startMailboxConnect(actionMailboxId)}
         // Constructed here (not inside ActionSheet) so the sheet never
         // imports UnprotectButton — and with it the sender-policy
         // mutation and the API client it calls — directly. Mirrors
@@ -1983,6 +2008,8 @@ export function TriageScreen({
       {/* Batch sheet — the D226 preview for a domain-batch decision. */}
       <BatchActionSheet
         open={active && pendingBatch != null}
+        needsReconnect={mailboxNeedsReconnect}
+        onReconnect={() => startMailboxConnect(actionMailboxId)}
         verb={pendingBatch?.verb ?? 'Archive'}
         batch={pendingBatch?.batch ?? null}
         // Codex review 2026-09-03 round 3: `useBulkActionPreview` sets

@@ -35,6 +35,7 @@ import {
   type LabelChange,
 } from './gmail-mutation-client.js';
 import { scheduleLaterReturn } from './later-return-timer.js';
+import { recordMailboxSyncFailure } from './mailbox-reconnect.js';
 import type { OutboxPublisher } from './outbox-publisher.js';
 import { isQuietActive, msUntilQuietEnds } from './quiet-hours-state.js';
 import { backoffJobOptions } from './rate-limit-backoff.js';
@@ -1275,6 +1276,7 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
   protected override async onTerminalFailure(
     payload: LabelActionJobData,
     error: Error,
+    ctx: WorkerContext,
   ): Promise<void> {
     try {
       await this.deps.db
@@ -1301,6 +1303,22 @@ export class LabelActionWorker extends BaseDeclutrWorker<LabelActionJobData, Lab
           message: recordErr instanceof Error ? recordErr.message : String(recordErr),
         }),
       );
+    }
+    if (error instanceof InvalidGrantError) {
+      try {
+        await recordMailboxSyncFailure(this.deps.db, payload.mailboxAccountId, error.name, {
+          attemptStartedAt: ctx.startedAt,
+        });
+      } catch (recordErr) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            kind: 'label_action.reconnect_status_write_failed',
+            actionId: payload.actionId,
+            errorCode: recordErr instanceof Error ? recordErr.name : 'UnknownError',
+          }),
+        );
+      }
     }
   }
 

@@ -104,6 +104,32 @@ function request(verb: ActionRequest['verb']): ActionRequest {
 
 describe('ConfirmActionModal — live-preview confirm gate', () => {
   it.each(['Archive', 'Later', 'Delete'] as const)(
+    'shows reconnect recovery and blocks %s even with a ready preview',
+    (verb) => {
+      const onConfirm = vi.fn();
+      const onReconnect = vi.fn();
+      render(
+        <ConfirmActionModal
+          request={request(verb)}
+          compositePreview={livePreview}
+          needsReconnect
+          onReconnect={onReconnect}
+          onCancel={vi.fn()}
+          onConfirm={onConfirm}
+        />,
+      );
+
+      expect(screen.getByText(/lost access to this Gmail account/i)).toBeVisible();
+      const confirm = screen.getByRole('button', { name: new RegExp(verb) });
+      expect(confirm).toBeDisabled();
+      fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+      expect(onConfirm).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+      expect(onReconnect).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each(['Archive', 'Later', 'Delete'] as const)(
     'blocks %s click and keyboard confirmation until a live preview resolves',
     (verb) => {
       const onConfirm = vi.fn();

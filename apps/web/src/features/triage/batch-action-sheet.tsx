@@ -68,6 +68,8 @@ export function BatchActionSheet({
   onWindowChange,
   onWakeAtChange,
   mailboxEmail,
+  needsReconnect = false,
+  onReconnect,
   onCancel,
   onConfirm,
   onRetryPreview,
@@ -86,6 +88,8 @@ export function BatchActionSheet({
   onWakeAtChange?: ((wakeAt: string | null) => void) | undefined;
   /** Explicit override for isolated previews; app surfaces use active auth context. */
   mailboxEmail?: string | undefined;
+  needsReconnect?: boolean | undefined;
+  onReconnect?: (() => void) | undefined;
   onCancel: () => void;
   onConfirm: () => void;
   onRetryPreview?: (() => void) | undefined;
@@ -141,6 +145,7 @@ export function BatchActionSheet({
       : null;
   const nothingToMove = total === 0 && !nothingActionable;
   const confirmDisabled =
+    needsReconnect ||
     preview === 'loading' ||
     preview === 'unavailable' ||
     total === null ||
@@ -213,7 +218,12 @@ export function BatchActionSheet({
   const note = [undoNote, skipSentence].filter((s): s is string => s !== null).join(' ');
 
   // ── Status: why confirm is unavailable, and the way out ──────────────
-  const status: ReactNode = wakeAtInvalid ? (
+  const status: ReactNode = needsReconnect ? (
+    <StatusWithAction
+      message="DeclutrMail lost access to this Gmail account. Reconnect before changing email."
+      action={onReconnect ? { label: 'Reconnect Gmail', onClick: onReconnect } : undefined}
+    />
+  ) : wakeAtInvalid ? (
     WS5_COPY['preview.later.returnInvalid']
   ) : preview === 'loading' ? (
     WS5_COPY['f1.preview.backlog.loading']

@@ -18,6 +18,7 @@ const expected = new Map([
   ['unsubscribe-backlog.spec.ts', 4],
   ['home-next-step.spec.ts', 1],
   ['manual-delete-previews.spec.ts', 4],
+  ['reconnect-action-feedback.spec.ts', 1],
 ]);
 const report = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const counts = new Map();

@@ -399,3 +399,14 @@ export const BulkInclusionUnavailable: Story<typeof ConfirmActionModal> = {
     bulkPreview: { data: undefined, loading: false, error: true },
   },
 };
+
+/** Known lost Gmail access replaces a doomed Archive confirmation with recovery. */
+export const ReconnectRequired: Story<typeof ConfirmActionModal> = {
+  args: {
+    ...base,
+    request: { verb: 'Archive', senders: [macys] },
+    compositePreview: preview,
+    needsReconnect: true,
+    onReconnect: noop,
+  } satisfies Args,
+};

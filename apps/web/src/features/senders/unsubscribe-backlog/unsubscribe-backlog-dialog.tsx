@@ -93,6 +93,8 @@ export function UnsubscribeBacklogDialog({
   compositePreviewError = false,
   bulkPreview,
   mailboxEmail,
+  needsReconnect = false,
+  onReconnect,
   previewSenderGone = false,
   onRetryPreview,
   onRefreshSenders,
@@ -111,6 +113,8 @@ export function UnsubscribeBacklogDialog({
   compositePreviewLoading?: boolean | undefined;
   compositePreviewError?: boolean | undefined;
   mailboxEmail?: string | undefined;
+  needsReconnect?: boolean | undefined;
+  onReconnect?: (() => void) | undefined;
   previewSenderGone?: boolean | undefined;
   onRetryPreview?: (() => void) | undefined;
   onRefreshSenders?: (() => void) | undefined;
@@ -373,7 +377,9 @@ export function UnsubscribeBacklogDialog({
   // Unsubscribe only stays closed while the preview is loading. A failed
   // read still leaves it usable for one sender.
   const archivedRequested = mode === 'delete' && activeReach === 'all_mail';
+  const reconnectBlocksConfirm = needsReconnect && mode !== 'unsub_only';
   const confirmDisabled =
+    reconnectBlocksConfirm ||
     submitting ||
     previewSenderGone ||
     nothingActionable ||
@@ -406,46 +412,56 @@ export function UnsubscribeBacklogDialog({
     };
   }, [confirm, confirmDisabled]);
   const { color, radius, space, text } = tokens;
-  const status =
-    previewSenderGone || nothingActionable ? (
-      <>
-        {nothingActionable ? null : <span>{WS2_COPY.simplify.senders.gone}</span>}
-        {onRefreshSenders ? (
-          <Button tone="default" size="sm" onClick={onRefreshSenders}>
-            {WS5_COPY['f1.preview.button.refreshSenders']}
-          </Button>
-        ) : (
-          <Link href="/senders" prefetch={false} onClick={onCancel}>
-            {WS5_COPY['f1.preview.button.reviewSenders']}
-          </Link>
-        )}
-      </>
-    ) : failed ? (
-      <>
-        <span>
-          {!single && mode === 'unsub_only'
-            ? WS5_COPY['preview.state.loadFailed.unsub']
-            : WS5_COPY['f1.preview.backlog.error']}
-        </span>
-        {onRetryPreview && (
-          <Button tone="default" size="sm" onClick={onRetryPreview}>
-            {WS2_COPY.home.failed.retry}
-          </Button>
-        )}
-      </>
-    ) : archivedRequested && allMailCount === null && inboxCount !== null ? (
-      WS5_COPY['f1.preview.archived.unavailable']
-    ) : mode !== 'unsub_only' && cleanupCount === null && !loading ? (
-      WS5_COPY['preview.age.rangeUnavailable']
-    ) : inboxCount === null ? (
-      !single && mode === 'unsub_only' && loading ? (
-        WS5_COPY['preview.state.checkingSenders']
+  const status = reconnectBlocksConfirm ? (
+    <>
+      <span>
+        DeclutrMail lost access to this Gmail account. Reconnect before changing past email.
+      </span>
+      {onReconnect && (
+        <Button tone="default" size="sm" onClick={onReconnect}>
+          Reconnect Gmail
+        </Button>
+      )}
+    </>
+  ) : previewSenderGone || nothingActionable ? (
+    <>
+      {nothingActionable ? null : <span>{WS2_COPY.simplify.senders.gone}</span>}
+      {onRefreshSenders ? (
+        <Button tone="default" size="sm" onClick={onRefreshSenders}>
+          {WS5_COPY['f1.preview.button.refreshSenders']}
+        </Button>
       ) : (
-        WS5_COPY['f1.preview.backlog.loading']
-      )
-    ) : mode === 'archive' && n === 0 ? (
-      WS5_COPY['preview.zero.unsubHint']
-    ) : null;
+        <Link href="/senders" prefetch={false} onClick={onCancel}>
+          {WS5_COPY['f1.preview.button.reviewSenders']}
+        </Link>
+      )}
+    </>
+  ) : failed ? (
+    <>
+      <span>
+        {!single && mode === 'unsub_only'
+          ? WS5_COPY['preview.state.loadFailed.unsub']
+          : WS5_COPY['f1.preview.backlog.error']}
+      </span>
+      {onRetryPreview && (
+        <Button tone="default" size="sm" onClick={onRetryPreview}>
+          {WS2_COPY.home.failed.retry}
+        </Button>
+      )}
+    </>
+  ) : archivedRequested && allMailCount === null && inboxCount !== null ? (
+    WS5_COPY['f1.preview.archived.unavailable']
+  ) : mode !== 'unsub_only' && cleanupCount === null && !loading ? (
+    WS5_COPY['preview.age.rangeUnavailable']
+  ) : inboxCount === null ? (
+    !single && mode === 'unsub_only' && loading ? (
+      WS5_COPY['preview.state.checkingSenders']
+    ) : (
+      WS5_COPY['f1.preview.backlog.loading']
+    )
+  ) : mode === 'archive' && n === 0 ? (
+    WS5_COPY['preview.zero.unsubHint']
+  ) : null;
 
   return (
     <div

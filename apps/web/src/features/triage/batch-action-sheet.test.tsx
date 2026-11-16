@@ -58,6 +58,29 @@ describe('BatchActionSheet — suggestion groups', () => {
 });
 
 describe('BatchActionSheet — live-preview confirm gate', () => {
+  it('offers reconnect and blocks a ready batch preview when Gmail access is lost', () => {
+    const onConfirm = vi.fn();
+    const onReconnect = vi.fn();
+    render(
+      <BatchActionSheet
+        open
+        verb="Archive"
+        batch={batch}
+        preview={readyPreview}
+        needsReconnect
+        onReconnect={onReconnect}
+        onCancel={vi.fn()}
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.getByText(/lost access to this Gmail account/i)).toBeVisible();
+    expect(screen.getByRole('button', { name: /^Archive( [\d,]+ emails?)?$/ })).toBeDisabled();
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true });
+    expect(onConfirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Reconnect Gmail' }));
+    expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['loading', 'unavailable'] as const)(
     'blocks click and keyboard confirmation while the preview is %s',
     (preview) => {
