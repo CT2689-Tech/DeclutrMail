@@ -188,6 +188,24 @@ describe('landing page — D134', () => {
     expect(figure.querySelector('button, a, [tabindex]')).toBeNull();
   });
 
+  // ADR-0036: the locked mark is the only DeclutrMail identity. Both places
+  // the page depicts the product itself once drew a "d." stand-in instead.
+  // Both sit on an always-dark ground, so the tone must be the pinned
+  // `reversed` pair (paper frame) — `duo` would flip to ink on light theme.
+  it('draws the brand mark, not a stand-in monogram, wherever it depicts DeclutrMail', async () => {
+    const { container } = await renderLanding();
+    const productMarks = [
+      container.querySelector('.dm-mkt-hero-workspace-rail'),
+      container.querySelector('.dm-mkt-companion-map > div:last-child .dm-mkt-companion-mark'),
+    ];
+    for (const mark of productMarks) {
+      expect(mark).not.toBeNull();
+      expect(mark?.textContent).not.toMatch(/\bd\./);
+      const frame = mark?.querySelector('svg path');
+      expect(frame?.getAttribute('stroke')).toBe('#FAF4ED');
+    }
+  });
+
   it('offers exactly one primary button and one quiet demo link in the hero', async () => {
     const { container } = await renderLanding();
     const hero = container.querySelector('.dm-mkt-hero') as HTMLElement;

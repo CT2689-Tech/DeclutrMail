@@ -1,4 +1,5 @@
 // Styles are loaded by the public route group through public-styles.css.
+import { Logo } from '@declutrmail/shared';
 
 /** A labelled, static view of the real sender-list + right-inspector pattern. */
 const SENDERS = [
@@ -31,9 +32,14 @@ export function HeroWorkspace() {
           </div>
           <div className="dm-mkt-hero-workspace-body">
             <div className="dm-mkt-hero-workspace-rail">
-              <span className="dm-mkt-hero-workspace-monogram">
-                d<span>.</span>
-              </span>
+              {/* The rail is always the dark nav ground, so the tone is pinned. */}
+              <Logo
+                variant="mark"
+                tone="reversed"
+                size={24}
+                label={null}
+                className="dm-mkt-hero-workspace-monogram"
+              />
               <span>▦</span>
               <span className="dm-mkt-hero-workspace-rail-active">✦</span>
               <span>◷</span>

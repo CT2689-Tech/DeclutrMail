@@ -182,10 +182,10 @@
   font-size: 36px;
 }
 
+/* Always-dark ground in both themes: the mark inside is pinned `reversed`. */
 .dm-mkt-companion-map > div:last-child .dm-mkt-companion-mark {
   border-color: transparent;
-  background: var(--dm-primary);
-  color: var(--dm-fg-inverse);
+  background: var(--dm-nav-bg);
 }
 
 .dm-mkt-companion-map strong {

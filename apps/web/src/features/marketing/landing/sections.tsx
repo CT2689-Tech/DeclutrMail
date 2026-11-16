@@ -2,6 +2,7 @@ import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import {
   CASA_VERIFICATION_APPROVED_ON,
   formatVerificationDate,
+  Logo,
   PRIVACY_BADGE_HEADLINE,
   PRIVACY_NEVER_ITEMS,
   PRIVACY_NEVER_LABEL,
@@ -121,7 +122,7 @@ export function HowItWorks() {
         </span>
         <div>
           <span className="dm-mkt-companion-mark" aria-hidden="true">
-            d.
+            <Logo variant="mark" tone="reversed" size={48} label={null} />
           </span>
           <strong>DeclutrMail</strong>
           <p>Review and clean up</p>
