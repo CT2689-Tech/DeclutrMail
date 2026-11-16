@@ -112,16 +112,30 @@ describe('PublicHeader auth entry', () => {
     }
   });
 
-  it('exposes comparison, privacy, and theme choice in the public header', () => {
+  // Four routes keep the header on one line from 881px up; six wrapped
+  // their labels and overflowed a 900px viewport. Compare and Security
+  // stay one click away in the footer directory.
+  it('keeps four product routes plus theme choice in the public header', () => {
     const { container } = render(<PublicHeader />);
-    const desktop = within(container.querySelector('.dm-public-nav') as HTMLElement);
-    for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
-      expect(desktop.getByRole('link', { name: label })).toBeInTheDocument();
-    }
+    const expected: Array<[string, string]> = [
+      ['How it works', '/how-it-works'],
+      ['Demo', '/inbox-simulator?workspace=senders'],
+      ['Pricing', '/pricing'],
+      ['Privacy', '/methodology'],
+    ];
+    const desktop = container.querySelector('.dm-public-nav') as HTMLElement;
+    expect(
+      within(desktop)
+        .getAllByRole('link')
+        .map((link) => [link.textContent, link.getAttribute('href')]),
+    ).toEqual(expected);
     fireEvent.click(screen.getByRole('button', { name: openMenuLabel }));
-    const mobile = within(screen.getByRole('navigation', { name: 'Mobile navigation' }));
-    for (const label of ['How it works', 'Pricing', 'Demo', 'Compare', 'Privacy & control']) {
-      expect(mobile.getByRole('link', { name: label })).toBeInTheDocument();
+    const mobile = screen.getByRole('navigation', { name: 'Mobile navigation' });
+    for (const [label, href] of expected) {
+      expect(within(mobile).getByRole('link', { name: label })).toHaveAttribute('href', href);
+    }
+    for (const label of ['Compare', 'Security']) {
+      expect(within(mobile).queryByRole('link', { name: label })).not.toBeInTheDocument();
     }
     expect(container.querySelector('.dm-public-theme-toggle')).toBeTruthy();
     expect(
@@ -150,6 +164,7 @@ describe('PublicFooter directory', () => {
     const footer = within(screen.getByRole('contentinfo'));
 
     expect(footer.getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy');
+    expect(footer.getByRole('link', { name: 'Security' })).toHaveAttribute('href', '/security');
     expect(footer.getByRole('link', { name: 'All comparisons' })).toHaveAttribute(
       'href',
       '/compare',

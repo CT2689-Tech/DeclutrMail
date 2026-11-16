@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import HowItWorksPage from '@/app/(marketing)/how-it-works/page';
 import MethodologyPage from '@/app/(marketing)/methodology/page';
-import { ProductJourney } from './landing/product-journey';
+import { SenderWalkthrough } from './landing/sender-walkthrough';
 import { AuthEntry } from './auth-entry/auth-entry';
 import { permissionEntryUrl } from './landing/urls';
 import { ArticlePage } from './learn/article-page';
@@ -53,7 +53,8 @@ describe('rendered public promises and product entry', () => {
   });
 
   it('labels the illustrative Archive walkthrough and preserves its recovery boundary', () => {
-    render(<ProductJourney />);
+    // Guide articles embed it; the homepage teaches the same loop as steps.
+    render(<SenderWalkthrough id="journey-test" />);
     expect(screen.getByText(/Illustrative walkthrough · made-up data/)).toBeInTheDocument();
     expect(screen.getByText(/Nothing changes in Gmail/)).toBeInTheDocument();
     expect(screen.getByRole('group', { name: 'Archive walkthrough' })).toBeInTheDocument();

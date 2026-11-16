@@ -10,7 +10,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
-import { METER, MIN_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements';
+import { actionHelpCopy, VERB_REGISTRY } from '@declutrmail/shared/actions';
+import { METER, MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { installFetchStub } from '@/test/fetch-stub';
 import LandingPage, { metadata } from './page';
@@ -49,17 +50,20 @@ describe('landing page — D134', () => {
     expect(h1.querySelector('em')?.textContent).toBe('See what moves first.');
   });
 
-  it('states the D228 trust copy once, plus the collapsed scope disclosures', async () => {
+  it('states the D228 trust copy once, in Privacy, plus one collapsed scope disclosure', async () => {
     const { container } = await renderLanding();
-    // Visible twice on purpose: the hero trust row and the Privacy section
-    // lede. The row also keeps a narrow line in the DOM for small screens;
-    // CSS hides it above 880px, so it is not a third copy. Further copies
-    // stay inside collapsed scope disclosures.
+    // Once, at the Privacy section: never on the hero (CLAUDE.md §8.5).
+    // The only further copy stays inside the collapsed scope disclosure
+    // beside the final "Start free".
     const visible = container.cloneNode(true) as HTMLElement;
-    visible.querySelectorAll('details, .dm-trust-row-narrow').forEach((node) => node.remove());
-    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(2);
-    expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(2);
-    expect(container.querySelector('.dm-mkt-privacy-data')).toBeInTheDocument();
+    visible.querySelectorAll('details').forEach((node) => node.remove());
+    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(1);
+    expect(container.querySelector('#privacy')?.textContent).toContain(PRIVACY_BADGE_HEADLINE);
+    expect(container.querySelector('.dm-mkt-hero')?.textContent).not.toContain(
+      PRIVACY_BADGE_HEADLINE,
+    );
+    expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(1);
+    expect(container.querySelector('.dm-home-inventory-lists')).toBeInTheDocument();
     // What actually needs guarding is that the generated list reaches the
     // page, so assert it directly rather than via a mount count.
     for (const item of PRIVACY_STORAGE_ITEMS) {
@@ -82,12 +86,27 @@ describe('landing page — D134', () => {
     expect(text).not.toContain('Pending confirmation');
   });
 
-  it('includes the product journey alongside hero, workflow, privacy, pricing and final CTA', async () => {
+  it('composes hero, principles, close-up, steps, companion, tools, privacy, pricing and final CTA', async () => {
     const { container } = await renderLanding();
-    expect(container.querySelectorAll('.dm-mkt-landing > section')).toHaveLength(7);
-    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(6);
+    expect(container.querySelectorAll('.dm-mkt-landing > section')).toHaveLength(9);
     expect(
-      screen.getByRole('heading', { name: 'A clearer inbox is only the beginning.' }),
+      screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent),
+    ).toEqual([
+      'See the sender. Know what will change.',
+      'Five decisions. A preview before anything moves.',
+      'Keep your inbox. Get a better way to decide.',
+      'A clearer inbox is only the beginning.',
+      'Know what we see. Keep the final say.',
+      'Start free. Pay when it earns it.',
+      'Start with one sender.',
+    ]);
+    // The in-page section index and the values strip are gone; the
+    // principles carry those three ideas with a sentence each.
+    expect(container.querySelector('nav')).toBeNull();
+    expect(
+      within(screen.getByRole('region', { name: 'Product principles' })).getByText(
+        'Keep the final say',
+      ),
     ).toBeInTheDocument();
     // No mono "№ 02 — …" eyebrows, and no FAQ block — so no FAQPage
     // JSON-LD either: Google only allows FAQ markup for answers the page
@@ -96,16 +115,38 @@ describe('landing page — D134', () => {
     expect(container.querySelector('script[type="application/ld+json"]')).toBeNull();
   });
 
-  it('describes the product tour preview as a matching count and planned Gmail change', async () => {
+  it('describes the preview step as a matching count and planned Gmail change', async () => {
     const { container } = await renderLanding();
-    const tour = container.querySelector('#product-tour');
-    expect(tour?.textContent).toMatch(/matching count and planned Gmail changes/i);
-    expect(tour?.textContent).not.toMatch(/which emails will move/i);
+    const steps = container.querySelector('#how-it-works ol');
+    expect(steps?.textContent).toMatch(/matching count and the planned Gmail change/i);
+    expect(steps?.textContent).not.toMatch(/which emails will move/i);
+    expect(
+      Array.from(steps?.querySelectorAll('li') ?? []).map((li) => li.firstChild?.textContent),
+    ).toEqual(['1Inspect', '2Preview', '3Result', '4Undo']);
+  });
+
+  it('teaches the five decisions in K/A/U/L/D order with the registry semantics', async () => {
+    const { container } = await renderLanding();
+    const verbs = within(screen.getByRole('list', { name: 'The five decisions' }));
+    const cards = verbs.getAllByRole('listitem');
+    expect(cards.map((card) => card.querySelector('kbd')?.textContent)).toEqual([
+      'K',
+      'A',
+      'U',
+      'L',
+      'D',
+    ]);
+    VERB_REGISTRY.forEach((verb, index) => {
+      expect(cards[index]?.querySelector('strong')?.textContent).toBe(verb.label);
+      expect(cards[index]?.textContent).toContain(actionHelpCopy(verb.id));
+    });
+    // Keep must never read as protection or a permanent exclusion.
+    expect(container.textContent).not.toMatch(/stops coming up for review/i);
   });
 
   it('explains why the workspace sits beside Gmail', async () => {
     const { container } = await renderLanding();
-    const workflow = container.querySelector('#how-it-works');
+    const workflow = container.querySelector('#works-with-gmail');
     expect(workflow?.textContent).toContain('Your mail stays in your existing Gmail account');
     expect(workflow?.textContent).toContain('Read and reply');
     expect(workflow?.textContent).toContain('Review and clean up');
@@ -153,27 +194,55 @@ describe('landing page — D134', () => {
     expect(text).toContain('$59');
     expect(text).not.toMatch(/\$9\s*\/\s*month/);
     expect(text).not.toContain('$129');
-    expect(text).not.toContain('30-day');
+    // v1 promised a 30-day refund; "30-day Undo" in the free list is fine.
+    expect(text).not.toMatch(/30-day money-back/);
+    // The one-time pass is the highlighted card, badged "Pay once".
+    const highlighted = plans?.querySelector('[data-highlighted]');
+    expect(highlighted?.querySelector('h3')?.textContent).toBe('Backlog Pass');
+    expect(highlighted?.textContent).toContain('Pay once');
+    expect(highlighted?.textContent).toContain('Never renews');
+    expect(Array.from(plans?.querySelectorAll('h3') ?? []).map((h) => h.textContent)).toEqual([
+      'Free',
+      'Backlog Pass',
+      'Plus',
+    ]);
   });
 
   it('keeps the complete data list available without making it the first trust message', async () => {
     const { container } = await renderLanding();
-    expect(container.querySelector('.dm-mkt-privacy-inventory')).not.toHaveAttribute('open');
-    expect(container.querySelector('.dm-mkt-privacy-inventory summary')?.textContent).toBe(
+    expect(container.querySelector('.dm-home-inventory')).not.toHaveAttribute('open');
+    expect(container.querySelector('.dm-home-inventory summary')?.textContent).toBe(
       'Full data list',
     );
   });
 
-  it('states the recovery window in the walkthrough and the external request boundary', async () => {
+  it('names which actions carry the recovery window', async () => {
     const { container } = await renderLanding();
-    const text = container.textContent ?? '';
-    expect(text).toContain(`${MIN_UNDO_WINDOW_DAYS} days`);
-    expect(text).toMatch(/a delivered unsubscribe request cannot be recalled/i);
+    const text = container.querySelector('#how-it-works')?.textContent ?? '';
+    expect(text).toContain(
+      `Archive, Later and Delete have ${MIN_UNDO_WINDOW_DAYS} days of Activity Undo.`,
+    );
   });
 
-  it('shows the sender list and right-hand details in a clearly illustrative hero', async () => {
+  it('previews an Archive in the hero with its count, destination and undo, nothing focusable', async () => {
     const { container } = await renderLanding();
-    const figure = container.querySelector('.dm-mkt-hero-workspace-figure') as HTMLElement;
+    const figure = container.querySelector('.dm-home-preview-figure') as HTMLElement;
+    const preview = within(figure).getByRole('img', { name: /Illustrative Archive preview/ });
+    expect(preview.textContent).toContain('Fictional sample');
+    expect(preview.textContent).toContain('Archive 128 emails');
+    expect(preview.textContent).toContain('Moves out of your inbox, stays in Gmail.');
+    expect(preview.textContent).toContain(`Undo from Activity for ${MIN_UNDO_WINDOW_DAYS} days.`);
+    expect(figure.querySelector('button, a, [tabindex], input')).toBeNull();
+    expect(Array.from(figure.querySelectorAll('kbd')).map((kbd) => kbd.textContent)).toEqual(
+      VERB_REGISTRY.map((verb) => verb.shortcut),
+    );
+  });
+
+  it('shows the sender list and right-hand details as a clearly illustrative close-up', async () => {
+    const { container } = await renderLanding();
+    const figure = container.querySelector(
+      '#product-tour .dm-mkt-hero-workspace-figure',
+    ) as HTMLElement;
     expect(figure.querySelector('figcaption')?.textContent).toMatch(/fictional sample/i);
     expect(figure.querySelector('.dm-mkt-hero-workspace-list')?.textContent).toContain(
       'Fieldnotes',
@@ -196,7 +265,7 @@ describe('landing page — D134', () => {
     const { container } = await renderLanding();
     const productMarks = [
       container.querySelector('.dm-mkt-hero-workspace-rail'),
-      container.querySelector('.dm-mkt-companion-map > div:last-child .dm-mkt-companion-mark'),
+      container.querySelector('.dm-home-companion-tile-product .dm-home-companion-mark'),
     ];
     for (const mark of productMarks) {
       expect(mark).not.toBeNull();
@@ -217,11 +286,34 @@ describe('landing page — D134', () => {
       'href',
       '/inbox-simulator?workspace=senders',
     );
-    // "Start free" opens the permission checkpoint. The concise scope
-    // disclosure also stays beside the CTA — collapsed.
-    const disclosure = hero.querySelector('details.dm-mkt-scope');
-    expect(disclosure).not.toBeNull();
-    expect(disclosure).not.toHaveAttribute('open');
+    // "Start free" opens the permission checkpoint, which shows the scope
+    // in full; the hero keeps one short verification line instead.
+    expect(hero.querySelector('details.dm-mkt-scope')).toBeNull();
+    const verified = hero.querySelector('.dm-home-verified') as HTMLElement;
+    expect(verified.textContent).toContain('Google OAuth verified · CASA Tier 2 assessed');
+    expect(verified.textContent).toContain('Gmail only for now.');
+    expect(within(verified).getByRole('link', { name: 'Security details' })).toHaveAttribute(
+      'href',
+      '/security#verification',
+    );
+  });
+
+  it('sells only buyable plans as tools and points Pro at its waitlist', async () => {
+    const { container } = await renderLanding();
+    const tools = container.querySelector('#everyday-tools') as HTMLElement;
+    const tags = Array.from(tools.querySelectorAll('.dm-home-tag')).map((tag) => tag.textContent);
+    expect(tags).toEqual([
+      `Screener · ${TIER_MANIFEST.plus.name}`,
+      `Autopilot · ${TIER_MANIFEST.plus.name}`,
+      `Coming with ${TIER_MANIFEST.pro.name}`,
+    ]);
+    expect(within(tools).queryByRole('link', { name: /Explore Daily Brief/ })).toBeNull();
+    expect(within(tools).queryByRole('link', { name: /Explore Follow-ups/ })).toBeNull();
+    expect(tools.textContent).toContain(`${TIER_MANIFEST.pro.name} isn’t available to buy yet.`);
+    expect(within(tools).getByRole('link', { name: 'Join the Pro waitlist' })).toHaveAttribute(
+      'href',
+      '/pricing#pro-waitlist',
+    );
   });
 
   it('points the primary CTA at the permission checkpoint and exposes demo, pricing, and privacy routes', async () => {
@@ -244,16 +336,24 @@ describe('landing page — D134', () => {
   describe('D138 verification claim — the item the visitor can check', () => {
     it('links the CASA claim to the page that substantiates it', async () => {
       const { container } = await renderLanding();
-      const link = Array.from(container.querySelectorAll('a')).find((a) =>
-        a.textContent?.includes('CASA Tier 2'),
-      );
-      expect(link).toBeDefined();
-      expect(link?.getAttribute('href')).toBe('/security#verification');
+      const privacy = within(container.querySelector('#privacy') as HTMLElement);
+      const link = privacy.getByRole('link', { name: 'Security details' });
+      expect(link.getAttribute('href')).toBe('/security#verification');
+      const describedBy = link.getAttribute('aria-describedby');
+      expect(describedBy).toBeTruthy();
+      const claim = container.querySelector(`#${describedBy}`);
+      expect(claim?.textContent).toContain('CASA Tier 2 assessed by TAC Security');
+      // The deck sentence drops its closing privacy line; Privacy's lede
+      // already states it once.
+      expect(claim?.textContent).not.toContain(PRIVACY_BADGE_HEADLINE);
+      expect(claim?.textContent).toMatch(/\.$/);
     });
 
     it('claims only an APPROVED OAuth verification, never a certification', async () => {
       const { container } = await renderLanding();
-      const text = container.querySelector('#privacy')?.textContent ?? '';
+      const text = `${container.querySelector('#privacy')?.textContent ?? ''} ${
+        container.querySelector('.dm-home-verified')?.textContent ?? ''
+      }`;
       expect(text).toContain('Google OAuth verification approved');
       // Google approved a verification for one restricted scope. It did
       // not certify or audit the product, and the page must never say

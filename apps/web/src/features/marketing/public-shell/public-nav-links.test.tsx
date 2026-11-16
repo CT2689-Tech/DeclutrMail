@@ -21,6 +21,9 @@ describe('PublicNavLinks', () => {
     ['/demo', '/inbox-simulator'],
     ['/how-it-works', '/how-it-works'],
     ['/pricing', '/pricing'],
+    // The header's real Demo href carries a workspace query.
+    ['/inbox-simulator', '/inbox-simulator?workspace=senders'],
+    ['/demo', '/inbox-simulator?workspace=senders'],
   ])('maps %s to the stable %s navigation tab', (pathname, href) => {
     expect(isPublicNavLinkActive(pathname, href)).toBe(true);
   });

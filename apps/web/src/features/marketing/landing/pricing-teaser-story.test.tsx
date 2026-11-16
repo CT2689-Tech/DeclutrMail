@@ -85,12 +85,12 @@ describe('PricingTeaserGate', () => {
 
     render(<PricingTeaserGate pricingV2 passEnabled />);
 
-    expect(await screen.findByText('$59 a year')).toBeInTheDocument();
-    expect(screen.queryByText('₹1,999 a year')).not.toBeInTheDocument();
+    expect(await screen.findByText('$59')).toBeInTheDocument();
+    expect(screen.queryByText('₹1,999')).not.toBeInTheDocument();
     releaseLocale(jsonOk({ locale: 'inr' }));
-    expect(await screen.findByText('₹1,999 a year')).toBeInTheDocument();
-    expect(screen.getByText('₹799 once')).toBeInTheDocument();
-    expect(screen.queryByText('$59 a year')).not.toBeInTheDocument();
+    expect(await screen.findByText('₹1,999')).toBeInTheDocument();
+    expect(screen.getByText('₹799')).toBeInTheDocument();
+    expect(screen.queryByText('$59')).not.toBeInTheDocument();
   });
 
   it('keeps dollar prices when visitor-locale is not India', async () => {
@@ -103,14 +103,14 @@ describe('PricingTeaserGate', () => {
 
     render(<PricingTeaserGate pricingV2 passEnabled={false} />);
 
-    expect(await screen.findByText('$59 a year')).toBeInTheDocument();
+    expect(await screen.findByText('$59')).toBeInTheDocument();
     await waitFor(() => {
       expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/visitor-locale'))).toBe(
         true,
       );
     });
-    expect(screen.getByText('$59 a year')).toBeInTheDocument();
-    expect(screen.queryByText('₹1,999 a year')).not.toBeInTheDocument();
+    expect(screen.getByText('$59')).toBeInTheDocument();
+    expect(screen.queryByText('₹1,999')).not.toBeInTheDocument();
   });
 
   it('keeps the launch teaser when the server flag is on and the public read 404s', async () => {

@@ -33,7 +33,8 @@ test('mobile menu links open inside a 390px viewport', async ({ page }) => {
   const pricing = nav.getByRole('link', { name: 'Pricing' });
   await expect(pricing).toBeVisible();
   await inViewport(pricing, page);
-  await inViewport(nav.getByRole('link', { name: 'Security' }), page);
+  // The last of the four header routes; Security lives in the footer.
+  await inViewport(nav.getByRole('link', { name: 'Privacy', exact: true }), page);
 });
 
 test('skip link stays visually hidden until it is focused', async ({ page }) => {

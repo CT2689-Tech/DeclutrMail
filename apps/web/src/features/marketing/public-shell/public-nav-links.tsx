@@ -29,10 +29,15 @@ export function PublicNavLinks({
   ));
 }
 
-/** Keep public aliases/detail routes attached to their stable top-level tab. */
+/**
+ * Keep public aliases/detail routes attached to their stable top-level tab.
+ * Compares paths only: the Demo tab's href carries `?workspace=senders`,
+ * which no pathname ever equals.
+ */
 export function isPublicNavLinkActive(pathname: string, href: string): boolean {
-  if (href === '/inbox-simulator') {
-    return pathname === href || pathname === '/demo';
+  const path = href.split(/[?#]/)[0] ?? href;
+  if (path === '/inbox-simulator') {
+    return pathname === path || pathname === '/demo';
   }
-  return pathname === href;
+  return pathname === path;
 }
