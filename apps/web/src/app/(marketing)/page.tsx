@@ -1,8 +1,14 @@
-import { ProductJourney } from '@/features/marketing/landing/product-journey';
 import type { Metadata } from 'next';
 
 import { Hero } from '@/features/marketing/landing/hero';
-import { HowItWorks, PrivacyDesk, ProductBreadth } from '@/features/marketing/landing/sections';
+import {
+  Companion,
+  EverydayTools,
+  HowItWorks,
+  Pillars,
+  PrivacyDesk,
+  ProductCloseUp,
+} from '@/features/marketing/landing/sections';
 import { PricingTeaserGate } from '@/features/marketing/landing/pricing-teaser-story';
 import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 import { FinalCta } from '@/features/marketing/landing/footer';
@@ -15,8 +21,9 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
  * the chain, no auth round-trip before paint. Auth CTAs open the
  * public permission checkpoint before the final Google OAuth hop.
  *
- * Hero + demo → workspace journey → how it works → privacy →
- * pricing teaser → final CTA. The FAQ (and its FAQPage JSON-LD) lives on
+ * Hero + action preview → principles → the product up close → how it
+ * works (steps and the five decisions) → companion to Gmail → paid tools
+ * → privacy → pricing teaser → final CTA. The FAQ (and its FAQPage JSON-LD) lives on
  * /faq and /help, not here — Google does not allow FAQ markup for answers
  * the page does not visibly render. D136 still ships no testimonials
  * without first-party evidence. Product comparisons live on their
@@ -75,28 +82,11 @@ export default async function LandingPage() {
   return (
     <div className="dm-mkt dm-mkt-landing">
       <Hero />
-      <div
-        className="dm-mkt-values-strip dm-mkt-shell"
-        role="group"
-        aria-label="Product principles"
-      >
-        <span>See the whole sender</span>
-        <span>Preview before moving mail</span>
-        <span>Keep the final say</span>
-      </div>
-      <nav className="dm-mkt-page-nav dm-mkt-shell" aria-label="Homepage sections">
-        <p>On this page</p>
-        <div className="dm-mkt-page-nav-links">
-          <a href="#product-tour">Product tour</a>
-          <a href="#how-it-works">Works with Gmail</a>
-          <a href="#everyday-tools">Everyday tools</a>
-          <a href="#privacy">Privacy &amp; control</a>
-          <a href="#plans">Pricing</a>
-        </div>
-      </nav>
-      <ProductJourney />
+      <Pillars />
+      <ProductCloseUp />
       <HowItWorks />
-      <ProductBreadth />
+      <Companion />
+      <EverydayTools />
       <PrivacyDesk />
       <PricingTeaserGate pricingV2={flags.pricingV2} passEnabled={flags.passEnabled} />
       <FinalCta />

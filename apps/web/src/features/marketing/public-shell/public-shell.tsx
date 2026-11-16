@@ -13,14 +13,14 @@ import { HOW_TO_ARTICLES, HOW_TO_SLUGS } from '../learn/how-to-content';
 import { PublicMobileMenu } from './public-mobile-menu';
 import { PublicNavLinks } from './public-nav-links';
 
-// Keep the main decision routes visible; the footer remains the full site directory.
+// Four decision routes only; Compare and Security live in the footer
+// directory. Six links wrapped onto two or three lines between 881 and
+// ~1,100px and pushed the header 7px past a 900px viewport.
 const PRODUCT_LINKS = [
   { href: '/how-it-works', label: 'How it works' },
-  { href: '/pricing', label: 'Pricing' },
   { href: '/inbox-simulator?workspace=senders', label: 'Demo' },
-  { href: '/compare', label: 'Compare' },
-  { href: '/methodology', label: 'Privacy & control' },
-  { href: '/security', label: 'Security' },
+  { href: '/pricing', label: 'Pricing' },
+  { href: '/methodology', label: 'Privacy' },
 ] as const;
 
 const COMPARE_LINKS = [

@@ -101,6 +101,8 @@
   color: var(--dm-fg-soft);
   font: 500 14px/1 var(--dm-font-sans);
   text-decoration: none;
+  /* A label that wraps grows the header; one line or nothing. */
+  white-space: nowrap;
 }
 
 .dm-public-nav a {
