@@ -1,0 +1,57 @@
+# IndexNow submission.
+#
+# Vercel's GitHub integration records every web deploy as a GitHub
+# deployment (environment `Production` or `Preview`) with a `success`
+# status. On a successful Production deployment this submits every URL in
+# https://declutrmail.com/sitemap.xml to IndexNow (Bing, Yandex and the
+# other participating engines).
+#
+# scripts/indexnow-submit.mjs fails the run when the sitemap is unreachable
+# or empty, holds a URL off declutrmail.com, the key file is not live, or
+# IndexNow answers non-2xx. The key is public by design (it is served at
+# https://declutrmail.com/<key>.txt), so no secret is needed.
+#
+# Preview deployment statuses also start this workflow; the job is skipped.
+
+name: IndexNow submit
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Print the batches without submitting'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: indexnow-submit
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Submit sitemap URLs to IndexNow
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = true ]; then
+            node scripts/indexnow-submit.mjs --dry-run
+          else
+            node scripts/indexnow-submit.mjs
+          fi

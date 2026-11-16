@@ -187,6 +187,18 @@ _why_, _which tier_, and _where the credential lives_.
 
 ---
 
+### IndexNow (search engine URL submission)
+
+| Field                | Value                                                                                                                                                                                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Status**           | ✅ Active — no account exists; the protocol needs none                                                                                                                                                                                                            |
+| **Purpose**          | Tells Bing, Yandex and the other IndexNow engines which marketing URLs to recrawl. `.github/workflows/indexnow-submit.yml` runs `scripts/indexnow-submit.mjs` after each successful Vercel Production deployment and submits every URL in the production sitemap. |
+| **Approximate cost** | $0                                                                                                                                                                                                                                                                |
+| **Key / secret**     | None. The IndexNow key is public by design: `INDEXNOW_KEY` in `scripts/indexnow-submit.mjs`, served from `apps/web/public/<key>.txt`.                                                                                                                             |
+| **Notes**            | To rotate the key, change the constant and rename/refill the public file in one PR (`scripts/indexnow-submit.test.mjs` pins the pair). Check or re-run by hand: Actions → _IndexNow submit_ → Run workflow (`dry_run` prints the batches without submitting).     |
+
+---
+
 ## Adding a new service
 
 1. Add a row to this file (PR preferred, or commit directly to `main` for docs-only changes).
