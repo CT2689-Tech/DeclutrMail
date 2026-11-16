@@ -21,6 +21,7 @@ const files = [
   ['unsubscribe-backlog', 4],
   ['home-next-step', 1],
   ['manual-delete-previews', 4],
+  ['reconnect-action-feedback', 1],
 ];
 function report() {
   return {
