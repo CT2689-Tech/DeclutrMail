@@ -36,6 +36,8 @@ Status values: Proposed | Accepted | Superseded by ADR-NNNN.
 
 | [0047](./0047-durable-checkout-attempts.md) | Accepted for implementation; activation pending sandbox evidence | Durable checkout attempt recovery | D249, ADR-0040, ADR-0044, ADR-0046 |
 
+| [0048](./0048-mcp-connector-is-a-second-client.md) | Accepted | MCP connector is a second client of the action pipeline | ADR-0020, ADR-0028 |
+
 ## Authoring an ADR
 
 1. Copy `0000-template.md` to `NNNN-kebab-title.md` using the next
