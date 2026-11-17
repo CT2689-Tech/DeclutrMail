@@ -36,6 +36,11 @@ Define a verifiable success criterion before implementing ("fix the bug" →
 
 ## 2. Rules
 
+Every rule here says what backs it: an outside commitment, security, an
+incident, or executable truth. Where nothing external backs a rule, it says
+so — those are product choices, and keeping or dropping one is the founder's
+call. A D-number from the retired plan is never the reason (§3).
+
 ### 2.0 Two tiers
 
 **Tier 1 — stop and ask the founder.** Unsafe, expensive to reverse, or
@@ -52,15 +57,21 @@ Prefer `unknown` to turning absence of evidence into "no".
 
 **Tier 2 — ship it, do not ask.** Marketing content, information
 architecture, pages, routes, copy, comparisons, structure, formats, internal
-linking, metadata. No D-number, no plan citation, no permission. Match
+linking, metadata. No plan citation, no permission. Match
 existing conventions and move. (Founder decision 2026-08-27: an audit found
 nothing blocking content work was a real rule — it was stale docs, narrow
 tests and hooks.)
 
-### 2.1 Privacy — never fetch or store full email contents (D7, D228, D245)
+### 2.1 Privacy — never fetch or store full email contents
 
 DeclutrMail never fetches or stores message bodies (HTML or text),
 attachments, inline images, raw MIME, or any header outside the allowlist.
+
+**Why:** two outside commitments. The trust copy and the storage list are
+published claims (Tier 1b), and the privacy policy (`/privacy` §4) commits us
+to Google's
+[API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy),
+including Limited Use, for the restricted `gmail.modify` scope we request.
 
 - **Source of truth:** `packages/shared/src/contracts/gmail-data-inventory.ts`
   — every fetched field, persisted and derived dataset, purpose, retention,
@@ -71,7 +82,7 @@ attachments, inline images, raw MIME, or any header outside the allowlist.
   `List-Unsubscribe-Post`. Plus the registry's metadata envelope (Gmail
   message/thread ids, `internalDate`, labels, `snippet`, size estimate) and
   derived values (outbound recipients, parsed unsubscribe channels).
-  `Message-ID` is never stored (D231).
+  `Message-ID` is never stored.
 - **OAuth scopes:** `gmail.modify` + `openid` + `userinfo.email` only
   (`apps/api/src/auth/google-oauth.service.ts`).
 - **Trust copy** is exactly **"We never fetch or store full email
@@ -81,7 +92,7 @@ attachments, inline images, raw MIME, or any header outside the allowlist.
 Enforced by the `privacy-auditor` agent and `verify-no-body-storage.sh`
 (run on every PR by CI, §7.4).
 
-### 2.2 Five verbs — K/A/U/L/D (D227, ADR-0019)
+### 2.2 Five verbs — K/A/U/L/D (ADR-0019)
 
 Product UI uses exactly **Keep · Archive · Unsubscribe · Later · Delete**,
 shortcuts **K/A/U/L/D**, sourced from the verb registry
@@ -92,32 +103,47 @@ shortcuts **K/A/U/L/D**, sourced from the verb registry
 - The API says `snoozed` where the UI says **Later**; keep it that way on the
   wire, never in copy.
 
+**Why:** product choice — nothing external requires it. One vocabulary and
+one set of shortcuts on every surface.
+
 Enforced by `check-microcopy.sh` (CI) and `design-system-agent`.
 
-### 2.3 Action lifecycle (D226)
+### 2.3 Action lifecycle
 
 ```
 user intent → action sheet → action preview → mutation → undo
 ```
 
-The preview is **mandatory**. The sheet may be skipped (D34 "remember
-preference"); the preview then renders inline. A preview owes the user the
+The preview is **mandatory**. The sheet may be skipped (its "remember
+preference" toggle); the preview then renders inline. A preview owes the user the
 count, where the email goes, and how to undo — each once. "What does not
 change" appears only where the user would plausibly fear it (Delete →
 "Future email is unchanged"); an Archive preview does not deny deleting
-(founder decision 2026-09-19, amends D208/D209).
+(founder decision 2026-09-19).
+
+**Why:** a mutation changes the user's real Gmail. The preview is where they
+see what will happen before it does, and it is what the product promises —
+the homepage is built around it (PR #1200).
 
 Enforced by `design-system-agent` and `architecture-guardian`. The
 `require-preview-before-mutation.sh` hook is advisory only — it never fails
 a run.
 
-### 2.4 No category prediction — permanently (D222)
+### 2.4 No category prediction
 
 DeclutrMail never predicts email categories (newsletter, transactional,
 personal, …) to auto-protect or auto-route. Categories are user-assigned or
 rule-matched. Enforced by `block-category-prediction.sh` (CI).
 
-### 2.5 Webhook authentication (D229)
+**Why:** product choice — nothing external requires it. The reasoning when
+it was made: category guesses are often wrong and feel invasive, and a wrong
+one would quietly protect or move real mail, while Protected (§2.7) is meant
+to rest on signals the user can see.
+
+### 2.5 Webhook authentication
+
+**Why:** security. Every webhook is a public URL; a verified token or
+signature is the only proof the provider sent the request.
 
 - **Gmail Pub/Sub push:** OIDC JWT in `Authorization: Bearer`, full
   checklist — issuer, JWKS signature, `aud`, `email`, `exp`, `messageId`
@@ -129,29 +155,24 @@ rule-matched. Enforced by `block-category-prediction.sh` (CI).
 
 Enforced by `webhook-security-auditor`.
 
-### 2.6 Invariants that shipped as production bugs
+### 2.6 Invariants
 
-Each line below is a rule because breaking it already cost an incident or
-a founder decision.
+Each line says why it is a rule: an incident it already caused, or the
+user's mail, data or trust it protects.
 
-- **Mailto unsubscribe is manual** (D230) — never auto-sent.
-- **Offline destructive actions are draft intents** (D233) — never
-  auto-replayed.
-- **Custom Autopilot rules are rejected** (`is_preset=false` → 404, D234).
-- **Account deletion respects undo windows** (D232):
-  `max(now + 7d, latest_undo_expires_at)`.
-- **Partitioning is deferred** (D235) until 25M rows, 2M per mailbox, or
-  p95 > 150 ms.
-- **Protected is the only visible safety state** (D245). Protected senders
-  are excluded from bulk and automatic mail-changing actions. VIP is retired
-  — never reintroduce it as a ranking or safety alias; a manual ranking
-  control would be a separate **Pin in Brief**. Auto-protect only on
-  explainable strong signals (≥3 replies, a star in the past year, or ≥3
-  Gmail-important messages in the past year), never on read/open rate. Show
-  the exact reason; manual Unprotect is a sticky override.
-- **Prelaunch: no hypothetical compatibility** (D245). Remove superseded
-  routes, columns, contracts, fixtures and docs directly unless a current
-  technical invariant needs them. **Water line:** Atlas tracks migrations by
+- **Offline destructive actions are draft intents** — never auto-replayed. A
+  replay would change mail without a preview of its current state (§2.3).
+- **Account deletion respects undo windows**:
+  `max(now + 7d, latest_undo_expires_at)`. Deleting the account must not
+  void an undo the user was already given.
+- **Mailto unsubscribe is manual** — never auto-sent. Sent from our address
+  it may not unsubscribe the user at all, so "Unsubscribed" would be a claim
+  we cannot back (§8.5). Sending it as the user, unseen, is a product choice
+  not to (§2.7).
+- **Prelaunch: no hypothetical compatibility.** Remove superseded routes,
+  columns, contracts, fixtures and docs directly unless a current technical
+  invariant needs them — compatibility code for users who do not exist has
+  no reader (founder direction). **Water line:** Atlas tracks migrations by
   version, not content — once any long-lived DB applied vN, never edit vN;
   ship vN+1 (2026-07-15, PRs #333/#335/#336, a ~15 h prod sync rollback).
 - **Quiet governs Autopilot**, so no tier may grant `autopilot` without
@@ -185,6 +206,28 @@ a founder decision.
   exercising a raw template needs a driver-parity check. Enforced by
   `check-raw-date-in-sql.sh` (CI).
 
+### 2.7 Product choices
+
+Nothing external requires these. Each records a choice; keep enforcing it
+until the founder changes it. §2.2 (five verbs), §2.4 (no category
+prediction) and §5.2 (design freeze) are the same kind.
+
+- **Custom Autopilot rules are rejected** (`is_preset=false` → 404). Presets
+  only, so no hidden custom-rule API exists before custom rules get their
+  own UX and safety design.
+- **A mailto unsubscribe is not sent as the user.** It opens a pre-filled
+  Gmail draft the user sends. Mail in someone's name that they never saw is
+  a trust choice; `gmail.modify` would technically allow it.
+- **Partitioning is deferred** until 25M rows, 2M per mailbox, or
+  p95 > 150 ms — measured triggers instead of speculative work.
+- **Protected is the only visible safety state.** Protected senders are
+  excluded from bulk and automatic mail-changing actions. VIP is retired —
+  never reintroduce it as a ranking or safety alias; a manual ranking control
+  would be a separate **Pin in Brief**. Auto-protect only on explainable
+  strong signals (≥3 replies, a star in the past year, or ≥3 Gmail-important
+  messages in the past year), never on read/open rate. Show the exact
+  reason; manual Unprotect is a sticky override.
+
 ---
 
 ## 3. What is true, in order
@@ -196,29 +239,19 @@ a founder decision.
 3. **ADRs** in `docs/adr/` — rules about how code is written.
 4. **Local conventions** in the module you are touching.
 5. Your judgment.
-6. **The plan** (`docs/execution/Implementation-Plan.md`) — a historical
-   record of how decisions were reasoned, not a gate and not a description
-   of current behavior.
 
 **Conflicts.** Tier 1 / 1b conflict → the founder decides; surface it. Tier
 2 → nothing to resolve: serve the user, match convention, note the choice in
-the PR body. When a D-body contradicts `pricing.config.ts`, the manifest wins
-and the plan needs a marker.
+the PR body. When prose contradicts a manifest, the manifest wins; fix the
+prose.
 
-**Reading the plan.** D-bodies are patched later in the file
-(`[AUDIT PATCH …]`, `[GRILL2 PATCH …]`, `[REVERSAL …]`, `[PACKAGING PATCH …]`),
-and some are superseded with no marker at all (D83 "Later is Pro-only" and
-D77 "Screener is Pro-only" are both retired). So:
-
-- Before writing `Closes D###` or citing a D as authority, open that
-  `### D<N> —` heading and read every later patch. Never cite from keyword
-  proximity or a topic index — that has mis-tagged PRs repeatedly (PR #14,
-  #339–#346, #517).
-- A D-number is something you ask "is it built yet?" about. An ADR is a rule
-  that constrains code and has no build status. A product decision made
-  during implementation goes to an ADR, not a new D (ADR-0029 vs D248).
-- You never need the plan for Tier 2 work. A plan list the repo has
-  outgrown is the plan being old, not drift to escalate.
+**D-numbers are retired** (founder decision 2026-11-17). The plan
+(`docs/execution/Implementation-Plan.md`) and `IMPLEMENTATION-LOG.md` are
+frozen history: read them for why something was once decided, never as a
+rule, a gate, or a description of current behavior. A D-number is not a
+reason. Cite what backs a rule — §2, an ADR, a manifest, a test — and never
+require, add or invent a D-number in a branch, commit, PR or doc. A new rule
+that constrains code goes in an ADR with its reason.
 
 ---
 
@@ -228,12 +261,12 @@ pnpm workspace · Node ≥ 22 · pnpm ≥ 10.
 
 | Path                | What                                                                                                    |
 | ------------------- | ------------------------------------------------------------------------------------------------------- |
-| `apps/web`          | Next.js app + marketing site (TanStack Query for server state, Zustand for client state — D200)          |
+| `apps/web`          | Next.js app + marketing site (TanStack Query for server state, Zustand for client state)                |
 | `apps/api`          | NestJS API and worker entrypoint (`src/main.ts`, `src/worker.ts`)                                        |
 | `packages/db`       | Drizzle schema (`src/schema/`) + Atlas migrations (`migrations/NNNN_*.sql` with paired `.rollback`)      |
 | `packages/shared`   | Contracts (Zod), verb registry, shared components, tokens, copy, entitlements                            |
-| `packages/events`   | Typed outbox event schemas (D204) — cross-feature writes go through `OutboxPublisher`, not a direct call |
-| `packages/workers`  | `BaseDeclutrWorker` + the five worker policies (D203/D225)                                               |
+| `packages/events`   | Typed outbox event schemas — cross-feature writes go through `OutboxPublisher`, not a direct call        |
+| `packages/workers`  | `BaseDeclutrWorker` + the five worker policies                                                           |
 | `packages/e2e`      | Playwright                                                                                              |
 
 **Promoted shared components** live in `packages/shared/src/components/`
@@ -249,8 +282,6 @@ pnpm --filter <pkg> exec vitest run       # per package; root `pnpm test` can li
 node --test scripts/*.test.mjs            # CI Lint's script guards — run before pushing
 node scripts/run-guard-hooks.mjs --base origin/main   # CI's guard hooks over your diff
 pnpm build && pnpm check:bundle           # web bundle budget — not a required check, so red merges, then blocks deploys
-pnpm verify-d <D###> --cmd|--observed     # record 🔵 → 🟢 evidence
-pnpm generate-impl-log                    # re-derive IMPLEMENTATION-LOG.md
 scripts/wt-new.sh <branch>                # worktree at ../wt-<branch> from fresh origin/main
 
 ./scripts/dev-up.sh                       # redis + api (:4000) + worker; --stop to kill
@@ -281,26 +312,32 @@ of truth for component appearance. A visual change to a frozen screen gets
 the `redesign` label from its author — a signal for the founder's queue; no
 check enforces it.
 
+**Why:** product choice — nothing external requires it. A stable look while
+the product converges.
+
 ---
 
 ## 6. Naming conventions
 
 ### 6.1 Names
 
-| Thing                | Pattern                                                  | Example                                                  |
-| -------------------- | -------------------------------------------------------- | -------------------------------------------------------- |
-| Branch               | `<type>/d<NNN>-<kebab>` (≤ 50 chars, D zero-padded)      | `feat/d011-drizzle-orm-setup`                            |
-| No-D branch          | `chore/bootstrap-<topic>` or `chore/distill-<topic>`     | `chore/bootstrap-claude-md`                              |
-| Agent harness branch | `codex/…`, `claude/…`, `cursor/…` (assigned by the tool) | `codex/prelaunch-product-fixes`                          |
-| Worktree             | `../wt-<branch>`                                         | `../wt-feat-d011-drizzle-orm-setup`                      |
-| Commit / PR title    | `<type>(<scope>): <subject> (D<NNN>[, D<NNN>])`          | `fix(triage): preserve preview when sheet skipped (D226)` |
-| PR body              | `Closes D###` per shipped D (`Relates to D###`: no flip) |                                                          |
+| Thing                | Pattern                                                  | Example                                            |
+| -------------------- | -------------------------------------------------------- | -------------------------------------------------- |
+| Branch               | `<type>/<kebab>` (≤ 50 chars)                            | `feat/sender-detail-undo`                          |
+| Agent harness branch | `codex/…`, `claude/…`, `cursor/…` (assigned by the tool) | `codex/prelaunch-product-fixes`                    |
+| Worktree             | `../wt-<branch>`                                         | `../wt-feat-sender-detail-undo`                    |
+| Commit / PR title    | `<type>(<scope>): <subject>`                             | `fix(triage): preserve preview when sheet skipped` |
+| PR body              | the sections in `.github/pull_request_template.md`       |                                                    |
 
 Types: `feat fix chore docs refactor test perf security`. Subject imperative,
-≤ 50 chars. Multi-D PRs use the lowest D in the branch name.
-`chore/bootstrap-*` is exempt from the D-trailer. Enforced by
-`.husky/pre-push`, commitlint, and `branch-name.yml` (authoritative). Never
-bypass with `--no-verify`.
+≤ 50 chars. Enforced by `.husky/pre-push`, commitlint, and `branch-name.yml`
+(authoritative). Never bypass with `--no-verify`.
+
+No D-number anywhere (retired 2026-11-17): no `d<NNN>` branch segment, no
+`(D###)` commit trailer, no `Closes D###`. CI's
+`PR body references D-decisions or is bootstrap-exempt` check is a
+placeholder that checks nothing; it runs only because branch protection
+requires its name (`docs/log/founder-followups/2026-11-17-remove-retired-pr-body-required-check.md`).
 
 ### 6.2 Agent review comments
 
@@ -361,20 +398,18 @@ makes §2's "enforced by" true.
 
 ## 8. Done means verified
 
-### 8.1 Implementation log
+### 8.1 Where status lives
 
-`IMPLEMENTATION-LOG.md` is **derived**: ⬜/🔵 and the shipping PR are
-recomputed by `pnpm generate-impl-log` from `Closes D###` on merged PRs that
-touch a non-`.md` file. Recorded states (🟢 🚫 🟡 🔴 ⏸️) and evidence live
-in `.impl-log/D###.md`, one file per decision. CI fails a PR whose committed
-log disagrees with the derived one.
+In PRs, issues and the merge history. `IMPLEMENTATION-LOG.md` and
+`.impl-log/` — the old per-D status table — are frozen as of 2026-11-17;
+nothing generates, checks or updates them.
 
 ### 8.2 Definition of done
 
 - `pnpm typecheck`, `pnpm lint`, affected unit/integration and E2E tests,
   and `node --test scripts/*.test.mjs` all pass.
-- `Closes D###` for each shipped D; no unresolved `[BLOCKING]`.
-- No new TODO without a linked D or issue.
+- No unresolved `[BLOCKING]`.
+- No new TODO without a linked issue.
 - By PR type: a component ships its Storybook story; a migration states its
   rollback path; an API change keeps contract tests green; a worker names its
   policy and idempotency key in the PR body.
@@ -470,7 +505,7 @@ unowned ids, null prefs. On a break: find the cause, fix, re-smoke.
 | `scripts/**`                         | run it; observe the side effect                                                      |
 | docs only                            | none — green CI suffices                                                             |
 
-**Authed flows** use the D206 dev login — "needs OAuth" is not an excuse.
+**Authed flows** use the dev test login — "needs OAuth" is not an excuse.
 Set `DEV_AUTH_ENABLED=true` and `DEV_AUTH_EMAIL_PREFIX=chintan` in
 `.env.local`, then open
 `http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com`.
@@ -507,7 +542,7 @@ First ask which tier it is (§2.0). Tier 2: you are unsure about craft, not
 permission — pick what serves the user and ship. Otherwise: check the
 manifests and tests (§3), re-read §2, run the relevant agent, state your
 assumption and proceed if low-stakes, or add a
-`docs/log/founder-followups/` entry. Don't invent a D-number.
+`docs/log/founder-followups/` entry.
 
 **Stop and ask the founder** when a change touches: Gmail OAuth scopes;
 token encryption; production migrations; billing provider webhooks or
@@ -534,7 +569,7 @@ observed messages). Nothing else is a stop condition.
 ### 10.1 No fake completion
 
 Never ship stubbed production behavior as done: mocked Gmail calls, fake
-sync progress (it must reflect real `current_stage` / `progress_pct`, D224),
+sync progress (it must reflect real `current_stage` / `progress_pct`),
 fake billing state, hard-coded analytics triggers, placeholder signature
 verification, `// TODO: implement`, empty catch blocks, hard-coded test data
 in prod paths, disabled tests without a reason, or optimistic UI for a
