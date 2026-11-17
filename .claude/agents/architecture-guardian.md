@@ -1,6 +1,6 @@
 ---
 name: architecture-guardian
-description: Backend structural correctness reviewer for DeclutrMail. Verifies NestJS module structure (D201), worker policies (D203/D225), read-only services with cross-feature events (D204), orchestrator boundaries (D205), undo journal wiring (D232), observability events (D159), API response envelope (D202), and rate limiting (D156). Use on PRs touching apps/api/** or packages/{db,workers,events}/**. Reports findings; never refactors.
+description: Backend structural correctness reviewer for DeclutrMail. Verifies NestJS module structure, worker policies, read-only services with cross-feature events, orchestrator boundaries, undo journal wiring, observability events, the API response envelope, and rate limiting. Use on PRs touching apps/api/** or packages/{db,workers,events}/**. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -55,7 +55,7 @@ pnpm lint 2>&1 | tail -20
 
 Run each check below. Report findings per the output format at the end.
 
-#### Check A — NestJS module structure (D201)
+#### Check A — NestJS module structure
 
 For each new NestJS module (`*.module.ts`) added or modified:
 
@@ -68,7 +68,7 @@ For each new NestJS module (`*.module.ts`) added or modified:
 internal repository or service directly bypasses the boundary. Cross-feature
 data access must go through the owning module's exported facade or events.
 
-#### Check B — Worker policies (D203, D225)
+#### Check B — Worker policies
 
 For each new or modified worker class extending `BaseDeclutrWorker`:
 
@@ -84,7 +84,7 @@ For each new or modified worker class extending `BaseDeclutrWorker`:
   - `cronPolicy`: keyed on `(worker_name, scheduled_at_minute)`
   - `adminPolicy`: exempt from idempotency (its job IS to surface failures)
 - Does it call `Sentry.captureException` exactly once per failure (NOT in
-  multiple nested try/catch — violates D203 Sentry test)?
+  multiple nested try/catch — one failure must be one Sentry event)?
 - For `adminPolicy` only: Sentry-multiple is allowed (the purpose IS alerting)
 
 **Flag (BLOCKING)** any worker that:
@@ -94,7 +94,7 @@ For each new or modified worker class extending `BaseDeclutrWorker`:
 - Calls Sentry from multiple catch blocks (except adminPolicy)
 - Performs cross-feature writes synchronously (use events instead — Check C)
 
-#### Check C — Read-only services + cross-feature events (D204)
+#### Check C — Read-only services + cross-feature events
 
 Services in DeclutrMail are **read-only by default**. Writes must go
 through the owning feature's repository OR through an outbox event —
@@ -113,7 +113,7 @@ For each service in the diff:
 **Anti-pattern (BLOCKING):** A service in feature A directly calling
 `featureB.repository.update(...)`. Must be event-based.
 
-**Allowed exception:** orchestrator classes (D205) explicitly own
+**Allowed exception:** orchestrator classes explicitly own
 cross-feature workflows and may call multiple feature services. They
 must be named `*Orchestrator` and document their transactional boundary
 in the class comment.
@@ -123,7 +123,7 @@ The orchestrators that exist today: `AuthSignupOrchestrator`
 `AccountDeletionOrchestrator` (`apps/api/src/account/deletion.service.ts`).
 A new one is a stop condition (below).
 
-#### Check D — Undo journal wiring (D232, D207)
+#### Check D — Undo journal wiring (CLAUDE.md §2.3 undo step, §2.6 account deletion)
 
 For each destructive mutation handler (Archive, Unsubscribe, Later,
 Delete, account deletion):
@@ -136,7 +136,7 @@ Delete, account deletion):
 
 **Flag (BLOCKING)** any destructive mutation that doesn't wire to undo.
 
-#### Check E — Observability events (D159)
+#### Check E — Observability events
 
 For each new event in the codebase:
 
@@ -151,11 +151,11 @@ For each new event in the codebase:
 they could contain message body (`message_text`, `email_content`, `body_preview`).
 Refer to `privacy-auditor` for body-storage check.
 
-#### Check F — API envelope + pagination (D202)
+#### Check F — API envelope + pagination
 
 For each new HTTP endpoint (`@Get`, `@Post`, etc.) in a controller:
 
-- Does the response follow the D202 envelope `{ data, meta? }`
+- Does the response follow the envelope `{ data, meta? }`
   (`packages/shared/src/contracts/envelope.ts`, built with `ok()` /
   `withMeta()`)? Errors go through `AllExceptionsFilter`, never a hand-built body.
 - For list endpoints: does it use cursor pagination (`cursor` + `limit`),
@@ -165,7 +165,7 @@ For each new HTTP endpoint (`@Get`, `@Post`, etc.) in a controller:
 - Is the request body parsed with a Zod schema from
   `packages/shared/src/contracts/` (there are no `dto/` classes)?
 
-#### Check G — Rate limiting (D156)
+#### Check G — Rate limiting
 
 For each new public endpoint:
 
@@ -176,7 +176,7 @@ For each new public endpoint:
 **Flag (WARNING)** missing per-route throttle on auth, mutation, and
 expensive query endpoints.
 
-#### Check H — Idempotency on mutation endpoints (D202, D207)
+#### Check H — Idempotency on mutation endpoints
 
 For each mutation endpoint (POST/PATCH/DELETE):
 
@@ -217,7 +217,7 @@ Each of these shipped to production at least once. Flag (BLOCKING):
 **Check:** <A–I>
 **File:** <path>:<line>
 **Pattern:** <what was found>
-**Why it's a violation:** <reference D###>
+**Why it's a violation:** <cite the source: CLAUDE.md section, ADR, or the file that defines the convention>
 **Required fix:** <what to change>
 
 ### [WARNING] ...
@@ -229,8 +229,9 @@ If no findings: `## Architecture Guardian — PR #<NN>: no findings.`
 
 ## Severity rubric
 
-- **[BLOCKING]** — direct violation of a D-decision (D201, D203, D204,
-  D205, D232, D202 envelope, missing idempotency on mutation, cross-feature
+- **[BLOCKING]** — direct violation of a convention this file checks (module
+  boundary, worker policy, read-only services, orchestrator boundary, undo
+  wiring, API envelope, missing idempotency on mutation, cross-feature
   sync write)
 - **[WARNING]** — pattern that's likely wrong but might have valid context
   (missing throttle, observability gap, missing exception path)
@@ -243,9 +244,9 @@ Stop and surface to founder immediately if the PR:
 
 - Modifies `BaseDeclutrWorker` itself
 - Adds a new worker policy beyond the 5 defined
-- Modifies the API envelope contract (D202)
-- Introduces a new orchestrator beyond those approved in D205
-- Changes the undo journal schema or TTL logic (D232)
+- Modifies the API envelope contract (`packages/shared/src/contracts/envelope.ts`)
+- Introduces a new orchestrator beyond the two listed in Check C
+- Changes the undo journal schema or TTL logic
 - Modifies CLAUDE.md §2 guardrails or this file
 
 These are systemic changes requiring founder review beyond the gate.

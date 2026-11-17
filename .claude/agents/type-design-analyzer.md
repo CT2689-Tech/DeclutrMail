@@ -101,7 +101,7 @@ function is called from multiple sites where the swap risk is real.
 
 ### Step 4: Worker policy enum
 
-D203 + D225 define a 5-enum worker policy set. Look for places where
+The worker layer defines a 5-enum policy set (`packages/workers/src/worker-policies.ts`). Look for places where
 the policy is passed as raw string:
 
 ```bash
@@ -115,7 +115,7 @@ suggest typing the value with it instead of `string`.
 ### Step 5: Action intent + undo token coupling
 
 For files that define action intents (the request shape that arrives
-at the action sheet → preview → mutation chain in D226):
+at the action sheet → preview → mutation chain in CLAUDE.md §2.3):
 
 - Does the intent shape make it impossible to construct a non-undoable
   destructive intent? An archive intent without a restore plan should

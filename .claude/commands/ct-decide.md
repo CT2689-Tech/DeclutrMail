@@ -25,7 +25,8 @@ Do NOT include:
 
 - Anything that is really about **your** effort or wall-clock. Decide those
   yourself and say what you picked (`decide-dont-defer-when-effort-is-claudes`).
-- Anything a convention, an existing decision, or the plan already answers —
+- Anything a convention, an existing decision, or executable truth (a manifest
+  or a test) already answers —
   go read it and act.
 - Questions you could answer by running a query, reading a file, or testing.
   **Go and check first.** A question that verification would have answered is

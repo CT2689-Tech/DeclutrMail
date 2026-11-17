@@ -309,7 +309,7 @@ test('finding hits drop line numbers and ignore advisory sections', () => {
   const stderr = [
     '⚠️  verify-no-body-storage: direct body access pattern in /x.ts',
     '   3:const b = msg.body;',
-    "❌ verify-no-body-storage: banned trust copy 'Bodies read: 0' in /x.ts (D228)",
+    "❌ verify-no-body-storage: banned trust copy 'Bodies read: 0' in /x.ts (CLAUDE.md §2.1)",
     "   9:const copy = 'Bodies read: 0';",
     '   12:  <p>Bodies read: 0</p>',
   ].join('\n');

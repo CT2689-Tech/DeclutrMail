@@ -1,6 +1,6 @@
 ---
 name: design-system-agent
-description: Frontend structural correctness reviewer for DeclutrMail. Verifies Storybook coverage (D210), component naming/promotion rules (D199/D220), canonical verbs in semantic context (D227), action lifecycle order (D208/D226), TanStack/Zustand state boundaries (D200), headless-hook vs feature-render split (D198), and edge-state coverage (D211/D212). Use on PRs touching apps/web/** or packages/shared/**. Reports findings; never refactors.
+description: Frontend structural correctness reviewer for DeclutrMail. Verifies Storybook coverage, component naming/promotion rules, canonical verbs in semantic context, action lifecycle order (preview before mutation), TanStack/Zustand state boundaries, headless-hook vs feature-render split, and edge-state coverage. Use on PRs touching apps/web/** or packages/shared/**. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -58,7 +58,7 @@ If typecheck/lint/build fails, stop and report.
 
 ### Step 3: Structural checks
 
-#### Check A — Canonical verbs (D227)
+#### Check A — Canonical verbs (CLAUDE.md §2.2, ADR-0019)
 
 The product UI uses exactly five user-facing verbs: **Keep · Archive ·
 Unsubscribe · Later · Delete** with shortcuts **K / A / U / L / D**
@@ -89,11 +89,11 @@ For each touched component:
 **Allowed:** Internal TypeScript enum `verdict='screen'`, the page name
 "Screener", and references in this agent's own definition.
 
-#### Check B — Action lifecycle order (D226, D208)
+#### Check B — Action lifecycle order (CLAUDE.md §2.3)
 
 The mandatory order: **user intent → action sheet → action preview → mutation → undo**.
 
-The action sheet may be skipped (D34 "remember preference" toggle), but
+The action sheet may be skipped (the "remember preference" toggle), but
 the **preview is mandatory** in both paths.
 
 For each destructive action handler in the diff (Archive, Unsubscribe,
@@ -111,9 +111,9 @@ Later, Delete, or anything calling a mutation hook):
 **Flag (BLOCKING)** any destructive mutation handler that fires without an
 upstream preview OR without an explicit confirmation gate.
 
-#### Check C — Component placement (D198, D199, D220)
+#### Check C — Component placement
 
-The promotion rule (D199 + D220): a component lives in `packages/shared/`
+The promotion rule: a component lives in `packages/shared/`
 (promoted shared) ONLY if it has ≥2 actual consumers OR an explicit spec
 override.
 
@@ -128,8 +128,8 @@ For each new component file:
 - If feature-owned: does it avoid being imported by any other feature?
 
 The promoted set is whatever lives in `packages/shared/src/components/`
-today (`ls` it — do not trust a list written in a doc; the original D220
-names were never built under those names). CLAUDE.md §4 records the
+today (`ls` it — do not trust a list written in a doc; the original
+launch-allowlist names were never built under those names). CLAUDE.md §4 records the
 founder-ratified additions (`NumericDisplay`, `ActionPopover`, `ErrorState`).
 
 **Anti-patterns:**
@@ -137,9 +137,9 @@ founder-ratified additions (`NumericDisplay`, `ActionPopover`, `ErrorState`).
 - **[BLOCKING]** feature-owned component imported by another feature (boundary violation)
 - **[WARNING]** new component added to `packages/shared/` with fewer than 2 consumers and no founder ratification
 
-#### Check D — Headless hooks vs render components (D198)
+#### Check D — Headless hooks vs render components
 
-D198 split: **behavior lives in headless hooks**, **rendering lives in feature-owned components**.
+The split: **behavior lives in headless hooks**, **rendering lives in feature-owned components**.
 
 For each new file:
 
@@ -152,7 +152,7 @@ For each new file:
 **Anti-pattern (WARNING):** component with inline `useMutation`,
 `fetch`, or complex effect logic. Extract to a hook.
 
-#### Check E — State management boundaries (D200)
+#### Check E — State management boundaries
 
 - Server state → TanStack Query (`useQuery`, `useMutation`)
 - Client state → Zustand stores
@@ -164,7 +164,7 @@ For each new file:
   non-optimistic-update reasons (state should live in Zustand if not server-derived)
 - Redux, MobX, Jotai, or other state libraries (only TanStack + Zustand allowed)
 
-#### Check F — Storybook coverage (D210)
+#### Check F — Storybook coverage
 
 For each new component file (`*.tsx` not in `app/`):
 
@@ -174,29 +174,32 @@ For each new component file (`*.tsx` not in `app/`):
 **Flag (BLOCKING)** new component without a stories file. **Flag (WARNING)**
 stories file missing edge states.
 
-#### Check G — Empty states first-class (D212)
+#### Check G — Empty states first-class
 
 For each list/table component in the diff:
 
 - Does the component render `<EmptyState>` when data is empty?
 - Is the empty state visually distinct from the loading state?
-- Does it use the D212 `<EmptyState>` component (not ad-hoc divs)?
+- Does it use the shared `<EmptyState>` component
+  (`packages/shared/src/components/empty-state/`), not ad-hoc divs?
 
 **Flag (WARNING)** list/table without an empty state branch.
 
-#### Check H — Edge state coverage (D211)
+#### Check H — Edge state coverage (CLAUDE.md §8, "Flow & state completeness")
 
 For each new screen/page (`app/**/page.tsx`):
 
-- Are the edge states from D211 covered? (sync-in-progress, sync-failed,
+- Are the edge states the screen can reach covered? (sync-in-progress, sync-failed,
   permission-expired, quota-exceeded, undo-expired, payment-failed, etc.)
-- Does each edge state route to its assigned component (per D211 table)?
+- Does each edge state render a real state with a route out of it, not a
+  blank or `null` screen?
 
 **Flag (WARNING)** new screen missing edge-state coverage.
 
-#### Check I — Motion discipline (D213)
+#### Check I — Motion discipline
 
-- Component animations use the project's motion tokens (durations, easings)
+- Component animations use the project's motion tokens (durations, easings —
+  `motion` in `packages/shared/src/tokens/tokens.ts`)
 - No inline `transition` strings with arbitrary values
 - Respects `prefers-reduced-motion`
 
@@ -214,7 +217,7 @@ For each new screen/page (`app/**/page.tsx`):
 **Check:** <A/B/C/D/E/F/G/H/I>
 **File:** <path>:<line>
 **Pattern:** <what was found>
-**Why it's a violation:** <reference D###>
+**Why it's a violation:** <cite the source: CLAUDE.md section, ADR, or the file that defines the convention>
 **Required fix:** <what to change>
 
 ### [WARNING] ...
@@ -226,9 +229,8 @@ If no findings: `## Design System Agent — PR #<NN>: no findings.`
 
 ## Severity rubric
 
-- **[BLOCKING]** — direct violation of canonical verbs (D227), action
-  lifecycle (D226/D208), state management library (D200), or component
-  placement (D198/D199/D220)
+- **[BLOCKING]** — direct violation of canonical verbs (§2.2), action
+  lifecycle (§2.3), state management library, or component placement
 - **[WARNING]** — convention drift that's likely wrong (Storybook coverage
   gap, missing empty state, motion discipline)
 - **[INFO]** — observation worth surfacing (suggested extraction, story

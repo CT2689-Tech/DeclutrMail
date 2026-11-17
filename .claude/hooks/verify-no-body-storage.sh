@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # verify-no-body-storage.sh — PostToolUse hook for Edit/Write/MultiEdit
 #
-# Fast regex tripwire for D7/D228 privacy violations. The full
+# Fast regex tripwire for CLAUDE.md §2.1 privacy violations (the published
+# "We never fetch or store full email contents" claim). The full
 # semantic data-flow review is privacy-auditor (subagent). This hook
 # catches obvious cases at edit-time; subtle ones require semantic
 # review.
@@ -76,15 +77,15 @@ if grep -nE "[A-Za-z_]*FORMAT[A-Za-z_]*\s*=\s*['\"](full|raw)['\"]" "$file_path"
   findings=$((findings + 1))
 fi
 
-# Pattern 3: Banned trust copy (D228). This is the only HARD block —
+# Pattern 3: Banned trust copy (CLAUDE.md §2.1). This is the only HARD block —
 # trust copy violations are easy to grep and severe to ship.
 if grep -niE "bod(y|ies)\s+read.*0" "$file_path" >/dev/null 2>&1; then
-  echo "❌ verify-no-body-storage: banned trust copy 'Bodies read: 0' in $file_path (D228)" >&2
+  echo "❌ verify-no-body-storage: banned trust copy 'Bodies read: 0' in $file_path (CLAUDE.md §2.1)" >&2
   grep -niE "bod(y|ies)\s+read.*0" "$file_path" | sed 's/^/   /' >&2
   exit 2
 fi
 
-# Note on Message-ID detection (D231): a regex check produced too many
+# Note on Message-ID detection: a regex check produced too many
 # false positives because `messageId` is a generic identifier in many
 # contexts (Pub/Sub message IDs, internal UUIDs, queue IDs). Detection
 # of RFC822 Message-ID header storage requires semantic context, which

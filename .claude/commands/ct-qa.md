@@ -80,7 +80,7 @@ Tested — do not re-propose it.
 So the surface is reviewed by **reading, not driving**: is the control present,
 labelled with the canonical verb, visually distinct from the safe ones; does the
 sender row carry the channel it claims; is one-click distinguished from
-`mailto:`, which is manual at launch (D230). Whether the preview renders for `U`
+`mailto:`, which is manual at launch (CLAUDE.md §2.6). Whether the preview renders for `U`
 is checked in the Storybook story and the component. Record it as read-not-driven.
 
 **Never set `UNSUB_SEND_ENABLED=true` during a QA run, for any reason.**
@@ -103,7 +103,7 @@ can't start at all › a false statement about their own data › friction.
 2. `undo` — **deliberately before the destructive verbs.** Undo is the safety
    net the whole promise rests on; testing destruction first is testing it
    without a proven net.
-3. `archive` — most-used destructive verb and the D226 lifecycle reference
+3. `archive` — most-used destructive verb and the §2.3 lifecycle reference
    implementation. A break here is a break in the pattern every verb copies.
 4. `delete` — highest damage. The only verb where a bug loses real mail; the
    30-day Trash window is the entire margin.
@@ -259,7 +259,7 @@ Do the job. Mouse and keyboard, the way a person would.
 **Reading the source before a symptom appears is forbidden** — that is how you
 talk yourself into believing a screen works. Source gets opened only to explain
 something you already watched go wrong. Same ban on the spec: read the
-D-decisions first and you QA the spec instead of the product.
+specs and ADRs first and you QA the spec instead of the product.
 
 Browser pane (preview MCP) by default — it can emulate viewport, real Chrome
 cannot. Three harness artifacts that must never be filed as bugs:
@@ -312,10 +312,10 @@ The first three *use* it. The fourth *judges* it.
   bare `psql`. Expire the session. Reach a real 429 with
   `RATE_LIMIT_ENABLED=true`.
 - **Reach past your own data.** An id belonging to the other mailbox.
-- **Skip the preview.** Every destructive verb must render one (D226). Try to
+- **Skip the preview.** Every destructive verb must render one (CLAUDE.md §2.3). Try to
   get a mutation without it — on Archive, Later and Delete **only**. Running
   this on unsubscribe is an attempt to execute one without a preview, which is
-  the send itself. Confirm D226 holds for unsubscribe by reading whether the
+  the send itself. Confirm the preview rule holds for unsubscribe by reading whether the
   preview renders, never by trying to defeat it.
 - **375px**, then keyboard only: **K / A / L / D**. `U` is not pressed — see
   Safety, above.
