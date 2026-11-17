@@ -12,7 +12,12 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { fillWs3, llmsStorageAiLine, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillWs3,
+  LAUNCH_STAGE,
+  llmsStorageAiLine,
+  WS3_COPY,
+} from '@declutrmail/shared/copy/launch';
 import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 
 import { renderLlmsFullTxt, renderLlmsTxt } from '@/features/marketing/llms/llms-document';
@@ -27,6 +32,21 @@ describe('llms.txt — marketing surface reconciliation', () => {
     // every other route by its absolute canonical URL.
     const needle = route === '/' ? 'https://declutrmail.com/#' : `https://declutrmail.com${route}`;
     expect(await renderLlmsTxt()).toContain(needle);
+  });
+
+  it('lists /sign-in once, and /beta only while the beta is open', async () => {
+    const body = await renderLlmsTxt();
+    expect(body.match(/\]\(https:\/\/declutrmail\.com\/sign-in\)/g)).toHaveLength(1);
+    if (LAUNCH_STAGE === 'ga') {
+      // /beta 307s organic visits after GA; its open-sign-up fact moves
+      // onto the Sign in entry instead of a second link to the same page.
+      expect(body).not.toContain('https://declutrmail.com/beta');
+      expect(body).toMatch(
+        /^- \[Sign in\]\(https:\/\/declutrmail\.com\/sign-in\): .+\. No invite or waitlist needed\.$/m,
+      );
+    } else {
+      expect(body).toContain('- [Open beta](https://declutrmail.com/beta):');
+    }
   });
 
   it('lists /pricing/changelog beside the pricing link', () => {
@@ -55,7 +75,10 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(body.startsWith('# DeclutrMail\n')).toBe(true);
     const pricing = renderPricingMarkdown().trim();
     expect(body).toContain('## Pricing');
-    expect(body).toContain(pricing);
+    // Embedded one level down: each /pricing.md plan heading becomes H3.
+    for (const heading of pricing.match(/^## .+$/gm) ?? []) {
+      expect(body).toContain(`#${heading}\n`);
+    }
     expect(await renderLlmsFullTxt()).toContain(body.trim());
     expect(await renderLlmsFullTxt()).toContain('## Mailstrom vs DeclutrMail');
   });
@@ -84,10 +107,8 @@ describe('llms.txt — marketing surface reconciliation', () => {
       '## Journal and build log',
       '## Legal',
     ];
-    const pricingHeadings = [...renderPricingMarkdown().matchAll(/^## .+$/gm)].map(
-      (match) => match[0],
-    );
-    expect(headings).toEqual([...sections, '## Pricing', ...pricingHeadings]);
+    // /pricing.md is embedded one level down, so its plan headings are H3.
+    expect(headings).toEqual([...sections, '## Pricing']);
 
     expect(LLMS_TXT).toContain(llmsStorageAiLine());
     expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.storageAi.gate']));
@@ -108,7 +129,11 @@ describe('llms.txt — marketing surface reconciliation', () => {
     const body = await llmsTxt().text();
     const full = await llmsFullTxt().text();
     expect(body).toContain('## Pricing');
-    expect(body).toContain('## Backlog Pass');
+    expect(body).toContain('\n### Backlog Pass\n');
+    // The embedded /pricing.md keeps its plans under `## Pricing`: one H1,
+    // and no plan heading at H2 beside the document's own sections.
+    expect(body.match(/^# .+$/gm)).toEqual(['# DeclutrMail']);
+    expect(body).not.toMatch(/^## Backlog Pass$/m);
     expect(body).toContain('$59 a year');
     expect(body).toContain('$19 once');
     expect(body).toContain('https://declutrmail.com/pricing/changelog');

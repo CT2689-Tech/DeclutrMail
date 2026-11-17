@@ -4,7 +4,11 @@ import { notFound } from 'next/navigation';
 import '@/features/marketing/product-story/product-story.css';
 import '@/features/marketing/comparison/comparison.css';
 
-import { COMPARISONS, comparisonBySlug } from '@/features/marketing/comparison/comparison-data';
+import {
+  COMPARISONS,
+  comparisonBySlug,
+  comparisonMetaTitle,
+} from '@/features/marketing/comparison/comparison-data';
 import { ComparisonDetailScreen } from '@/features/marketing/comparison/comparison-screen';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
@@ -24,7 +28,7 @@ export async function generateMetadata({ params }: ComparisonPageProps): Promise
   if (!comparison) return {};
 
   return marketingPageMetadata({
-    title: comparison.metaTitle ?? `${comparison.title} — compared, October 2026`,
+    title: comparisonMetaTitle(comparison),
     description: comparison.metaDescription ?? comparison.description,
     path: `/vs/${comparison.slug}`,
   });

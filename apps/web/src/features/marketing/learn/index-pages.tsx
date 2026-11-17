@@ -142,7 +142,7 @@ export function FaqPage() {
   return (
     <ReadingLayout
       variant="faq"
-      title="Questions worth answering before Gmail access"
+      title="DeclutrMail FAQ: inbox access, actions and undo"
       lede="What is stored, what each action changes, where recovery stops, and how DeclutrMail fits beside Gmail. No universal-undo shorthand."
     >
       <TrustRow />

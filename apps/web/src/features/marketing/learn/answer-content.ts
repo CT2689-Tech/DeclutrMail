@@ -224,7 +224,9 @@ export const ANSWER_ARTICLES: Record<AnswerSlug, LearnArticle> = {
     kind: 'Direct answer',
     title: 'How does undo work for Gmail cleanup?',
     description:
-      'How recovery differs for Archive, Later, Delete, Keep, and sent Unsubscribe requests.',
+      UNIFORM_UNDO_WINDOW_DAYS === null
+        ? 'How recovery differs for Archive, Later, Delete, Keep, and sent Unsubscribe requests.'
+        : `Archive, Later and Delete have ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo; Delete also has Gmail Trash recovery. A sent unsubscribe request can’t be recalled.`,
     intro:
       'There is no honest universal undo for email cleanup. Some actions are reversible label changes, some rely on Gmail Trash, some are standing settings you can change again, and some leave the system entirely.',
     quickAnswer:

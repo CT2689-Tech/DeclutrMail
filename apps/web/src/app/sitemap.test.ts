@@ -81,6 +81,8 @@ describe('sitemap — D134', () => {
     // Recovery and thin history pages are noindexed or redirect after GA.
     const excludedFromSitemap = [
       '/demo',
+      '/alternatives',
+      '/vs',
       '/changelog',
       '/sign-in',
       '/pricing/changelog',
