@@ -38,7 +38,10 @@ export type ComparisonSlug =
   | 'meta-muse'
   | 'mailstrom'
   | 'inboxpurge'
-  | 'mailmop';
+  | 'mailmop'
+  | 'cleanfox'
+  | 'inbox-zapper'
+  | 'chuck';
 
 export type EvidenceState = 'supported' | 'limited' | 'not-supported' | 'unknown' | 'native';
 
@@ -151,7 +154,8 @@ const DECLUTR = {
     state: 'supported',
   },
   funding: {
-    summary: 'Subscriptions only',
+    // Not "Subscriptions only": the Backlog Pass is a one-time payment.
+    summary: 'Paid plans',
     detail:
       'The published privacy policy states that Gmail data is not sold and is not used for advertising of any kind, and that it is not transferred to third parties except the subprocessors needed to run the service.',
     state: 'supported',
@@ -1338,6 +1342,12 @@ function verdictFor(slug: ComparisonSlug): string {
       return WS3_COPY['ws3.vs.inboxpurge.verdict'];
     case 'mailmop':
       return WS3_COPY['ws3.vs.mailmop.verdict'];
+    case 'cleanfox':
+      return WS3_COPY['ws3.vs.cleanfox.verdict'];
+    case 'inbox-zapper':
+      return WS3_COPY['ws3.vs.inbox-zapper.verdict'];
+    case 'chuck':
+      return WS3_COPY['ws3.vs.chuck.verdict'];
     default: {
       const neverSlug: never = slug;
       return neverSlug;
@@ -1383,6 +1393,9 @@ export function comparisonBySlug(slug: string): ComparisonDefinition | undefined
  * leave Gmail as a mail provider, not to add a cleanup tool to it.
  * Publishing that page would rank for an intent this product cannot
  * serve, which is worse than not ranking at all.
+ *
+ * Excludes `meta-muse` for the same reason: "Meta Muse alternatives" is
+ * a search for another general AI agent, not for a cleanup tool.
  */
 export const ALTERNATIVES_SLUGS = [
   'clean-email',
@@ -1390,6 +1403,12 @@ export const ALTERNATIVES_SLUGS = [
   'sanebox',
   'leave-me-alone',
   'trimbox',
+  'mailstrom',
+  'inboxpurge',
+  'mailmop',
+  'cleanfox',
+  'inbox-zapper',
+  'chuck',
 ] as const satisfies readonly ComparisonSlug[];
 
 export type AlternativesSlug = (typeof ALTERNATIVES_SLUGS)[number];

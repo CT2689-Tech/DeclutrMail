@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   directorySourceFromReferrer,
+  organicSourceFromReferrer,
   parseDmAttr,
   resolveFirstTouchCampaign,
 } from './signup-attribution-attr';
@@ -63,5 +64,55 @@ describe('directory first touch', () => {
         referrer: 'https://saashub.com/',
       }),
     ).toBeUndefined();
+  });
+});
+
+describe('search and AI first touch', () => {
+  it.each([
+    ['https://www.google.com/', 'google', 'organic'],
+    ['https://www.google.co.in/search?q=private+query', 'google', 'organic'],
+    ['https://google.com.au/', 'google', 'organic'],
+    ['https://www.bing.com/search?q=private', 'bing', 'organic'],
+    ['https://duckduckgo.com/', 'duckduckgo', 'organic'],
+    ['https://search.brave.com/', 'brave', 'organic'],
+    ['https://chatgpt.com/', 'chatgpt', 'ai'],
+    ['https://www.perplexity.ai/search/abc', 'perplexity', 'ai'],
+    ['https://gemini.google.com/app', 'gemini', 'ai'],
+  ])('retains only a fixed source for %s', (referrer, source, medium) => {
+    expect(capture(referrer, '/vs/clean-email')).toEqual({
+      utmSource: source,
+      utmMedium: medium,
+      landingPath: '/vs/clean-email',
+    });
+  });
+  it.each([
+    'https://accounts.google.com/',
+    'https://mail.google.com/',
+    'https://google.com.attacker.com/',
+    'https://notgoogle.com/',
+    'https://evil.com/?www.google.com',
+    'https://user:pass@www.google.com/',
+    'https://declutrmail.com/pricing',
+    '',
+    // Hostnames that name inherited object members: an object-literal lookup
+    // returned a Function or Object here and wrote it into the cookie.
+    'http://constructor/',
+    'http://__proto__/',
+  ])('ignores non-search referrers: %s', (value) => {
+    expect(organicSourceFromReferrer(value)).toBeUndefined();
+    expect(capture(value)).toBeUndefined();
+  });
+  it('keeps explicit campaigns ahead of search inference', () => {
+    expect(capture('https://www.google.com/', '/', 'utm_source=newsletter')).toEqual({
+      utmSource: 'newsletter',
+      landingPath: '/',
+    });
+  });
+  it('attributes search-to-demo traffic to the search engine, not the demo', () => {
+    expect(capture('https://www.google.com/', '/inbox-simulator')).toEqual({
+      utmSource: 'google',
+      utmMedium: 'organic',
+      landingPath: '/inbox-simulator',
+    });
   });
 });

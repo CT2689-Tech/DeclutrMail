@@ -312,6 +312,12 @@ describe('marketing metadata guards', () => {
       ['/alternatives/sanebox', 'SaneBox'],
       ['/alternatives/leave-me-alone', 'Leave Me Alone'],
       ['/alternatives/trimbox', 'Trimbox'],
+      ['/alternatives/mailstrom', 'Mailstrom'],
+      ['/alternatives/inboxpurge', 'InboxPurge'],
+      ['/alternatives/mailmop', 'MailMop'],
+      ['/alternatives/cleanfox', 'Cleanfox'],
+      ['/alternatives/inbox-zapper', 'Inbox Zapper'],
+      ['/alternatives/chuck', 'Chuck'],
     ] as const) {
       const metadata = await metadataForPath(path);
       expect(titleText(metadata)).toBe(`${name} alternatives for Gmail — DeclutrMail`);
