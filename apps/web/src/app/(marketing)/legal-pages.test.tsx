@@ -279,10 +279,12 @@ describe('/privacy content — D7 + D228 posture', () => {
       'Brandfetch',
       'Resend',
       'Paddle',
+      // Kept as a past processor: unpaid Razorpay checkouts from 2026-07-25 to
+      // 2026-10-10 may still hold payer contact details at Razorpay.
+      'Razorpay',
     ]) {
       expect(screen.getByRole('cell', { name: provider })).toBeInTheDocument();
     }
-    expect(screen.queryByRole('cell', { name: 'Razorpay' })).not.toBeInTheDocument();
     expect(
       screen.getByRole('cell', {
         name: 'runs background tasks, like scanning your Gmail. It never stores the contents of your Gmail messages.',

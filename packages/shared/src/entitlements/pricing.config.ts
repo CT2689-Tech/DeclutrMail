@@ -7,8 +7,9 @@
 // the codebase carries a dollar amount, a tier limit, a quota number
 // or a plan name as a literal.
 //
-// Catalog ids (`paddlePriceId`, D117) are null until the
-// catalog-provisioning unit writes the live SKU ids back into this file.
+// Live Paddle price ids are written into this file by hand. The catalog
+// provisioning workflow was deleted 2026-11-17 with the Razorpay rail; create
+// new Paddle products and prices in the Paddle dashboard.
 // India pays through Paddle in INR (`indiaPaddlePriceId` below).
 //
 // Ladder per the A3 free-tier activation decision (founder, 2026-07-26 —

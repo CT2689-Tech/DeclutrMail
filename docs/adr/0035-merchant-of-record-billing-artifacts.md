@@ -1,5 +1,7 @@
 # ADR-0035: The merchant-of-record split decides who owns each billing artifact — and it is not symmetric
 
+> **Superseded 2026-11-17 (decision 4A).** The Razorpay rail was deleted: no checkout, webhook handling or reconciliation for Razorpay remains. Paddle is the only payment provider. The INR rule for Paddle (rupee checkout only when both India price ids are configured) still holds.
+
 - **Status:** Accepted
 - **Date:** 2026-08-16
 - **Deciders:** founder, Claude (agent)

@@ -2,8 +2,8 @@
 // price catalog.
 //
 // SOURCE OF TRUTH: `TIER_MANIFEST` (packages/shared/src/entitlements)
-// carries the production `paddlePriceId` per price point — null until
-// the catalog-provisioning ids are patched in (founder step F3).
+// carries the production `paddlePriceId` per price point, written by hand.
+// (The catalog-provisioning workflow was deleted 2026-11-17.)
 //
 // SANDBOX OVERRIDE: sandbox catalog ids are DIFFERENT objects from the
 // live ones (Paddle sandbox has its own id space), and the manifest can

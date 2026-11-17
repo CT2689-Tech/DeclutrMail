@@ -116,8 +116,8 @@ export default function PrivacyPolicyPage() {
           Beyond the Gmail details listed above, we also store: your Google account email address
           and display name (from sign-in), your DeclutrMail preferences and per-sender decisions, an
           activity log of the actions DeclutrMail performed on your behalf, and billing records
-          (kept by Paddle; see <a href="#subprocessors">Section 8</a>. We never see or store full
-          card numbers.)
+          (kept by Paddle, and by Razorpay for earlier rupee plans; see{' '}
+          <a href="#subprocessors">Section 8</a>. We never see or store full card numbers.)
         </p>
       </LegalSection>
 
@@ -367,6 +367,10 @@ export default function PrivacyPolicyPage() {
             <tr>
               <td>Paddle</td>
               <td>Merchant of record and reseller: payment, tax and invoices</td>
+            </tr>
+            <tr>
+              <td>Razorpay</td>
+              <td>Payment processing for earlier rupee plans (no new purchases)</td>
             </tr>
           </tbody>
         </table>

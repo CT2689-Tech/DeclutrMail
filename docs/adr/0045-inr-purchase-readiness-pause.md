@@ -1,5 +1,7 @@
 # ADR-0045: Pause new INR purchases pending readiness
 
+> **Superseded 2026-11-17 (decision 4A).** The Razorpay rail was deleted: no checkout, webhook handling or reconciliation for Razorpay remains. Paddle is the only payment provider. The INR rule for Paddle (rupee checkout only when both India price ids are configured) still holds.
+
 - Status: accepted by founder on 2026-10-10; rollout tracked separately
 - Related: D117, D119, ADR-0035 and ADR-0044
 
