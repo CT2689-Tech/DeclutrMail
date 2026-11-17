@@ -136,17 +136,17 @@ describe('every shared public content variant has a usable next step', () => {
 });
 
 describe('truthful Watch first activation guidance', () => {
-  it('distinguishes review-only low-engagement Archive from eligible automatic presets', () => {
+  it('describes Watch first, then a deliberate switch to automatic runs', () => {
     const guide = text(
       renderToStaticMarkup(
         <ArticlePage article={HOW_TO_ARTICLES['auto-archive-future-emails-in-gmail']!} />,
       ),
     );
-    expect(guide).toContain(
-      'always collects matches for review; it cannot be set to act on its own',
-    );
-    expect(guide).toContain('For other eligible presets, switching to Active requires a preview');
-    expect(guide).toContain('no rule promotes itself automatically');
+    expect(guide).toContain('can watch first');
+    expect(guide).toContain('requires a preview and a deliberate choice');
+    expect(guide).toContain('no rule promotes itself');
+    // The founder's 2026-11-17 decision retired these claims; keep them out.
+    expect(guide).not.toMatch(/cannot be set to act on its own|Custom rules are not part/);
     expect(guide).not.toMatch(/Every preset begins in|After seven days, you review/);
   });
 

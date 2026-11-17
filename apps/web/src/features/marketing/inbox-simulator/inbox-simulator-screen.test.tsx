@@ -604,15 +604,15 @@ describe('InboxSimulatorScreen', () => {
     expectInboxOutcome();
   });
 
-  it('offers a review-only rule and names Plus', () => {
+  it('offers the rule in Watch first and names Plus', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
     expect(screen.getByRole('heading', { name: 'A preset can keep watch.' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));
 
-    // Low-engagement signals can include important account mail, so this
-    // preset never offers an unattended acting path.
+    // The demo has no account to act on, so it never offers an unattended
+    // path (`canRunUnattended={false}`); the real rule can run Active on Plus.
     expect(screen.queryByRole('radio', { name: 'Act now' })).toBeNull();
     expect(screen.getByText(/Nothing moves until you approve each match/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Turn on$/ })).toBeInTheDocument();
@@ -670,7 +670,7 @@ describe('InboxSimulatorScreen', () => {
     ).toBeInTheDocument();
   });
 
-  it('turning on the review-only rule completes the step without an acting option', () => {
+  it('turning on the rule in Watch first completes the step without an acting option', () => {
     render(<InboxSimulatorScreen />);
     reachRuleStep();
     fireEvent.click(screen.getByRole('button', { name: /Preview rule/i }));

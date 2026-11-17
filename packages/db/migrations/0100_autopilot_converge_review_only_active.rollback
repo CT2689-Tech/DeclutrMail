@@ -1,0 +1,7 @@
+-- Reverse 0100 — deliberately a no-op.
+--
+-- The forward migration cannot know which rows it moved once they share
+-- `observe` with every other rule, and before it ran each of them already
+-- behaved as Observe. Restoring Active would be the unsafe direction: it
+-- would let an unattended archiving rule resume with nobody turning it on.
+SELECT 1;

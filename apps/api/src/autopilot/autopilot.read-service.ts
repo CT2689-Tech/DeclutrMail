@@ -79,6 +79,7 @@ import {
   AUTOPILOT_PENDING_PAGE_SIZE,
   encodeCursor,
   defaultAutopilotConditions,
+  isReviewOnlyRule,
   AutopilotRuleConditionsSchema,
   AutopilotRuleConfigurationSchema,
 } from '@declutrmail/shared/contracts';
@@ -568,18 +569,12 @@ export class AutopilotReadService {
           ),
         )
         .limit(1);
-      if (target?.actionKind === 'delete')
-        throw new BadRequestException('Delete batches always require preview and approval.');
-      if (target?.presetKey === 'auto_screen_new_senders') {
+      if (target && isReviewOnlyRule(target))
         throw new BadRequestException(
-          'New-sender matches require review before moving mail to Later.',
+          target.actionKind === 'delete'
+            ? 'Delete batches always require preview and approval.'
+            : 'New-sender matches require review before moving mail to Later.',
         );
-      }
-      if (target?.presetKey === 'auto_archive_low_engagement') {
-        throw new BadRequestException(
-          'Low-engagement archive matches require review before moving mail.',
-        );
-      }
     }
 
     const materialChange = configuration !== undefined || patch.confidenceThreshold !== undefined;
@@ -1808,13 +1803,10 @@ function projectRule(
   // from the LAST mode transition (`patchRule` resets `modeChangedAt`).
   // No auto-promotion happens at elapse (locked safe variant) — the FE
   // day-7 banner (U15) prompts the user off `observeWindowElapsed`.
-  // Older mailboxes may retain either of these presets in Active mode. The apply
-  // worker treats them as review-only, so the API must show the effective
-  // behavior rather than promise unattended moves that cannot happen.
-  const reviewOnly =
-    row.actionKind === 'delete' ||
-    row.presetKey === 'auto_screen_new_senders' ||
-    row.presetKey === 'auto_archive_low_engagement';
+  // A review-only rule stored as Active (migration 0100 converged the ones
+  // that existed) is shown as what the workers do with it: Observe. Never
+  // promise unattended moves that cannot happen.
+  const reviewOnly = isReviewOnlyRule(row);
   const mode = reviewOnly && row.mode === 'active' ? 'observe' : row.mode;
   const inObserve = mode === 'observe';
   const observeWindowEndsAtMs = row.modeChangedAt.getTime() + OBSERVE_WINDOW_MS;

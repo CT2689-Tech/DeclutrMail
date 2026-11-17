@@ -513,13 +513,13 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         id: 'declutrmail-autopilot',
         title: 'Use DeclutrMail Autopilot without blind activation',
         paragraphs: [
-          'Autopilot ships five launch presets on Plus and Pro. The low-engagement Archive preset always collects matches for review; it cannot be set to act on its own. Custom rules are not part of the launch UI, so do not expect to enter an arbitrary sender and create a permanent archive rule there.',
-          'You approve or dismiss collected matches yourself. For other eligible presets, switching to Active requires a preview and a deliberate choice; no rule promotes itself automatically.',
+          'Autopilot ships five presets on Plus and Pro, and you can add your own Archive rules for chosen senders. Any Archive rule can watch first, collecting matches for you to review, or run automatically once you turn that on.',
+          'You approve or dismiss collected matches yourself. Switching a rule to run automatically requires a preview and a deliberate choice; no rule promotes itself.',
         ],
         steps: [
           {
             name: 'Turn on review',
-            text: 'Review the activation preview, then turn on the low-engagement Archive preset. It records possible matches without moving email and always waits for your approval.',
+            text: 'Review the activation preview, then turn on the low-engagement Archive preset with Watch first. It records possible matches without moving email until you approve them.',
           },
           {
             name: 'Wait for representative traffic',
@@ -531,7 +531,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Approve individual matches',
-            text: 'Approve only the senders whose Inbox mail you want archived. You can dismiss suggestions or pause the rule later. Archived mail remains in Gmail All Mail.',
+            text: 'Approve only the senders whose Inbox mail you want archived. Once the matches look right, you can let the rule run automatically, and pause it any time. Archived mail remains in Gmail All Mail.',
           },
         ],
       },

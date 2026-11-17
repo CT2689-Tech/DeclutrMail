@@ -1103,9 +1103,9 @@ describe('AutopilotActionWorker', () => {
     });
   });
 
-  it('retires a legacy unattended low-engagement Archive match before any Gmail mutation', async () => {
+  it('runs an unattended low-engagement Archive match while its rule is Active (founder decision 3A)', async () => {
     const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement', 'active');
-    const { senderKey } = await seedSender(db, mailboxId, 'financial-alert@example.com', {
+    const { senderKey } = await seedSender(db, mailboxId, 'promo@example.com', {
       inboxMessages: 2,
     });
     const matchId = await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'active');
@@ -1115,14 +1115,168 @@ describe('AutopilotActionWorker', () => {
       CTX,
     );
 
-    expect(result.labelActionsExecuted).toBe(0);
-    expect(gmail.calls).toHaveLength(0);
-    expect(await db.select().from(actionJobs)).toHaveLength(0);
+    expect(result.labelActionsExecuted).toBe(1);
+    expect(gmail.calls).toHaveLength(1);
+    const [activity] = await db.select().from(activityLog);
+    expect(activity).toMatchObject({
+      source: 'autopilot',
+      action: 'archive',
+      ruleId,
+      affectedCount: 2,
+    });
+    expect(activity!.undoToken).not.toBeNull();
     const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
-    expect(match).toMatchObject({
-      resolution: 'dismissed',
-      dismissReason: 'superseded',
-      intentApplied: false,
+    expect(match).toMatchObject({ resolution: 'approved', intentApplied: true });
+  });
+
+  it.each([
+    ['set back to Observe', { mode: 'observe' as const }],
+    [
+      'still Active but now review-only (Delete)',
+      { mode: 'active' as const, actionKind: 'delete' as const },
+    ],
+  ])(
+    'retires an unattended match whose rule was %s, before any Gmail mutation',
+    async (_label, rulePatch) => {
+      const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement', 'active');
+      const { senderKey } = await seedSender(db, mailboxId, 'promo@example.com', {
+        inboxMessages: 2,
+      });
+      const matchId = await seedApprovedMatch(
+        db,
+        mailboxId,
+        ruleId,
+        senderKey,
+        'approved',
+        'active',
+      );
+      // What migration 0100, a user's "Watch first", or an edit that
+      // re-enters approval does to the rule after the match was queued.
+      await db.update(automationRules).set(rulePatch).where(eq(automationRules.id, ruleId));
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      expect(result.labelActionsExecuted).toBe(0);
+      expect(gmail.calls).toHaveLength(0);
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({
+        resolution: 'dismissed',
+        dismissReason: 'superseded',
+        intentApplied: false,
+      });
+    },
+  );
+
+  it('keeps a person-approved match for a rule that is not Active', async () => {
+    // Observe-provenance means a person approved it; the rule's mode is irrelevant.
+    const ruleId = await enablePreset(db, mailboxId, 'auto_archive_low_engagement', 'observe');
+    const { senderKey } = await seedSender(db, mailboxId, 'promo@example.com', {
+      inboxMessages: 1,
+    });
+    await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'observe');
+
+    const result = await worker.processJob(
+      { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+      CTX,
+    );
+    expect(result.labelActionsExecuted).toBe(1);
+  });
+
+  describe('custom sender rules', () => {
+    async function seedSenderRule(rule: {
+      senderKeys: string[];
+      olderThanDays?: 30 | 90 | 180 | null;
+      actionKind?: 'archive' | 'delete';
+    }): Promise<string> {
+      const [row] = await db
+        .insert(automationRules)
+        .values({
+          mailboxAccountId: mailboxId,
+          isPreset: false,
+          presetKey: null,
+          name: 'Newsletters',
+          enabled: true,
+          mode: 'active',
+          scope: 'account',
+          conditions: {
+            kind: 'sender_list',
+            senderKeys: rule.senderKeys,
+            olderThanDays: rule.olderThanDays ?? null,
+          },
+          actionKind: rule.actionKind ?? 'archive',
+          actionPayload: { reach: 'inbox_only' },
+        })
+        .returning({ id: automationRules.id });
+      return row!.id;
+    }
+    async function inboxMessage(senderKey: string, id: string, daysOld: number) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId: mailboxId,
+        providerMessageId: id,
+        providerThreadId: `t-${id}`,
+        senderKey,
+        // `senderInboxActionWhere` ages mail against the database clock.
+        internalDate: new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      });
+    }
+
+    it("archives only the named sender's inbox mail older than the rule's email age, with undo", async () => {
+      const { senderKey } = await seedSender(db, mailboxId, 'news@example.com');
+      await inboxMessage(senderKey, 'aged-1', 45);
+      await inboxMessage(senderKey, 'aged-2', 200);
+      await inboxMessage(senderKey, 'recent-1', 3);
+      const ruleId = await seedSenderRule({ senderKeys: [senderKey], olderThanDays: 30 });
+      const matchId = await seedApprovedMatch(
+        db,
+        mailboxId,
+        ruleId,
+        senderKey,
+        'approved',
+        'active',
+      );
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      expect(result.labelActionsExecuted).toBe(1);
+      expect(gmail.calls).toHaveLength(1);
+      expect([...gmail.calls[0]!.ids].sort()).toEqual(['aged-1', 'aged-2']);
+      const [activity] = await db.select().from(activityLog);
+      expect(activity).toMatchObject({
+        source: 'autopilot',
+        action: 'archive',
+        ruleId,
+        affectedCount: 2,
+      });
+      const undo = await db.select().from(undoJournal);
+      expect(activity!.undoToken).toBe(undo[0]!.token);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ intentApplied: true });
+    });
+
+    it('never runs a custom Delete row unattended', async () => {
+      const { senderKey } = await seedSender(db, mailboxId, 'news@example.com', {
+        inboxMessages: 2,
+      });
+      const ruleId = await seedSenderRule({ senderKeys: [senderKey], actionKind: 'delete' });
+      await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'active');
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      expect(result.labelActionsExecuted).toBe(0);
+      expect(gmail.calls).toHaveLength(0);
+      expect(await db.select().from(actionJobs)).toHaveLength(0);
     });
   });
 

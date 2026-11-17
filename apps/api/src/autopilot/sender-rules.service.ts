@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { and, asc, eq, gt, ilike, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
@@ -20,6 +21,7 @@ import {
 } from '@declutrmail/db';
 import {
   isApprovalFirstDeletePreset,
+  isReviewOnlyRule,
   decodeCursor,
   encodeCursor,
   type AutopilotSenderRule,
@@ -27,7 +29,12 @@ import {
   type AutopilotSenderRuleExecuteResult,
   type AutopilotSenderSearchResult,
 } from '@declutrmail/shared/contracts';
-import { materializeAutopilotSignals, matchConfiguredPreset } from '@declutrmail/workers';
+import { AutopilotRuleActivatedPayloadSchema, TOPICS } from '@declutrmail/events';
+import {
+  materializeAutopilotSignals,
+  matchConfiguredPreset,
+  OutboxPublisher,
+} from '@declutrmail/workers';
 import { ActionsService } from '../actions/actions.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import {
@@ -44,7 +51,7 @@ type Definition = {
   reach: 'inbox_only' | 'all_mail';
   olderThanDays: 30 | 90 | 180 | null;
   enabled?: boolean;
-  mode?: 'observe' | 'paused' | undefined;
+  mode?: 'observe' | 'active' | 'paused' | undefined;
 };
 type RulePatch = Partial<Definition> & { version: number };
 type PreviewRequest = {
@@ -84,7 +91,14 @@ export class SenderRulesService {
     private readonly actions: ActionsService,
     @Inject(SENDER_RULE_PREVIEW_STORE)
     private readonly previews: SenderRulePreviewStore = new MemorySenderRulePreviewStore(),
-  ) {}
+    // `@Optional()` for the reason AutopilotReadService gives: the
+    // publisher is stateless, and test wiring constructs this directly.
+    @Optional() outbox?: OutboxPublisher,
+  ) {
+    this.outbox = outbox ?? new OutboxPublisher();
+  }
+
+  private readonly outbox: OutboxPublisher;
 
   async list(mailboxId: string): Promise<AutopilotSenderRule[]> {
     const rows = (
@@ -198,38 +212,71 @@ export class SenderRulesService {
     const action = input.action ?? current.actionKind;
     const reach = input.reach ?? current.actionPayload.reach;
     assertReach(action, reach);
-    const [updated] = await this.db
-      .update(automationRules)
-      .set({
-        name: input.name ?? current.name,
-        enabled: input.enabled ?? current.enabled,
-        mode: input.mode ?? current.mode,
-        ...(input.mode !== undefined && input.mode !== current.mode
-          ? { modeChangedAt: sql`now()` }
-          : {}),
-        actionKind: action,
-        actionPayload: { reach },
-        conditions: {
-          kind: 'sender_list',
-          senderKeys: [...new Set(senderKeys)],
-          olderThanDays:
-            input.olderThanDays === undefined
-              ? current.conditions.olderThanDays
-              : input.olderThanDays,
-        },
-        version: sql`${automationRules.version} + 1`,
-        updatedAt: sql`now()`,
-      })
-      .where(
-        and(
-          eq(automationRules.id, ruleId),
-          eq(automationRules.mailboxAccountId, mailboxId),
-          eq(automationRules.version, input.version),
-          eq(automationRules.isPreset, false),
-          isNull(automationRules.retiredAt),
-        ),
-      )
-      .returning();
+    const olderThanDays =
+      input.olderThanDays === undefined ? current.conditions.olderThanDays : input.olderThanDays;
+    // Running on its own is Archive-only; Delete always waits for approval
+    // of a frozen preview (`isReviewOnlyRule`).
+    if (input.mode === 'active' && isReviewOnlyRule({ presetKey: null, actionKind: action }))
+      throw new BadRequestException('Delete rules always wait for your approval.');
+    // Changing which email an Active rule reaches (its senders, action,
+    // reach or email age) re-enters approval first, the same as a preset's
+    // configuration change (founder decision 2026-08-20): a widened rule
+    // must not start moving the new mail with nobody having looked. A
+    // rename keeps it running.
+    const reachChanged =
+      action !== current.actionKind ||
+      reach !== current.actionPayload.reach ||
+      olderThanDays !== current.conditions.olderThanDays ||
+      !sameKeys(senderKeys, current.conditions.senderKeys);
+    const mode =
+      input.mode ?? (current.mode === 'active' && reachChanged ? 'observe' : current.mode);
+    const turnedActive = mode === 'active' && current.mode !== 'active';
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(automationRules)
+        .set({
+          name: input.name ?? current.name,
+          enabled: input.enabled ?? current.enabled,
+          mode,
+          ...(mode !== current.mode ? { modeChangedAt: sql`now()` } : {}),
+          actionKind: action,
+          actionPayload: { reach },
+          conditions: {
+            kind: 'sender_list',
+            senderKeys: [...new Set(senderKeys)],
+            olderThanDays,
+          },
+          version: sql`${automationRules.version} + 1`,
+          updatedAt: sql`now()`,
+        })
+        .where(
+          and(
+            eq(automationRules.id, ruleId),
+            eq(automationRules.mailboxAccountId, mailboxId),
+            eq(automationRules.version, input.version),
+            eq(automationRules.isPreset, false),
+            isNull(automationRules.retiredAt),
+          ),
+        )
+        .returning();
+      // Nothing else starts a sweep on a rule change (see the
+      // AUTOPILOT_RULE_ACTIVATED consumer), so an Active rule would sit
+      // inert until unrelated mail arrived. Published in the same
+      // transaction: the rule and its first sweep land together or not at all.
+      if (row && turnedActive && row.enabled)
+        await this.outbox.publish(tx, {
+          topic: TOPICS.AUTOPILOT_RULE_ACTIVATED,
+          aggregateId: row.id,
+          payload: {
+            mailboxAccountId: mailboxId,
+            ruleId: row.id,
+            mode: 'active' as const,
+            activatedAt: new Date().toISOString(),
+          },
+          schema: AutopilotRuleActivatedPayloadSchema,
+        });
+      return row;
+    });
     if (!updated) throw changed();
     return this.readDto(mailboxId, updated.id);
   }
@@ -427,6 +474,8 @@ export class SenderRulesService {
         message: 'This preview expired. Refresh to see current matches.',
       });
     this.assertVersion(rule, saved.ruleVersion);
+    // An Active rule archives on its own; a frozen batch for it is stale.
+    if (rule.mode === 'active') throw changed();
     if (!rule.enabled || rule.mode !== 'observe')
       throw new ConflictException({
         code: 'AUTOPILOT_RULE_PAUSED',
@@ -555,7 +604,7 @@ export class SenderRulesService {
       name: row.name,
       version: row.version,
       enabled: row.enabled,
-      mode: row.mode === 'paused' ? 'paused' : 'observe',
+      mode: row.mode,
       action: row.actionKind,
       reach: row.actionPayload.reach,
       olderThanDays: row.conditions.olderThanDays,
@@ -692,6 +741,11 @@ function matchingCount(
     s[`${reach === 'inbox_only' ? 'inbox' : 'all'}${days ?? 0}` as keyof SenderMetadata] ?? 0,
   );
 }
+function sameKeys(a: readonly string[], b: readonly string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((key) => right.has(key));
+}
 function changed() {
   return new ConflictException({
     code: 'AUTOPILOT_RULE_CHANGED',
@@ -716,6 +770,8 @@ function isSenderRule(row: AutomationRule): row is SenderRule {
     [null, 30, 90, 180].includes(c.olderThanDays as number | null) &&
     (row.actionKind === 'archive' || row.actionKind === 'delete') &&
     (p?.reach === 'inbox_only' || (p?.reach === 'all_mail' && row.actionKind === 'delete')) &&
-    (row.mode === 'observe' || row.mode === 'paused')
+    (row.mode === 'observe' ||
+      row.mode === 'paused' ||
+      (row.mode === 'active' && row.actionKind === 'archive'))
   );
 }

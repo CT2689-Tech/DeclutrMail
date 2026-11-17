@@ -316,6 +316,56 @@ describe('sender rule library', () => {
     expect(api.execute).not.toHaveBeenCalled();
   });
 
+  describe('running an Archive rule automatically (founder decision 3A)', () => {
+    it('previews the count, where mail goes and how to undo before turning it on', async () => {
+      api.mode.mockResolvedValue({ ...rule, version: 2, mode: 'active' });
+      setup();
+      await loaded();
+      fireEvent.click(screen.getByRole('button', { name: 'Run automatically' }));
+
+      const dialog = await screen.findByRole('dialog');
+      await within(dialog).findByText(
+        'Archives 12 inbox emails older than 90 days from 2 senders now, then new matches as they arrive.',
+      );
+      expect(within(dialog).getByText(/Undo any run from Activity within 30 days/)).toBeTruthy();
+      expect(within(dialog).getByText(/Protected senders are skipped/)).toBeTruthy();
+      expect(api.mode).not.toHaveBeenCalled();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Run automatically' }));
+
+      await waitFor(() => expect(api.mode).toHaveBeenCalledWith(rule, 'active', 'mailbox-a'));
+      await screen.findByText('Rule runs automatically. Undo any run from Activity.');
+      expect(screen.queryByRole('button', { name: 'Run automatically' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull();
+      expect(api.execute).not.toHaveBeenCalled();
+    });
+
+    it('lets an automatic rule ask first again', async () => {
+      const active = { ...rule, mode: 'active' as const, version: 2 };
+      api.list.mockResolvedValue([active]);
+      api.mode.mockResolvedValue({ ...active, version: 3, mode: 'observe' });
+      setup();
+      await loaded();
+      expect(screen.getAllByText('Automatic').length).toBeGreaterThan(0);
+      expect(screen.queryByRole('button', { name: /^Preview batch for/ })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: 'Ask first' }));
+      await waitFor(() => expect(api.mode).toHaveBeenCalledWith(active, 'observe', 'mailbox-a'));
+      await screen.findByText('Rule now asks for your approval.');
+    });
+
+    it('never offers automatic runs for Delete or without the unattended capability', async () => {
+      api.list.mockResolvedValue([{ ...rule, action: 'delete', reach: 'all_mail' }]);
+      const view = setup();
+      await loaded();
+      expect(screen.queryByRole('button', { name: 'Run automatically' })).toBeNull();
+      view.unmount();
+
+      api.tier = 'free';
+      api.list.mockResolvedValue([rule]);
+      setup();
+      expect(screen.queryByRole('button', { name: 'Run automatically' })).toBeNull();
+    });
+  });
+
   it('cannot approve the previous token while an exclusion refresh waits offline', async () => {
     setup();
     await loaded();

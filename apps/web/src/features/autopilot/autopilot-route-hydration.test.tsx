@@ -81,7 +81,7 @@ it.each(['suggestions', 'pattern'] as const)(
         : {
             ruleId: PRESET_RULES_ALL_FIVE[0]!.id,
             presetKey: 'auto_archive_low_engagement',
-            ruleName: 'Review low-engagement senders for Archive',
+            ruleName: 'Archive low-engagement senders',
             actionKind: 'archive',
             scope: 'account',
             evidenceCount: 4,

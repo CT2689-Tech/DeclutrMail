@@ -15,26 +15,23 @@
  * and the override map can be deleted.
  */
 
+import { isReviewOnlyRule } from '@declutrmail/shared/contracts';
 import type { AutopilotPresetKey } from '@/lib/api/autopilot';
 
 const PRESET_LABEL_OVERRIDES: Partial<Record<AutopilotPresetKey, string>> = {
-  auto_archive_low_engagement: 'Review low-engagement senders for Archive',
+  auto_archive_low_engagement: 'Archive low-engagement senders',
   // D227: "Screen" is an internal enum, never a user-facing verb. The
   // canonical fourth verb is Later (L); the preset's actionKind is
   // already 'later'.
   auto_screen_new_senders: 'Review new senders for Later',
 };
 
-/** Presets whose matches always need a person to approve them. */
+/** Rules whose matches always need a person to approve them (`isReviewOnlyRule`). */
 export function isReviewOnlyPreset(
   presetKey: AutopilotPresetKey | null,
   actionKind?: string,
 ): boolean {
-  return (
-    actionKind === 'delete' ||
-    presetKey === 'auto_screen_new_senders' ||
-    presetKey === 'auto_archive_low_engagement'
-  );
+  return isReviewOnlyRule({ presetKey, actionKind: actionKind ?? '' });
 }
 
 /**

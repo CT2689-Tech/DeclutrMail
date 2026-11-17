@@ -78,11 +78,7 @@ export const executeSenderRule = (
     { headers: { 'Idempotency-Key': idempotencyKey }, mailboxId },
   ).then((e) => e.data);
 
-export const setSenderRuleMode = (
-  rule: SenderRule,
-  mode: 'observe' | 'paused',
-  mailboxId?: string,
-) =>
+export const setSenderRuleMode = (rule: SenderRule, mode: SenderRule['mode'], mailboxId?: string) =>
   apiPatch<SenderRule>(
     `${base}/${encodeURIComponent(rule.id)}`,
     { version: rule.version, mode },

@@ -404,28 +404,31 @@ describe('AutopilotReadService', () => {
   });
 
   describe('patchRule', () => {
-    it('keeps low-engagement Archive review-only, including legacy Active rows', async () => {
+    it('lets low-engagement Archive run Active, with an Observe window first (founder decision 3A)', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
-      await expect(
-        service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' }),
-      ).rejects.toThrow('Low-engagement archive matches require review');
-
-      const enabled = await service.patchRule(mailboxA, ruleId, {
+      const watching = await service.patchRule(mailboxA, ruleId, {
         enabled: true,
         mode: 'observe',
       });
-      expect(enabled?.mode).toBe('observe');
-      expect(enabled?.observeWindowEndsAt).toBeNull();
-      expect(enabled?.observeWindowElapsed).toBe(false);
+      expect(watching?.mode).toBe('observe');
+      // No longer review-only, so it earns the 7-day window and day-7 prompt.
+      expect(watching?.observeWindowEndsAt).not.toBeNull();
 
+      const active = await service.patchRule(mailboxA, ruleId, { mode: 'active' });
+      expect(active?.mode).toBe('active');
+      expect(active?.observeWindowEndsAt).toBeNull();
+      expect((await service.getRule(mailboxA, ruleId))?.mode).toBe('active');
+    });
+
+    it('keeps a Delete-configured low-engagement rule review-only', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       await db
         .update(automationRules)
-        .set({ mode: 'active' })
+        .set({ actionKind: 'delete' })
         .where(eq(automationRules.id, ruleId));
-      const projected = await service.getRule(mailboxA, ruleId);
-      expect(projected?.mode).toBe('observe');
-      expect(projected?.observeWindowEndsAt).toBeNull();
-      expect(projected?.observeWindowElapsed).toBe(false);
+      await expect(
+        service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' }),
+      ).rejects.toThrow('Delete batches always require preview and approval.');
     });
 
     it('keeps new-sender matches review-only, including legacy Active rows', async () => {

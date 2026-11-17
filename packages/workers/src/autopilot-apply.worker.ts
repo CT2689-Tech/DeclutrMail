@@ -1,5 +1,5 @@
 import type { JobsOptions, WorkerOptions } from 'bullmq';
-import { and, eq, inArray, ne, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { Redis } from 'ioredis';
 
@@ -10,13 +10,19 @@ import {
   type AutopilotMatchResolution,
   type AutopilotPresetKey,
   automationRules,
+  mailMessages,
   mailboxAccounts,
   ruleMatchIsQueuedAction,
   ruleMatchLog,
   type schema,
+  senderInboxActionWhere,
   senders,
   workspaces,
 } from '@declutrmail/db';
+import {
+  AutopilotSenderRuleConditionsSchema,
+  isReviewOnlyRule,
+} from '@declutrmail/shared/contracts';
 import { hasCapability } from '@declutrmail/shared/entitlements';
 
 import { AUTOPILOT_PRESETS, matchConfiguredPreset, type PresetInput } from './autopilot-presets.js';
@@ -83,8 +89,7 @@ export interface AutopilotApplyJobResult {
    * Observe-mode suggestions SKIPPED for the same no-op reason as
    * {@link activeSkippedNotActionable}: an unsubscribe-kind preset whose
    * sender already carries `policy_type='unsubscribe'`, or an
-   * archive/later-kind preset (the two forced-Observe "review" presets —
-   * `auto_archive_low_engagement`, `auto_screen_new_senders`) whose
+   * archive/later-kind preset whose
    * sender has zero INBOX messages. Until 2026-09-29 Observe suggestions
    * were NOT gated on this — "a suggestion is meaningful even when the
    * inbox is momentarily clear" — but that let the Watch-first queue
@@ -156,6 +161,8 @@ export interface AutopilotApplyDeps {
  *   - Materializes the minimal `PresetSignals` for every sender (the
  *     rule set does not need the full cascade signal vector).
  *   - Runs each preset matcher; on match, INSERTs into `rule_match_log`.
+ *   - For an Active custom Archive rule, writes an Active match for each
+ *     sender it names that has inbox mail old enough to move.
  *   - Filters protected senders (`signals.isProtected = true`) BEFORE
  *     matching. Protected senders should never be auto-actioned.
  *   - Updates `automation_rules.last_run_at` + `last_run_actions` +
@@ -264,13 +271,17 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       k !== null && presetKeySet.has(k);
 
     for (const rule of rules) {
-      // Custom rules (presetKey=NULL) and any future preset keys the
-      // worker doesn't know about yet — V2.1 territory; skip per D197.
-      if (!isPresetKey(rule.presetKey)) continue;
       // Delete is always an explicitly approved, frozen message batch.
       // It never creates legacy automatic or sender-level approvals.
       if (rule.actionKind === 'delete') continue;
-      const def = AUTOPILOT_PRESETS[rule.presetKey];
+      // A custom sender rule names its senders outright. It has no matcher
+      // to tune and no suggestions to collect (its review path is the frozen
+      // preview), so only an Active Archive rule reaches here — the loader
+      // admits no other — and every sender it names is a candidate.
+      const senderList = rule.isPreset ? null : senderListOf(rule);
+      // Any future preset key the worker doesn't know yet, or a custom row
+      // that isn't a valid sender list: skip rather than guess.
+      if (!senderList && !isPresetKey(rule.presetKey)) continue;
 
       // numeric(3,2) → number. The schema stores a string; the matcher
       // wants a float. `null` means "use the preset default".
@@ -281,7 +292,7 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       // would silently never match. Skip + log + count so the failure
       // is visible in metrics.
       let threshold: number | null = null;
-      if (rule.confidenceThreshold !== null) {
+      if (!senderList && rule.confidenceThreshold !== null) {
         const parsed = Number.parseFloat(rule.confidenceThreshold);
         if (!Number.isFinite(parsed)) {
           rulesSkippedMalformed += 1;
@@ -298,17 +309,15 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
         }
         threshold = parsed;
       }
-      // New-sender and low-engagement signals cannot reliably distinguish
-      // promotions from account, purchase, or security messages. Even legacy
-      // Active rows collect suggestions rather than moving mail unattended.
+      // A review-only rule (`isReviewOnlyRule`: Delete, and the new-sender
+      // matcher, which cannot tell a promotion from a person the user writes
+      // to) collects suggestions even if it is stored Active. Everything
+      // else stored Active acts unattended.
       const modeAtMatch: AutopilotMatchMode =
-        rule.mode === 'active' &&
-        rule.presetKey !== 'auto_screen_new_senders' &&
-        rule.presetKey !== 'auto_archive_low_engagement'
-          ? 'active'
-          : 'observe';
+        rule.mode === 'active' && !isReviewOnlyRule(rule) ? 'active' : 'observe';
       const resolution: AutopilotMatchResolution =
         modeAtMatch === 'active' ? 'approved' : 'pending';
+      if (senderList && modeAtMatch !== 'active') continue;
 
       // Per-rule try/catch — one rule's failure (deadlock, transient
       // DB error, schema drift) must NOT kill the whole apply pass.
@@ -317,32 +326,60 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       try {
         rulesEvaluated += 1;
         let matchesForRule: Array<{ senderKey: string; confidence: number; reason: string }> = [];
-        for (const { senderKey, signals, decision, inboxCount, isUnsubscribed } of eligible) {
-          const input: PresetInput = { signals, triageDecision: decision };
-          const result = matchConfiguredPreset(rule.presetKey, input, threshold, rule.conditions);
-          if (!result.matched) continue;
-          // Actionability gate (see the `activeSkippedNotActionable` /
-          // `observeSkippedNotActionable` docstrings): skip the insert
-          // when the configured verb would be a 0-affected no-op —
-          // unsubscribe for a sender already carrying
-          // `policy_type='unsubscribe'`, or archive/later for a sender
-          // with zero INBOX messages. Applied to BOTH modes: Active
-          // already needed this so a re-trigger sweep does not stack
-          // 0-affected actions; Observe needs the identical check so the
-          // Watch-first queue never offers a suggestion the Active sweep
-          // and the turn-on preview would already have excluded (founder
-          // decisions 2026-09-29, see the docstrings for the citations).
-          const actionable = rule.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
-          if (!actionable) {
-            if (modeAtMatch === 'active') activeSkippedNotActionable += 1;
-            else observeSkippedNotActionable += 1;
-            continue;
+        if (senderList) {
+          // Same message set the action worker will archive
+          // (`senderInboxActionWhere` with the rule's age), so a match is
+          // written only when that archive would move something.
+          const named = eligible.filter((s) => senderList.senderKeys.has(s.senderKey));
+          const actionable = await this.senderListInboxCounts(
+            mailboxAccountId,
+            named.map((s) => s.senderKey),
+            senderList.olderThanDays,
+          );
+          for (const { senderKey } of named) {
+            if ((actionable.get(senderKey) ?? 0) === 0) {
+              activeSkippedNotActionable += 1;
+              continue;
+            }
+            matchesForRule.push({
+              senderKey,
+              confidence: 1,
+              reason:
+                senderList.olderThanDays === null
+                  ? 'Sender chosen in this rule'
+                  : `Sender chosen in this rule, email older than ${senderList.olderThanDays} days`,
+            });
           }
-          // Confidence stored on the match row: the engine's current
-          // confidence if a decision row exists; otherwise the rule's
-          // threshold (or 0 for non-threshold presets) as a stable default.
-          const confidence = decision?.confidence ?? threshold ?? def.defaultThreshold ?? 0;
-          matchesForRule.push({ senderKey, confidence, reason: result.reason });
+        } else if (isPresetKey(rule.presetKey)) {
+          const presetKey = rule.presetKey;
+          const def = AUTOPILOT_PRESETS[presetKey];
+          for (const { senderKey, signals, decision, inboxCount, isUnsubscribed } of eligible) {
+            const input: PresetInput = { signals, triageDecision: decision };
+            const result = matchConfiguredPreset(presetKey, input, threshold, rule.conditions);
+            if (!result.matched) continue;
+            // Actionability gate (see the `activeSkippedNotActionable` /
+            // `observeSkippedNotActionable` docstrings): skip the insert
+            // when the configured verb would be a 0-affected no-op —
+            // unsubscribe for a sender already carrying
+            // `policy_type='unsubscribe'`, or archive/later for a sender
+            // with zero INBOX messages. Applied to BOTH modes: Active
+            // already needed this so a re-trigger sweep does not stack
+            // 0-affected actions; Observe needs the identical check so the
+            // Watch-first queue never offers a suggestion the Active sweep
+            // and the turn-on preview would already have excluded (founder
+            // decisions 2026-09-29, see the docstrings for the citations).
+            const actionable = rule.actionKind === 'unsubscribe' ? !isUnsubscribed : inboxCount > 0;
+            if (!actionable) {
+              if (modeAtMatch === 'active') activeSkippedNotActionable += 1;
+              else observeSkippedNotActionable += 1;
+              continue;
+            }
+            // Confidence stored on the match row: the engine's current
+            // confidence if a decision row exists; otherwise the rule's
+            // threshold (or 0 for non-threshold presets) as a stable default.
+            const confidence = decision?.confidence ?? threshold ?? def.defaultThreshold ?? 0;
+            matchesForRule.push({ senderKey, confidence, reason: result.reason });
+          }
         }
 
         // Already-queued dedup (see `activeSkippedAlreadyQueued`): drop
@@ -597,9 +634,8 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
   /**
    * Enabled, non-paused rules for an entitled mailbox. Tier is checked
    * here so downgraded workspaces stop before signal materialization or
-   * match creation. Custom rules (`is_preset = false`) are accepted by
-   * the schema but skipped at runtime per D197 — V2 ships only the
-   * preset matchers.
+   * match creation. A custom sender rule (`is_preset = false`) loads
+   * only as an Active Archive rule on a tier granting `autopilot-active`.
    */
   /**
    * A fingerprint that changes only when the sender index is REBUILT.
@@ -647,8 +683,8 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     // than silently continuing to act on a tier that stopped paying for
     // it, while Observe rules keep running.
     //
-    // Legacy Active new-sender and low-engagement rows are exceptions: the
-    // matcher forces Observe for those presets, so a review-entitled workspace
+    // A legacy Active new-sender row is the exception: the matcher forces
+    // Observe for it (`isReviewOnlyRule`), so a review-entitled workspace
     // may still collect its suggestions after a future tier split.
     //
     // 2026-08-23: both capabilities sit on Plus, so the only tier with
@@ -667,19 +703,59 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           eq(automationRules.mailboxAccountId, mailboxAccountId),
           eq(automationRules.enabled, true),
           ne(automationRules.mode, 'paused'),
-          ...(mayActUnattended
-            ? []
-            : [
-                or(
-                  ne(automationRules.mode, 'active'),
-                  eq(automationRules.presetKey, 'auto_screen_new_senders'),
-                  eq(automationRules.presetKey, 'auto_archive_low_engagement'),
-                ),
-              ]),
-          eq(automationRules.isPreset, true),
+          isNull(automationRules.retiredAt),
+          or(
+            and(
+              eq(automationRules.isPreset, true),
+              mayActUnattended
+                ? undefined
+                : or(
+                    ne(automationRules.mode, 'active'),
+                    eq(automationRules.presetKey, 'auto_screen_new_senders'),
+                  ),
+            ),
+            // A custom sender rule runs here only as an Active Archive
+            // rule; Observe sender rules are reviewed through their frozen
+            // preview instead, and Delete never runs unattended.
+            mayActUnattended
+              ? and(
+                  eq(automationRules.isPreset, false),
+                  eq(automationRules.mode, 'active'),
+                  eq(automationRules.actionKind, 'archive'),
+                )
+              : undefined,
+          ),
         ),
       );
   }
+
+  /**
+   * INBOX messages per named sender that an Archive would move now: the
+   * action worker's own resolution (`senderInboxActionWhere`), counted.
+   */
+  private async senderListInboxCounts(
+    mailboxAccountId: string,
+    senderKeys: string[],
+    olderThanDays: number | null,
+  ): Promise<Map<string, number>> {
+    if (senderKeys.length === 0) return new Map();
+    const rows = await this.deps.db
+      .select({ senderKey: mailMessages.senderKey, n: sql<number>`count(*)::int` })
+      .from(mailMessages)
+      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys, olderThanDays }))
+      .groupBy(mailMessages.senderKey);
+    return new Map(rows.map((r) => [r.senderKey ?? '', Number(r.n)]));
+  }
+}
+
+/** A custom rule's sender list, or `null` when the stored row is not one. */
+function senderListOf(
+  rule: AutomationRule,
+): { senderKeys: ReadonlySet<string>; olderThanDays: number | null } | null {
+  const parsed = AutopilotSenderRuleConditionsSchema.safeParse(rule.conditions);
+  return parsed.success
+    ? { senderKeys: new Set(parsed.data.senderKeys), olderThanDays: parsed.data.olderThanDays }
+    : null;
 }
 
 /** Queue + job name for the Autopilot apply worker (matches the score-worker pattern). */

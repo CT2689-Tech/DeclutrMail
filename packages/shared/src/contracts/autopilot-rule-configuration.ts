@@ -46,6 +46,19 @@ export const AutopilotRuleConfigurationSchema = z
   });
 export type AutopilotRuleConfiguration = z.infer<typeof AutopilotRuleConfigurationSchema>;
 
+/**
+ * Rules that may never act unattended: every batch waits for approval.
+ *
+ * Delete always does. So does the new-sender matcher: run against the
+ * founder's mailbox on 2026-11-17, 382 of the 3,835 senders it would have
+ * moved were people the user had written to or Gmail had marked important
+ * (founder decision 3A, "Archive only"). The API, both Autopilot workers and
+ * the web all read this one predicate.
+ */
+export function isReviewOnlyRule(rule: { presetKey: string | null; actionKind: string }): boolean {
+  return rule.actionKind === 'delete' || rule.presetKey === 'auto_screen_new_senders';
+}
+
 /** Empty stored conditions retain the installed preset's original behavior. */
 export function defaultAutopilotConditions(
   key: string | null,
