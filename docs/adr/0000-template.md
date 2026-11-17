@@ -3,13 +3,12 @@
 - **Status:** Proposed | Accepted | Superseded by ADR-NNNN
 - **Date:** YYYY-MM-DD
 - **Deciders:** <founder, agent name(s) involved>
-- **Related D-decisions:** D###, D###
 
 ## Context
 
 <What is the problem? What forces are at play? What constraints exist?
-2-4 paragraphs. Reference D-decisions that are relevant but don't fully
-answer the question.>
+2-4 paragraphs. Name what backs the constraint — an external policy, a
+published claim, an incident, a manifest or a test — not a plan number.>
 
 ## Decision
 
@@ -47,4 +46,4 @@ dependencies to add, tests to write.>
 
 ## References
 
-<Optional. Links to related ADRs, D-decisions, external docs, prior art.>
+<Optional. Links to related ADRs, incidents, external docs, prior art.>

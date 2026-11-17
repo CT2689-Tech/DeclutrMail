@@ -14,7 +14,6 @@ function fixture() {
     'typecheck',
     'lint',
     'format',
-    'impl-log',
     'test-api',
     'test-workers',
     'test-db',
@@ -82,10 +81,9 @@ test('missing path outputs fail closed; green PR and queue pass', () => {
   assert.ok(checkRequired(needs, 'pull_request').length);
 });
 
-test('push and manual runs require full suites and permit only the intentional log skip', () => {
+test('push and manual runs require full suites', () => {
   for (const event of ['push', 'workflow_dispatch']) {
     const needs = fixture();
-    needs['impl-log'].result = 'skipped';
     assert.deepEqual(checkRequired(needs, event), []);
     needs.accessibility.result = 'skipped';
     assert.ok(checkRequired(needs, event).length);
@@ -95,7 +93,6 @@ test('push and manual runs require full suites and permit only the intentional l
 
 test('only independently verified main queue proof permits the declared reused suites to skip', () => {
   const needs = fixture();
-  needs['impl-log'].result = 'skipped';
   Object.assign(needs.changes.outputs, { reuse: 'true', reuse_run_id: '100', reuse_attempt: '1' });
   for (const job of reusedJobs) needs[job].result = 'skipped';
   const verifiedSource = { runId: 100, attempt: 1 };
@@ -125,15 +122,7 @@ test('only independently verified main queue proof permits the declared reused s
 test('test aggregate also rejects unexpected skips and an invalid path selection', () => {
   const testsOnly = { testsOnly: true };
   assert.deepEqual(checkRequired(fixture(), 'merge_group', testsOnly), []);
-  for (const job of [
-    'changes',
-    'impl-log',
-    'test-api',
-    'test-workers',
-    'test-db',
-    'test-web',
-    'test-units',
-  ]) {
+  for (const job of ['changes', 'test-api', 'test-workers', 'test-db', 'test-web', 'test-units']) {
     const needs = fixture();
     needs[job].result = 'skipped';
     assert.ok(checkRequired(needs, 'merge_group', testsOnly).length, job);

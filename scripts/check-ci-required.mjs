@@ -23,8 +23,6 @@ export function checkRequired(needs, event, { verifiedSource, testsOnly = false 
   for (const job of testsOnly ? ['changes'] : ['changes', 'typecheck', 'lint', 'format']) {
     if (needs[job]?.result !== 'success') errors.push(`${job} must succeed`);
   }
-  const logExpected = ['pull_request', 'merge_group'].includes(event) ? 'success' : 'skipped';
-  if (needs['impl-log']?.result !== logExpected) errors.push(`impl-log must be ${logExpected}`);
   const receipt = needs.changes?.outputs;
   const reuseRequested = receipt?.reuse === 'true';
   if (

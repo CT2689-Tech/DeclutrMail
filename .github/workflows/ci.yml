@@ -232,43 +232,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
 
-  impl-log:
-    name: Implementation log is derived and current
-    # Two modes, because the question differs by event (2026-08-19).
-    #
-    # On a PR the gate asks "is YOUR claim right?" — it fails only on rows
-    # this PR closes or whose `.impl-log/` fragment it edits. Comparing
-    # the whole file failed PRs for rows they had never heard of: five in
-    # flight on 2026-08-11 spent their reviews laundering each other's
-    # drift by hand.
-    #
-    # In the merge queue the candidate IS what becomes main, so the gate
-    # goes strict — any drift there is drift about to land. Running on
-    # push-to-main instead would only produce red nobody can act on, the
-    # permanently-red-guardrail class this repo keeps relearning.
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      # Recomputes ⬜/🔵 from the plan + merged `Closes D###` trailers and
-      # fails when the committed IMPLEMENTATION-LOG.md disagrees. This
-      # replaced pr-merged.yml's push-to-main flip, which branch
-      # protection rejected on EVERY run — it never once wrote a flip
-      # (D158, 2026-07-28). Fix a failure here with:
-      #   pnpm generate-impl-log && git add IMPLEMENTATION-LOG.md
-      - run: >-
-          pnpm generate-impl-log --check
-          ${{ github.event_name == 'merge_group' && '--strict' || '' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -309,15 +272,13 @@ jobs:
         run: node --test scripts/paddle-sandbox-inspection.test.mjs scripts/paddle-sandbox-india-checkout.test.mjs
       - name: Build selection and artifact retention contracts
         run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/artifact-cleanup-policy.test.mjs scripts/deploy-api-safely.test.mjs scripts/live-india-billing-env.test.mjs scripts/check-billing-queue-runtime.test.mjs
-      - name: PR-body D-citation matcher
-        run: node --test scripts/check-pr-body-d-ref.test.mjs scripts/merged-pr-history.test.mjs
       - name: ct-gates verdicts (a run that reviewed nothing never passes)
         run: node --test scripts/ct-gates-workflow.test.mjs
       - name: User-journey log trace
         run: node --test scripts/journey-logs.test.mjs
       - name: Stuck-mailbox alert and sync watchdog contracts
         run: node --test scripts/stuck-mailbox-alert.test.mjs scripts/check-known-stuck.test.mjs scripts/check-sync-failed.test.mjs
-      - name: No personal email addresses in tracked files (D7)
+      - name: No personal email addresses in tracked files
         run: node --test scripts/personal-email-guard.test.mjs
       # The .claude/hooks guards only ran on edits made through Claude Code,
       # and signalled violations with an exit code the agent never sees, so
@@ -328,7 +289,7 @@ jobs:
       # Pre-existing findings live in scripts/guard-hooks-allowlist.json.
       - name: Guard-hook runner contracts
         run: node --test scripts/run-guard-hooks.test.mjs
-      - name: Tier 1 guard hooks (D7, D222, D227)
+      - name: Tier 1 guard hooks
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || github.event.before }}
         run: |
@@ -766,7 +727,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: >-
           pnpm
-          --filter @declutrmail/config
           --filter @declutrmail/events
           --filter @declutrmail/shared
           test
@@ -787,7 +747,7 @@ jobs:
   test:
     name: Test
     if: ${{ always() }}
-    needs: [changes, impl-log, test-api, test-workers, test-db, test-web, test-units]
+    needs: [changes, test-api, test-workers, test-db, test-web, test-units]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -811,7 +771,6 @@ jobs:
         typecheck,
         lint,
         format,
-        impl-log,
         test-api,
         test-workers,
         test-db,
