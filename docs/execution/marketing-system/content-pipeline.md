@@ -174,7 +174,7 @@ notification behavior: notify on concrete new work, completion, failure or a
 needed approval; do not repeat unchanged approval requests.
 
 Contract tests cover changed-content/destination/asset refusal, founder approval,
-zero spend, private-field exclusion, HTML escaping, staging idempotency,
+the $200 monthly spend cap, private-field exclusion, HTML escaping, staging idempotency,
 revision re-review and single-writer locks. The web integration test verifies
 that a fixture publication reaches the blog, metadata, static params and sitemap.
 Do not treat any fixture receipt as real approval.

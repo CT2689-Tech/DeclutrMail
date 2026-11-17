@@ -20,7 +20,7 @@ Repository completion is not production verification. See [current founder gates
 
 ## 0. If you are overwhelmed, do this
 
-This runbook assumes a solo founder and no paid acquisition budget; current customer counts have not been re-queried. The product
+This runbook assumes a solo founder and a paid-marketing cap of $200 a month (founder decision 2026-11-17); current customer counts have not been re-queried. The product
 already has a landing page, how-tos, `/vs` pages, and `/inbox-simulator`.
 Attribution plumbing exists in the repository. Verify it survives the production OAuth path before increasing outreach; do not rebuild it or add pages merely to expand the inventory.
 
@@ -31,7 +31,7 @@ Today:
 2. Complete the production verification gates in the founder checklist, then address the unchecked launch-copy tasks below.
 3. Every day, run **the community loop** even if launch is not booked.
 
-Do not: install duplicate marketing skills, start a Discord, buy ads,
+Do not: install duplicate marketing skills, start a Discord, spend past the $200 monthly cap,
 or wait for SEO. Search Console (`sc-domain:declutrmail.com`, 24 May–21 Aug 2026)
 showed how-tos getting impressions and **zero clicks**. Re-query before repeating
 that sentence.
@@ -140,7 +140,7 @@ Handles (~30 min):
 
 This week, not the same half hour:
 
-- [ ] Product Hunt Coming Soon collecting followers (the only launch-notification list the CAN-SPAM gate allows — no capture forms on content pages)
+- [ ] Product Hunt Coming Soon collecting followers (the only launch-notification list until `BUSINESS_POSTAL_ADDRESS` is set; then signup forms may follow, see §8)
 - [ ] Start HN seasoning: 3 comments this week, no product
 - [ ] Immigration counsel before you book Show HN if H‑1B operating-authorization is still open. This runbook does not decide that.
 
@@ -290,8 +290,17 @@ Use those URLs as comment destinations. Do not wait for them to rank.
 
 ## 8. Explicitly not channels (now)
 
-- Owned email / newsletter on content pages (CAN-SPAM postal-address gate). Resend = transactional only
-- Paid ads
+Allowed, with conditions (founder decisions 2026-11-17):
+
+- **Paid marketing** up to **$200 a month** in total (ads, sponsored newsletters, paid directory
+  fast-tracks). The content pipeline refuses a publication approval that would cross the
+  cap; it cannot see spend made outside it, so log that spend too.
+- **Owned email / newsletter signup on content pages** once `BUSINESS_POSTAL_ADDRESS`
+  (`packages/shared/src/copy/postal-address.ts`) is set, which CAN-SPAM needs for commercial email,
+  and `/privacy` discloses the list. Until then Resend stays transactional only.
+
+Not channels:
+
 - Discord / Slack community
 - G2 / Capterra review pushes
 - Privacy-absolutist forums (a public rejection of a closed-source cloud Gmail tool becomes a durable cite; skip)

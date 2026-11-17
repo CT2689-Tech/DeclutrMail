@@ -158,8 +158,9 @@ The 80/20:
 - **Attribution must be live before the first launch post.** Still open. Launch traffic
   arrives exactly once; the cross-domain OAuth jump loses the thread today. No
   attribution = every future channel decision is vibes.
-- **Owned email marketing is closed** (CAN-SPAM postal-address gate; transactional only).
-  Product Hunt's Coming Soon follower notification is the one compliant launch list.
+- **Owned email marketing opens once `BUSINESS_POSTAL_ADDRESS` is set** (CAN-SPAM) and `/privacy`
+  discloses the list (founder decision 2026-11-17). Until then Product Hunt's Coming Soon follower
+  notification is the one compliant launch list.
 
 Hard rules bounding every tactic below: D209 banned vocabulary applies to marketing copy
 (never "never reads your email", never "every action is reversible" — state 7-day
@@ -189,8 +190,8 @@ Ranked for a solo prelaunch founder. Peak launch-fortnight load ~15–20 h/wk; s
 | 6   | **Directories / entity layer**                                                                                | AlternativeTo + SaaSHub (pre-launch wk), LinkedIn company page + Crunchbase; later DR-20+ micro-launch drip                                                                                                                    | One-time + 20 min/listing drip post-PH                                     | ~6–8 one-time           | AlternativeTo referral visits; product appearing in LLM "alternative" answers (audit)                   | Skip anything pay-to-play or badge-swap                                                                         |
 | 7   | **LinkedIn**                                                                                                  | Repost the X story posts; links in first comment only; storage-list carousel later                                                                                                                                             | 1/wk, 30 min                                                               | 0.5                     | Any ICP inbound at all                                                                                  | Zero engagement after 6 wks → keep the company page as an entity anchor, stop posting                           |
 
-Explicitly not channels right now: owned email/newsletter (CAN-SPAM gate — no capture forms
-on content pages), paid anything (zero budget), G2/Capterra review pushes (zero users),
+Explicitly not channels right now: owned email/newsletter until the postal address is set,
+paid anything beyond the $200 monthly cap, G2/Capterra review pushes (zero users),
 privacy-absolutist communities (closed-source cloud service will be publicly rejected —
 a permanent AI-citable artifact against the wedge).
 

@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  approvedSpendInMonth,
+  assertWithinMonthlyCap,
   contentDigest,
   execute,
   reviewHtml,
@@ -110,7 +112,7 @@ test('unknown nested public fields and unsafe source links cannot leak into publ
   assert.throws(() => validateArticle(c, TODAY), /fictional/);
 });
 
-test('approval binds exact words, destination, founder sign-off and zero spend', () => {
+test('approval binds exact words, destination, founder sign-off and the spend cap', () => {
   const d = draft();
   const a = approval(d);
   assert.equal(verifyApproval(d, a, TODAY), a);
@@ -128,7 +130,20 @@ test('approval binds exact words, destination, founder sign-off and zero spend',
     () => verifyApproval(d, { ...a, founder: { ...a.founder, decision: 'pending' } }, TODAY),
     /founder approval/,
   );
-  assert.throws(() => verifyApproval(d, { ...a, additionalSpend: 1 }, TODAY), /zero/);
+  assert.equal(verifyApproval(d, { ...a, additionalSpend: 29.99 }, TODAY).additionalSpend, 29.99);
+  assert.throws(() => verifyApproval(d, { ...a, additionalSpend: 201 }, TODAY), /cap/);
+  assert.throws(() => verifyApproval(d, { ...a, additionalSpend: -1 }, TODAY), /cap/);
+  assert.throws(() => verifyApproval(d, { ...a, additionalSpend: undefined }, TODAY), /cap/);
+});
+
+test('the monthly cap sums earlier approvals in the same month only', () => {
+  const month = TODAY.slice(0, 7);
+  const at = (approvedAt, additionalSpend) => ({ founder: { approvedAt }, additionalSpend });
+  const earlier = [at(TODAY, 150), at('2020-01-15', 190), at(TODAY, 0)];
+  assert.equal(approvedSpendInMonth(earlier, month), 150);
+  assertWithinMonthlyCap(at(TODAY, 50), earlier);
+  assert.throws(() => assertWithinMonthlyCap(at(TODAY, 51), earlier), /monthly marketing cap/);
+  assertWithinMonthlyCap(at(TODAY, 200), []);
 });
 
 test('private review escapes injected markup and cannot publish', () => {

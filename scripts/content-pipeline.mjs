@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Local drafting/review/staging only. External publication uses the normal PR
-// workflow after explicit founder approval and Content sign-off of exact bytes.
+// workflow after explicit founder approval of exact bytes.
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, open, readFile, realpath, rename, stat, unlink, writeFile } from 'node:fs/promises';
@@ -293,6 +293,27 @@ export function contentDigest(draft) {
   });
 }
 
+/** Founder decision 2026-11-17: paid marketing allowed up to $200 a month. */
+export const MONTHLY_MARKETING_CAP_USD = 200;
+
+/** Spend already approved in `month` (YYYY-MM), from earlier approval receipts. */
+export function approvedSpendInMonth(approvals, month) {
+  return approvals
+    .filter(
+      (a) => typeof a?.founder?.approvedAt === 'string' && a.founder.approvedAt.startsWith(month),
+    )
+    .reduce((sum, a) => sum + (Number.isFinite(a.additionalSpend) ? a.additionalSpend : 0), 0);
+}
+
+export function assertWithinMonthlyCap(approval, otherApprovals) {
+  const month = approval.founder.approvedAt.slice(0, 7);
+  const total = approvedSpendInMonth(otherApprovals, month) + approval.additionalSpend;
+  check(
+    total <= MONTHLY_MARKETING_CAP_USD,
+    `Approved spend for ${month} would be $${total}, over the $${MONTHLY_MARKETING_CAP_USD} monthly marketing cap`,
+  );
+}
+
 export function verifyApproval(draft, approval, today = pacificDate()) {
   validateDraft(draft, today);
   check(
@@ -319,7 +340,12 @@ export function verifyApproval(draft, approval, today = pacificDate()) {
       receipt.approvedAt <= today,
     'founder approval and its actual evidence reference are required',
   );
-  check(approval.additionalSpend === 0, 'Only zero-additional-spend publication is permitted');
+  check(
+    Number.isFinite(approval.additionalSpend) &&
+      approval.additionalSpend >= 0 &&
+      approval.additionalSpend <= MONTHLY_MARKETING_CAP_USD,
+    `Additional spend must be between $0 and the $${MONTHLY_MARKETING_CAP_USD} monthly marketing cap`,
+  );
   return approval;
 }
 
@@ -390,7 +416,7 @@ export function reviewHtml(draft, images = []) {
               `<figure><img src="data:image/png;base64,${image}" alt="${escape(draft.directory.images[i].alt)}"><figcaption>${escape(draft.directory.images[i].caption)}<details><summary>Image description</summary>${escape(draft.directory.images[i].alt)}</details></figcaption></figure>`,
           )
           .join('');
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escape(title)} — private review</title><style>body{margin:0;background:#f6f3ee;color:#28252b;font:18px/1.65 Georgia,serif}header{padding:20px 6vw;background:#51415f;color:#fff;font:16px/1.6 system-ui}main{max-width:850px;margin:48px auto;padding:0 28px 80px}h1{font-size:44px;line-height:1.12;letter-spacing:-1px}h2{font-size:27px;margin-top:38px}a{color:#51415f}aside{background:#eae3ef;padding:20px;border-radius:12px}img{width:100%;height:auto;border:1px solid #d7cfdd;border-radius:12px}figure{margin:30px 0}figcaption{font:15px/1.5 system-ui;color:#655c6c}.lede{font-size:23px}footer{border-top:1px solid #d7cfdd;padding-top:24px;font:16px/1.6 system-ui}code{overflow-wrap:anywhere}</style><header>DeclutrMail · Private draft · Not published</header><main>${body}<footer><p><strong>Review ${escape(draft.id)}</strong></p><p>Version <code>${contentDigest(draft)}</code></p><p>Publication requires your approval of this version and Content sign-off. Changes after approval require another review. No additional spending, outreach or account changes are included.</p><p>To approve, identify this draft in the chat. This preview itself cannot publish anything.</p></footer></main></html>`;
+  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>${escape(title)} — private review</title><style>body{margin:0;background:#f6f3ee;color:#28252b;font:18px/1.65 Georgia,serif}header{padding:20px 6vw;background:#51415f;color:#fff;font:16px/1.6 system-ui}main{max-width:850px;margin:48px auto;padding:0 28px 80px}h1{font-size:44px;line-height:1.12;letter-spacing:-1px}h2{font-size:27px;margin-top:38px}a{color:#51415f}aside{background:#eae3ef;padding:20px;border-radius:12px}img{width:100%;height:auto;border:1px solid #d7cfdd;border-radius:12px}figure{margin:30px 0}figcaption{font:15px/1.5 system-ui;color:#655c6c}.lede{font-size:23px}footer{border-top:1px solid #d7cfdd;padding-top:24px;font:16px/1.6 system-ui}code{overflow-wrap:anywhere}</style><header>DeclutrMail · Private draft · Not published</header><main>${body}<footer><p><strong>Review ${escape(draft.id)}</strong></p><p>Version <code>${contentDigest(draft)}</code></p><p>Publication requires your approval of this version. Changes after approval require another review. Any spend is stated in the approval and must fit the $${MONTHLY_MARKETING_CAP_USD} monthly marketing cap; no outreach or account changes are included.</p><p>To approve, identify this draft in the chat. This preview itself cannot publish anything.</p></footer></main></html>`;
 }
 
 async function readJson(filename) {
@@ -488,6 +514,13 @@ export async function execute(command, options, dependencies = {}) {
       const draft = validateDraft(await readJson(path.join(item.folder, 'draft.json')), today);
       const approval = verifyApproval(draft, await readJson(options.approval), today);
       check(contentDigest(draft) === item.digest, 'Private draft changed unexpectedly');
+      const otherApprovals = [];
+      for (const other of state.items) {
+        const receipt = path.join(other.folder, 'approval.json');
+        if (other.id !== item.id && existsSync(receipt))
+          otherApprovals.push(await readJson(receipt));
+      }
+      assertWithinMonthlyCap(approval, otherApprovals);
       if (command === 'stage-approved') {
         check(draft.kind === 'article', 'Article draft required');
         const repo = await realpath(options.repo || ROOT);
