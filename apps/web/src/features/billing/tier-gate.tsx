@@ -170,12 +170,16 @@ export function TierGate({
         }}
         style={{
           display: 'inline-flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 10,
-          height: 50,
+          columnGap: 10,
+          rowGap: 2,
+          minHeight: 50,
+          maxWidth: '100%',
+          boxSizing: 'border-box',
           marginTop: 28,
-          padding: '0 28px',
+          padding: '8px 28px',
           background: color.primary,
           color: color.fgInverse,
           borderRadius: radius.pill,
@@ -184,12 +188,15 @@ export function TierGate({
           fontWeight: 600,
           letterSpacing: '-0.006em',
           textDecoration: 'none',
-          whiteSpace: 'nowrap',
         }}
       >
-        Upgrade to {requiredTier}
+        {/* Each part stays whole; the price wraps to a second line rather
+            than pushing the pill past a 320px viewport. */}
+        <span style={{ whiteSpace: 'nowrap' }}>Upgrade to {requiredTier}</span>
         {quotedPrice ? (
-          <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>{quotedPrice}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums', opacity: 0.85, whiteSpace: 'nowrap' }}>
+            {quotedPrice}
+          </span>
         ) : null}
       </Link>
 
