@@ -18,7 +18,7 @@ import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { inboxLimitFor, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { inboxLimitFor, METER } from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { AuthSignupOrchestrator } from '../auth/auth-signup.orchestrator.js';
@@ -54,8 +54,8 @@ const MIGRATIONS_DIR = join(
 
 const pgUrl = process.env.CLEANUP_TEST_PG_URL;
 
-/** The Free monthly quota, from the pricing config (A3). */
-const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
+/** Free's monthly email allowance, from the pricing config. */
+const FREE_LIMIT = METER.free.limit;
 const PRO_INBOX_LIMIT = inboxLimitFor('pro');
 
 type Client = ReturnType<typeof postgres>;
@@ -188,16 +188,18 @@ async function seedQuotaFixture(
     labelIds: ['INBOX'],
   });
 
-  for (let i = 0; i < fillUnits; i += 1) {
+  // One done forward row holds the spent emails (Free's meter sums quota_units).
+  if (fillUnits > 0) {
     await db.insert(actionJobs).values({
       mailboxAccountId: mailbox!.id,
       verb: 'archive',
       direction: 'forward',
       selector: { type: 'sender', senderId: sender!.id, senderKey },
-      requestedCount: 1,
-      affectedCount: 1,
+      requestedCount: fillUnits,
+      affectedCount: fillUnits,
+      quotaUnits: fillUnits,
       status: 'done',
-      idempotencyKey: `postgres-${label}-fill-${i}`,
+      idempotencyKey: `postgres-${label}-fill-0`,
     });
   }
 
@@ -438,7 +440,7 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
     },
   );
 
-  it('admits only one mixed cleanup request when one Free unit remains', async () => {
+  it('admits only one archive when one Free email remains; a racing unsubscribe draws nothing', async () => {
     const backendPids = await Promise.all(
       clients.map(async (client) => {
         const [row] = await client<{ pid: number }[]>`SELECT pg_backend_pid()::int AS pid`;
@@ -504,14 +506,14 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
     if (contentionFailure) throw contentionFailure;
     if (releaseFailure) throw releaseFailure;
 
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    // The unsubscribe is free; exactly one of the two one-email archives fits.
+    expect(results[2]?.status).toBe('fulfilled');
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2);
     const rejected = results.filter(
       (result): result is PromiseRejectedResult => result.status === 'rejected',
     );
-    expect(rejected).toHaveLength(2);
-    for (const result of rejected) {
-      expect(result.reason).toMatchObject({ code: 'FREE_CAP_REACHED' });
-    }
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toMatchObject({ code: 'FREE_CAP_REACHED' });
 
     const candidateRows = await databases[0]!
       .select({ id: actionJobs.id })
@@ -523,7 +525,7 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
           'unsub:postgres-race-unsubscribe',
         ]),
       );
-    expect(candidateRows).toHaveLength(1);
+    expect(candidateRows).toHaveLength(2);
     await expect(
       new EntitlementsService(databases[0]! as never).cleanupSummary(workspaceId),
     ).resolves.toEqual({
@@ -551,7 +553,7 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
   });
 
   it('A3 bulk race: two concurrent bulks near the boundary cannot exceed the quota', async () => {
-    // Three units remain; each racing bulk asks for two. The capacity
+    // Three emails remain; each racing bulk asks for two. The capacity
     // check, replay recheck and inserts share ONE transaction holding
     // the workspace row lock, so exactly one bulk can win — without the
     // transaction both read used=FREE_LIMIT-3, both pass, and the
@@ -565,7 +567,8 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
     );
 
     const { workspaceId, mailboxId } = await seedQuotaFixture(dbA, FREE_LIMIT - 3, 'bulk-race');
-    // Four extra senders so each bulk acts on its own pair.
+    // Four extra senders, one inbox email each, so each bulk clears its
+    // own pair of emails.
     const extraSenders: string[] = [];
     for (let i = 0; i < 4; i += 1) {
       const key = `${i}`.padStart(64, 'a');
@@ -582,6 +585,15 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
         })
         .returning({ id: senders.id });
       extraSenders.push(row!.id);
+      await dbA.insert(mailMessages).values({
+        mailboxAccountId: mailboxId,
+        providerMessageId: `bulk-race-message-${i}`,
+        providerThreadId: `bulk-race-thread-${i}`,
+        senderKey: key,
+        internalDate: new Date('2026-07-01T00:00:00.000Z'),
+        isUnread: false,
+        labelIds: ['INBOX'],
+      });
     }
 
     const queue = fakeQueue();
@@ -628,7 +640,7 @@ describe.skipIf(!pgUrl)('workspace quota serialization against real Postgres', (
     // The combined consumption can never exceed the quota.
     const summary = await new EntitlementsService(dbA as never).cleanupSummary(workspaceId);
     expect(summary.used).toBeLessThanOrEqual(FREE_LIMIT);
-    expect(summary.used).toBe(FREE_LIMIT - 1); // FREE_LIMIT-3 fill + one 2-sender bulk
+    expect(summary.used).toBe(FREE_LIMIT - 1); // FREE_LIMIT-3 fill + one 2-email bulk
   });
 
   it('admits only one distinct inbox activation when one Pro slot remains', async () => {

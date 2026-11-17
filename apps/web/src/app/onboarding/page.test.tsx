@@ -578,7 +578,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
 
   it('preserves a validated pricing choice through first-run onboarding', async () => {
     searchParams = new URLSearchParams({
-      returnTo: '/billing?cycle=annual&promo=foundingPro&plan=pro',
+      returnTo: '/billing?cycle=annual&plan=pro',
     });
     installFetchStub([
       meAuthed('ready'),
@@ -587,9 +587,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     ]);
     renderPage();
 
-    await waitFor(() =>
-      expect(replace).toHaveBeenCalledWith('/billing?plan=pro&cycle=annual&promo=foundingPro'),
-    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/billing?plan=pro&cycle=annual'));
   });
 
   it('drops an untrusted onboarding destination', async () => {
@@ -679,7 +677,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
   });
 
   it('returns a reconnected Billing mailbox through review completion with its exact intent', async () => {
-    const destination = '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief';
+    const destination = '/billing?plan=pro&cycle=annual&from=%2Fbrief';
     searchParams = new URLSearchParams({ mailbox: 'mb2', reconnect: '1', returnTo: destination });
     installFetchStub([secondaryMe(), syncStatus(true)]);
     renderPage();

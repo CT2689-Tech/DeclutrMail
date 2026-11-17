@@ -27,7 +27,7 @@ import type {
   SelectorType,
 } from '../contracts/verb-constants';
 import { ACTION_VERBS, CANONICAL_SHORTCUTS } from '../contracts/verb-constants';
-import { COUNTS_AS_CLEANUP, SELECTOR_CAPS, SELECTOR_TIERS } from '../entitlements/pricing.config';
+import { SELECTOR_CAPS, SELECTOR_TIERS } from '../entitlements/pricing.config';
 import {
   ACTION_SEMANTICS,
   staticActionPreviewCopy,
@@ -130,11 +130,9 @@ export interface ActionCopy {
   readonly description: string;
 }
 
-/** Tier + cleanup-counting for one selector axis (Codex correction C). */
+/** Tier + batch cap for one selector axis (Codex correction C). */
 export interface ActionCapability {
   readonly tier: ActionTier;
-  /** Whether this draws down the monthly cleanup quota (D19/A3). */
-  readonly countsAsCleanup: boolean;
   /** Max senders per batch for the `multi-sender` selector (D-Q1: 1000). */
   readonly cap?: number;
 }
@@ -152,10 +150,9 @@ export interface CapabilitiesBySelector {
 
 /**
  * A3 seam: verb entries declare only WHICH selectors they support —
- * the one axis that genuinely varies per verb. Tier, batch cap and
- * cleanup counting resolve from the pricing config (SELECTOR_TIERS /
- * SELECTOR_CAPS / COUNTS_AS_CLEANUP), so retiering a selector or
- * changing what counts is a config edit, never a registry sweep.
+ * the one axis that genuinely varies per verb. Tier and batch cap
+ * resolve from the pricing config (SELECTOR_TIERS / SELECTOR_CAPS), so
+ * retiering a selector is a config edit, never a registry sweep.
  */
 export type SelectorSupport = Readonly<Record<SelectorType, boolean>>;
 
@@ -165,7 +162,6 @@ function capabilitiesFor(verb: ActionVerb, support: SelectorSupport): Capabiliti
     const cap = SELECTOR_CAPS[selector];
     return {
       tier: SELECTOR_TIERS[selector],
-      countsAsCleanup: COUNTS_AS_CLEANUP[verb],
       ...(cap !== undefined ? { cap } : {}),
     };
   };

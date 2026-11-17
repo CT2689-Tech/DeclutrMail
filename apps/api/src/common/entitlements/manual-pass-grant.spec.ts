@@ -224,34 +224,29 @@ describe('manual Backlog Pass grants', () => {
     const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
     expect(ws?.tier).toBe('plus');
 
-    process.env.PRICING_V2 = 'true';
-    try {
-      const entitlements = new EntitlementsService(db);
-      expect(await entitlements.inboxEntitlementForWorkspace(workspaceId)).toEqual({
-        limit: 1,
-        reason: 'pass',
-      });
-      await expect(entitlements.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
+    const entitlements = new EntitlementsService(db);
+    expect(await entitlements.inboxEntitlementForWorkspace(workspaceId)).toEqual({
+      limit: 1,
+      reason: 'pass',
+    });
+    await expect(entitlements.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
 
-      await db.insert(mailboxAccounts).values({
-        workspaceId,
-        userId,
-        provider: 'gmail',
-        providerAccountId: 'future@example.test',
-      });
-      const err = await entitlements
-        .assertCanConnectMailbox(workspaceId)
-        .catch((error: unknown) => error);
-      expect(err).toBeInstanceOf(AppException);
-      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
-      expect((err as AppException).details).toMatchObject({
-        limit: 1,
-        connected: 1,
-        reason: 'pass',
-      });
-    } finally {
-      delete process.env.PRICING_V2;
-    }
+    await db.insert(mailboxAccounts).values({
+      workspaceId,
+      userId,
+      provider: 'gmail',
+      providerAccountId: 'future@example.test',
+    });
+    const err = await entitlements
+      .assertCanConnectMailbox(workspaceId)
+      .catch((error: unknown) => error);
+    expect(err).toBeInstanceOf(AppException);
+    expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+    expect((err as AppException).details).toMatchObject({
+      limit: 1,
+      connected: 1,
+      reason: 'pass',
+    });
 
     const grants = await db.select().from(entitlementGrants);
     expect(grants).toHaveLength(1);

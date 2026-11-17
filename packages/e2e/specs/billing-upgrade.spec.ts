@@ -17,7 +17,12 @@ import {
 import { dbConnect } from '../helpers/db';
 import { E2E_ENV } from '../helpers/env';
 import { requirePrecondition } from '../helpers/preconditions';
-import { applyBillingSeed, BILLING_SEED, resetBillingVolatileState } from '../helpers/seed-billing';
+import {
+  applyBillingSeed,
+  BILLING_SEED,
+  exhaustFreeMeter,
+  resetBillingVolatileState,
+} from '../helpers/seed-billing';
 
 /**
  * Money-path spec (D183 / D19 / D77 / D117 / D180) — free user hits the
@@ -25,18 +30,16 @@ import { applyBillingSeed, BILLING_SEED, resetBillingVolatileState } from '../he
  * entitlements flip → gates open.
  *
  * WHAT IT PROVES
- *   1. A Free workspace with its monthly cleanup allowance spent (D19,
- *      limit derived from TIER_MANIFEST) gets the
- *      designed upsell: Archive confirm → server 402 FREE_CAP_REACHED →
- *      UpgradeModal — and NO action row was written (the gate fires
- *      before insert).
- *   2. The Pro-only Screener (D77) shows its upsell surface, and the
- *      API 402s PRO_FEATURE_REQUIRED underneath (defense in depth).
+ *   1. A Free workspace with its monthly email allowance spent (`METER`)
+ *      gets the designed upsell: Archive confirm → UpgradeModal — and NO
+ *      action row was written (the gate fires before insert).
+ *   2. The Plus Screener (D251) shows its upsell surface, and the API
+ *      402s PRO_FEATURE_REQUIRED underneath (defense in depth).
  *   3. The Paddle webhook only accepts the REAL signature scheme
  *      (D180): a tampered `h1` is 401'd and changes nothing; the
  *      byte-exact HMAC (`ts:rawBody`, HMAC-SHA256, ±5s skew) flips
- *      `workspaces.tier` to pro in the same request.
- *   4. `/api/auth/me` reports tier=pro with the quota lifted;
+ *      `workspaces.tier` to plus in the same request.
+ *   4. `/api/auth/me` reports tier=plus with the quota lifted;
  *      /screener renders the seeded queue instead of the upsell;
  *      /billing shows the active Paddle plan.
  *   5. Replaying the same event id acks `duplicate` with no double
@@ -59,7 +62,7 @@ import { applyBillingSeed, BILLING_SEED, resetBillingVolatileState } from '../he
  *   REDIS_URL=redis://localhost:6379/8 RATE_LIMIT_ENABLED=false \
  *   BILLING_ENABLED=true \
  *   PADDLE_WEBHOOK_SECRET=e2e_local_paddle_webhook_secret \
- *   BILLING_CATALOG_JSON='{"paddle":{"pro_monthly":"pri_e2e_pro_monthly"}}' \
+ *   BILLING_CATALOG_JSON='{"paddle":{"plus_annual":"pri_e2e_plus_annual"}}' \
  *     pnpm --filter @declutrmail/api start
  *
  *   # web (:3183)
@@ -76,7 +79,7 @@ import { applyBillingSeed, BILLING_SEED, resetBillingVolatileState } from '../he
  * DEV_AUTH_EMAIL_PREFIX — the default `chintan.e2e.billing@synthetic.test`
  * matches the checked-in dev prefix (`chintan`); override via
  * E2E_BILLING_LOGIN_EMAIL if yours differs. E2E_PADDLE_PRICE_ID must
- * match the BILLING_CATALOG_JSON pro_monthly id (defaults align).
+ * match the BILLING_CATALOG_JSON plus_annual id (defaults align).
  *
  * RESTORE DISCIPLINE: the synthetic workspace is a persistent fixture
  * (like scripts/cloud-seed.sql); every VOLATILE effect of this run —
@@ -132,6 +135,7 @@ test.beforeAll(async () => {
   // Baseline (idempotent; global-setup already ran it — re-assert so a
   // crashed previous run can never leak volatile state into this one).
   await applyBillingSeed(sql);
+  await exhaustFreeMeter(sql);
 
   // Synthetic-user session — honest runtime probes, requireLiveStack-style.
   const loginProblem = await loginBillingUser(BILLING_SEED.email);
@@ -190,7 +194,7 @@ test.afterAll(async () => {
   await api.dispose();
 });
 
-test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gates open', async ({
+test('free user hits the paywall; signed Paddle webhook flips the tier; Plus gates open', async ({
   page,
 }) => {
   test.setTimeout(300_000); // six navigations on a real dev stack
@@ -201,8 +205,8 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   expect(me.tier).toBe('free');
   expect(me.cleanupRemaining, 'seed must exhaust the monthly cleanup allowance').toBe(0);
 
-  // ---- 1. Paywall: Archive on /senders → D226 preview → confirm →
-  // server 402 FREE_CAP_REACHED → the designed UpgradeModal.
+  // ---- 1. Paywall: Archive on /senders → D226 preview → the designed
+  // UpgradeModal.
   await page.goto('/senders');
   await expectScreenMounted(page);
   // Responsive rows share an identity; exercise the row visible at this viewport.
@@ -227,14 +231,14 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
     'This clears 1 email, but you have no free emails left this month.',
   );
   const upgradeCta = preview.getByRole('button', {
-    name: fillStory(WS1_COPY['cap.plus.link']),
+    name: fillStory(WS1_COPY['cap.pass.button']),
   });
   await expect(upgradeCta).toBeEnabled();
   await upgradeCta.click();
 
   const upgradeModal = page.getByTestId('upgrade-modal');
   await expect(upgradeModal).toBeVisible({ timeout: 15_000 });
-  await expect(upgradeModal).toContainText('Not enough free emails left this month');
+  await expect(upgradeModal).toContainText(WS1_COPY['cap.title']);
 
   // The gate fired BEFORE any insert — the quota ledger still holds
   // exactly the seeded units and nothing else.
@@ -248,8 +252,8 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   // The modal's designed funnel (D117 one-path): the CTA deep-links the
   // nudged plan into /billing's confirm step — the D226 preview opens
   // pre-selected, one click from the provider surface.
-  await upgradeModal.getByRole('link', { name: 'Upgrade to Plus' }).click();
-  await expect(page).toHaveURL(/\/billing\?plan=plus&cycle=monthly/);
+  await upgradeModal.getByRole('link', { name: fillStory(WS1_COPY['cap.plus.button']) }).click();
+  await expect(page).toHaveURL(/\/billing\?plan=plus&cycle=annual/);
   const planCard = page.getByTestId('current-plan-card');
   await expect(planCard).toBeVisible({ timeout: 60_000 });
   await expect(planCard).toContainText('Free');
@@ -260,7 +264,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   await expect(planCard).toContainText(/· resets [A-Z][a-z]{2} \d{1,2}(?!,)/);
   await expect(page.getByTestId('checkout-panel')).toBeVisible();
   await expect(page.getByTestId('checkout-panel')).toContainText(
-    'Preview · before anything changes',
+    fillStory(WS1_COPY['checkout.title']),
   );
 
   // ---- 2. Paid-surface paywall: /screener renders the upsell for a
@@ -281,7 +285,7 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   const ids = paddleRunIds();
   const payload = paddleSubscriptionActivated({
     ...ids,
-    priceId: BILLING_E2E_ENV.proMonthlyPriceId,
+    priceId: BILLING_E2E_ENV.plusAnnualPriceId,
     workspaceId: BILLING_SEED.workspaceId,
     periodEndsAt: new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString(),
     // Attribution rides custom_data and must be SIGNED (paddle.adapter
@@ -313,20 +317,20 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   expect(
     (accepted.body as WebhookAck).status,
     'an unknown price id is (correctly) ignored — BILLING_CATALOG_JSON must map ' +
-      `pro_monthly to ${BILLING_E2E_ENV.proMonthlyPriceId} (E2E_PADDLE_PRICE_ID)`,
+      `plus_annual to ${BILLING_E2E_ENV.plusAnnualPriceId} (E2E_PADDLE_PRICE_ID)`,
   ).toBe('processed');
   const tierAfterGrant = await sql<{ tier: string }[]>`
     SELECT tier FROM workspaces WHERE id = ${BILLING_SEED.workspaceId}
   `;
-  expect(tierAfterGrant[0]!.tier).toBe('pro');
+  expect(tierAfterGrant[0]!.tier).toBe('plus');
 
-  // ---- 4. Entitlements flip on the wire: tier=pro, quota lifted.
+  // ---- 4. Entitlements flip on the wire: tier=plus, quota lifted.
   await expect
     .poll(async () => (await api.get<BillingMe>('/api/auth/me')).tier, {
       timeout: 30_000,
-      message: 'auth/me must report tier=pro after the webhook grant',
+      message: 'auth/me must report tier=plus after the webhook grant',
     })
-    .toBe('pro');
+    .toBe('plus');
   expect((await api.get<BillingMe>('/api/auth/me')).cleanupRemaining).toBeNull();
 
   // ---- 5. Gates open: /screener now renders the seeded queue (fresh
@@ -342,35 +346,35 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Pro gate
   await expect(queueList).toContainText(BILLING_SEED.screenerSenderName);
   await expect(page.getByTestId('tier-gate-placeholder')).toHaveCount(0);
   const opened = await api.getRaw('/api/screener/queue?limit=5');
-  expect(opened.status, 'screener read must open for the Pro workspace').toBe(200);
+  expect(opened.status, 'screener read must open for the Plus workspace').toBe(200);
 
   // ---- 6. /billing shows the ACTIVE plan.
   await page.goto('/billing');
   await expectScreenMounted(page);
-  const proCard = page.getByTestId('current-plan-card');
-  await expect(proCard).toBeVisible({ timeout: 60_000 });
-  await expect(proCard).toContainText('Pro');
+  const plusCard = page.getByTestId('current-plan-card');
+  await expect(plusCard).toBeVisible({ timeout: 60_000 });
+  await expect(plusCard).toContainText('Plus');
   // Provider name is plumbing, not a plan fact — asserted ABSENT.
-  await expect(proCard).not.toContainText('via Paddle');
-  // The plan row reads "$19/mo · Renews Dec 1, 2026".
-  await expect(proCard).toContainText(/Renews [A-Z][a-z]{2} \d{1,2}, \d{4}/);
+  await expect(plusCard).not.toContainText('via Paddle');
+  // The plan row reads "$59/yr · Renews Dec 1, 2026".
+  await expect(plusCard).toContainText(/Renews [A-Z][a-z]{2} \d{1,2}, \d{4}/);
   // QA-billing-20260901-06: the opener button was renamed from "Cancel
   // subscription" so the two clicks (open preview vs. the modal's own
   // destructive confirm) read as two different things. The D119 redesign
   // keeps both on the plan card: "Change plan" on the plan row, "Review
   // cancellation" as the group's last row.
-  await expect(proCard.getByRole('button', { name: 'Change plan' })).toBeVisible();
-  await expect(proCard.getByRole('button', { name: 'Review cancellation' })).toBeVisible();
+  await expect(plusCard.getByRole('button', { name: 'Change plan' })).toBeVisible();
+  await expect(plusCard.getByRole('button', { name: 'Review cancellation' })).toBeVisible();
   const sub = await api.get<SubscriptionView>('/api/billing/subscription');
-  expect(sub.tier).toBe('pro');
-  expect(sub.foundingMember, 'pro_monthly is not the founding price').toBe(false);
+  expect(sub.tier).toBe('plus');
+  expect(sub.foundingMember, 'plus_annual is not the founding price').toBe(false);
   expect(sub.subscription?.provider).toBe('paddle');
   expect(sub.subscription?.status).toBe('active');
   expect(
     sub.subscription?.grantsAccess,
     'signed webhook grants paid access independently of the effective tier',
   ).toBe(true);
-  expect(sub.subscription?.cycle).toBe('monthly');
+  expect(sub.subscription?.cycle).toBe('annual');
 
   // ---- 7. At-least-once safety: replaying the SAME event id acks as
   // a duplicate and double-applies nothing.

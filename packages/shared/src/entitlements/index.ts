@@ -6,7 +6,6 @@
 // seam contract in types.ts.
 
 export {
-  COUNTS_AS_CLEANUP,
   INBOXES,
   LEGACY_PRICE_IDS,
   METER,
@@ -44,9 +43,6 @@ export {
   passSecondAccountMessage,
   passSecondAccountTitle,
   indiaFaqAnswer,
-  isBillingPassEnabled,
-  isMeterV2,
-  isPricingV2,
   launchPriceDisplay,
   meterChipLine,
   meterNoun,
@@ -76,7 +72,6 @@ export {
 } from './copy';
 export type { ListedOfferOverride, QuotaExceededMessageInput } from './copy';
 export {
-  cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
   tierIsPurchasable,
@@ -88,15 +83,5 @@ export {
   undoWindowDaysFor,
 } from './resolve';
 export { UNIFORM_UNDO_WINDOW_DAYS } from './undo-window';
-export { CAPABILITIES, PROMO_IDS, TIER_IDS, TIER_RANK } from './types';
-export type {
-  Capability,
-  NonPurchasableRow,
-  PricePoint,
-  PromoDefinition,
-  PromoId,
-  TierDefinition,
-  TierId,
-  TierManifest,
-  TierPrices,
-} from './types';
+export { CAPABILITIES, TIER_IDS, TIER_RANK } from './types';
+export type { Capability, PricePoint, TierDefinition, TierId, TierManifest } from './types';

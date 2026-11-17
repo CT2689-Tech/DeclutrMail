@@ -18,8 +18,6 @@ const auth = vi.hoisted(() => ({
     cleanupRemaining: 1000 as number | null,
     cleanupResetsAt: '2026-11-09T00:00:00.000Z',
     cleanupLimit: null as number | null,
-    meterV2: false,
-    pricingV2: false,
   },
 }));
 
@@ -35,8 +33,6 @@ const UNIT = 'cleanup' + ' action';
 describe('PlanCoverage', () => {
   beforeEach(() => {
     auth.me.tier = 'free';
-    auth.me.meterV2 = false;
-    auth.me.pricingV2 = false;
     auth.me.cleanupLimit = null;
     auth.me.cleanupRemaining = 1000;
   });
@@ -52,7 +48,6 @@ describe('PlanCoverage', () => {
   });
 
   it('states the email allowance on a metered Free plan', () => {
-    auth.me.meterV2 = true;
     auth.me.cleanupLimit = 1000;
     auth.me.cleanupRemaining = 640;
     render(<PlanCoverage tier="free" />);
@@ -61,10 +56,8 @@ describe('PlanCoverage', () => {
     expect(coverage.textContent).not.toContain(UNIT);
   });
 
-  it('uses the r19 unlimited line on Plus when launch pricing is on', () => {
+  it('uses the r19 unlimited line on Plus', () => {
     auth.me.tier = 'plus';
-    auth.me.meterV2 = true;
-    auth.me.pricingV2 = true;
     auth.me.cleanupLimit = null;
     auth.me.cleanupRemaining = null;
     render(<PlanCoverage tier="plus" />);
@@ -94,7 +87,6 @@ describe('PlanCoverage', () => {
 
   it('uses the r19 Pass lines when the Pass is the plan', () => {
     auth.me.tier = 'plus';
-    auth.me.pricingV2 = true;
     render(<PlanCoverage tier="plus" pass />);
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
     const passLines = [
@@ -117,7 +109,6 @@ describe('PlanCoverage', () => {
 
   it('keeps the buy-again line for a paid Backlog Pass', () => {
     auth.me.tier = 'plus';
-    auth.me.pricingV2 = true;
     render(<PlanCoverage tier="plus" pass freeManualPass={false} />);
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
     expect(coverage).toHaveTextContent('Buy again any time to add 30 more days');
@@ -126,7 +117,6 @@ describe('PlanCoverage', () => {
 
   it('omits the buy-again line for a free manual Backlog Pass', () => {
     auth.me.tier = 'plus';
-    auth.me.pricingV2 = true;
     render(<PlanCoverage tier="plus" pass freeManualPass />);
     const coverage = screen.getByRole('region', { name: 'Your plan includes' });
     expect(coverage.textContent).not.toContain('Buy again any time to add 30 more days');
@@ -139,7 +129,7 @@ describe('PlanCoverage', () => {
 
 describe('PlanConsequences', () => {
   it('states the destination plan’s allowance as its own sentence', () => {
-    const { container } = render(<PlanConsequences fromTier="plus" toTier="free" pricingV2 />);
+    const { container } = render(<PlanConsequences fromTier="plus" toTier="free" />);
     // It once read "1 connected Gmail account and Clear 1,000 emails … stay free.."
     expect(container.textContent).toContain('Free includes 1 connected Gmail account. Clear');
     expect(container.textContent).not.toContain(' and Clear');
@@ -147,7 +137,7 @@ describe('PlanConsequences', () => {
   });
 
   it('warns about the account limit when launch Plus (2 accounts) moves to Free (1)', () => {
-    render(<PlanConsequences fromTier="plus" toTier="free" pricingV2 />);
+    render(<PlanConsequences fromTier="plus" toTier="free" />);
     expect(screen.getByText(/Existing connected Gmail accounts keep working/)).toBeInTheDocument();
   });
 });

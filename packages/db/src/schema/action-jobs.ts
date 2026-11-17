@@ -171,7 +171,7 @@ export const actionJobs = pgTable(
     affectedCount: integer('affected_count').notNull().default(0),
     /**
      * Emails this row holds against the Free meter. Stamped at enqueue
-     * while `METER_V2` is on; 0 otherwise. Completion lowers it to the
+     * for metered verbs on Free; 0 otherwise. Completion lowers it to the
      * messages actually changed. Failed and no-op rows end at 0.
      */
     quotaUnits: integer('quota_units').notNull().default(0),

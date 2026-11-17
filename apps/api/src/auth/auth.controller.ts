@@ -18,12 +18,7 @@ import {
   type Envelope,
   type SyncReadiness,
 } from '@declutrmail/shared/contracts';
-import {
-  isBillingPassEnabled,
-  isMeterV2,
-  isPricingV2,
-  type TierId,
-} from '@declutrmail/shared/entitlements';
+import type { TierId } from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
@@ -64,10 +59,9 @@ export interface MeEnvelope {
   /** Workspace billing tier (D19) — drives every FE entitlement gate. */
   tier: TierId;
   /**
-   * Cleanup actions left THIS PERIOD (A3: Free = 50/month on the signup
-   * anniversary); `null` = unlimited (every paid tier). Mirrored by the
-   * FE `useTier()` hook; the config resolvers in
-   * `@declutrmail/shared/entitlements` carry the limits themselves.
+   * Emails left on Free's meter THIS PERIOD; `null` = unlimited (every
+   * paid tier). Mirrored by the FE `useTier()` hook; `METER` in
+   * `@declutrmail/shared/entitlements` carries the allowance itself.
    */
   cleanupRemaining: number | null;
   /**
@@ -77,7 +71,7 @@ export interface MeEnvelope {
   cleanupResetsAt: string | null;
   /**
    * Server-computed inbox ceiling. Optional on older responses; the
-   * client falls back to the flag-off manifest when it is absent.
+   * client falls back to the manifest when it is absent.
    */
   inboxLimit: number;
   /**
@@ -86,19 +80,19 @@ export interface MeEnvelope {
    * the Pass lapses or when a paid Plus/Pro row is what set the limit.
    */
   inboxLimitReason?: 'pass';
-  /** Server env `PRICING_V2`. The browser does not read the env itself. */
-  pricingV2: boolean;
+  /**
+   * `pricingV2` / `meterV2` / `passEnabled` are always true: the 2026-10
+   * pricing is unconditional. They stay on the wire because a web build
+   * that predates their removal reads an absent value as the retired
+   * pricing, and the web and API deploy separately.
+   */
+  pricingV2: true;
   /** Email allowance this period. `null` when the tier is not metered. */
   cleanupLimit: number | null;
   /** Emails held against the current period. */
   cleanupUsed: number;
-  /** Server env `METER_V2`. The browser does not read the env itself. */
-  meterV2: boolean;
-  /**
-   * Server env `BILLING_PASS_ENABLED`. Absent on an older API means the
-   * Pass stays hidden. The browser does not read the env itself.
-   */
-  passEnabled: boolean;
+  meterV2: true;
+  passEnabled: true;
   /**
    * First-touch tracked `ref` vs skippable self-report. Never sum them.
    * `promptNeeded` is true until they answer or skip.
@@ -206,11 +200,11 @@ export class AuthController {
       cleanupResetsAt: quota.resetsAt?.toISOString() ?? null,
       inboxLimit: inboxEntitlement.limit,
       ...(inboxEntitlement.reason ? { inboxLimitReason: inboxEntitlement.reason } : {}),
-      pricingV2: isPricingV2(),
+      pricingV2: true,
       cleanupLimit: quota.limit,
       cleanupUsed: quota.used,
-      meterV2: isMeterV2(),
-      passEnabled: isBillingPassEnabled(),
+      meterV2: true,
+      passEnabled: true,
       signupAttribution: {
         ref: user.signupAttributionRef,
         heardFrom: user.signupAttributionHeardFrom,

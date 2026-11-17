@@ -31,7 +31,6 @@ describe('app destinations surviving login', () => {
     '/home#settings',
     '/billing?from=%2Fbilling',
     '/billing?from=%2Fhome%3Ffrom%3D%2Fsenders',
-    '/billing?plan=plus&cycle=annual&promo=foundingPro',
     '/billing?plan=pro&plan=plus&cycle=annual',
   ])('rejects %s', (path) => {
     expect(parseAppReturnTo(path)).toBeUndefined();
@@ -96,7 +95,13 @@ it.each([
   // The existing destination parser rejects unsafe nested origins.
   expect(result).toBeUndefined();
 });
-it('retains the selected plan, cycle, promotion and validated app origin', () => {
-  const value = '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief';
+it('retains the selected plan, cycle and validated app origin', () => {
+  const value = '/billing?plan=pro&cycle=annual&from=%2Fbrief';
   expect(parseBillingReturnTo(value)).toBe(value);
+});
+
+it('drops the retired Founding Pro promo from a billing destination', () => {
+  expect(parseBillingReturnTo('/billing?plan=pro&cycle=annual&promo=foundingPro')).toBe(
+    '/billing?plan=pro&cycle=annual',
+  );
 });

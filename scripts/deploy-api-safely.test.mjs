@@ -271,10 +271,9 @@ test('workflow gates worker boot through HTTP, preserves production OAuth identi
     workflow.indexOf('- name: Deploy declutrmail-api'),
     workflow.indexOf('- name: Verify billing notice API producers'),
   );
+  // The 2026-10 pricing is unconditional; its retired flags stay gone.
   for (const block of [worker, api]) {
-    assert.match(block, /PRICING_V2=true/);
-    assert.match(block, /METER_V2=true/);
-    assert.match(block, /BILLING_PASS_ENABLED=true/);
+    assert.doesNotMatch(block, /PRICING_V2|METER_V2|BILLING_PASS_ENABLED/);
   }
   assert.match(api, /scripts\/live-india-billing-env\.mjs --api-env/);
   assert.match(api, /BILLING_GEO_HMAC_SECRET: \$\{\{ secrets\.BILLING_GEO_HMAC_SECRET \}\}/);

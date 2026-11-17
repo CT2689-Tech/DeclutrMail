@@ -1,6 +1,6 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { launchPriceDisplay } from '@declutrmail/shared/entitlements';
 
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
@@ -341,15 +341,10 @@ test('billing hydrates across repeated loads when the subscription read is disab
   });
 });
 
-function usd(cents: number): string {
-  const dollars = cents / 100;
-  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
-}
-
-function manifestPrice(tier: 'plus' | 'pro', cycle: 'monthly' | 'annual'): string {
-  const point = TIER_MANIFEST[tier].prices[cycle];
-  if (!point) throw new Error(`missing ${cycle} price for ${tier}`);
-  return `${usd(point.usdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
+/** The launch Plus annual price as the billing screen prints it ("$59/yr"). */
+function launchPlusPrice(): string {
+  const line = launchPriceDisplay('usd').plus;
+  return `${line.amount}${line.per}`;
 }
 
 /**
@@ -389,13 +384,15 @@ async function withBillingFixture(
         await sql`UPDATE workspaces SET tier = 'free' WHERE id = ${BILLING_SEED.workspaceId}`;
       } else {
         await sql`UPDATE workspaces SET tier = 'plus' WHERE id = ${BILLING_SEED.workspaceId}`;
+        // The price id is the lane's BILLING_CATALOG_JSON plus_annual id, so
+        // the API resolves the charged amount for the plan row.
         await sql`
           INSERT INTO subscriptions (
             workspace_id, provider, provider_subscription_id, tier, status,
             provider_price_id, billing_cycle, current_period_end
           ) VALUES (
             ${BILLING_SEED.workspaceId}, 'paddle', 'sub_e2e_hydration_paid', 'plus', 'active',
-            'pri_e2e_hydration', 'monthly', now() + interval '30 days'
+            'pri_e2e_plus_annual', 'annual', now() + interval '365 days'
           )
         `;
       }
@@ -425,9 +422,7 @@ test('cold paid-account billing fragments reach payment and invoice sections', a
   });
 });
 
-test('live Pro complimentary billing hydrates on annual across repeated loads', async ({
-  page,
-}) => {
+test('live Pro complimentary billing hydrates across repeated loads', async ({ page }) => {
   test.setTimeout(180_000);
   await withBillingFixture('complimentary-pro', async () => {
     await expectLoadsHydrate(page, '/billing', async () => {
@@ -440,28 +435,13 @@ test('live Pro complimentary billing hydrates on annual across repeated loads', 
       await expect(purchaseOptions).toBeVisible();
       await expect(purchaseOptions).toHaveText('View purchase options');
       await purchaseOptions.click();
-      await expect(page.getByRole('button', { name: /^Annual/, pressed: true })).toBeVisible();
-      await expect(page.getByText(manifestPrice('plus', 'annual')).first()).toBeVisible();
+      await expect(page.getByText(launchPlusPrice()).first()).toBeVisible();
       const pro = page.getByTestId('plan-option-pro');
       await expect(pro).toContainText('Current access');
       await expect(pro).toContainText('Complimentary');
-      await expect(pro).not.toContainText(manifestPrice('pro', 'annual'));
+      // Pro is not sold, so its card carries no list price.
+      await expect(pro).not.toContainText('/yr');
       await expect(page.getByRole('button', { name: 'Buy Plus separately' })).toBeVisible();
-    });
-  });
-});
-
-test('live Pro complimentary billing hydrates with the monthly toggle selected', async ({
-  page,
-}) => {
-  test.setTimeout(180_000);
-  await withBillingFixture('complimentary-pro', async () => {
-    await expectLoadsHydrate(page, '/billing?plan=plus&cycle=monthly', async () => {
-      await expect(page.getByTestId('complimentary-note')).toContainText(
-        'Pro is included at no cost',
-      );
-      await expect(page.getByRole('button', { name: 'Monthly', pressed: true })).toBeVisible();
-      await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
     });
   });
 });
@@ -471,7 +451,7 @@ test('a normal paid plan hydrates across repeated loads', async ({ page }) => {
   await withBillingFixture('paid-plus', async () => {
     await expectLoadsHydrate(page, '/billing', async () => {
       await expect(page.getByTestId('complimentary-note')).toHaveCount(0);
-      await expect(page.getByText(manifestPrice('plus', 'monthly')).first()).toBeVisible();
+      await expect(page.getByText(launchPlusPrice()).first()).toBeVisible();
       await expect(page.getByTestId('current-plan-card')).toContainText('Plus');
     });
   });

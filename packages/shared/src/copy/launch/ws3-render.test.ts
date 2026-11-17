@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { METER, planName, POLICY } from '../../entitlements';
+import { METER, passAmount, planName, plusAmount, POLICY } from '../../entitlements';
 import {
   BRAND_VERIFICATION_APPROVED_ON,
   CASA_LOV_SUBMITTED_ON,
@@ -29,10 +29,6 @@ import {
 import { WS3_COPY } from './ws3';
 
 describe('WS3 token fill', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
   it('formats the verification date in US order from the British constant', () => {
     expect(formatVerificationDate(CASA_VERIFICATION_APPROVED_ON)).toBe('April 21, 2026');
     expect(formatVerificationDate(CASA_LOV_SUBMITTED_ON)).toBe('April 15, 2026');
@@ -62,15 +58,22 @@ describe('WS3 token fill', () => {
     expect(ws3Tokens().allowance).toBe(allowance);
   });
 
-  it('drops a clause whose filler is still empty', () => {
-    expect(ws3Tokens().refundDays).toBe('');
-    expect(ws3Tokens().passDays).toBe('');
-    expect(ws3Tokens().passPrice).toBe('');
-    expect(fillComplete('{refundDays}-day money-back on any purchase, once per customer.')).toBe(
-      '',
-    );
+  it('drops a clause whose filler is empty', () => {
+    expect(
+      fillComplete('{refundDays}-day money-back on any purchase, once per customer.', {
+        refundDays: '',
+      }),
+    ).toBe('');
     expect(REFUNDS_PAGE_WINDOW_DAYS).toBe(POLICY.refundWindowDays);
-    expect(refundSentence()).toBe('');
+  });
+
+  it('fills launch prices and the refund window from config', () => {
+    const days = String(POLICY.refundWindowDays);
+    expect(ws3Tokens().refundDays).toBe(days);
+    expect(ws3Tokens().plusPrice).toBe(plusAmount('usd'));
+    expect(ws3Tokens().passPrice).toBe(passAmount('usd'));
+    expect(refundSentence()).toBe(`${days}-day money-back on any purchase, once per customer.`);
+    expect(llmsPricingLine()).toContain(`${days}-day money-back`);
     const answer = priceFaqAnswer();
     const summary = declutrPriceSummary();
     const detail = declutrPriceDetail();
@@ -82,21 +85,15 @@ describe('WS3 token fill', () => {
       expect(text).not.toMatch(/,\s*,/);
       expect(text).not.toMatch(/(^|[.!?]\s+)-day\b/);
     }
-    expect(answer).not.toContain('-day money-back');
-    expect(answer).not.toMatch(/\$19|\$59/);
+    expect(answer).toContain(`${days}-day money-back`);
+    expect(answer).toContain(plusAmount('usd'));
+    expect(answer).toContain(passAmount('usd'));
     expect(answer).toContain(planName('free'));
     expect(answer).toContain(planName('plus'));
+    expect(summary).toContain(planName('pass'));
+    expect(detail).toContain(plusAmount('usd'));
     expect(autopilot).toContain(planName('plus'));
     expect(autopilot).not.toMatch(/on\s+handle/);
-  });
-
-  it('fills the refund window from POLICY when PRICING_V2 is on', () => {
-    vi.stubEnv('PRICING_V2', 'true');
-    const days = String(POLICY.refundWindowDays);
-    expect(ws3Tokens().refundDays).toBe(days);
-    expect(refundSentence()).toBe(`${days}-day money-back on any purchase, once per customer.`);
-    expect(llmsPricingLine()).toContain(`${days}-day money-back`);
-    expect(priceFaqAnswer()).toContain(`${days}-day money-back`);
   });
 
   it('opens the consent gate and uses the deck consent sentences', () => {

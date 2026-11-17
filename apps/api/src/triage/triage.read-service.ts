@@ -18,7 +18,6 @@ import {
   workspaces,
   type TriageVerdict,
 } from '@declutrmail/db';
-import { cleanupActionsPerMonthFor } from '@declutrmail/shared/entitlements';
 import {
   evaluateProtectionEvidence,
   PROTECTION_WROTE_TO_THRESHOLD,
@@ -1125,11 +1124,11 @@ export class TriageReadService {
       }
     }
 
-    // D19/A3 quota position — cleanup units left THIS PERIOD. One
-    // authority: `cleanupSummary` owns the anniversary period + the
+    // Free meter position — emails left THIS PERIOD; only Free is
+    // metered. One authority: `cleanupSummary` owns the period + the
     // counting rule; this read must never recompute either.
     const freeRemaining =
-      cleanupActionsPerMonthFor(tierEnum) === null || !tierRow
+      tierEnum !== 'free' || !tierRow
         ? null
         : (await this.entitlements.cleanupSummary(tierRow.workspaceId)).remaining;
 

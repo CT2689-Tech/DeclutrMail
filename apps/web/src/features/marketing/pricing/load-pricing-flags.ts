@@ -1,8 +1,4 @@
-import { isBillingPassEnabled, isPricingV2 } from '@declutrmail/shared/entitlements';
-
 export interface PricingFlags {
-  pricingV2: boolean;
-  passEnabled: boolean;
   /** API says both India price ids exist. The page still requires the geo secret. */
   indiaCheckoutOpen: boolean;
 }
@@ -13,19 +9,14 @@ export function indiaCheckoutReady(flag: boolean | undefined, secret: string | u
 }
 
 /**
- * Prefer the API so a web rebuild is not required to flip the flag.
- * A missing or unreachable API falls back to this server's env, which
- * is off unless `PRICING_V2=true`.
+ * Read India checkout availability from the API. A missing or
+ * unreachable API keeps rupee checkout closed.
  *
  * `revalidate` keeps the caller on ISR. `cache: 'no-store'` opts the
  * route into dynamic rendering, which defers `<head>` metadata.
  */
 export async function loadPricingFlags(options?: { revalidate?: number }): Promise<PricingFlags> {
-  const fallback: PricingFlags = {
-    pricingV2: isPricingV2(),
-    passEnabled: isBillingPassEnabled(),
-    indiaCheckoutOpen: false,
-  };
+  const fallback: PricingFlags = { indiaCheckoutOpen: false };
   const apiBase = process.env.NEXT_PUBLIC_API_URL;
   if (!apiBase) return fallback;
   try {
@@ -42,16 +33,8 @@ export async function loadPricingFlags(options?: { revalidate?: number }): Promi
         ? (body as { data?: unknown }).data
         : body;
     if (typeof data !== 'object' || data === null) return fallback;
-    const record = data as {
-      pricingV2?: unknown;
-      passEnabled?: unknown;
-      indiaCheckoutOpen?: unknown;
-    };
-    return {
-      pricingV2: record.pricingV2 === true,
-      passEnabled: record.passEnabled === true,
-      indiaCheckoutOpen: record.indiaCheckoutOpen === true,
-    };
+    const record = data as { indiaCheckoutOpen?: unknown };
+    return { indiaCheckoutOpen: record.indiaCheckoutOpen === true };
   } catch {
     return fallback;
   }

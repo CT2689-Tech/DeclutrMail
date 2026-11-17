@@ -16,7 +16,7 @@ import { useTier } from '@/features/auth/api/use-tier';
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import { launchPlusQuote, moneyBackNote, quotedPlanPrice } from './billing-model';
+import { launchPlusQuote, MONEY_BACK_NOTE } from './billing-model';
 import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
 
 const { color, font, motion, radius, shadow, text } = tokens;
@@ -54,7 +54,7 @@ export function TierGate({
   footnote?: ReactNode;
   children: ReactNode;
 }) {
-  const { tier, pricingV2 } = useTier();
+  const { tier } = useTier();
   const from = useUpgradeReturnTo();
   const granted = hasCapability(tier, capability);
   const requiredTierId = minimumTierForCapability(capability);
@@ -73,13 +73,10 @@ export function TierGate({
   if (granted) return <>{children}</>;
 
   // Quote the rail this visitor will actually be charged on — the CTA
-  // below deep-links straight into checkout (D117). Launch pricing
-  // sells Plus annual; the flag-off catalog still quotes monthly.
-  const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
+  // below deep-links straight into checkout (D117). Launch pricing sells
+  // Plus annual; Pro is waitlist only, so it carries no quote.
   const quotedPrice =
-    pricingV2 && requiredTierId === 'plus'
-      ? launchPlusQuote(regionProvider, visitorLocale)
-      : quotedPlanPrice(requiredTierId, 'monthly', regionProvider);
+    requiredTierId === 'plus' ? launchPlusQuote(regionProvider, visitorLocale) : null;
   const requiredTier = TIER_MANIFEST[requiredTierId].name;
   // ONE checkout path (D117): deep-link the required plan into
   // /billing's confirm step via the validated intent — same funnel as
@@ -88,7 +85,7 @@ export function TierGate({
     requiredTierId === 'plus' || requiredTierId === 'pro'
       ? billingIntentPath({
           plan: requiredTierId,
-          cycle: checkoutCycle,
+          cycle: 'annual',
           ...(from ? { from } : {}),
         })
       : '/billing';
@@ -216,7 +213,7 @@ export function TierGate({
       </Link>
 
       <p style={{ margin: '12px 0 0', fontSize: text.sm, color: color.fgMuted }}>
-        {moneyBackNote(pricingV2)}
+        {MONEY_BACK_NOTE}
       </p>
 
       {footnote ? (

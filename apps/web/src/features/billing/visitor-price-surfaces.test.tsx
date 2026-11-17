@@ -36,8 +36,6 @@ vi.mock('@/features/auth/api/use-tier', () => ({
   useTier: () => ({
     tier: 'free',
     cleanupRemaining: 0,
-    pricingV2: true,
-    passEnabled: true,
   }),
 }));
 
@@ -61,8 +59,6 @@ function renderPicker(
         grantingSub={null}
         disabled={false}
         initialIntent={initialIntent}
-        pricingV2
-        passEnabled
         country={country}
         indiaCheckoutOpen={indiaCheckoutOpen}
         onRequestCancel={() => undefined}
@@ -86,18 +82,11 @@ function renderConfirm(
   return render(
     <ConfirmPanel
       target="plus"
-      cycle="annual"
       provider="paddle"
-      razorpayOffered={false}
-      pricingV2
       offer={offer}
       country={locale.country}
       indiaCheckoutOpen={locale.indiaCheckoutOpen}
-      pricePointOverride={offer === 'pass_onetime' ? OFFERS.backlogPass.price : PLUS_ANNUAL_2026_10}
-      onProviderChange={() => undefined}
-      foundingEligible={false}
-      claimFounding={false}
-      onClaimFoundingChange={() => undefined}
+      pricePoint={offer === 'pass_onetime' ? OFFERS.backlogPass.price : PLUS_ANNUAL_2026_10}
       isPending={false}
       errorMessage={null}
       onConfirm={() => undefined}
@@ -159,13 +148,13 @@ describe('visitor price surfaces — US stays the #1020 strings', () => {
     expect(plusConfirm).toHaveTextContent('$59 billed yearly');
     expect(plusConfirm).toHaveTextContent('Before you pay');
 
-    render(<PricingStory passEnabled locale="usd" now={NOW} />);
+    render(<PricingStory locale="usd" now={NOW} />);
     expect(screen.getByTestId('pricing-story')).toHaveTextContent('$0');
     expect(screen.getByTestId('pricing-story')).toHaveTextContent('$59');
     expect(screen.getByTestId('pricing-story')).toHaveTextContent('a year');
     expect(screen.getByTestId('pricing-story')).toHaveTextContent('$19');
 
-    render(<PricingTeaserStory passEnabled locale="usd" />);
+    render(<PricingTeaserStory locale="usd" />);
     expect(screen.getByTestId('pricing-teaser-story')).toHaveTextContent('$59 a year');
     expect(screen.getByTestId('pricing-teaser-story')).toHaveTextContent('$19 once');
 
@@ -244,7 +233,7 @@ describe('visitor price surfaces — India uses one currency', () => {
     expect(confirm).toHaveTextContent('₹1,999 billed yearly');
     expect(confirm.textContent).not.toContain('$');
 
-    render(<PricingStory passEnabled locale="inr" now={NOW} rupeePurchasesOpen />);
+    render(<PricingStory locale="inr" now={NOW} rupeePurchasesOpen />);
     const pricing = screen.getByTestId('pricing-story');
     expect(pricing).toHaveTextContent('₹0');
     expect(pricing).toHaveTextContent('₹1,999');
@@ -252,7 +241,7 @@ describe('visitor price surfaces — India uses one currency', () => {
     expect(pricing).toHaveTextContent('₹799');
     expect(pricing.textContent).not.toContain('$');
 
-    render(<PricingTeaserStory passEnabled locale="inr" />);
+    render(<PricingTeaserStory locale="inr" />);
     const teaser = screen.getByTestId('pricing-teaser-story');
     expect(teaser).toHaveTextContent('₹1,999 a year');
     expect(teaser).toHaveTextContent('₹799 once');

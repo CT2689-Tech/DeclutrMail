@@ -18,8 +18,6 @@ export const BRIEF_PROCESSING_NOTE =
   'Daily Brief may send the sender, subject line, and Gmail preview snippet to Anthropic to compose a summary. Full email contents and attachments are never sent.';
 export const RAZORPAY_LIMITATIONS_NOTE =
   'If you pay in rupees, email support@declutrmail.com to change, pause or restart your plan. You can cancel here.';
-export const CHECKOUT_TOTAL_NOTE =
-  'Taxes, discounts, and the final amount due are confirmed at checkout.';
 export const PROVIDER_SWITCH_NOTE =
   'To pay in another currency, cancel first and subscribe again after your plan ends.';
 export const BILLING_MANAGEMENT_NOTE =

@@ -7,7 +7,7 @@ import { TrustRow } from '@/features/marketing/trust/trust-row';
 import { SupportTasks } from './support-tasks';
 import { getBlogArticle, BLOG_SLUGS } from './blog-content';
 import { CHANGELOG_ENTRIES } from './changelog-content';
-import { publishedFaqEntries } from './faq-content';
+import { FAQ_ENTRIES } from './faq-content';
 import { ANSWERS_HUB, HOW_TO_HUB, type LearnHubDefinition } from './hub-content';
 import { formatReadingDate, ReadingCta, ReadingLayout } from './learn-shell';
 import type { LearnArticle } from './types';
@@ -137,8 +137,8 @@ export function BlogIndexPage() {
   );
 }
 
-export function FaqPage({ pricingV2 }: { pricingV2?: boolean } = {}) {
-  const entries = publishedFaqEntries(pricingV2);
+export function FaqPage() {
+  const entries = FAQ_ENTRIES;
   return (
     <ReadingLayout
       variant="faq"

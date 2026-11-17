@@ -20,7 +20,6 @@ import {
 import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
-  BillingProviderId,
   BillingReconcileOutcome,
   BillingSubscription,
   CancelRequest,
@@ -28,6 +27,7 @@ import type {
 import { WS1_COPY, WS2_COPY } from '@declutrmail/shared/copy/launch';
 import {
   fillStory,
+  METER,
   meterChipLine,
   passEndLabel,
   TIER_MANIFEST,
@@ -38,7 +38,6 @@ import {
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
-import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { ApiError } from '@/lib/api/client';
 import { useHydrated } from '@/lib/use-hydrated';
@@ -213,8 +212,6 @@ function livePassGrant(grant: BillingSubscription['complimentary']): boolean {
  */
 export function BillingScreen({
   initialIntent = null,
-  initialProvider = 'paddle',
-  pricingV2 = false,
   country = null,
   indiaCheckoutOpen = false,
   checkoutGeoToken = null,
@@ -223,10 +220,6 @@ export function BillingScreen({
 }: {
   initialIntent?: BillingIntent | null;
   returnTo?: string | undefined;
-  /** Geo-derived default rail (D117); the radio still overrides it. */
-  initialProvider?: BillingProviderId;
-  /** Server-read launch flag. Absent means off, so an older shell still renders. */
-  pricingV2?: boolean;
   country?: string | null;
   /** Server-derived. Absent keeps rupee checkout paused. */
   indiaCheckoutOpen?: boolean;
@@ -236,7 +229,7 @@ export function BillingScreen({
   invoiceHistory?: ReactNode;
 }) {
   const { me } = useAuth();
-  const { tier: meTier, cleanupRemaining, cleanupResetsAt, passEnabled, inboxLimit } = useTier();
+  const { tier: meTier, cleanupRemaining, cleanupResetsAt, inboxLimit } = useTier();
   const visitorLocale = visitorPriceLocale({ country, indiaCheckoutOpen });
   const workspaceId = me.user.workspaceId;
   const currentOwner = useRef(workspaceId);
@@ -1196,9 +1189,6 @@ export function BillingScreen({
     });
   }
   if (billingDark) notices.push({ key: 'billing-dark', node: <BillingDisabledNotice /> });
-  if (!pricingV2 && plan.foundingMember && backingSub) {
-    notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
-  }
 
   // Who the page is for decides its order. With nothing billing, the
   // job is choosing what to buy, so the offers lead. A subscriber's job is
@@ -1211,9 +1201,7 @@ export function BillingScreen({
       ? ('complimentary' as const)
       : ('tier' as const);
   const purchaseFirst =
-    pricingV2 &&
-    backingSub === null &&
-    (plan.entitlementTier === 'free' || currentAccessKind === 'pass');
+    backingSub === null && (plan.entitlementTier === 'free' || currentAccessKind === 'pass');
   const pickerShown = purchaseFirst || backingSub === null || changeOpen || initialIntent !== null;
   // While a plan action awaits its webhook, a second one could
   // double-charge — SUBSCRIPTION_EXISTS can't catch a checkout
@@ -1306,9 +1294,6 @@ export function BillingScreen({
       grantingSub={grantingBackingSub}
       disabled={pickerDisabled}
       initialIntent={initialIntent}
-      initialProvider={initialProvider}
-      pricingV2={pricingV2}
-      passEnabled={passEnabled}
       country={country}
       indiaCheckoutOpen={indiaCheckoutOpen}
       checkoutGeoToken={checkoutGeoToken}
@@ -1426,7 +1411,7 @@ export function BillingScreen({
             currentPlanCard
           )}
           {picker}
-          <BillingFaq passEnabled={passEnabled} />
+          <BillingFaq />
           {plan.entitlementTier === 'free' ? null : planCoverage}
           {invoices}
         </>
@@ -1451,7 +1436,6 @@ export function BillingScreen({
       </SettingsGroup>
       <CancelModal
         open={cancelOpen}
-        pricingV2={pricingV2}
         billingReviewPending={reviewPending}
         variant={isPhone ? 'sheet' : 'modal'}
         sub={backingSub ?? plan.nonBacking?.sub ?? null}
@@ -2014,7 +1998,7 @@ function heldSince(at: number): string {
 
 /** Non-metered Free chip. A missing reset is omitted, not invented. */
 function freeEmailsLeftLine(remaining: number, resetAt: string | null): string {
-  const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+  const limit = METER.free.limit;
   const line = meterChipLine({
     remaining,
     limit,
@@ -2104,10 +2088,9 @@ function FreePlanStatus({
 }
 
 /** The /pricing answers to "will I be charged again?", refunds and tax — reused verbatim. */
-function BillingFaq({ passEnabled }: { passEnabled: boolean }) {
+function BillingFaq() {
   // Renewal, refunds and tax are already on each offer card; only what
   // happens after the Pass is not.
-  if (!passEnabled) return null;
   const items = [['pricing.faq.passEnds.q', 'pricing.faq.passEnds.a']] as const;
   // The Settings group grammar: one raised surface, one question per row,
   // inset hairlines between them (the row class draws them, not borders).
@@ -2850,39 +2833,6 @@ function NonBackingSubscriptionNotice({
           </Button>
         ) : null}
       </div>
-    </div>
-  );
-}
-
-/**
- * Founding Pro banner (D119 / D126). Price straight off the manifest,
- * in the currency the member's own rail locked — a Razorpay founding
- * member's price is locked at ₹10,999/yr, not $129/yr.
- * Shown only while `PRICING_V2` is off.
- */
-function FoundingBanner({ provider }: { provider: BillingProviderId }) {
-  const promo = TIER_MANIFEST.pro.promo;
-  if (!promo) return null;
-  return (
-    <div
-      data-testid="founding-banner"
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        gap: 8,
-        padding: '14px 16px',
-        background: color.primarySoft,
-        borderRadius: radius.lg,
-        fontSize: text.md,
-        color: color.fg,
-      }}
-    >
-      <span aria-hidden>🏛️</span>
-      <span>
-        <strong style={{ fontWeight: 600 }}>{promo.name} member</strong> — price locked at{' '}
-        {formatMoney(promo.annual, currencyForProvider(provider))}/yr while your subscription stays
-        active.
-      </span>
     </div>
   );
 }

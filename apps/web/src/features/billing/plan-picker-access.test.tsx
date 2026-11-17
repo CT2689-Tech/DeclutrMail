@@ -18,6 +18,8 @@ const PRO_MONTHLY: Subscription = {
   pauseUntil: null,
   foundingMember: false,
   scheduledChange: null,
+  // The API resolves a legacy price id to the amount it charges.
+  chargedUsdCents: 1900,
 };
 
 function picker(props: Partial<ComponentProps<typeof PlanPicker>>) {
@@ -27,7 +29,6 @@ function picker(props: Partial<ComponentProps<typeof PlanPicker>>) {
         currentTier="pro"
         grantingSub={null}
         disabled={false}
-        pricingV2
         onRequestCancel={() => undefined}
         onPaymentCompleted={() => undefined}
         onCheckoutAttempt={() => Promise.resolve('attempt')}
@@ -61,7 +62,6 @@ describe('PlanPicker current access and purchase offers', () => {
 
   it('puts an optional Pass after the plan cards for complimentary Pro and preserves its preview', async () => {
     picker({
-      passEnabled: true,
       currentAccess: { kind: 'complimentary', priceLabel: 'Complimentary', subscription: null },
     });
     const pass = screen.getByTestId('pass-offer-card');
@@ -82,7 +82,6 @@ describe('PlanPicker current access and purchase offers', () => {
 
   it('preserves a localized explicit Pass preview', async () => {
     picker({
-      passEnabled: true,
       country: 'IN',
       indiaCheckoutOpen: true,
       initialIntent: { plan: 'plus', cycle: 'annual', offer: 'pass_onetime' },
@@ -97,7 +96,6 @@ describe('PlanPicker current access and purchase offers', () => {
 
   it('keeps the optional Pass disabled while a payment is unresolved', () => {
     picker({
-      passEnabled: true,
       disabled: true,
       currentAccess: { kind: 'complimentary', priceLabel: 'Complimentary', subscription: null },
     });
@@ -130,7 +128,7 @@ describe('PlanPicker current access and purchase offers', () => {
     },
   ];
   it.each(unchangedAccess)('keeps the original Pass placement for $name', ({ props }) => {
-    picker({ passEnabled: true, ...props });
+    picker(props);
     const pass = screen.getByTestId('pass-offer-card');
     expect(
       pass.compareDocumentPosition(screen.getByTestId('plan-option-pro')) &
@@ -151,7 +149,7 @@ describe('PlanPicker current access and purchase offers', () => {
   ] as Array<{ name: string; props: Partial<ComponentProps<typeof PlanPicker>> }>)(
     'leads with Plus and puts the Pass beside it for $name',
     ({ props }) => {
-      picker({ passEnabled: true, ...props });
+      picker(props);
       const plus = screen.getByTestId('launch-offer-plus');
       const pass = screen.getByTestId('launch-offer-pass');
       expect(plus.compareDocumentPosition(pass) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -162,7 +160,7 @@ describe('PlanPicker current access and purchase offers', () => {
   );
 
   it('withholds the Pass from a paying subscriber', () => {
-    picker({ passEnabled: true, grantingSub: PRO_MONTHLY });
+    picker({ grantingSub: PRO_MONTHLY });
     // It read "Already included in Plus" to a Pro subscriber: wrong plan,
     // and nothing to buy for someone already paying.
     expect(screen.queryByTestId('pass-offer-card')).not.toBeInTheDocument();
@@ -205,22 +203,13 @@ describe('PlanPicker current access and purchase offers', () => {
     expect(pro).not.toHaveTextContent('$190/yr');
   });
 
-  it('keeps a legacy annual switch quote separate from the current monthly charge', () => {
-    picker({
-      pricingV2: false,
-      grantingSub: PRO_MONTHLY,
-      currentAccess: { kind: 'tier', priceLabel: '$19/mo', subscription: PRO_MONTHLY },
-    });
-    const pro = screen.getByTestId('plan-option-pro');
-    expect(pro).toHaveTextContent('$190/yr');
-    expect(pro).not.toHaveTextContent('Current plan');
-    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
-    expect(pro).toHaveTextContent('$19/mo');
-    expect(pro).toHaveTextContent('Current plan');
-  });
-
   it('keeps a founding subscriber’s actual annual price', () => {
-    const sub: Subscription = { ...PRO_MONTHLY, cycle: 'annual', foundingMember: true };
+    const sub: Subscription = {
+      ...PRO_MONTHLY,
+      cycle: 'annual',
+      foundingMember: true,
+      chargedUsdCents: 12900,
+    };
     picker({ grantingSub: sub });
     const pro = screen.getByTestId('plan-option-pro');
     expect(pro).toHaveTextContent('$129/yr');
@@ -241,10 +230,12 @@ describe('PlanPicker current access and purchase offers', () => {
     expect(plus).not.toHaveTextContent('$59/yr');
   });
 
-  it('reads an existing Razorpay charge in its own currency', () => {
+  it('never restates an unresolved Razorpay charge in dollars', () => {
+    // Retired prices left the manifest, so an INR charge the catalog does
+    // not resolve has no amount to show — and must not borrow a USD one.
     picker({ grantingSub: { ...PRO_MONTHLY, cycle: 'annual', provider: 'razorpay' } });
     const pro = screen.getByTestId('plan-option-pro');
-    expect(pro.textContent).toContain('₹');
+    expect(pro).toHaveTextContent('—');
     expect(pro.textContent).not.toContain('$');
   });
 

@@ -10,8 +10,8 @@ import type { Tier } from './use-me';
 export interface TierEntitlements {
   tier: Tier;
   /**
-   * Cleanup actions left THIS PERIOD (A3: Free = 50/month); `null` =
-   * unlimited (every paid tier). Served by `/api/auth/me`.
+   * Emails left on Free's meter THIS PERIOD; `null` = unlimited (every
+   * paid tier). Served by `/api/auth/me`.
    */
   cleanupRemaining: number | null;
   /**
@@ -30,10 +30,6 @@ export interface TierEntitlements {
    * lapsed Pass drops the limit hours before the stored tier follows.
    */
   inboxLimitOwner: string;
-  /** Launch pricing flag, from `/api/auth/me`. */
-  pricingV2: boolean;
-  /** Backlog Pass checkout flag, from `/api/auth/me`. Absent means hidden. */
-  passEnabled: boolean;
   /** Mailboxes currently connected (status='active'). */
   connectedInboxes: number;
   /**
@@ -59,18 +55,14 @@ export function useTier(): TierEntitlements {
   // skew window `/api/auth/me` may predate the tier fields. Fall back
   // instead of crashing the shell on TIER_MANIFEST[undefined].
   const tier = me.tier ?? 'free';
-  const pricingV2 = me.pricingV2 === true;
-  // The server's ceiling when it sends one. Otherwise read launch pricing
-  // from `me`: the browser has no PRICING_V2 env, so `inboxLimitFor`
-  // alone fell back to the legacy one-account Plus.
-  const inboxLimit = me.inboxLimit ?? inboxLimitFor(tier, pricingV2);
+  // The server's ceiling when it sends one, else the manifest's.
+  const inboxLimit = me.inboxLimit ?? inboxLimitFor(tier);
   const inboxLimitOwner =
     me.inboxLimitReason === 'pass'
       ? BACKLOG_PASS_NAME
-      : inboxLimit === inboxLimitFor(tier, pricingV2)
+      : inboxLimit === inboxLimitFor(tier)
         ? TIER_MANIFEST[tier].name
         : 'Your plan';
-  const passEnabled = me.passEnabled === true;
   const connectedInboxes = me.mailboxes.filter((m) => m.status === 'active').length;
   return {
     tier,
@@ -79,8 +71,6 @@ export function useTier(): TierEntitlements {
     inboxLimit,
     ...(me.inboxLimitReason === 'pass' ? { inboxLimitReason: 'pass' as const } : {}),
     inboxLimitOwner,
-    pricingV2,
-    passEnabled,
     connectedInboxes,
     atInboxLimit: connectedInboxes >= inboxLimit,
   };

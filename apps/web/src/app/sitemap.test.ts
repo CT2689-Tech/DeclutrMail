@@ -120,13 +120,7 @@ describe('sitemap — D134', () => {
     expect(await sitemapPaths()).not.toContain('/changelog');
   });
 
-  it('omits /pricing/changelog while PRICING_V2 is off', async () => {
-    vi.stubEnv('PRICING_V2', '');
-    expect(await sitemapPaths()).not.toContain('/pricing/changelog');
-  });
-
-  it('omits the thin /pricing/changelog even when PRICING_V2 is on', async () => {
-    vi.stubEnv('PRICING_V2', 'true');
+  it('omits the thin, noindexed /pricing/changelog', async () => {
     expect(await sitemapPaths()).not.toContain('/pricing/changelog');
   });
 

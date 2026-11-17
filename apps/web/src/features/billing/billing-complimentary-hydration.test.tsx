@@ -3,10 +3,9 @@ import { hydrateRoot } from 'react-dom/client';
 import { renderToString } from 'react-dom/server';
 import { dehydrate, hydrate, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { BillingInvoiceList, BillingSubscription } from '@declutrmail/shared/contracts';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { launchPriceDisplay } from '@declutrmail/shared/entitlements';
 import { afterEach, expect, it, vi } from 'vitest';
 
-import { priceLineFor } from '@/features/marketing/pricing/pricing-model';
 import { QueryHydrationBoundary, SERVER_STREAM_PLACEHOLDER } from '@/lib/query-hydration-boundary';
 
 import { billingSubscriptionQueryOptions } from './api/query-options';
@@ -42,10 +41,9 @@ vi.mock('@/lib/api/client', async (importOriginal) => {
   const actual = await importOriginal<Record<string, unknown>>();
   return {
     ...actual,
-    apiGet: vi.fn(async (path: string) => {
-      if (path === '/api/billing/founding-remaining') return { data: { remaining: 10 } };
-      return { data: { invoices: [], unavailableProviders: [], omittedRows: 0, truncated: false } };
-    }),
+    apiGet: vi.fn(async () => ({
+      data: { invoices: [], unavailableProviders: [], omittedRows: 0, truncated: false },
+    })),
   };
 });
 
@@ -78,9 +76,8 @@ function stubMatchMedia(): void {
   }));
 }
 
-function annualLine(tier: 'plus' | 'pro'): string {
-  const line = priceLineFor(TIER_MANIFEST[tier], 'annual', 'paddle');
-  if (!line) throw new Error(`missing annual price for ${tier}`);
+function launchPlusLine(): string {
+  const line = launchPriceDisplay('usd').plus;
   return `${line.amount}${line.per}`;
 }
 
@@ -96,14 +93,7 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
   source.setQueryData(billingKeys.invoices(), EMPTY_INVOICES);
   const state = dehydrate(source);
 
-  const screen = (
-    <BillingScreen
-      pricingV2={false}
-      initialProvider="paddle"
-      country="US"
-      invoiceHistory={<BillingInvoiceHistoryGate />}
-    />
-  );
+  const screen = <BillingScreen country="US" invoiceHistory={<BillingInvoiceHistoryGate />} />;
   const server = new QueryClient();
   const html = renderToString(
     <QueryClientProvider client={server}>
@@ -112,10 +102,8 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
   );
 
   expect(html).toContain('Pro is included at no cost');
-  expect(html).toContain('aria-pressed="true"');
-  expect(html).toContain('>Annual');
-  expect(html).toContain(annualLine('plus'));
-  expect(html).not.toContain(annualLine('pro'));
+  expect(html).not.toContain('data-testid="cycle-toggle"');
+  expect(html).toContain(launchPlusLine());
   expect(html).toContain('Current access');
   expect(html).not.toContain('Loading billing');
 
@@ -156,10 +144,8 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
     expect(container.querySelector('[data-testid="complimentary-note"]')?.textContent).toContain(
       'Pro is included at no cost',
     );
-    const annual = container.querySelector('[data-testid="cycle-toggle"] [aria-pressed="true"]');
-    expect(annual?.textContent).toContain('Annual');
-    expect(container.textContent).toContain(annualLine('plus'));
-    expect(container.textContent).not.toContain(annualLine('pro'));
+    expect(container.querySelector('[data-testid="cycle-toggle"]')).toBeNull();
+    expect(container.textContent).toContain(launchPlusLine());
     expect(container.textContent).toContain('Current access');
     expect(container.textContent).not.toContain('Loading billing');
   } finally {
@@ -200,7 +186,7 @@ it.each([0, 6])(
     streamed.meta = { [SERVER_STREAM_PLACEHOLDER]: true };
     const tree = (client: QueryClient) => (
       <QueryClientProvider client={client}>
-        <BillingScreen pricingV2 invoiceHistory={<BillingInvoiceHistoryGate />} />
+        <BillingScreen invoiceHistory={<BillingInvoiceHistoryGate />} />
       </QueryClientProvider>
     );
     const server = new QueryClient();
