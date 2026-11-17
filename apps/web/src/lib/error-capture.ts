@@ -45,7 +45,9 @@ export type ErrorBoundary =
   | 'snoozed'
   | 'admin-security'
   | 'onboarding'
-  | 'home';
+  | 'home'
+  // MCP connector consent page (`/connect/authorize`, ADR-0048).
+  | 'connect';
 
 /** Closed set used both as the type union and the runtime allowlist. */
 const VALID_BOUNDARIES = new Set<ErrorBoundary>([
@@ -66,6 +68,7 @@ const VALID_BOUNDARIES = new Set<ErrorBoundary>([
   'admin-security',
   'onboarding',
   'home',
+  'connect',
 ]);
 
 /**

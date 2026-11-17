@@ -38,6 +38,9 @@ test('launcher cannot carry real credentials or Node/env preloads into either se
     assert.equal(command.env.HTTP_PROXY, undefined);
     assert.equal(command.env.PADDLE_API_KEY, undefined);
     assert.equal(command.env.NEXT_PUBLIC_POSTHOG_KEY, '');
+    // The connector is on in this stack, and its issuer is the isolated API.
+    assert.equal(command.env.MCP_ENABLED, 'true');
+    assert.equal(command.env.API_URL, 'http://127.0.0.1:4104');
   }
 });
 

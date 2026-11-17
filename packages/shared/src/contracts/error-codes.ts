@@ -411,6 +411,22 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'The confirmation phrase did not match. Type it exactly to continue.',
   },
+  // --- MCP connector: OAuth consent (ADR-0048 rule 4) ---
+  // The authorization request is gone: it expired (15 minutes), was
+  // already decided, or belongs to another browser.
+  CONNECT_REQUEST_EXPIRED: {
+    status: 410,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This connection request has expired. Go back to your app and connect again.',
+  },
+  // An account on its way out cannot hand an assistant new access.
+  CONNECT_DELETION_PENDING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Account deletion is scheduled. Cancel it in Settings to connect an app.',
+  },
   DELETION_ALREADY_PENDING: {
     status: 409,
     severityTier: 'inline_recoverable',

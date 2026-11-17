@@ -1,0 +1,12 @@
+-- Dropping these tables disconnects every connected app: all OAuth clients,
+-- grants and tokens are discarded and people must connect again. No Gmail
+-- data, action history or undo state lives here.
+DROP TABLE oauth_interactions;
+--> statement-breakpoint
+DROP TABLE oauth_auth_codes;
+--> statement-breakpoint
+DROP TABLE oauth_tokens;
+--> statement-breakpoint
+DROP TABLE oauth_grants;
+--> statement-breakpoint
+DROP TABLE oauth_clients;

@@ -17,6 +17,8 @@ import { InboxReportModule } from './inbox-report/inbox-report.module.js';
 import { HealthModule } from './health/health.module.js';
 import { IconsModule } from './icons/icons.module.js';
 import { MailboxAccountsModule } from './mailboxes/mailbox-accounts.module.js';
+import { McpModule } from './mcp/mcp.module.js';
+import { OAuthModule } from './oauth/oauth.module.js';
 import { OnboardingModule } from './onboarding/onboarding.module.js';
 import { ProductFeedbackModule } from './product-feedback/product-feedback.module.js';
 import { SupportRequestModule } from './support/support-request.module.js';
@@ -107,6 +109,10 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     // (503) while RESEND_WEBHOOK_SECRET is unset.
     NotificationsModule,
     ResendWebhookModule,
+    // MCP connector (ADR-0048) — OAuth authorization server + `/mcp`.
+    // Always loaded; every route 404s until MCP_ENABLED=true.
+    OAuthModule,
+    McpModule,
     ...(pubsubWebhookEnabled ? [WebhooksModule] : []),
   ],
 })

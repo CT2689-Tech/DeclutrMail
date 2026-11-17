@@ -19,7 +19,12 @@ const APP_PATHS = [
   '/onboarding',
   '/admin/security',
   '/admin/acquisition',
+  // MCP connector consent page (ADR-0048): sign-in returns to the pending request.
+  '/connect/authorize',
 ];
+
+/** The authorization server's request ids are URL-safe random strings. */
+const CONNECT_REQUEST_ID = /^[A-Za-z0-9_-]{16,64}$/;
 
 export { isUserScopedAppPath } from './account-navigation.js';
 
@@ -89,6 +94,14 @@ export function parseAppReturnTo(value: unknown): string | undefined {
     if (offer !== null) query.set('offer', offer);
     if (from !== null) query.set('from', from);
     return query.size ? `/billing?${query}` : '/billing';
+  }
+  if (url.pathname === '/connect/authorize') {
+    // Exactly one well-formed request id, nothing else: the page reads
+    // only that, so nothing else may ride through sign-in beside it.
+    const request = url.searchParams.get('request');
+    if (keys.length !== 1 || request === null || !CONNECT_REQUEST_ID.test(request))
+      return undefined;
+    return `/connect/authorize?request=${request}`;
   }
   return `${url.pathname}${url.search}${url.hash}`;
 }

@@ -9,6 +9,7 @@ import { AppModule } from './app.module.js';
 import { AllExceptionsFilter } from './common/all-exceptions.filter.js';
 import { CORS_ALLOWED_HEADERS } from './common/cors-allowed-headers.js';
 import { correlationMiddleware } from './common/correlation.middleware.js';
+import { MCP_ROOT_ROUTES } from './oauth/oauth-protocol.controller.js';
 import { requestTimingMiddleware } from './common/request-timing.middleware.js';
 import { securityHeadersMiddleware } from './common/security-headers.middleware.js';
 import { initSentry } from './observability/sentry.js';
@@ -167,7 +168,10 @@ async function bootstrap(): Promise<void> {
     credentials: true,
     allowedHeaders: [...CORS_ALLOWED_HEADERS],
   });
-  app.setGlobalPrefix('api');
+  // The MCP connector's OAuth discovery documents, `/oauth/*` and `/mcp`
+  // live at the origin root (RFC 8414 / RFC 9728, ADR-0048); every other
+  // route keeps the `/api` prefix.
+  app.setGlobalPrefix('api', { exclude: [...MCP_ROOT_ROUTES] });
   // Correlation IDs (D168) must be stamped before any handler or the
   // exception filter runs, so every request — success or error — carries
   // a correlationId / displayId the response, logs, and Sentry join on.

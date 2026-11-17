@@ -21,6 +21,7 @@ export const AUTHED_APP_PATHS = [
   '/autopilot',
   '/billing',
   '/brief',
+  '/connect',
   '/followups',
   '/home',
   '/later',

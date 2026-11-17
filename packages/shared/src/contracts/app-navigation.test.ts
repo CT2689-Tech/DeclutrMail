@@ -16,6 +16,7 @@ describe('app destinations surviving login', () => {
     '/admin/acquisition',
     '/brief?date=2026-10-10',
     '/onboarding?mailbox=mb-123&reconnect=1',
+    '/connect/authorize?request=CUygbhMUbHwTzNhgVgnRZC1EjwMfy2c_9vKePrg8rq9',
   ])('preserves %s', (path) => {
     expect(parseAppReturnTo(path)).toBe(path);
   });
@@ -33,6 +34,13 @@ describe('app destinations surviving login', () => {
     '/billing?from=%2Fhome%3Ffrom%3D%2Fsenders',
     '/billing?plan=plus&cycle=annual&promo=foundingPro',
     '/billing?plan=pro&plan=plus&cycle=annual',
+    // The consent page returns with exactly one well-formed request id.
+    '/connect/authorize',
+    '/connect/authorize?request=short',
+    '/connect/authorize?request=CUygbhMUbHwTzNhgVgnRZC1E&next=%2Fhome',
+    '/connect/authorize?request=has%20space%20in%20it%20123',
+    '/connect/authorize?request=CUygbhMUbHwTzNhgVgnRZC1E#account',
+    '/connect',
   ])('rejects %s', (path) => {
     expect(parseAppReturnTo(path)).toBeUndefined();
   });

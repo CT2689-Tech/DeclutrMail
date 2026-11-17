@@ -31,7 +31,7 @@ import { toast } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 
 import { QueryWrapper, createTestQueryClient } from '@/test/query-wrapper';
-import { installFetchStub, jsonOk, resetFetchStub } from '@/test/fetch-stub';
+import { installFetchStub, jsonNotFound, jsonOk, resetFetchStub } from '@/test/fetch-stub';
 import type { Me } from '@/features/auth/api/use-me';
 import { billingKeys } from '@/features/billing/api/query-keys';
 import { ME_SETTINGS_QUERY_KEY } from '@/features/settings/api/query-options';
@@ -181,6 +181,12 @@ function happyHandlers() {
       method: 'GET' as const,
       path: '/api/account/deletion',
       respond: () => jsonOk({ data: DELETION_STATUS }),
+    },
+    {
+      // MCP connector off (the production default): Connected apps is absent.
+      method: 'GET' as const,
+      path: '/api/oauth/grants',
+      respond: () => jsonNotFound('NOT_FOUND'),
     },
   ];
 }

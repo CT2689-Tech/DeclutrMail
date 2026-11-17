@@ -22,6 +22,8 @@ export interface OpsRetentionResult {
   deadLetterDeleted: number;
   /** `product_events` rows older than 13 months removed this pass. */
   productEventsDeleted: number;
+  /** OAuth rows past retention removed this pass, all five tables together. */
+  oauthRowsDeleted: number;
   /** True when a table hit the batch ceiling and has more to remove. */
   moreRemaining: boolean;
   durationMs: number;
@@ -74,6 +76,17 @@ export const CRON_RUNS_RETENTION_DAYS = 30;
 export const DEAD_LETTER_RETENTION_DAYS = 90;
 /** Product funnel rows. 13 months, no exception. */
 export const PRODUCT_EVENTS_RETENTION_MONTHS = 13;
+/**
+ * MCP connector OAuth retention (docs/spec/mcp-connector.md §7). Every
+ * row here is already useless to a client by the time it is removed —
+ * an expired code or token cannot be redeemed — so the windows only
+ * decide how long a dead row stays readable for debugging.
+ */
+export const OAUTH_AUTH_CODE_RETENTION_DAYS = 1;
+export const OAUTH_TOKEN_RETENTION_DAYS = 7;
+export const OAUTH_GRANT_RETENTION_DAYS = 30;
+/** A registered client nobody ever approved (registration is unauthenticated). */
+export const OAUTH_UNUSED_CLIENT_RETENTION_DAYS = 30;
 /** Max rows removed from ONE table in ONE pass. */
 export const RETENTION_BATCH_LIMIT = 5_000;
 
@@ -148,16 +161,96 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
     const cronRunsDeleted = rowCount(cronRows);
     const deadLetterDeleted = rowCount(deadRows);
     const productEventsDeleted = rowCount(productRows);
+    const oauth = await this.sweepOAuth();
 
     return {
       cronRunsDeleted,
       deadLetterDeleted,
       productEventsDeleted,
+      oauthRowsDeleted: oauth.deleted,
       moreRemaining:
         cronRunsDeleted >= RETENTION_BATCH_LIMIT ||
         deadLetterDeleted >= RETENTION_BATCH_LIMIT ||
-        productEventsDeleted >= RETENTION_BATCH_LIMIT,
+        productEventsDeleted >= RETENTION_BATCH_LIMIT ||
+        oauth.moreRemaining,
       durationMs: Date.now() - startedAt,
+    };
+  }
+
+  /**
+   * OAuth retention, in dependency order.
+   *
+   * A grant has no expiry of its own, so one whose every code and token
+   * has expired and been removed would otherwise sit unrevoked forever.
+   * It is marked revoked here; the 30-day rule then removes it like any
+   * other. Deleting a grant cascades to whatever it still owns.
+   */
+  private async sweepOAuth(): Promise<{ deleted: number; moreRemaining: boolean }> {
+    const { db } = this.deps;
+    const days = (n: number) => sql.raw(`interval '${n} days'`);
+    const counts: number[] = [];
+    const sweep = async (statement: ReturnType<typeof sql>) => {
+      counts.push(rowCount(await db.execute(statement)));
+    };
+
+    await sweep(sql`
+      WITH doomed AS (
+        SELECT i.ctid FROM oauth_interactions i
+        WHERE i.expires_at < now()
+        LIMIT ${RETENTION_BATCH_LIMIT}
+      )
+      DELETE FROM oauth_interactions WHERE ctid IN (SELECT ctid FROM doomed)
+      RETURNING 1
+    `);
+    await sweep(sql`
+      WITH doomed AS (
+        SELECT c.ctid FROM oauth_auth_codes c
+        WHERE c.expires_at < now() - ${days(OAUTH_AUTH_CODE_RETENTION_DAYS)}
+        LIMIT ${RETENTION_BATCH_LIMIT}
+      )
+      DELETE FROM oauth_auth_codes WHERE ctid IN (SELECT ctid FROM doomed)
+      RETURNING 1
+    `);
+    await sweep(sql`
+      WITH doomed AS (
+        SELECT t.ctid FROM oauth_tokens t
+        WHERE t.expires_at < now() - ${days(OAUTH_TOKEN_RETENTION_DAYS)}
+        LIMIT ${RETENTION_BATCH_LIMIT}
+      )
+      DELETE FROM oauth_tokens WHERE ctid IN (SELECT ctid FROM doomed)
+      RETURNING 1
+    `);
+    // Not a delete and not counted: retire grants that own nothing.
+    await db.execute(sql`
+      UPDATE oauth_grants g SET revoked_at = now()
+      WHERE g.revoked_at IS NULL
+        AND g.created_at < now() - ${days(1)}
+        AND NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = g.id)
+        AND NOT EXISTS (SELECT 1 FROM oauth_auth_codes c WHERE c.grant_id = g.id)
+    `);
+    await sweep(sql`
+      WITH doomed AS (
+        SELECT g.ctid FROM oauth_grants g
+        WHERE g.revoked_at < now() - ${days(OAUTH_GRANT_RETENTION_DAYS)}
+        LIMIT ${RETENTION_BATCH_LIMIT}
+      )
+      DELETE FROM oauth_grants WHERE ctid IN (SELECT ctid FROM doomed)
+      RETURNING 1
+    `);
+    await sweep(sql`
+      WITH doomed AS (
+        SELECT c.ctid FROM oauth_clients c
+        WHERE c.created_at < now() - ${days(OAUTH_UNUSED_CLIENT_RETENTION_DAYS)}
+          AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = c.client_id)
+        LIMIT ${RETENTION_BATCH_LIMIT}
+      )
+      DELETE FROM oauth_clients WHERE ctid IN (SELECT ctid FROM doomed)
+      RETURNING 1
+    `);
+
+    return {
+      deleted: counts.reduce((sum, n) => sum + n, 0),
+      moreRemaining: counts.some((n) => n >= RETENTION_BATCH_LIMIT),
     };
   }
 }

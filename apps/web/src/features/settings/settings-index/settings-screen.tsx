@@ -10,6 +10,7 @@ import type { ActionSheetPrefs, EmailPrefs } from '@declutrmail/shared/contracts
 
 import { useAuth } from '@/features/auth/auth-provider';
 import { useTier } from '@/features/auth/api/use-tier';
+import { ConnectedAppsSection } from '@/features/connected-apps/connected-apps-section';
 import { AccountDeletionSection } from '@/features/account-deletion/account-deletion-section';
 import {
   startMailboxConnect,
@@ -449,6 +450,10 @@ export function SettingsScreen({
             <DrillRow href="/settings/privacy" label="Privacy & data" />
             <DrillRow href="/settings/help" label="Help & glossary" />
           </SettingsGroup>
+
+          {/* Self-contained: owns its query and renders nothing while the
+          MCP connector is switched off (ADR-0048). */}
+          <ConnectedAppsSection />
         </div>
 
         <div

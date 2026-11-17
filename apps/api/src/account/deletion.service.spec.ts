@@ -1,6 +1,10 @@
 import {
   accountDeletionRequests,
   mailboxAccounts,
+  oauthAuthCodes,
+  oauthClients,
+  oauthGrants,
+  oauthTokens,
   schema,
   securityEvents,
   subscriptions,
@@ -50,11 +54,14 @@ function fakeEmailQueue(): { queue: Queue<EmailSendJobData>; jobs: EmailSendJobD
   return { queue, jobs };
 }
 
-async function seedUser(db: Db): Promise<{ userId: string; workspaceId: string }> {
+async function seedUser(
+  db: Db,
+  email = 'owner@declutrmail.ai',
+): Promise<{ userId: string; workspaceId: string }> {
   const [ws] = await db.insert(workspaces).values({ name: 'WS' }).returning({ id: workspaces.id });
   const [user] = await db
     .insert(users)
-    .values({ workspaceId: ws!.id, email: 'owner@declutrmail.ai' })
+    .values({ workspaceId: ws!.id, email })
     .returning({ id: users.id });
   return { userId: user!.id, workspaceId: ws!.id };
 }
@@ -261,6 +268,95 @@ describe('AccountDeletionOrchestrator', () => {
       await expect(
         orch.requestDeletion({ userId }, { confirmPhrase: 'DELETE' }),
       ).rejects.toMatchObject({ code: 'DELETION_ALREADY_PENDING' });
+    });
+  });
+
+  describe('connected apps lose access when deletion starts (ADR-0048, spec §7)', () => {
+    /** One connected app: a grant with an access token, a refresh token and a pending code. */
+    async function connectApp(owner: { userId: string; workspaceId: string }, tag: string) {
+      await db
+        .insert(oauthClients)
+        .values({
+          clientId: `client-${tag}`,
+          redirectUris: ['https://client.example/cb'],
+          registrationType: 'dynamic',
+          metadata: {},
+        })
+        .onConflictDoNothing();
+      const [grant] = await db
+        .insert(oauthGrants)
+        .values({
+          ...owner,
+          clientId: `client-${tag}`,
+          scopes: ['read', 'cleanup'],
+          resource: 'https://api.declutrmail.com/mcp',
+        })
+        .returning();
+      const expiresAt = new Date(Date.now() + 3_600_000);
+      await db.insert(oauthTokens).values([
+        { grantId: grant!.id, kind: 'access', tokenHash: `a-${tag}`, expiresAt, payload: {} },
+        { grantId: grant!.id, kind: 'refresh', tokenHash: `r-${tag}`, expiresAt, payload: {} },
+      ]);
+      await db.insert(oauthAuthCodes).values({
+        grantId: grant!.id,
+        codeHash: `c-${tag}`,
+        codeChallenge: 'challenge',
+        codeChallengeMethod: 'S256',
+        redirectUri: 'https://client.example/cb',
+        expiresAt,
+        payload: {},
+      });
+      return grant!.id;
+    }
+
+    const grantRow = async (id: string) =>
+      (await db.select().from(oauthGrants).where(eq(oauthGrants.id, id)))[0]!;
+    const tokenRows = (id: string) =>
+      db.select().from(oauthTokens).where(eq(oauthTokens.grantId, id));
+    const codeRows = (id: string) =>
+      db.select().from(oauthAuthCodes).where(eq(oauthAuthCodes.grantId, id));
+
+    it('revokes every grant, token and code of the person, and nobody else’s', async () => {
+      const mine = [
+        await connectApp({ userId, workspaceId }, 'one'),
+        await connectApp({ userId, workspaceId }, 'two'),
+      ];
+      const other = await seedUser(db, 'other@declutrmail.ai');
+      const theirs = await connectApp(other, 'three');
+
+      await orch.requestDeletion({ userId }, { confirmPhrase: 'DELETE' });
+
+      for (const id of mine) {
+        expect((await grantRow(id)).revokedAt).toBeInstanceOf(Date);
+        const tokens = await tokenRows(id);
+        expect(tokens).toHaveLength(2);
+        expect(tokens.every((token) => token.revokedAt instanceof Date)).toBe(true);
+        expect(await codeRows(id)).toHaveLength(0);
+      }
+      expect((await grantRow(theirs)).revokedAt).toBeNull();
+      expect((await tokenRows(theirs)).every((token) => token.revokedAt === null)).toBe(true);
+      expect(await codeRows(theirs)).toHaveLength(1);
+
+      const [event] = await db
+        .select()
+        .from(securityEvents)
+        .where(eq(securityEvents.eventType, 'account.deletion_requested'));
+      expect(event!.payload).toMatchObject({ revokedConnectedApps: 2 });
+    });
+
+    it('a rejected request revokes nothing', async () => {
+      const grantId = await connectApp({ userId, workspaceId }, 'one');
+      await expect(
+        orch.requestDeletion({ userId }, { confirmPhrase: 'delete' }),
+      ).rejects.toMatchObject({ code: 'DELETION_CONFIRM_MISMATCH' });
+      expect((await grantRow(grantId)).revokedAt).toBeNull();
+    });
+
+    it('cancelling the deletion does not reconnect them', async () => {
+      const grantId = await connectApp({ userId, workspaceId }, 'one');
+      await orch.requestDeletion({ userId }, { confirmPhrase: 'DELETE' });
+      await orch.cancel(userId);
+      expect((await grantRow(grantId)).revokedAt).toBeInstanceOf(Date);
     });
   });
 
