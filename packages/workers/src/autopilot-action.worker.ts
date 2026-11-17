@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, not, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, eq, exists, inArray, ne, not, notExists, sql, type SQL } from 'drizzle-orm';
 import type { JobsOptions } from 'bullmq';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 
@@ -909,10 +909,15 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     // Retire it before Gmail is touched. A claim that is already in flight
     // still completes so its mutation receives an Activity record and undo
     // token. A paused rule was handled above: its matches wait.
+    // A custom rule's match is likewise retired once its sender is no
+    // longer on the rule's list: an edit that removed it re-entered Observe,
+    // and switching back to Active must not revive the old match.
     if (
       !inFlight &&
       match.modeAtMatch === 'active' &&
-      (match.ruleMode !== 'active' || isReviewOnlyRule(match))
+      (match.ruleMode !== 'active' ||
+        isReviewOnlyRule(match) ||
+        execution.senderKeys?.has(match.senderKey) === false)
     ) {
       await this.deps.db
         .update(ruleMatchLog)
@@ -1261,8 +1266,27 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     senderKey: string,
     freshIds: string[] | null,
     inFlight: boolean,
+    /**
+     * Set for an unattended match. Its only consent is the rule being
+     * Active, so a new start also requires that here, in the statement that
+     * releases the first request: an "Ask first" or Pause landing after the
+     * match was re-read (through the quota wait and token refresh) stops it.
+     */
+    unattendedRuleId: string | null = null,
   ): Promise<void> {
     const { db } = this.deps;
+    const ruleStillActive = (ruleId: string) =>
+      db
+        .select({ id: automationRules.id })
+        .from(automationRules)
+        .where(
+          and(
+            eq(automationRules.id, ruleId),
+            eq(automationRules.enabled, true),
+            eq(automationRules.mode, 'active'),
+          ),
+        );
+    const requireActive = unattendedRuleId !== null && !inFlight;
     const [marked] = await db
       .update(actionJobs)
       .set({
@@ -1276,6 +1300,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
           eq(actionJobs.id, jobId),
           notExists(protectedSenderRow(db, mailboxAccountId, senderKey)),
           ...(inFlight ? [] : [eq(actionJobs.status, 'queued')]),
+          ...(requireActive ? [exists(ruleStillActive(unattendedRuleId))] : []),
         ),
       )
       .returning({ id: actionJobs.id });
@@ -1290,6 +1315,10 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
       ? row.status === 'done' || row.status === 'failed'
       : row.status !== 'queued';
     if (retired) throw new ClaimRetired(jobId);
+    // The rule left Active: nothing was sent. The match stays queued and the
+    // next sweep's Guard 3 retires it.
+    if (requireActive && (await ruleStillActive(unattendedRuleId).limit(1)).length === 0)
+      throw new ClaimRetired(jobId);
     throw new SenderProtectedAtSend();
   }
 
@@ -1595,6 +1624,7 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
                     match.senderKey,
                     freshIds,
                     inFlight,
+                    match.modeAtMatch === 'active' ? match.ruleId : null,
                   );
                 },
               }
@@ -2241,13 +2271,17 @@ function isPresetKey(k: string | null): k is AutopilotPresetKey {
  * email age a custom sender rule restricts Archive to. `null` when the
  * worker has no definition for the rule, which fails closed.
  */
-function executionOf(
-  match: Pick<EligibleMatch, 'presetKey' | 'actionKind' | 'ruleConditions'>,
-): { dailyActionCap: number; olderThanDays: number | null } | null {
+function executionOf(match: Pick<EligibleMatch, 'presetKey' | 'actionKind' | 'ruleConditions'>): {
+  dailyActionCap: number;
+  olderThanDays: number | null;
+  /** A custom rule's current sender list; `null` for a preset. */
+  senderKeys: ReadonlySet<string> | null;
+} | null {
   if (isPresetKey(match.presetKey))
     return {
       dailyActionCap: AUTOPILOT_PRESETS[match.presetKey].dailyActionCap,
       olderThanDays: null,
+      senderKeys: null,
     };
   if (match.presetKey !== null || match.actionKind !== 'archive') return null;
   const senderList = AutopilotSenderRuleConditionsSchema.safeParse(match.ruleConditions);
@@ -2255,6 +2289,7 @@ function executionOf(
     ? {
         dailyActionCap: AUTOPILOT_SENDER_RULE_DAILY_ACTION_CAP,
         olderThanDays: senderList.data.olderThanDays,
+        senderKeys: new Set(senderList.data.senderKeys),
       }
     : null;
 }

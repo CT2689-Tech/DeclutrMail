@@ -222,7 +222,7 @@ export function messageNotRestoredFromRule(ruleId: string): SQL {
     and a.rule_id = ${ruleId}
     and a.source = 'autopilot'
     and a.reverted_at is not null
-    and ${sql.raw('mail_messages.internal_date')} <= a.occurred_at
+    and ${sql.raw('mail_messages.internal_date')} <= a.reverted_at
 )`;
 }
 

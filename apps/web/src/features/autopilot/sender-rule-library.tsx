@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Button, ScreenIntro, Skeleton } from '@declutrmail/shared';
 import {
@@ -14,6 +14,7 @@ import { useOptionalAuth, getActiveMailboxEmail } from '@/features/auth/auth-pro
 import { apiErrorCode } from '@/lib/api/client';
 import { newIdempotencyKey } from '@/lib/api/actions';
 import {
+  fetchSenderRuleAutomaticPreview,
   saveSenderRule,
   retireSenderRule,
   setSenderRuleMode,
@@ -716,7 +717,6 @@ export function SenderRuleLibraryScope({
                           onClick={() => {
                             mode.reset();
                             setAutomaticTarget(selected);
-                            void rules.refetch();
                           }}
                         >
                           Run automatically
@@ -887,7 +887,7 @@ export function SenderRuleLibraryScope({
       {automaticTarget && !planLocked && (
         <AutomaticRunConfirm
           rule={rules.data?.find((rule) => rule.id === automaticTarget.id) ?? automaticTarget}
-          checking={rules.isFetching}
+          mailboxId={mailboxId}
           undoDays={undoDays}
           isBusy={mode.isPending}
           mailboxEmail={email ?? undefined}
@@ -918,13 +918,14 @@ export function SenderRuleLibraryScope({
 }
 
 /**
- * The preview before an Archive rule runs on its own: how much moves now,
- * where it goes, and how to undo it. Counts come from a fresh read of the
- * rule (refetched when this opens), never from a stale row.
+ * The preview before an Archive rule runs on its own: how much it archives,
+ * where mail goes, and how to undo it. The count is the server's read of
+ * exactly what the workers would move now (Protected senders and mail a
+ * previous undo restored excluded), fetched fresh when this opens.
  */
 function AutomaticRunConfirm({
   rule,
-  checking,
+  mailboxId,
   undoDays,
   isBusy,
   mailboxEmail,
@@ -933,7 +934,7 @@ function AutomaticRunConfirm({
   onConfirm,
 }: {
   rule: SenderRule;
-  checking: boolean;
+  mailboxId: string | undefined;
   undoDays: number;
   isBusy: boolean;
   mailboxEmail: string | undefined;
@@ -941,23 +942,41 @@ function AutomaticRunConfirm({
   onCancel: () => void;
   onConfirm: (rule: SenderRule) => void;
 }) {
-  const emails = rule.matchingMessageCount;
-  const senders = rule.matchingSenderCount;
+  const preview = useQuery({
+    queryKey: ['autopilot-sender-rule-automatic', mailboxId, rule.id, rule.version],
+    queryFn: ({ signal }) => fetchSenderRuleAutomaticPreview(rule, signal, mailboxId),
+    staleTime: 0,
+    gcTime: 0,
+  });
+  const data = preview.data?.version === rule.version ? preview.data : undefined;
   const age = rule.olderThanDays === null ? '' : ` older than ${rule.olderThanDays} days`;
+  const emails = data?.messageCount ?? 0;
+  const senders = data?.senderCount ?? 0;
   return (
     <ConfirmModalFrame
       title={`Run ${rule.name} automatically?`}
       subtitle={
-        checking
-          ? 'Checking matching email…'
-          : emails === 0
-            ? `Nothing to archive now. New inbox email${age} from these senders will be archived as it arrives.`
-            : `Archives ${num(emails)} inbox email${emails === 1 ? '' : 's'}${age} from ${num(senders)} ${senders === 1 ? 'sender' : 'senders'} now, then new matches as they arrive.`
+        preview.isError
+          ? 'Matching email couldn’t be checked.'
+          : !data
+            ? 'Checking matching email…'
+            : emails === 0
+              ? `Nothing to archive yet. New inbox email${age} from these senders will be archived without asking.`
+              : `Archives ${num(emails)} inbox email${emails === 1 ? '' : 's'}${age} from ${num(senders)} ${senders === 1 ? 'sender' : 'senders'}, then new matches without asking.`
       }
-      note={`Undo any run from Activity within ${undoDays} days.${rule.protectedSenderCount > 0 ? ' Protected senders are skipped.' : ''}`}
+      note={`Undo any run from Activity within ${undoDays} days.${(data?.protectedSenderCount ?? 0) > 0 ? ' Protected senders are skipped.' : ''}`}
+      trailing={
+        preview.isError ? (
+          <Button tone="ghost" size="sm" onClick={() => void preview.refetch()}>
+            Check again
+          </Button>
+        ) : undefined
+      }
       confirmLabel="Run automatically"
       confirmBusyLabel="Turning on…"
-      canConfirm={!checking && rule.enabled && rule.mode === 'observe' && rule.action === 'archive'}
+      canConfirm={
+        data !== undefined && rule.enabled && rule.mode === 'observe' && rule.action === 'archive'
+      }
       isBusy={isBusy}
       mailboxEmail={mailboxEmail}
       error={error}

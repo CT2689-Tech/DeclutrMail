@@ -2025,6 +2025,46 @@ describe('AutopilotReadService', () => {
       expect(() => AutopilotRulePreviewResultSchema.parse(result)).not.toThrow();
     });
 
+    it('does not promise to Archive mail an undo of this rule restored', async () => {
+      const day = 86_400_000;
+      const key = 'a'.repeat(64);
+      await indexSenders(db, mailboxA, [key]);
+      await db.insert(triageDecisions).values({
+        mailboxAccountId: mailboxA,
+        senderKey: key,
+        verdict: 'archive',
+        confidence: '0.90',
+        reasoning: 'test',
+        generatedBy: 'template',
+        producedAt: new Date(),
+        expiresAt: new Date(Date.now() + day),
+      });
+      const message = (id: string, daysOld: number) => ({
+        mailboxAccountId: mailboxA,
+        providerMessageId: id,
+        providerThreadId: `t-${id}`,
+        senderKey: key,
+        internalDate: new Date(Date.now() - daysOld * day),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      });
+      await db.insert(mailMessages).values([message('restored', 20), message('later', 2)]);
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxA,
+        senderKey: key,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+      });
+
+      const result = await service.previewRule(mailboxA, ruleId);
+      expect(result).toMatchObject({ actionableSenderCount: 1, actionableMessageCount: 1 });
+    });
+
     it('pages through one complete actionable preview without repeating the rule evaluation', async () => {
       const keys = Array.from({ length: 55 }, (_, index) => index.toString(16).padStart(64, '0'));
       await indexSenders(db, mailboxA, keys);

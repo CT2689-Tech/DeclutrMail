@@ -280,8 +280,22 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
       // preview), so only an Active Archive rule reaches here — the loader
       // admits no other — and every sender it names is a candidate.
       const senderList = rule.isPreset ? null : senderListOf(rule);
-      // Any future preset key the worker doesn't know yet, or a custom row
-      // that isn't a valid sender list: skip rather than guess.
+      if (!rule.isPreset && !senderList) {
+        // A custom rule the user sees as Automatic but whose stored list
+        // does not parse would otherwise never run, silently. Skip it
+        // rather than guess, and say so where the bad-threshold path does.
+        rulesSkippedMalformed += 1;
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            kind: 'autopilot.malformed_sender_rule',
+            worker: this.workerName,
+            ruleId: rule.id,
+          }),
+        );
+        continue;
+      }
+      // A preset key this worker doesn't know yet: skip rather than guess.
       if (!senderList && !isPresetKey(rule.presetKey)) continue;
 
       // numeric(3,2) → number. The schema stores a string; the matcher

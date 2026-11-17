@@ -56,7 +56,9 @@ import {
   ruleMatchSenderIsProtected,
   ruleMatchUnsubscribeAlreadyDone,
   workspaces,
+  messageNotRestoredFromRule,
   senderActionWhere,
+  senderInboxActionWhere,
   senderPolicies,
   senders,
   triageDecisions,
@@ -1589,8 +1591,34 @@ export class AutopilotReadService {
             .groupBy(mailMessages.senderKey)
         : [];
     const deleteCounts = new Map(eligibleCounts.map((r) => [r.senderKey, r.n]));
+    // Archive and Later count what the rule's own run would move: never mail
+    // a previous undo of this rule restored (`messageNotRestoredFromRule`),
+    // which an Active run leaves alone. Without this the turn-on preview
+    // promises a number of emails that do not move.
+    const labelVerb = rule.actionKind === 'archive' || rule.actionKind === 'later';
+    const labelRows =
+      labelVerb && matched.length > 0
+        ? await this.db
+            .select({ senderKey: mailMessages.senderKey, n: sql<number>`count(*)::int` })
+            .from(mailMessages)
+            .where(
+              and(
+                senderInboxActionWhere({
+                  mailboxAccountId,
+                  senderKeys: matched.map((m) => m.senderKey),
+                }),
+                messageNotRestoredFromRule(rule.id),
+              ),
+            )
+            .groupBy(mailMessages.senderKey)
+        : [];
+    const labelCounts = new Map(labelRows.map((r) => [r.senderKey, Number(r.n)]));
     const actionableCount = (m: { senderKey: string; inboxCount: number }) =>
-      rule.actionKind === 'delete' ? (deleteCounts.get(m.senderKey) ?? 0) : m.inboxCount;
+      rule.actionKind === 'delete'
+        ? (deleteCounts.get(m.senderKey) ?? 0)
+        : labelVerb
+          ? (labelCounts.get(m.senderKey) ?? 0)
+          : m.inboxCount;
 
     const actionable = matched.filter((m) =>
       rule.actionKind === 'unsubscribe' ? !m.isUnsubscribed : actionableCount(m) > 0,

@@ -1,6 +1,7 @@
 import {
   actionJobs,
   actionRecoveryPreviews,
+  activityLog,
   AUTOPILOT_PRESET_KEYS,
   automationRules,
   mailMessages,
@@ -856,6 +857,54 @@ describe('sender-list Autopilot rules', () => {
         });
         expect(edited.mode).toBe('observe');
       }
+    });
+
+    it('always lets an automatic rule stop, even after a sender left the index', async () => {
+      const rule = await service.create(mailbox, definition);
+      await service.patch(mailbox, rule.id, { version: 1, mode: 'active' });
+      await db.delete(senders).where(eq(senders.senderKey, A));
+      const asking = await service.patch(mailbox, rule.id, { version: 2, mode: 'observe' });
+      expect(asking.mode).toBe('observe');
+      expect((await service.patch(mailbox, rule.id, { version: 3, mode: 'paused' })).mode).toBe(
+        'paused',
+      );
+    });
+
+    it('previews exactly what an automatic run would archive now', async () => {
+      await message(db, mailbox, 'old-a', A, 100);
+      await message(db, mailbox, 'young-a', A, 3);
+      await message(db, mailbox, 'old-b', B, 100);
+      await message(db, mailbox, 'restored-a', A, 200);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailbox,
+        senderKey: B,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      const rule = await service.create(mailbox, { ...definition, senderKeys: [A, B] });
+      // A previous automatic run of this rule, undone, restored A's older mail.
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailbox,
+        senderKey: A,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId: rule.id,
+        occurredAt: new Date(Date.now() - 150 * 86_400_000),
+        revertedAt: new Date(Date.now() - 150 * 86_400_000 + 3_600_000),
+      });
+
+      const preview = await service.automaticPreview(mailbox, rule.id);
+      // old-a only: young-a is under the 30-day age, old-b is Protected,
+      // restored-a was restored by the undo.
+      expect(preview).toMatchObject({
+        ruleId: rule.id,
+        version: 1,
+        messageCount: 1,
+        senderCount: 1,
+        protectedSenderCount: 1,
+      });
+      await expect(service.automaticPreview(other, rule.id)).rejects.toThrow('not found');
     });
 
     it('refuses a frozen batch for an Active rule, which archives on its own', async () => {

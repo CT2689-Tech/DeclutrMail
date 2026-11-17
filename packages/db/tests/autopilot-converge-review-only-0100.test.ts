@@ -23,6 +23,12 @@ const rollback = readFileSync(
 
 type Db = Awaited<ReturnType<typeof freshTestDb>>;
 
+/** Run a migration file the way the runner does: one statement per breakpoint. */
+async function run(db: Db, file: string) {
+  for (const statement of file.split('--> statement-breakpoint'))
+    if (statement.replace(/--.*$/gm, '').trim()) await db.execute(statement);
+}
+
 async function seedMailbox(db: Db) {
   const [ws] = await db
     .insert(workspaces)
@@ -89,9 +95,9 @@ describe('0100 — converge stored-Active review-only rules', () => {
       actionKind: 'delete',
       mode: 'active',
     });
-    // Untouched: an Unsubscribe preset that already ran Active, a paused
-    // Delete rule, and a custom Archive rule (none could be Active before
-    // this change, but the scope must not reach them).
+    // Untouched: an Unsubscribe preset that already ran Active and a paused
+    // Delete rule. A custom rule could never be set Active before this
+    // change; one that is (a manual edit) is converged too.
     const unsubscribe = await rule(db, mb, {
       presetKey: 'auto_unsubscribe_noisy',
       actionKind: 'unsubscribe',
@@ -104,10 +110,10 @@ describe('0100 — converge stored-Active review-only rules', () => {
     });
     const custom = await rule(db, mb, { presetKey: null, actionKind: 'archive', mode: 'active' });
 
-    await db.execute(forward);
+    await run(db, forward);
 
     const rows = new Map((await db.select().from(automationRules)).map((r) => [r.id, r] as const));
-    for (const id of [lowEngagement, newSender, deleteRule]) {
+    for (const id of [lowEngagement, newSender, deleteRule, custom]) {
       expect(rows.get(id)).toMatchObject({
         mode: 'observe',
         version: 2,
@@ -119,11 +125,10 @@ describe('0100 — converge stored-Active review-only rules', () => {
     }
     expect(rows.get(unsubscribe)).toMatchObject({ mode: 'active', version: 1 });
     expect(rows.get(paused)).toMatchObject({ mode: 'paused', version: 1 });
-    expect(rows.get(custom)).toMatchObject({ mode: 'active', version: 1 });
 
     // Re-running converges nothing further; the rollback restores nothing.
-    await db.execute(forward);
-    await db.execute(rollback);
+    await run(db, forward);
+    await run(db, rollback);
     expect((await db.select().from(automationRules)).every((r) => r.version <= 2)).toBe(true);
     expect(
       (await db.select().from(automationRules).where(eq(automationRules.id, lowEngagement)))[0],
@@ -132,7 +137,7 @@ describe('0100 — converge stored-Active review-only rules', () => {
 });
 
 describe('Quiet held count — unattended matches the sweep will retire', () => {
-  it('excludes an Active match whose rule left Active or is review-only, keeps the rest', async () => {
+  it('excludes an Active match whose rule left Active, is review-only or dropped the sender', async () => {
     const db = await freshTestDb();
     const mb = await seedMailbox(db);
     const stillActive = await rule(db, mb, {
@@ -160,19 +165,35 @@ describe('Quiet held count — unattended matches the sweep will retire', () => 
       intentApplied: false,
       resolution: 'approved' as const,
     });
-    await db
-      .insert(ruleMatchLog)
-      .values([
-        match(stillActive, 'a', 'active'),
-        match(backToObserve, 'b', 'active'),
-        match(backToObserve, 'c', 'observe'),
-        match(reviewOnly, 'd', 'active'),
-      ]);
+    const named = 'e'.padEnd(64, '0');
+    const [custom] = await db
+      .insert(automationRules)
+      .values({
+        mailboxAccountId: mb,
+        isPreset: false,
+        presetKey: null,
+        name: 'Custom',
+        enabled: true,
+        mode: 'active',
+        conditions: { kind: 'sender_list', senderKeys: [named], olderThanDays: null },
+        actionKind: 'archive',
+        actionPayload: { reach: 'inbox_only' },
+      })
+      .returning({ id: automationRules.id });
+    await db.insert(ruleMatchLog).values([
+      match(stillActive, 'a', 'active'),
+      match(backToObserve, 'b', 'active'),
+      match(backToObserve, 'c', 'observe'),
+      match(reviewOnly, 'd', 'active'),
+      // Still on the custom rule's list, and since removed from it.
+      match(custom!.id, 'e', 'active'),
+      match(custom!.id, 'f', 'active'),
+    ]);
 
     const held = async (predicate: SQL) =>
       (await db.select({ senderKey: ruleMatchLog.senderKey }).from(ruleMatchLog).where(predicate))
         .map((r) => r.senderKey[0])
         .sort();
-    expect(await held(ruleMatchIsHeldAction())).toEqual(['a', 'c']);
+    expect(await held(ruleMatchIsHeldAction())).toEqual(['a', 'c', 'e']);
   });
 });

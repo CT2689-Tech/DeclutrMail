@@ -1195,6 +1195,7 @@ describe('AutopilotApplyWorker', () => {
         FAKE_CTX,
       );
       expect(result.matchesWritten).toBe(0);
+      expect(result.rulesSkippedMalformed).toBe(1);
     });
   });
 

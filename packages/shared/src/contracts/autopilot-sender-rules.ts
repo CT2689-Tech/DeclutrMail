@@ -6,7 +6,7 @@ export const AUTOPILOT_RULE_SENDER_LIMIT = 100;
 export const AUTOPILOT_RULE_PREVIEW_MESSAGE_LIMIT = 5_000;
 export const AUTOPILOT_SENDER_SEARCH_PAGE_SIZE = 25;
 export const AUTOPILOT_SENDER_RULE_PREVIEW_TTL_SECONDS = 300;
-/** Unattended Archive actions per rule per rolling day: each sender at most once. */
+/** Unattended Archive runs per rule per rolling 24 hours. */
 export const AUTOPILOT_SENDER_RULE_DAILY_ACTION_CAP = AUTOPILOT_RULE_SENDER_LIMIT;
 
 const senderKey = z.string().regex(/^[0-9a-f]{64}$/);
@@ -123,6 +123,19 @@ export interface AutopilotSenderRulePreview {
   protectedSenderCount: number;
   senders: (AutopilotRuleSender & { messageCount: number })[];
   excludedSenderKeys: string[];
+}
+/**
+ * What switching an Archive rule to run on its own would archive right now:
+ * inbox email from its unprotected senders, within its email age, minus mail
+ * a previous undo of the rule restored (the rule never moves that again).
+ */
+export interface AutopilotSenderRuleAutomaticPreview {
+  ruleId: string;
+  version: number;
+  messageCount: number;
+  senderCount: number;
+  protectedSenderCount: number;
+  checkedAt: string;
 }
 export interface AutopilotSenderRuleExecuteResult {
   previewId: string;

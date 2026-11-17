@@ -1266,6 +1266,9 @@ describe('AutopilotActionWorker', () => {
       const day = 24 * 60 * 60 * 1000;
       const { senderKey } = await seedSender(db, mailboxId, 'news@example.com');
       await inboxMessage(senderKey, 'restored-1', 20);
+      // Arrived after the run but before the undo: it was in the inbox when
+      // the user said no, so it stays too.
+      await inboxMessage(senderKey, 'before-undo', 9.5);
       await inboxMessage(senderKey, 'arrived-later', 2);
       const ruleId = await seedSenderRule({ senderKeys: [senderKey] });
       // An earlier unattended run of this rule, undone from Activity.
@@ -1313,6 +1316,99 @@ describe('AutopilotActionWorker', () => {
 
       await worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX);
       expect(gmail.calls[0]!.ids).toEqual(['restored-1']);
+    });
+
+    it('retires a queued unattended match once its sender is off the rule', async () => {
+      const { senderKey } = await seedSender(db, mailboxId, 'news@example.com', {
+        inboxMessages: 2,
+      });
+      // The rule was edited to drop this sender, then switched back to Active.
+      const ruleId = await seedSenderRule({ senderKeys: ['b'.repeat(64)] });
+      const matchId = await seedApprovedMatch(
+        db,
+        mailboxId,
+        ruleId,
+        senderKey,
+        'approved',
+        'active',
+      );
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      expect(result.labelActionsExecuted).toBe(0);
+      expect(gmail.calls).toHaveLength(0);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ resolution: 'dismissed', dismissReason: 'superseded' });
+    });
+
+    it('stops an unattended run when the rule leaves Active during the quota wait', async () => {
+      const { senderKey } = await seedSender(db, mailboxId, 'news@example.com', {
+        inboxMessages: 2,
+      });
+      const ruleId = await seedSenderRule({ senderKeys: [senderKey] });
+      const matchId = await seedApprovedMatch(
+        db,
+        mailboxId,
+        ruleId,
+        senderKey,
+        'approved',
+        'active',
+      );
+      // "Ask first" lands after the match was re-read, before the first request.
+      gmail.duringQuotaWait = async () => {
+        await db
+          .update(automationRules)
+          .set({ mode: 'observe' })
+          .where(eq(automationRules.id, ruleId));
+      };
+
+      const first = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+      expect(first.labelActionsExecuted).toBe(0);
+      expect(gmail.calls).toHaveLength(0);
+
+      gmail.duringQuotaWait = null;
+      await worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX);
+      expect(gmail.calls).toHaveLength(0);
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ resolution: 'dismissed', dismissReason: 'superseded' });
+    });
+
+    it('ignores undone runs of another rule, another sender, and runs that were not undone', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const { senderKey } = await seedSender(db, mailboxId, 'news@example.com');
+      const other = await seedSender(db, mailboxId, 'other@example.com');
+      await inboxMessage(senderKey, 'old-1', 20);
+      const ruleId = await seedSenderRule({ senderKeys: [senderKey] });
+      const otherRule = await seedSenderRule({ senderKeys: [senderKey] });
+      const run = (values: Partial<typeof activityLog.$inferInsert>) => ({
+        mailboxAccountId: mailboxId,
+        senderKey,
+        source: 'autopilot' as const,
+        action: 'archive' as const,
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+        ...values,
+      });
+      await db
+        .insert(activityLog)
+        .values([
+          run({ ruleId: otherRule }),
+          run({ senderKey: other.senderKey }),
+          run({ revertedAt: null }),
+          run({ source: 'manual' as const }),
+        ]);
+      await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'active');
+
+      await worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX);
+      expect(gmail.calls[0]!.ids).toEqual(['old-1']);
     });
 
     it('never runs a custom Delete row unattended', async () => {

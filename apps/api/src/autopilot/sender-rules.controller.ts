@@ -137,6 +137,13 @@ export class SenderRulesController {
     return ok(await this.rules.preview(mailbox.id, id, parsed.data));
   }
 
+  @Get('sender-rules/:id/automatic-preview')
+  @RateLimit('triage-load')
+  async automaticPreview(@CurrentMailbox() mailbox: { id: string }, @Param('id') id: string) {
+    assertUuid(id);
+    return ok(await this.rules.automaticPreview(mailbox.id, id));
+  }
+
   @Post('sender-rules/:id/execute')
   @RateLimit('triage-load')
   async execute(

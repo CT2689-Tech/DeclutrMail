@@ -13,7 +13,9 @@ import {
   automationRules,
   mailMessages,
   mailboxAccounts,
+  messageNotRestoredFromRule,
   senderActionWhere,
+  senderInboxActionWhere,
   senderPolicies,
   senders,
   type AutomationRule,
@@ -25,6 +27,7 @@ import {
   decodeCursor,
   encodeCursor,
   type AutopilotSenderRule,
+  type AutopilotSenderRuleAutomaticPreview,
   type AutopilotSenderRulePreview,
   type AutopilotSenderRuleExecuteResult,
   type AutopilotSenderSearchResult,
@@ -208,7 +211,10 @@ export class SenderRulesService {
     const current = await this.rule(mailboxId, ruleId);
     this.assertVersion(current, input.version);
     const senderKeys = input.senderKeys ?? current.conditions.senderKeys;
-    await this.assertOwnedSenders(mailboxId, senderKeys);
+    // Only a definition edit names senders. A lifecycle change (pause,
+    // Ask first) must always succeed, even after a sender-index rebuild
+    // dropped one of the rule's senders.
+    if (input.senderKeys !== undefined) await this.assertOwnedSenders(mailboxId, senderKeys);
     const action = input.action ?? current.actionKind;
     const reach = input.reach ?? current.actionPayload.reach;
     assertReach(action, reach);
@@ -456,6 +462,54 @@ export class SenderRulesService {
         messageCount: t.messageIds.length,
       })),
       excludedSenderKeys: excluded,
+    };
+  }
+
+  /**
+   * The count behind "Run automatically": exactly what the apply and action
+   * workers would archive now (`senderInboxActionWhere` with the rule's age,
+   * `messageNotRestoredFromRule`), Protected senders excluded. Read-only.
+   */
+  async automaticPreview(
+    mailboxId: string,
+    ruleId: string,
+  ): Promise<AutopilotSenderRuleAutomaticPreview> {
+    const rule = await this.rule(mailboxId, ruleId);
+    const checkedAt = new Date().toISOString();
+    const keys = rule.conditions.senderKeys;
+    const rows = await this.db
+      .select({
+        senderKey: mailMessages.senderKey,
+        n: sql<number>`count(*)::int`,
+        protected: sql<boolean>`coalesce(bool_or(${senderPolicies.isProtected}), false)`,
+      })
+      .from(mailMessages)
+      .leftJoin(
+        senderPolicies,
+        and(
+          eq(senderPolicies.mailboxAccountId, mailMessages.mailboxAccountId),
+          eq(senderPolicies.senderKey, mailMessages.senderKey),
+        ),
+      )
+      .where(
+        and(
+          senderInboxActionWhere({
+            mailboxAccountId: mailboxId,
+            senderKeys: keys,
+            olderThanDays: rule.conditions.olderThanDays,
+          }),
+          messageNotRestoredFromRule(rule.id),
+        ),
+      )
+      .groupBy(mailMessages.senderKey);
+    const movable = rows.filter((r) => !r.protected && Number(r.n) > 0);
+    return {
+      ruleId: rule.id,
+      version: rule.version,
+      messageCount: movable.reduce((total, r) => total + Number(r.n), 0),
+      senderCount: movable.length,
+      protectedSenderCount: rows.filter((r) => r.protected && Number(r.n) > 0).length,
+      checkedAt,
     };
   }
 

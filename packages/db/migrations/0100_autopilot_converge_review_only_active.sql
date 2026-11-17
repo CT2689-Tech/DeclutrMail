@@ -13,7 +13,7 @@
 -- needs a fresh, deliberate switch to Active.
 --
 -- SCOPE. Every stored-Active row the workers treat as review-only, plus the
--- low-engagement preset. The new-sender preset and Delete stay review-only
+-- low-engagement preset and any custom rule. The new-sender preset and Delete stay review-only
 -- (`isReviewOnlyRule`); converging them too makes stored state match
 -- behaviour, and it unblocks edits that the API refuses on an Active Delete
 -- row. Same field semantics as a user mode change in `patchRule`: fresh
@@ -23,6 +23,13 @@
 -- Unattended matches these rules already queued are retired by the action
 -- worker's Guard 3 (an `active` match whose rule is no longer Active), and a
 -- claim already in flight still completes with its Activity row and undo.
+--
+-- Custom sender rules (`is_preset = false`) are included too. The API could
+-- never set one Active before this change, so none should exist; one that
+-- does (a manual edit) would otherwise start archiving at deploy, since the
+-- apply worker now runs Active custom Archive rules.
+SET lock_timeout = '3s';
+--> statement-breakpoint
 UPDATE "automation_rules"
 SET "mode" = 'observe',
     "mode_changed_at" = now(),
@@ -31,4 +38,7 @@ SET "mode" = 'observe',
     "updated_at" = now()
 WHERE "mode" = 'active'
   AND ("preset_key" IN ('auto_archive_low_engagement', 'auto_screen_new_senders')
-       OR "action_kind" = 'delete');
+       OR "action_kind" = 'delete'
+       OR "is_preset" = false);
+--> statement-breakpoint
+RESET lock_timeout;

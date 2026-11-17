@@ -279,10 +279,11 @@ export function ruleMatchUnsubscribeAlreadyDone(): SQL {
 
 /**
  * An unattended (`mode_at_match = 'active'`) match the sweep will retire
- * instead of running (Guard 3): its rule is no longer Active, or is
- * review-only. Mirrors `isReviewOnlyRule` (`@declutrmail/shared`): Delete,
- * and the new-sender preset. A paused rule's matches are not retired, they
- * wait; {@link ruleMatchRuleCanStart} covers those.
+ * instead of running (Guard 3): its rule is no longer Active, is
+ * review-only (mirrors `isReviewOnlyRule` in `@declutrmail/shared`: Delete,
+ * and the new-sender preset), or is a custom rule that no longer names the
+ * sender. A paused rule's matches are not retired, they wait;
+ * {@link ruleMatchRuleCanStart} covers those.
  */
 export function ruleMatchUnattendedRetired(): SQL {
   return sql`(${sql.raw('rule_match_log.mode_at_match')} = 'active' and exists (
@@ -292,7 +293,9 @@ export function ruleMatchUnattendedRetired(): SQL {
     and ar.mode <> 'paused'
     and (ar.mode <> 'active'
          or ar.action_kind = 'delete'
-         or ar.preset_key = 'auto_screen_new_senders')
+         or ar.preset_key = 'auto_screen_new_senders'
+         or (not ar.is_preset
+             and not coalesce(ar.conditions -> 'senderKeys' ? ${sql.raw('rule_match_log.sender_key')}, false)))
 ))`;
 }
 

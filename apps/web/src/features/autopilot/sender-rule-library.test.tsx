@@ -20,6 +20,7 @@ const api = vi.hoisted(() => ({
   execute: vi.fn(),
   pause: vi.fn(),
   mode: vi.fn(),
+  automatic: vi.fn(),
   track: vi.fn(),
   feedback: vi.fn(),
   status: { data: undefined, isError: false, refetch: vi.fn() } as {
@@ -36,6 +37,7 @@ vi.mock('@/lib/api/autopilot-sender-rules', () => ({
   saveSenderRule: api.save,
   retireSenderRule: api.retire,
   setSenderRuleMode: api.mode,
+  fetchSenderRuleAutomaticPreview: api.automatic,
   previewSenderRule: api.preview,
   executeSenderRule: api.execute,
 }));
@@ -171,6 +173,16 @@ beforeEach(() => {
     enqueueFailedCount: 0,
   });
   api.pause.mockResolvedValue({ data: { pausedCount: 2 } });
+  api.automatic.mockImplementation((target: { id: string }) =>
+    Promise.resolve({
+      ruleId: target.id,
+      version: 1,
+      messageCount: 12,
+      senderCount: 2,
+      protectedSenderCount: 1,
+      checkedAt: new Date().toISOString(),
+    }),
+  );
   api.status.data = undefined;
   api.status.isError = false;
 });
@@ -325,7 +337,12 @@ describe('sender rule library', () => {
 
       const dialog = await screen.findByRole('dialog');
       await within(dialog).findByText(
-        'Archives 12 inbox emails older than 90 days from 2 senders now, then new matches as they arrive.',
+        'Archives 12 inbox emails older than 90 days from 2 senders, then new matches without asking.',
+      );
+      expect(api.automatic).toHaveBeenCalledWith(
+        expect.objectContaining({ id: rule.id }),
+        expect.anything(),
+        'mailbox-a',
       );
       expect(within(dialog).getByText(/Undo any run from Activity within 30 days/)).toBeTruthy();
       expect(within(dialog).getByText(/Protected senders are skipped/)).toBeTruthy();
@@ -337,6 +354,31 @@ describe('sender rule library', () => {
       expect(screen.queryByRole('button', { name: 'Run automatically' })).toBeNull();
       expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull();
       expect(api.execute).not.toHaveBeenCalled();
+    });
+
+    it('counts only what the server says the run would archive, and waits for it', async () => {
+      // e.g. after an undo: the rule card still lists 12 matching emails, but
+      // the restored ones never move again.
+      let resolve: (value: unknown) => void = () => {};
+      api.automatic.mockReturnValue(new Promise((r) => (resolve = r)));
+      setup();
+      await loaded();
+      fireEvent.click(screen.getByRole('button', { name: 'Run automatically' }));
+      const dialog = await screen.findByRole('dialog');
+      expect(within(dialog).getByText('Checking matching email…')).toBeTruthy();
+      expect(within(dialog).getByRole('button', { name: 'Run automatically' })).toBeDisabled();
+      resolve({
+        ruleId: rule.id,
+        version: 1,
+        messageCount: 0,
+        senderCount: 0,
+        protectedSenderCount: 0,
+        checkedAt: new Date().toISOString(),
+      });
+      await within(dialog).findByText(
+        'Nothing to archive yet. New inbox email older than 90 days from these senders will be archived without asking.',
+      );
+      expect(within(dialog).queryByText(/Protected senders are skipped/)).toBeNull();
     });
 
     it('lets an automatic rule ask first again', async () => {
