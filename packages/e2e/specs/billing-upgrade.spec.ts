@@ -227,8 +227,11 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Plus gat
   // confirm CTA is REPLACED by the upgrade CTA — the shortfall is
   // stated in the modal and no request is ever sent (the server 402
   // path stays covered by actions.service.postgres.spec).
+  // The meter counts emails (Archive and Delete), not senders, so the
+  // shortfall names the sender's inbox count: the `.one` copy for a
+  // single email, the general copy otherwise.
   await expect(preview).toContainText(
-    'This clears 1 email, but you have no free emails left this month.',
+    /This clears (1 email, but you have no free emails left|\d+ emails\. You have 0 free left) this month\./,
   );
   const upgradeCta = preview.getByRole('button', {
     name: fillStory(WS1_COPY['cap.pass.button']),
