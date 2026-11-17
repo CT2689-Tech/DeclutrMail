@@ -25,6 +25,7 @@ import { ORGANIZATION_SAME_AS, WS3_COPY } from '@declutrmail/shared/copy/launch'
 import { CookieConsentBanner } from '@/features/consent/cookie-consent-banner';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
+import { organizationId, organizationLogoUrl } from '@/features/marketing/structured-data';
 import { PublicRouteTracker } from '@/features/marketing/public-route-tracker';
 import { PublicFooter, PublicHeader } from '@/features/marketing/public-shell/public-shell';
 import { SignupRefCapture } from '@/features/marketing/signup-ref-capture';
@@ -35,14 +36,14 @@ import '@/features/marketing/public-styles.css';
 
 const { color, font } = tokens;
 
-const ORGANIZATION_ID = `${siteUrl()}/#organization`;
+const ORGANIZATION_ID = organizationId();
 
 const organization: Record<string, unknown> = {
   '@type': 'Organization',
   '@id': ORGANIZATION_ID,
   name: 'DeclutrMail',
   url: siteUrl(),
-  logo: `${siteUrl()}/icons/icon-512.png`,
+  logo: organizationLogoUrl(),
   email: 'support@declutrmail.com',
   disambiguatingDescription: WS3_COPY['ws3.jsonld.disambiguatingDescription'],
   alternateName: [...WS3_COPY['ws3.jsonld.alternateName']],

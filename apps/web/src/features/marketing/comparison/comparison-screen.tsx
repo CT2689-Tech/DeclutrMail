@@ -14,6 +14,7 @@ import { comparisonFaqJsonLd, comparisonFaqs } from './comparison-faqs';
 import { JsonLd } from '../json-ld';
 import { TrackedCta } from '../landing/tracked-cta';
 import { permissionEntryUrl, siteUrl } from '../landing/urls';
+import { breadcrumbList, type Crumb } from '../structured-data';
 import {
   ALTERNATIVES_SLUGS,
   comparisonBySlug,
@@ -416,6 +417,9 @@ function MatrixSection({ pricingV2, passEnabled }: LaunchFlags) {
   );
 }
 
+/** First step of every comparison breadcrumb, visible and structured. */
+export const COMPARE_CRUMB: Crumb = { name: 'All comparisons', path: '/compare' };
+
 function comparisonJsonLd(comparison: ComparisonDefinition) {
   return {
     '@context': 'https://schema.org',
@@ -424,19 +428,10 @@ function comparisonJsonLd(comparison: ComparisonDefinition) {
     description: comparison.description,
     url: `${siteUrl()}/vs/${comparison.slug}`,
     dateModified: comparison.verifiedIso,
-    breadcrumb: {
-      '@type': 'BreadcrumbList',
-      itemListElement: [
-        { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl() },
-        { '@type': 'ListItem', position: 2, name: 'Compare', item: `${siteUrl()}/compare` },
-        {
-          '@type': 'ListItem',
-          position: 3,
-          name: comparison.name,
-          item: `${siteUrl()}/vs/${comparison.slug}`,
-        },
-      ],
-    },
+    breadcrumb: breadcrumbList([
+      COMPARE_CRUMB,
+      { name: comparison.name, path: `/vs/${comparison.slug}` },
+    ]),
   };
 }
 
@@ -500,7 +495,7 @@ export function ComparisonDetailScreen({
       <JsonLd data={comparisonFaqJsonLd(comparison, passEnabled, pricingV2)} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
-          <Link href="/compare">All comparisons</Link>
+          <Link href={COMPARE_CRUMB.path}>{COMPARE_CRUMB.name}</Link>
           <span aria-hidden="true">/</span>
           <span>{comparison.name}</span>
         </nav>

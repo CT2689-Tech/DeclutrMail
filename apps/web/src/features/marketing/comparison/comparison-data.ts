@@ -20,11 +20,26 @@ import { buildLaunchComparisons } from './comparison-launch-pages';
  * 2026-08-04). Bump a page's date only after re-reading ITS sources.
  */
 export function comparisonVerifiedLabel(iso: string): string {
-  return `Last verified ${new Date(iso).toLocaleDateString('en-US', {
+  return `Last verified ${verifiedMonth(iso)}`;
+}
+
+/** "October 2026" from an ISO date: the one month format every freshness claim uses. */
+function verifiedMonth(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
-  })}`;
+  });
+}
+
+/**
+ * Document title for a `/vs` page. The month in it is a freshness claim,
+ * so it derives from `verifiedIso` like the visible stamp, instead of a
+ * literal that silently outlives the next re-verification.
+ */
+export function comparisonMetaTitle(comparison: ComparisonDefinition): string {
+  if (comparison.metaTitle) return comparison.metaTitle;
+  return `${comparison.metaSubject ?? comparison.title} — compared, ${verifiedMonth(comparison.verifiedIso)}`;
 }
 
 export type ComparisonSlug =
@@ -69,10 +84,15 @@ export interface ComparisonDefinition {
   readonly title: string;
   readonly description: string;
   /**
-   * Document title when it should differ from `${title} — honest 2026 comparison`.
+   * Document title when it should differ from `${title} — compared, <verified month>`.
    * Does not change the visible page heading or `description`.
    */
   readonly metaTitle?: string;
+  /**
+   * Shorter subject for the dated document title when `title` would push it
+   * past about 60 characters. Does not change the visible page heading.
+   */
+  readonly metaSubject?: string;
   /** Meta description when it should differ from the visible `description`. */
   readonly metaDescription?: string;
   readonly verdict: string;
@@ -867,7 +887,7 @@ const unrollMe: ComparisonDefinition = {
     },
     {
       label: 'Unroll.Me privacy notice',
-      url: 'https://unroll.me/legal/privacy',
+      url: 'https://unroll.me/legal/privacy/',
       note: 'Commercial-email collection, selling and sharing panelist data, Gmail restricted-use terms, and account-deletion coupling.',
     },
     {
@@ -1021,6 +1041,7 @@ const gmailNative: ComparisonDefinition = {
   category: 'Native tools',
   verifiedIso: '2026-10-13',
   title: 'DeclutrMail vs Gmail’s built-in cleanup',
+  metaSubject: 'DeclutrMail vs Gmail cleanup tools',
   description:
     'A source-backed comparison of DeclutrMail and Gmail’s own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.',
   metaDescription:
@@ -1297,12 +1318,12 @@ const metaMuse: ComparisonDefinition = {
     },
     {
       label: 'Meta Help Center — How Muse works with Connectors',
-      url: 'https://www.meta.com/help/artificial-intelligence/1687253048996149/',
+      url: 'https://www.meta.com/help/superintelligence/1687253048996149/',
       note: 'Connecting Gmail, email search, no whole-inbox download by default, approval before sending, retrieve-only Connectors.',
     },
     {
       label: 'Meta Help Center — How Muse handles your privacy, safety and security',
-      url: 'https://www.meta.com/help/artificial-intelligence/1047255454427887/',
+      url: 'https://www.meta.com/help/superintelligence/1047255454427887/',
       note: 'Per-user virtual machine, ad-system and model-improvement statements, deletion, reset, and what Muse may still remember.',
     },
   ],
