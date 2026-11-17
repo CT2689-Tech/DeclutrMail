@@ -219,6 +219,16 @@ describe('comparison data', () => {
       'limited',
     );
 
+    // Tier 1b: when a vendor's own pages disagree, the cell says so instead of
+    // quoting only the reassuring one. Mailstrom's email-management page says
+    // it never accesses bodies; its FAQ says it has access to email contents.
+    const mailstromData = comparisonBySlug('mailstrom')!.rows.find(
+      (row) => row.label === 'Email-data posture',
+    );
+    expect(mailstromData?.competitor.state).toBe('limited');
+    expect(mailstromData?.competitor.detail).toContain('never email bodies');
+    expect(mailstromData?.competitor.detail).toContain('access to email contents');
+
     // A price we could not read stays unknown rather than becoming a number.
     const zapperPrice = comparisonBySlug('inbox-zapper')!.rows.find(
       (row) => row.label === 'Public starting point',

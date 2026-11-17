@@ -169,12 +169,12 @@
     "existingMail: Yes, in bulk | Delete, archive or move bundles of related email.",
     "futureMail: Rules and blocking | Its FAQ lists automatic rules and Block Sender/Subject.",
     "unsubscribe: Yes | Listed as a feature.",
-    "data: Message details, not bodies (its claim) | Its site says it uses only message details (sender, subject, date, size) and never accesses email bodies.",
+    "data: Conflicting statements on its site | Its email-management page says it reads only message details (sender, subject, date, size) and never email bodies. Its FAQ says it has access to email contents, which it uses when you display an email. | limited",
     "price: Paid plans by account count and inbox size | See mailstrom.co/pricing."
   ],
   "ws3.vsNew.mailstrom.sources": [
     "Mailstrom pricing | https://mailstrom.co/pricing/ | Plans by number of accounts and inbox size",
-    "Mailstrom FAQ | https://mailstrom.co/faq | IMAP requirement; supported providers; rules and blocking",
+    "Mailstrom FAQ | https://mailstrom.co/faq | IMAP requirement; supported providers; rules and blocking; access to email contents",
     "Mailstrom email management | https://mailstrom.co/email-management | Providers; details-only claim"
   ],
   "ws3.vsNew.inboxpurge.meta": [
@@ -240,13 +240,13 @@
   "ws3.vsNew.mailmop.cells": [
     "providers: Gmail | One inbox analyzed at a time.",
     "existingMail: Yes, in bulk | Delete, block, unsubscribe and mark as read by sender.",
-    "data: Processed in your browser (its claim) | Its site says processing and storage happen in your browser; its README says it requests full Gmail access and reads message bodies only to find unsubscribe links.",
+    "data: Processed in your browser (its claim) | Its site says processing and storage happen in your browser; its README says it requests full Gmail access, and that it reads message content when you use its unsubscribe feature, to find unsubscribe links.",
     "openSource: Source-available | Custom license: view, modify and run for personal use.",
     "price: Free hosted plan, a paid plan, or self-host | See mailmop.com."
   ],
   "ws3.vsNew.mailmop.sources": [
     "MailMop home | https://www.mailmop.com/ | Browser processing; free hosted plan; self-hosting",
-    "MailMop GitHub README | https://github.com/neilbhammar/mailmop | Source-available license; full Gmail access to read unsubscribe links"
+    "MailMop GitHub README | https://github.com/neilbhammar/mailmop | Source-available license; full Gmail access and how it reads message content"
   ],
   "ws3.vsNew.cleanfox.meta": [
     "Cleanfox",
@@ -280,7 +280,7 @@
     "unsubscribe: Sends future email to Trash instead | Its FAQ says it chose automatic deletion over unsubscribe requests, so that you no longer receive the newsletter. | limited",
     "recovery: Trash folder; blocked newsletters can be restored | Its FAQ says deleted email stays in your Trash folder until your email service empties it, and blocked newsletters can be restored from a list in the app. A preview before deleting is not stated. | limited",
     "data: Collects copies of commercial email | Its privacy notice says it collects copies of and information from the commercial email you receive, such as receipts and promotions. For Gmail it says access to email bodies and attachments is used only to provide the service, and that this Gmail data is not used for serving advertisements. | limited",
-    "funding: Selling data for e-commerce research | Its FAQ says “we sell data for statistical research purposes related to e-commerce” and that no data is shared for advertising, profiling or re-identification. For the USA, its privacy notice says panelist data may be sold or shared with customers including data brokers, and describes how to opt out. Its privacy notice calls Cleanfox a NielsenIQ company.",
+    "funding: Selling data for e-commerce research | Its FAQ says “we sell data for statistical research purposes related to e-commerce” and that no data is shared with third parties for advertising, profiling or re-identification. For the USA, its privacy notice says panelist data may be sold or shared with customers including data brokers, and describes how to opt out. Its privacy notice calls Cleanfox a NielsenIQ company.",
     "platform: iPhone, Android and web | Its FAQ lists apps for iPhone and Android and says computers use cleanfox.io in a browser.",
     "price: Free | Its FAQ says Cleanfox is 100% free, with no subscriptions, trial periods or hidden fees."
   ],
@@ -357,7 +357,7 @@
     "existingMail: Yes, in bulk | Swipe to delete, archive or move groups of email.",
     "futureMail: Block senders on Chuck Pro | Its plan list includes Block senders on Chuck Pro. How blocking handles new email is not stated on the reviewed pages. | limited",
     "unsubscribe: Yes | Per-email unsubscribe on the free plan; Global Unsubscribe on Chuck Pro.",
-    "recovery: Undo in the app | Its FAQ describes an immediate Undo after each change and an Undo list for older ones. How long older changes stay undoable, and a preview before a change, are not stated.",
+    "recovery: Undo in the app | Its FAQ describes an immediate Undo after each change, and a menu option to undo older ones. How long older changes stay undoable, and a preview before a change, are not stated.",
     "data: Processed on your phone (its claim) | Its security page says email content and details are not stored on its servers and all processing happens on your iPhone.",
     "platform: iPhone app | Its site offers Chuck as a free iPhone download.",
     "price: Free plan; Chuck Pro by month or year | The free plan covers 1 account, up to 10,000 emails and a monthly processing limit. See chuck.email for Chuck Pro prices."
