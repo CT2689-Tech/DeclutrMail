@@ -150,7 +150,7 @@ test('a signed-out person signs in, approves, and can disconnect the app in Sett
     await expect(page.getByText(new URL(app.redirectUri).host)).toBeVisible();
     await expect(page.getByRole('listitem')).toContainText([
       'See your senders and subject lines',
-      'Clean up, with your confirmation',
+      'with your confirmation',
     ]);
 
     // 3. Approve → the app receives a code and exchanges it.
@@ -202,7 +202,7 @@ test('Deny tells the app access_denied and connects nothing', async ({ page }) =
     await page.goto(authorizeUrl(app, pkce().challenge, 'deny-journey', 'read'));
     // Only the requested scope is listed.
     await expect(page.getByText('See your senders and subject lines')).toBeVisible();
-    await expect(page.getByText('Clean up, with your confirmation')).toHaveCount(0);
+    await expect(page.getByText('with your confirmation')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Deny' }).click();
     await page.waitForURL(`${app.redirectUri}?**`);

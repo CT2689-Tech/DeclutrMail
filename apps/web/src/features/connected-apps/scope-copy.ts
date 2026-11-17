@@ -3,11 +3,12 @@ import type { ConnectorScope } from '@declutrmail/shared/contracts';
 /**
  * What each connector scope lets an app do, in the person's words
  * (docs/spec/mcp-connector.md §4). One line each, shown on the consent
- * page and beside each connected app.
+ * page and beside each connected app. The second line names the verbs:
+ * the house glossary keeps "clean" out of product copy.
  */
 export const SCOPE_LABEL: Record<ConnectorScope, string> = {
   read: 'See your senders and subject lines',
-  cleanup: 'Clean up, with your confirmation',
+  cleanup: 'Archive, Unsubscribe, Later or Delete, with your confirmation',
 };
 
 /** Stable order: reading before changing. */

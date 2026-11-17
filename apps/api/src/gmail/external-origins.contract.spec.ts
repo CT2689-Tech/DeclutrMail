@@ -47,6 +47,7 @@ const NOT_A_PROCESSOR = new Set([
   'developers.google.com',
   'platform.claude.com',
   'brand.example',
+  'client.example',
   'app.foo.com',
   'a.com',
   'b.com',

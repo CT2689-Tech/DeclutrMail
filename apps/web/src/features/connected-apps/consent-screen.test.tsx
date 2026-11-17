@@ -6,6 +6,7 @@ import { installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { ConsentCard, ConsentScreen, isApiResumeUrl } from './consent-screen';
+import { SCOPE_LABEL } from './scope-copy';
 
 const REQUEST = 'CUygbhMUbHwTzNhgVgnRZC1EjwMfy2c_9vKePrg8rq9';
 const BASE = `/api/oauth/interactions/${REQUEST}`;
@@ -80,8 +81,8 @@ describe('ConsentCard', () => {
     expect(screen.getByText('claude.ai')).toBeTruthy();
     const items = screen.getAllByRole('listitem').map((item) => item.textContent);
     expect(items).toEqual([
-      'See your senders and subject lines',
-      'Clean up, with your confirmation',
+      SCOPE_LABEL.read,
+      SCOPE_LABEL.cleanup,
       'ada@example.com',
       'ada.work@example.com',
     ]);
@@ -91,8 +92,8 @@ describe('ConsentCard', () => {
 
   it('lists only the scopes that were requested', () => {
     ready({ scopes: ['read'] });
-    expect(screen.queryByText('Clean up, with your confirmation')).toBeNull();
-    expect(screen.getByText('See your senders and subject lines')).toBeTruthy();
+    expect(screen.queryByText(SCOPE_LABEL.cleanup)).toBeNull();
+    expect(screen.getByText(SCOPE_LABEL.read)).toBeTruthy();
   });
 
   it('does not invent a name for an app that registered without one', () => {

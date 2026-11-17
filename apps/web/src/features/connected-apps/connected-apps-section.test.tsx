@@ -8,6 +8,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { ConnectedAppsGroup, ConnectedAppsSection } from './connected-apps-section';
 import { isConnectorUnavailable } from './api/use-connected-apps';
+import { SCOPE_LABEL } from './scope-copy';
 
 const h = vi.hoisted(() => ({ toast: vi.fn() }));
 vi.mock('@declutrmail/shared', async (importOriginal) => ({
@@ -64,9 +65,7 @@ describe('ConnectedAppsGroup', () => {
     const group = screen.getByTestId('settings-connected-apps');
     expect(group.textContent).toContain('Claude');
     // Reading is listed before changing, whatever order the API sent.
-    expect(group.textContent).toContain(
-      'See your senders and subject lines · Clean up, with your confirmation',
-    );
+    expect(group.textContent).toContain(`${SCOPE_LABEL.read} · ${SCOPE_LABEL.cleanup}`);
     expect(group.textContent).toContain('Connected November 2, 2026');
     expect(group.textContent).toContain('Last used November 16, 2026');
     // An app that registered without a name is not given an invented one.
@@ -236,6 +235,17 @@ describe('ConnectedAppsSection', () => {
     );
     expect(screen.getByRole('button', { name: 'Disconnect Claude' })).toBeTruthy();
     expect(h.toast).not.toHaveBeenCalled();
+  });
+});
+
+describe('SCOPE_LABEL', () => {
+  it('says reading covers senders and subject lines, and changes need confirmation', () => {
+    expect(SCOPE_LABEL.read).toContain('senders');
+    expect(SCOPE_LABEL.read).toContain('subject lines');
+    for (const verb of ['Archive', 'Unsubscribe', 'Later', 'Delete']) {
+      expect(SCOPE_LABEL.cleanup).toContain(verb);
+    }
+    expect(SCOPE_LABEL.cleanup).toContain('with your confirmation');
   });
 });
 
