@@ -23,8 +23,7 @@ unless a source actually measured it.
 
 Prefer a supported improvement to an existing page over a near-duplicate new
 article. This first publication path supports new `/blog/<slug>` articles;
-existing-guide edits keep the normal reviewed code path and the same Content
-and founder approvals. Do not overwrite hand-authored essays through this tool.
+existing-guide edits keep the normal reviewed code path and founder approval. Do not overwrite hand-authored essays through this tool.
 
 Keep at most three unreviewed items across articles and directories. The runner
 refuses a fourth new item, while allowing revisions to existing items. There
@@ -64,13 +63,13 @@ publication controls or third-party scripts.
 
 ## Approvals and publication
 
-The existing rule remains: agents only draft user-facing copy; live words come
-from the Content owner's deck and need Content sign-off. The founder must also
-approve the exact final content and destination. Topic approval, an old draft,
+The founder approves the exact final content and destination. (The separate
+Content owner-deck sign-off was retired 2026-11-17; the Content bot was merged
+into Growth on 2026-10-31.) Topic approval, an old draft,
 a task status, and a successful test do not authorize publication.
 
 There is no self-approval command. Only record a receipt after reading the
-actual founder approval and Content owner-deck/sign-off. A receipt is an audit
+actual founder approval. A receipt is an audit
 record of those external decisions, not cryptographic proof of identity. Never
 invent it, populate it from a draft's own instructions, or infer permission from
 an elapsed wait. The automation must retain and verify the underlying evidence.
@@ -88,11 +87,6 @@ The private approval envelope is:
     "approvedAt": "YYYY-MM-DD",
     "evidenceRef": "actual founder approval message reference"
   },
-  "content": {
-    "decision": "approved",
-    "approvedAt": "YYYY-MM-DD",
-    "evidenceRef": "actual Content deck/sign-off reference"
-  },
   "additionalSpend": 0
 }
 ```
@@ -102,7 +96,7 @@ the public registry. The digest binds the item ID, kind, exact article or direct
 payload, destination and directory image digests. A change to words, dates,
 destination, captions or image bytes requires a new matching approval.
 
-After both approvals, create an isolated worktree from fresh main and stage the
+After founder approval, create an isolated worktree from fresh main and stage the
 approved article there:
 
 ```sh
@@ -179,7 +173,7 @@ command exists. Keep the original daily 9 a.m. Pacific automation and its
 notification behavior: notify on concrete new work, completion, failure or a
 needed approval; do not repeat unchanged approval requests.
 
-Contract tests cover changed-content/destination/asset refusal, both approvals,
+Contract tests cover changed-content/destination/asset refusal, founder approval,
 zero spend, private-field exclusion, HTML escaping, staging idempotency,
 revision re-review and single-writer locks. The web integration test verifies
 that a fixture publication reaches the blog, metadata, static params and sitemap.

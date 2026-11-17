@@ -308,16 +308,17 @@ export function verifyApproval(draft, approval, today = pacificDate()) {
         : draft.directory.url),
     'Approval destination mismatch',
   );
-  for (const role of ['founder', 'content']) {
-    const receipt = approval[role];
-    check(
-      receipt?.decision === 'approved' &&
-        text(receipt.evidenceRef) &&
-        date(receipt.approvedAt) &&
-        receipt.approvedAt <= today,
-      `${role} approval and its actual evidence reference are required`,
-    );
-  }
+  // Founder approval only. The separate Content sign-off was retired
+  // 2026-11-17: the Content bot was merged into Growth on 2026-10-31, so the
+  // second approver no longer exists.
+  const receipt = approval.founder;
+  check(
+    receipt?.decision === 'approved' &&
+      text(receipt.evidenceRef) &&
+      date(receipt.approvedAt) &&
+      receipt.approvedAt <= today,
+    'founder approval and its actual evidence reference are required',
+  );
   check(approval.additionalSpend === 0, 'Only zero-additional-spend publication is permitted');
   return approval;
 }
@@ -335,11 +336,13 @@ export function validateRegistry(registry, today = pacificDate()) {
         contentDigest({ version: 1, kind: 'article', id: entry.draftId, article: entry.article }),
       'Published content digest mismatch',
     );
+    // `contentReviewedAt` survives only on entries staged before the Content
+    // sign-off was retired; new entries omit it.
     check(
       date(entry.approvedAt) &&
-        date(entry.contentReviewedAt) &&
         entry.approvedAt <= today &&
-        entry.contentReviewedAt <= today,
+        (entry.contentReviewedAt === undefined ||
+          (date(entry.contentReviewedAt) && entry.contentReviewedAt <= today)),
       'Public approval timestamps required',
     );
     check(
@@ -511,10 +514,13 @@ export async function execute(command, options, dependencies = {}) {
           draftId: draft.id,
           contentSha256: item.digest,
           approvedAt: approval.founder.approvedAt,
-          contentReviewedAt: approval.content.approvedAt,
         };
-        if (existing) Object.assign(existing, entry);
-        else registry.articles.push(entry);
+        if (existing) {
+          // A revision is a new approval; an old Content date would describe
+          // the previous words.
+          delete existing.contentReviewedAt;
+          Object.assign(existing, entry);
+        } else registry.articles.push(entry);
         validateRegistry(registry, today);
         await atomic(target, JSON.stringify(registry, null, 2) + '\n');
         item.status = 'staged_for_pr';

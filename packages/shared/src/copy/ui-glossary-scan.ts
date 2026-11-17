@@ -40,7 +40,11 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const require = createRequire(import.meta.url);
 const ts = require(join(REPO, 'node_modules/typescript/lib/typescript.js')) as TsApi;
 const ROOTS = ['apps/web/src', 'packages/shared/src'];
-const SKIP_DIR = new Set(['marketing', 'node_modules', 'design-prototype']);
+// `marketing` skips features/marketing; `(marketing)` skips the route group.
+// The route group was meant to be skipped all along: this is the in-app UI
+// lint, and marketing pages need words like "clean", "best" and competitor
+// names ("Clean Email") that in-app copy avoids.
+const SKIP_DIR = new Set(['marketing', '(marketing)', 'node_modules', 'design-prototype']);
 const SKIP_FILE = /\.(test|spec|stories)\.[cm]?[jt]sx?$/;
 
 export interface BaselineEntry {

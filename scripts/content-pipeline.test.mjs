@@ -77,11 +77,6 @@ const approval = (d) => ({
     approvedAt: TODAY,
     evidenceRef: 'Actual founder message reference',
   },
-  content: {
-    decision: 'approved',
-    approvedAt: TODAY,
-    evidenceRef: 'Actual Content owner-deck sign-off reference',
-  },
   additionalSpend: 0,
 });
 
@@ -115,7 +110,7 @@ test('unknown nested public fields and unsafe source links cannot leak into publ
   assert.throws(() => validateArticle(c, TODAY), /fictional/);
 });
 
-test('approval binds exact words, destination, Content sign-off and zero spend', () => {
+test('approval binds exact words, destination, founder sign-off and zero spend', () => {
   const d = draft();
   const a = approval(d);
   assert.equal(verifyApproval(d, a, TODAY), a);
@@ -128,7 +123,7 @@ test('approval binds exact words, destination, Content sign-off and zero spend',
     () => verifyApproval(d, { ...a, destination: 'https://other.example/' }, TODAY),
     /destination/,
   );
-  assert.throws(() => verifyApproval(d, { ...a, content: undefined }, TODAY), /content approval/);
+  assert.throws(() => verifyApproval(d, { ...a, founder: undefined }, TODAY), /founder approval/);
   assert.throws(
     () => verifyApproval(d, { ...a, founder: { ...a.founder, decision: 'pending' } }, TODAY),
     /founder approval/,
