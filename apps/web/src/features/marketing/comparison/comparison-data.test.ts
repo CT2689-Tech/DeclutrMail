@@ -81,7 +81,7 @@ describe('comparison data', () => {
       'www.meta.com',
       'mailstrom.co',
       'www.inboxpurge.com',
-      'www.mailmop.com',
+      'mailmop.com',
       'github.com',
     ]);
 

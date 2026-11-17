@@ -211,7 +211,7 @@ export function ComparisonIndexScreen({ pricingV2, passEnabled }: LaunchFlags = 
     <div className="dm-story dm-comparison">
       <JsonLd data={INDEX_JSON_LD} />
       <header className="dm-compare-hero dm-compare-narrow">
-        <h1>Email cleanup tools solve different problems.</h1>
+        <h1>Gmail cleanup tools solve different problems.</h1>
         <p className="dm-compare-lede">{WS3_COPY['ws3.vs.compare.verdict']}</p>
         <TrustRow />
         <p className="dm-compare-verified">

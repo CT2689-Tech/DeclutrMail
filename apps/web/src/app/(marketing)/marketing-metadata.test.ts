@@ -113,7 +113,7 @@ describe('the blog index title — D250 §3.6 row 21', () => {
     // so an appended suffix would drift from the prescribed value unnoticed —
     // which is the failure this assertion exists to catch.
     expect(blog.title).toEqual({
-      absolute: 'DeclutrMail articles — previews, undo, and the limits of bulk email',
+      absolute: 'DeclutrMail Journal — essays on Gmail cleanup',
     });
   });
 });
@@ -293,9 +293,7 @@ describe('marketing metadata guards', () => {
     );
 
     const gmail = await metadataForPath('/vs/gmail');
-    expect(titleText(gmail)).toBe(
-      'DeclutrMail vs Gmail’s built-in cleanup — compared, October 2026',
-    );
+    expect(titleText(gmail)).toBe('DeclutrMail vs Gmail cleanup tools — compared, October 2026');
     expect(gmail.description).toBe(
       'A source-backed comparison of DeclutrMail and Gmail’s cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.',
     );
@@ -321,7 +319,7 @@ describe('marketing metadata guards', () => {
     }
 
     expect(inboxSimulator.description).toBe(
-      'Try Senders and Triage with made-up email. Open the sender inspector, filter and select senders, and preview Archive, Later or Delete. No signup or Gmail access needed.',
+      'Try Senders and Triage with made-up email: open the sender inspector and preview Archive, Later or Delete. No signup or Gmail access needed.',
     );
     expect(howToHub.description).toBe(
       'Step-by-step Gmail guides: delete all emails from one sender, free up storage when Gmail is full, auto archive future email, stop promotional email, and more.',
@@ -351,7 +349,7 @@ describe('marketing metadata guards', () => {
     expect(landing.description).toBe(
       'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
     );
-    expect(titleText(pricing)).toBe('Pricing — DeclutrMail');
+    expect(titleText(pricing)).toBe('Pricing: free Gmail cleanup and paid plans — DeclutrMail');
     expect(pricing.description).toBe(
       'Free includes manual sender cleanup. Plus adds Screener, Autopilot and Quiet hours with no monthly limit. Pro adds the Daily Brief, Follow-ups and more inboxes.',
     );
@@ -369,7 +367,7 @@ describe('marketing metadata guards', () => {
     );
     expect(titleText(answerUndo)).toBe('How does undo work for Gmail cleanup? — DeclutrMail');
     expect(answerUndo.description).toBe(
-      'How recovery differs for Archive, Later, Delete, Keep, and sent Unsubscribe requests.',
+      'Archive, Later and Delete have 30-day Activity Undo; Delete also has Gmail Trash recovery. A sent unsubscribe request can’t be recalled.',
     );
     expect(titleText(changelog)).toBe('DeclutrMail product updates — what changed, and when');
     expect(changelog.description).toBe(

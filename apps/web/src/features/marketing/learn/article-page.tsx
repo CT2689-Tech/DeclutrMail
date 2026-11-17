@@ -40,10 +40,27 @@ function Callout({ callout }: { callout: LearnCallout }) {
   );
 }
 
+/** The visible breadcrumb above the title; the BreadcrumbList mirrors it. */
+function articleBreadcrumb(article: LearnArticle): { href: string; label: string } {
+  if (article.kind === 'How-to guide') return { href: '/how-to', label: 'Guides' };
+  if (article.kind === 'Direct answer') return { href: '/answers', label: 'Answers' };
+  return { href: '/blog', label: 'Articles' };
+}
+
 function articleJsonLd(article: LearnArticle) {
-  // Both HowTo and Article inherit CreativeWork's date properties, so the
-  // freshness signal is identical on either branch.
-  const dates = { datePublished: article.publishedAt, dateModified: article.updatedAt };
+  const url = `${siteUrl()}${article.path}`;
+  // Every learn page uses the default share card (`app/opengraph-image.tsx`),
+  // so the schema image is the same crawlable URL as og:image.
+  const shared = {
+    url,
+    mainEntityOfPage: url,
+    image: `${siteUrl()}/opengraph-image`,
+    inLanguage: 'en-US',
+    // Both HowTo and Article inherit CreativeWork's date properties, so the
+    // freshness signal is identical on every branch.
+    datePublished: article.publishedAt,
+    dateModified: article.updatedAt,
+  };
 
   if (article.kind === 'How-to guide') {
     const steps = article.sections.flatMap((section) => section.steps ?? []);
@@ -52,21 +69,46 @@ function articleJsonLd(article: LearnArticle) {
       '@type': 'HowTo',
       name: article.title,
       description: article.description,
-      url: `${siteUrl()}${article.path}`,
-      ...dates,
+      ...shared,
       step: steps.map((step) => ({ '@type': 'HowToStep', name: step.name, text: step.text })),
     };
   }
 
+  // The same organization node the marketing layout emits, by `@id`, with
+  // the name and logo inline so the node stands alone for Article parsers.
+  const organization = {
+    '@type': 'Organization',
+    '@id': `${siteUrl()}/#organization`,
+    name: 'DeclutrMail',
+    url: siteUrl(),
+    logo: { '@type': 'ImageObject', url: `${siteUrl()}/icons/icon-512.png` },
+  };
   return {
     '@context': 'https://schema.org',
-    '@type': 'Article',
+    '@type': article.path.startsWith('/blog/') ? 'BlogPosting' : 'Article',
     headline: article.title,
     description: article.description,
-    url: `${siteUrl()}${article.path}`,
-    ...dates,
-    author: { '@type': 'Organization', name: 'DeclutrMail' },
-    publisher: { '@type': 'Organization', name: 'DeclutrMail' },
+    ...shared,
+    author: organization,
+    publisher: organization,
+  };
+}
+
+function breadcrumbJsonLd(article: LearnArticle) {
+  const parent = articleBreadcrumb(article);
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl() },
+      { '@type': 'ListItem', position: 2, name: parent.label, item: `${siteUrl()}${parent.href}` },
+      {
+        '@type': 'ListItem',
+        position: 3,
+        name: article.title,
+        item: `${siteUrl()}${article.path}`,
+      },
+    ],
   };
 }
 
@@ -113,13 +155,7 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
   );
   return (
     <ReadingLayout
-      breadcrumb={
-        article.kind === 'How-to guide'
-          ? { href: '/how-to', label: 'Guides' }
-          : article.kind === 'Direct answer'
-            ? { href: '/answers', label: 'Answers' }
-            : { href: '/blog', label: 'Articles' }
-      }
+      breadcrumb={articleBreadcrumb(article)}
       title={article.title}
       lede={article.intro}
       meta={
@@ -134,6 +170,7 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
       tocNarrow="hidden"
     >
       <JsonLd data={articleJsonLd(article)} />
+      <JsonLd data={breadcrumbJsonLd(article)} />
       {faq ? <JsonLd data={faq} /> : null}
 
       {article.quickAnswer ? (

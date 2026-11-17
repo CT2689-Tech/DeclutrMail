@@ -44,10 +44,27 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
       url: `${siteUrl()}/vs/${alternative.slug}`,
     })),
   };
+  // Mirrors the visible breadcrumb ("All comparisons / X alternatives"),
+  // with the same Home → Compare trail the /vs pages declare.
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl() },
+      { '@type': 'ListItem', position: 2, name: 'Compare', item: `${siteUrl()}/compare` },
+      {
+        '@type': 'ListItem',
+        position: 3,
+        name: `${subject.name} alternatives`,
+        item: `${siteUrl()}/alternatives/${page.slug}`,
+      },
+    ],
+  };
 
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={jsonLd} />
+      <JsonLd data={breadcrumbJsonLd} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
           <Link href="/compare">All comparisons</Link>

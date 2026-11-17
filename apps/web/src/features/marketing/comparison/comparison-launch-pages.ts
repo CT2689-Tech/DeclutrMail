@@ -136,7 +136,6 @@ function page(
     verifiedIso: '2026-10-11',
     title: meta[2] ?? `${meta[0]} vs DeclutrMail`,
     description,
-    metaTitle: `${meta[2]} — compared, October 2026`,
     ...(description.length > 160 && firstSentence ? { metaDescription: `${firstSentence}.` } : {}),
     verdict,
     indexSummary: facts[3]?.replace(/^indexSummary: /, '') ?? '',

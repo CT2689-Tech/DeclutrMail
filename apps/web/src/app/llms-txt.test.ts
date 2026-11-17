@@ -12,7 +12,12 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { fillWs3, llmsStorageAiLine, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillWs3,
+  LAUNCH_STAGE,
+  llmsStorageAiLine,
+  WS3_COPY,
+} from '@declutrmail/shared/copy/launch';
 import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 
 import { renderLlmsFullTxt, renderLlmsTxt } from '@/features/marketing/llms/llms-document';
@@ -32,6 +37,14 @@ describe('llms.txt — marketing surface reconciliation', () => {
     // every other route by its absolute canonical URL.
     const needle = route === '/' ? 'https://declutrmail.com/#' : `https://declutrmail.com${route}`;
     expect(await renderLlmsTxt()).toContain(needle);
+  });
+
+  it('links no retired route: /beta redirects organic visits after GA', async () => {
+    const body = await renderLlmsTxt();
+    if (LAUNCH_STAGE === 'ga') {
+      expect(body).not.toContain('https://declutrmail.com/beta');
+      expect(body).toContain('- [Get started](https://declutrmail.com/sign-in):');
+    }
   });
 
   it('omits /pricing/changelog while PRICING_V2 is off', async () => {
@@ -67,7 +80,10 @@ describe('llms.txt — marketing surface reconciliation', () => {
     const pricing = renderPricingMarkdown().trim();
     if (pricing) {
       expect(body).toContain('## Pricing');
-      expect(body).toContain(pricing);
+      // Embedded one level down: each /pricing.md plan heading becomes H3.
+      for (const heading of pricing.match(/^## .+$/gm) ?? []) {
+        expect(body).toContain(`#${heading}\n`);
+      }
     } else {
       expect(body).not.toMatch(/^## Pricing\s*$/m);
     }
@@ -132,7 +148,11 @@ describe('llms.txt — marketing surface reconciliation', () => {
     const body = await (await llmsTxt()).text();
     const full = await (await llmsFullTxt()).text();
     expect(body).toContain('## Pricing');
-    expect(body).toContain('## Backlog Pass');
+    expect(body).toContain('\n### Backlog Pass\n');
+    // The embedded /pricing.md keeps its plans under `## Pricing`: one H1,
+    // and no plan heading at H2 beside the document's own sections.
+    expect(body.match(/^# .+$/gm)).toEqual(['# DeclutrMail']);
+    expect(body).not.toMatch(/^## Backlog Pass$/m);
     expect(body).toContain('$59 a year');
     expect(body).toContain('$19 once');
     expect(body).toContain('https://declutrmail.com/pricing/changelog');
