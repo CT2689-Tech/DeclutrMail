@@ -26,7 +26,7 @@ import {
   moneyBackNote,
   quotedPlanPrice,
 } from './billing-model';
-import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
+import { useVisitorPriceLocale } from './billing-currency';
 
 const { color, radius, shadow, space, text } = tokens;
 
@@ -80,10 +80,9 @@ export function UpgradeModal() {
   }, [hit, dismiss]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(hit != null);
-  // Hooks before the early return — calling useRegionProvider below
+  // Hooks before the early return — calling a hook below
   // `if (!hit) return null` fired a hook-order violation the moment a
   // 402 flipped `hit` on a mounted modal (billing audit 2026-07-28).
-  const regionProvider = useRegionProvider();
   const visitorLocale = useVisitorPriceLocale();
 
   if (!hit) return null;
@@ -127,8 +126,8 @@ export function UpgradeModal() {
     limitConfirmLabel !== null
       ? null
       : pricingV2 && targetPlan === 'plus'
-        ? launchPlusQuote(regionProvider, visitorLocale)
-        : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
+        ? launchPlusQuote(visitorLocale)
+        : quotedPlanPrice(targetPlan, 'monthly');
 
   return (
     <DialogFrame

@@ -7,12 +7,9 @@
 // the codebase carries a dollar amount, a tier limit, a quota number
 // or a plan name as a literal.
 //
-// Catalog ids (`paddlePriceId` / `razorpayPlanId`, D117) are null until
-// the catalog-provisioning unit writes the live SKU ids back into this
-// file. Both providers are now LIVE-provisioned (2026-07-25) — the
-// Razorpay ids here are the switch that opens India: every price surface
-// clamps per point on `razorpayPlanId !== null`, so populating them is
-// what makes an India visitor see (and be charged) INR.
+// Catalog ids (`paddlePriceId`, D117) are null until the
+// catalog-provisioning unit writes the live SKU ids back into this file.
+// India pays through Paddle in INR (`indiaPaddlePriceId` below).
 //
 // Ladder per the A3 free-tier activation decision (founder, 2026-07-26 —
 // docs/execution/a3-pricing-rework-plan.md), as amended by the packaging
@@ -140,7 +137,7 @@ export const TIER_MANIFEST: TierManifest = {
     prices: {
       // $0 — a price point so the pricing page renders the amount from
       // the manifest; no checkout SKU ever exists for $0 (ids stay null).
-      monthly: { usdCents: 0, inrPaise: 0, paddlePriceId: null, razorpayPlanId: null },
+      monthly: { usdCents: 0, inrPaise: 0, paddlePriceId: null },
       annual: null,
     },
     inboxLimit: 1,
@@ -163,14 +160,12 @@ export const TIER_MANIFEST: TierManifest = {
         usdCents: 900,
         inrPaise: 74_900,
         paddlePriceId: 'pri_01ky15axxbeeyge87f9hehw37t',
-        razorpayPlanId: 'plan_THtwadiHmKTaze',
       },
       // $90/yr — 2 months free vs monthly (D19).
       annual: {
         usdCents: 9000,
         inrPaise: 749_900,
         paddlePriceId: 'pri_01ky15axzc9mz8sxw43c0wtn6h',
-        razorpayPlanId: 'plan_THtwb3iWLy7qyp',
       },
     },
     inboxLimit: 1,
@@ -187,14 +182,12 @@ export const TIER_MANIFEST: TierManifest = {
         usdCents: 1900,
         inrPaise: 159_900,
         paddlePriceId: 'pri_01ky15ay15wqjaz0wjfnhe94vs',
-        razorpayPlanId: 'plan_THtwbSxTZRClHX',
       },
       // $190/yr — 2 months free vs monthly (founder-confirmed 2026-07-14).
       annual: {
         usdCents: 19000,
         inrPaise: 1_599_900,
         paddlePriceId: 'pri_01ky15ay2p27rbevtvc0gb6qta',
-        razorpayPlanId: 'plan_THtwbs4FAeqWlv',
       },
     },
     // 2026-08-23 — Pro carries 5 inboxes. Account count is the axis Pro
@@ -214,7 +207,6 @@ export const TIER_MANIFEST: TierManifest = {
         usdCents: 12900,
         inrPaise: 1_099_900,
         paddlePriceId: 'pri_01ky15ay4bj9t68bv158hwwfqw',
-        razorpayPlanId: 'plan_THtwcIa7pf9HzZ',
       },
       maxRedemptions: 250,
     },
@@ -245,15 +237,6 @@ export const TIER_MANIFEST: TierManifest = {
 
 /** Catalog generation identifier. It is not a public launch or publication date. */
 export const PRICING_VERSION = '2026-10-27';
-
-/**
- * India rail switch. Hiding Razorpay does not null `razorpayPlanId`:
- * existing subscribers still resolve. `PRICING_V2` is what turns this on.
- */
-export const RAILS = {
-  paddle: { enabled: true },
-  razorpay: { enabled: false },
-} as const;
 
 /** Connected Gmail accounts while `PRICING_V2` is on. */
 export const INBOXES = { free: 1, plus: 2, pro: 5 } as const;
@@ -355,7 +338,6 @@ function launchPrice(usdCents: number, paise: number, paddlePriceId: string): Pr
     usdCents,
     inrPaise: paise,
     paddlePriceId,
-    razorpayPlanId: null,
     listed: false,
     version: '2026-10',
     inr: { paise, taxInclusive: true },
@@ -385,16 +367,9 @@ export interface LegacyPrice {
   readonly usdCents: number;
 }
 
-/** Every previously-live Paddle and Razorpay id. Never archive these in Paddle. */
+/** Every previously-live Paddle id. Never archive these in Paddle. */
 export const LEGACY_PRICE_IDS: Readonly<Record<string, LegacyPrice>> = {
   pri_01ky15axxbeeyge87f9hehw37t: {
-    plan: 'plus_monthly',
-    cycle: 'monthly',
-    version: 'legacy',
-    founding: false,
-    usdCents: 900,
-  },
-  plan_THtwadiHmKTaze: {
     plan: 'plus_monthly',
     cycle: 'monthly',
     version: 'legacy',
@@ -408,21 +383,7 @@ export const LEGACY_PRICE_IDS: Readonly<Record<string, LegacyPrice>> = {
     founding: false,
     usdCents: 9000,
   },
-  plan_THtwb3iWLy7qyp: {
-    plan: 'plus_annual',
-    cycle: 'annual',
-    version: 'legacy',
-    founding: false,
-    usdCents: 9000,
-  },
   pri_01ky15ay15wqjaz0wjfnhe94vs: {
-    plan: 'pro_monthly',
-    cycle: 'monthly',
-    version: 'legacy',
-    founding: false,
-    usdCents: 1900,
-  },
-  plan_THtwbSxTZRClHX: {
     plan: 'pro_monthly',
     cycle: 'monthly',
     version: 'legacy',
@@ -436,21 +397,7 @@ export const LEGACY_PRICE_IDS: Readonly<Record<string, LegacyPrice>> = {
     founding: false,
     usdCents: 19000,
   },
-  plan_THtwbs4FAeqWlv: {
-    plan: 'pro_annual',
-    cycle: 'annual',
-    version: 'legacy',
-    founding: false,
-    usdCents: 19000,
-  },
   pri_01ky15ay4bj9t68bv158hwwfqw: {
-    plan: 'pro_annual_founding',
-    cycle: 'annual',
-    version: 'legacy',
-    founding: true,
-    usdCents: 12900,
-  },
-  plan_THtwcIa7pf9HzZ: {
     plan: 'pro_annual_founding',
     cycle: 'annual',
     version: 'legacy',

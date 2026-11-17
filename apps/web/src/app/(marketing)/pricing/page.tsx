@@ -10,7 +10,6 @@ import dynamic from 'next/dynamic';
 import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
-import { defaultProviderForCountry } from '@/features/billing/billing-region';
 import { trustedVisitorCountry } from '@/features/billing/trusted-visitor-country';
 import {
   indiaCheckoutReady,
@@ -51,10 +50,7 @@ export default async function PricingPage() {
     geoSecret: process.env.BILLING_GEO_HMAC_SECRET,
   });
   return (
-    <BillingCurrencyProvider
-      provider={defaultProviderForCountry(country, flags.pricingV2)}
-      locale={locale}
-    >
+    <BillingCurrencyProvider locale={locale}>
       {flags.pricingV2 ? (
         <PricingStory
           passEnabled={flags.passEnabled}

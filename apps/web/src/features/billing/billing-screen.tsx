@@ -20,7 +20,6 @@ import {
 import { ERROR_CODES, isErrorCode } from '@declutrmail/shared/contracts';
 import type {
   BillingCycle,
-  BillingProviderId,
   BillingReconcileOutcome,
   BillingSubscription,
   CancelRequest,
@@ -38,7 +37,7 @@ import {
 import { useAuth } from '@/features/auth/auth-provider';
 import { ME_QUERY_KEY } from '@/features/auth/api/use-me';
 import { useTier } from '@/features/auth/api/use-tier';
-import { currencyForProvider, formatMoney } from '@/features/marketing/pricing/pricing-model';
+import { formatMoney } from '@/features/marketing/pricing/pricing-model';
 import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
 import { ApiError } from '@/lib/api/client';
 import { useHydrated } from '@/lib/use-hydrated';
@@ -207,13 +206,11 @@ function livePassGrant(grant: BillingSubscription['complimentary']): boolean {
  *
  * Payment method + invoices (D119/ADR-0035) render from PROVIDER-owned
  * artifacts — we hold no card data and generate no invoice document.
- * The two sections are asymmetric on purpose: Paddle is the merchant of
- * record and has a hosted form and a signed PDF, Razorpay has neither
- * and says so.
+ * Paddle is the merchant of record and has a hosted form and a signed
+ * PDF.
  */
 export function BillingScreen({
   initialIntent = null,
-  initialProvider = 'paddle',
   pricingV2 = false,
   country = null,
   indiaCheckoutOpen = false,
@@ -223,8 +220,6 @@ export function BillingScreen({
 }: {
   initialIntent?: BillingIntent | null;
   returnTo?: string | undefined;
-  /** Geo-derived default rail (D117); the radio still overrides it. */
-  initialProvider?: BillingProviderId;
   /** Server-read launch flag. Absent means off, so an older shell still renders. */
   pricingV2?: boolean;
   country?: string | null;
@@ -1197,7 +1192,7 @@ export function BillingScreen({
   }
   if (billingDark) notices.push({ key: 'billing-dark', node: <BillingDisabledNotice /> });
   if (!pricingV2 && plan.foundingMember && backingSub) {
-    notices.push({ key: 'founding', node: <FoundingBanner provider={backingSub.provider} /> });
+    notices.push({ key: 'founding', node: <FoundingBanner /> });
   }
 
   // Who the page is for decides its order. With nothing billing, the
@@ -1241,7 +1236,6 @@ export function BillingScreen({
   const paymentMethodCard =
     !billingDark && paymentMethodSub ? (
       <PaymentMethodCard
-        provider={paymentMethodSub.provider}
         isPastDue={paymentMethodSub.status === 'past_due'}
         disabled={pending !== null}
         disabledReason={
@@ -1306,7 +1300,6 @@ export function BillingScreen({
       grantingSub={grantingBackingSub}
       disabled={pickerDisabled}
       initialIntent={initialIntent}
-      initialProvider={initialProvider}
       pricingV2={pricingV2}
       passEnabled={passEnabled}
       country={country}
@@ -1324,7 +1317,7 @@ export function BillingScreen({
         if (!mounted.current || currentOwner.current !== workspaceId) return;
         const record = readPendingCheckout(workspaceId);
         if (record?.attemptId !== attemptId) return;
-        if (session.provider === 'paddle' && session.attemptId) {
+        if (session.attemptId) {
           surfaceAttemptLock(attemptId);
           void subscriptionQuery.refetch();
           return;
@@ -1590,9 +1583,6 @@ function resumeCancellationErrorMessage(error: unknown): string {
   if (code === 'NO_SCHEDULED_CANCELLATION') {
     return 'This subscription is already renewing — refresh the page to see the current state.';
   }
-  if (code === 'RESUME_UNSUPPORTED') {
-    return 'Subscriptions billed in India can’t be restored from here. Email support@declutrmail.com and we’ll do it for you.';
-  }
   if (code === 'NO_ACTIVE_SUBSCRIPTION') {
     return 'There is no subscription to restore — refresh the page to see the current state.';
   }
@@ -1605,9 +1595,6 @@ function resumeCancellationErrorMessage(error: unknown): string {
 /** D118 pause-offer failures. */
 function pauseErrorMessage(error: unknown): string {
   const code = apiErrorCode(error);
-  if (code === 'PAUSE_UNSUPPORTED') {
-    return 'Pausing isn’t available for subscriptions billed in India. Email support@declutrmail.com and we’ll pause it for you.';
-  }
   if (code === 'SUBSCRIPTION_PAUSED') {
     return 'This subscription is already paused — refresh the page to see the current state.';
   }
@@ -2763,9 +2750,8 @@ function NonBackingSubscriptionNotice({
       ) : null}
       {isPaused && !canSelfServeResume ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
-          {sub.provider === 'razorpay'
-            ? 'Restarting a plan paid in rupees could start a new charge. To avoid that, email '
-            : 'We can’t confirm how much paid time remains, so we can’t restart this subscription here. Email '}
+          We can&rsquo;t confirm how much paid time remains, so we can&rsquo;t restart this
+          subscription here. Email{' '}
           <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}
@@ -2855,12 +2841,10 @@ function NonBackingSubscriptionNotice({
 }
 
 /**
- * Founding Pro banner (D119 / D126). Price straight off the manifest,
- * in the currency the member's own rail locked — a Razorpay founding
- * member's price is locked at ₹10,999/yr, not $129/yr.
+ * Founding Pro banner (D119 / D126). Price straight off the manifest.
  * Shown only while `PRICING_V2` is off.
  */
-function FoundingBanner({ provider }: { provider: BillingProviderId }) {
+function FoundingBanner() {
   const promo = TIER_MANIFEST.pro.promo;
   if (!promo) return null;
   return (
@@ -2880,8 +2864,7 @@ function FoundingBanner({ provider }: { provider: BillingProviderId }) {
       <span aria-hidden>🏛️</span>
       <span>
         <strong style={{ fontWeight: 600 }}>{promo.name} member</strong> — price locked at{' '}
-        {formatMoney(promo.annual, currencyForProvider(provider))}/yr while your subscription stays
-        active.
+        {formatMoney(promo.annual, 'USD')}/yr while your subscription stays active.
       </span>
     </div>
   );

@@ -7,7 +7,6 @@ import { ACTION_SAFETY_SUMMARY, OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shar
 import { fillStory, TIER_MANIFEST, type TierDefinition } from '@declutrmail/shared/entitlements';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 
-import { useRegionProvider } from '@/features/billing/billing-currency';
 import {
   pricingTiers,
   sharedAnnualMonthsFree,
@@ -27,8 +26,6 @@ import {
   CLEANUP_COUNT_NOTE,
   CLEANUP_RESET_NOTE,
   CHECKOUT_TOTAL_NOTE,
-  PROVIDER_SWITCH_NOTE,
-  RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
 
 const SAFETY_FACTS = ACTION_SAFETY_SUMMARY.split(/(?<=\.)\s+/);
@@ -68,7 +65,6 @@ export function PricingScreen() {
   // the one the tier ladder is designed around — two months free — so
   // opening on monthly quoted the worse number first.
   const [interval, setInterval] = useState<BillingInterval>('annual');
-  const region = useRegionProvider();
 
   useConsentedPageView('pricing');
 
@@ -88,10 +84,6 @@ export function PricingScreen() {
           })}
         </p>
       </header>
-
-      {region === 'razorpay' && (
-        <p className="dm-pricing-oauth">{WS1_COPY['pricing.inrPaused.notice']}</p>
-      )}
 
       <div className="dm-pricing-toggle-wrap">
         <IntervalToggle interval={interval} onChange={setInterval} />
@@ -133,9 +125,6 @@ export function PricingScreen() {
           <li>{CLEANUP_RESET_NOTE}</li>
           <li>{CHECKOUT_TOTAL_NOTE} USD and INR are independently set prices.</li>
           <li>
-            {RAZORPAY_LIMITATIONS_NOTE} {PROVIDER_SWITCH_NOTE}
-          </li>
-          <li>
             After a downgrade, existing connected Gmail accounts keep working; you cannot add
             another while above your plan’s inbox limit.
           </li>
@@ -158,8 +147,7 @@ function IntervalToggle({
   interval: BillingInterval;
   onChange: (next: BillingInterval) => void;
 }) {
-  const provider = useRegionProvider();
-  const savings = sharedAnnualMonthsFree(provider);
+  const savings = sharedAnnualMonthsFree();
   const options: { id: BillingInterval; label: string }[] = [
     { id: 'monthly', label: 'Monthly' },
     { id: 'annual', label: savings === null ? 'Annual' : `Annual — ${savings} months free` },

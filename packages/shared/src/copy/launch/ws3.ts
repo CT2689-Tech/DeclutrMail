@@ -429,8 +429,6 @@ export const WS3_COPY = {
   'ws3.brand.makerName': 'DeclutrMail',
   'ws3.legal.terms.buyer':
     'Paddle is our merchant of record and reseller, so you buy your plan from Paddle. Paddle handles payment, tax and invoices, and Paddle’s buyer terms apply to the purchase. This is the same everywhere, including India.',
-  'ws3.legal.terms.existingRupee':
-    'If you already pay in rupees through Razorpay, your plan carries on and you can still manage it in {BILLING_NAME}. You can cancel there; to change, pause or restart it, email support@declutrmail.com. For these plans, DeclutrMail is the seller.',
   'ws3.legal.terms.refunds':
     'Refunds are described in our Refund Policy. To ask for a refund, contact Paddle or email support@declutrmail.com.',
   'ws3.legal.terms.pause':
@@ -438,9 +436,8 @@ export const WS3_COPY = {
   'ws3.legal.terms.downgrade':
     'Gmail accounts you already connected keep working after a downgrade. You can’t connect more while you’re over your plan’s limit.',
   'ws3.legal.privacy.billingRecords':
-    'billing records (kept by Paddle, and by Razorpay for earlier rupee plans; see Section 8. We never see or store full card numbers.)',
+    'billing records (kept by Paddle; see Section 8. We never see or store full card numbers.)',
   'ws3.legal.privacy.paddleRow': 'Merchant of record and reseller: payment, tax and invoices',
-  'ws3.legal.privacy.razorpayRow': 'Payment processing for earlier rupee plans (no new purchases)',
   'ws3.beta.cta.emailUs': 'Email us',
   'ws3.help.plans.a':
     '{freeName} costs nothing and needs no card. It includes {freeInboxes} {CONNECTION_TERM}, Senders, Triage, Later and Activity, and {allowance} emails cleared a month. Only Archive and Delete count; Unsubscribe, Keep, Later, previews and Undo never do. {plusName} is {plusPrice} a year: no monthly limit, up to {plusInboxes} {CONNECTION_TERM_PLURAL}, the Screener, Autopilot rules and Quiet hours. The {passName} is {passPrice} once, for one {CONNECTION_TERM}: no monthly limit for {passDays} days, plus the Screener and Autopilot while it lasts, and it never renews. On every plan, you can undo Archive, Later and Delete for 30 days.',

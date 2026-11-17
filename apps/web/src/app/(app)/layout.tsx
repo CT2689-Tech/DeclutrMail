@@ -13,13 +13,13 @@
 //     script executes ONLY because it carries the nonce. Reading it here
 //     is also what makes Next stamp its own framework scripts, so this
 //     read is load-bearing twice over.
-//   BILLING RAIL (D117). The tier gate, the upgrade modal, the Autopilot
-//     entitlement nudge and the plan strip all quote a price through
-//     `useRegionProvider`. Seeded server-side so first paint already
-//     names the rail the visitor will be charged on — a client-side
-//     resolve would flash USD and correct itself.
+//   VISITOR PRICE LOCALE (D117). The tier gate, the upgrade modal and the
+//     Autopilot entitlement nudge read `useVisitorPriceLocale`. Seeded
+//     server-side so first paint already quotes the currency the visitor
+//     will be charged in — a client-side resolve would flash USD and
+//     correct itself.
 //
-// `(app)/billing/page.tsx` uses the same helper. Both read
+// `(app)/billing/page.tsx` reads the same trusted country. Both read
 // `x-vercel-ip-country` and ignore a client-sent country, including
 // on prefetches that skip middleware.
 
@@ -28,7 +28,6 @@ import type { Viewport } from 'next';
 import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
-import { defaultProviderForCountry } from '@/features/billing/billing-region';
 import { trustedVisitorCountry } from '@/features/billing/trusted-visitor-country';
 import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 import { visitorPricingLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
@@ -64,7 +63,6 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const [requestHeaders, flags] = await Promise.all([headers(), loadPricingFlags()]);
   const nonce = requestHeaders.get('x-nonce') ?? undefined;
   const country = trustedVisitorCountry(requestHeaders);
-  const regionProvider = defaultProviderForCountry(country, flags.pricingV2);
   const visitorLocale = visitorPricingLocale({
     country,
     indiaCheckoutOpen: flags.indiaCheckoutOpen,
@@ -93,7 +91,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       )}
       <ThemeScript nonce={nonce} />
       <span id="dm-app-theme" hidden />
-      <BillingCurrencyProvider provider={regionProvider} locale={visitorLocale}>
+      <BillingCurrencyProvider locale={visitorLocale}>
         <ServerAppBoundary cookieHeader={cookieHeader}>
           <AppChromeLayout>{children}</AppChromeLayout>
         </ServerAppBoundary>

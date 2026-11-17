@@ -241,13 +241,6 @@ describe('PlanPicker current access and purchase offers', () => {
     expect(plus).not.toHaveTextContent('$59/yr');
   });
 
-  it('reads an existing Razorpay charge in its own currency', () => {
-    picker({ grantingSub: { ...PRO_MONTHLY, cycle: 'annual', provider: 'razorpay' } });
-    const pro = screen.getByTestId('plan-option-pro');
-    expect(pro.textContent).toContain('₹');
-    expect(pro.textContent).not.toContain('$');
-  });
-
   it('keeps a cancel-scheduled subscription’s display identity while purchases remain locked', () => {
     const sub: Subscription = { ...PRO_MONTHLY, cancelAtPeriodEnd: true };
     picker({

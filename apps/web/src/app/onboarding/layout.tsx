@@ -17,7 +17,7 @@
 // nothing, so the resolver runs only if it carries the nonce — read here
 // because the root layout may no longer read `headers()` (doing so
 // un-statics all 34 public pages). No `BillingCurrencyProvider`:
-// onboarding quotes no price, so `useRegionProvider`'s own default
+// onboarding quotes no price, so `useVisitorPriceLocale`'s own default
 // stands.
 
 import type { ReactNode } from 'react';

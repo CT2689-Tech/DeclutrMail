@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 
 import type { TierDefinition } from '@declutrmail/shared/entitlements';
 
-import { useRegionProvider } from '@/features/billing/billing-currency';
 import { track } from '@/lib/posthog';
 import { BRIEF_PROCESSING_NOTE } from '@/features/billing/billing-copy';
 import { navigateToCheckout, navigateToFreeApp } from './cta';
@@ -39,22 +38,13 @@ export function TierCard({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  // The card quotes the rail the CTA below it routes to (D117) —
-  // clamped per price point, so an unprovisioned rail still shows the
-  // USD that checkout will actually charge.
-  const regionProvider = useRegionProvider();
-
-  const price = priceLineFor(tier, interval, regionProvider);
+  // The card quotes what the CTA below it charges (D117), clamped per
+  // price point.
+  const price = priceLineFor(tier, interval);
   const promoActive = interval === 'annual' && tier.promo != null;
-  // A COMPARISON has to be single-currency. Each price point clamps
-  // independently, so a promo that is Paddle-only sitting beside a
-  // standard annual that IS on Razorpay would render "$129/yr" struck
-  // through "₹15,999/yr" — two currencies presented as a discount on one
-  // another. The promo is the thing being bought, so its rail wins for
-  // both halves.
-  const promoCurrency = tier.promo
-    ? currencyForPricePoint(tier.promo.annual, regionProvider)
-    : null;
+  // A COMPARISON has to be single-currency: the promo is the thing being
+  // bought, so its currency wins for both halves.
+  const promoCurrency = tier.promo ? currencyForPricePoint(tier.promo.annual) : null;
   const struckAmount =
     promoCurrency !== null && tier.prices.annual !== null
       ? formatMoney(tier.prices.annual, promoCurrency)

@@ -82,8 +82,7 @@ export function ObserveWindowBanner({
     plan: actPlan,
     cycle: pricingV2 ? 'annual' : 'monthly',
   });
-  const upgradePrice =
-    pricingV2 && actPlan === 'plus' ? launchPlusQuote('paddle', visitorLocale) : null;
+  const upgradePrice = pricingV2 && actPlan === 'plus' ? launchPlusQuote(visitorLocale) : null;
   if (rules.length === 0) return null;
 
   return (

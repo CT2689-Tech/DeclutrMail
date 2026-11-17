@@ -27,9 +27,6 @@ const DISCLOSED_AS: Record<string, string> = {
   'api.brandfetch.io': 'Brandfetch',
   'api.paddle.com': 'Paddle',
   'sandbox-api.paddle.com': 'Paddle',
-  'api.razorpay.com': 'Razorpay',
-  'razorpay.com': 'Razorpay',
-  'rzp.io': 'Razorpay',
   // Google is the mailbox provider and the host (Google Cloud row).
   'www.googleapis.com': 'Google Cloud',
   'gmail.googleapis.com': 'Google Cloud',

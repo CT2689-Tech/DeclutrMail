@@ -50,11 +50,11 @@ const annual = (id: 'plus' | 'pro') => formatUsd(TIER_MANIFEST[id].prices.annual
 const promoPrice = formatUsd(TIER_MANIFEST.pro.promo!.annual.usdCents);
 
 describe('PricingScreen (D19)', () => {
-  it.each(['paddle', 'razorpay'] as const)(
-    'hydrates the server-rendered %s price rail without replacing the tree',
-    async (provider) => {
+  it.each(['usd', 'inr'] as const)(
+    'hydrates the server-rendered %s price locale without replacing the tree',
+    async (locale) => {
       const page = (
-        <BillingCurrencyProvider provider={provider}>
+        <BillingCurrencyProvider locale={locale}>
           <PricingScreen />
         </BillingCurrencyProvider>
       );

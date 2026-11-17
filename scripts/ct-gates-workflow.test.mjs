@@ -118,7 +118,7 @@ test('gate routes cover the paths the agents name as their scope', async () => {
     ['apps/api/src/sync/initial-sync-reconciler.ts', 'privacy-auditor'],
     ['packages/shared/src/contracts/gmail-data-inventory.ts', 'privacy-auditor'],
     ['apps/api/src/billing/paddle.adapter.ts', 'webhook-security-auditor'],
-    ['apps/api/src/webhooks/billing-razorpay.controller.ts', 'webhook-security-auditor'],
+    ['apps/api/src/webhooks/billing-paddle.controller.ts', 'webhook-security-auditor'],
     ['packages/shared/src/contracts/activity.ts', 'type-design-analyzer'],
   ]) {
     const { result } = await gateRun([file], () => reviewed);

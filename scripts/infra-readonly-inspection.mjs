@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { encryptReport, validatePublicKey } from './sentry-private-triage.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
-const PAYMENT = ['Paddle (webhooks)', 'Razorpay (webhooks)'];
+const PAYMENT = ['Paddle (webhooks)'];
 const PROVIDERS = [
   'Google Cloud (project charges)',
   'Supabase (DB size)',

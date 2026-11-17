@@ -75,7 +75,7 @@ const CONTROL_PATTERN = /[\u0000-\u001F\u007F]+/g;
  * returns or throws, so none reads the body afterwards.
  *
  * Carries no D7 exposure: these are billing-provider error envelopes
- * (Paddle/Razorpay), which never see Gmail message data. The PII they
+ * (Paddle), which never see Gmail message data. The PII they
  * CAN echo is a request parameter — a subscription id, which the
  * surrounding log line already names, or a customer email, which is
  * redacted here (see EMAIL_PATTERN).

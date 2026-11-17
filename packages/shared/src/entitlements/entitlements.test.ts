@@ -270,12 +270,9 @@ describe('Pricing config — invariants (hold under any tuning)', () => {
       expect(point.usdCents).toBeGreaterThanOrEqual(0);
       expect(Number.isInteger(point.inrPaise)).toBe(true);
       expect(point.inrPaise).toBeGreaterThanOrEqual(0);
-      for (const catalogId of [point.paddlePriceId, point.razorpayPlanId]) {
-        expect(catalogId === null || catalogId.length > 0).toBe(true);
-      }
+      expect(point.paddlePriceId === null || point.paddlePriceId.length > 0).toBe(true);
       if (point.usdCents === 0) {
         expect(point.paddlePriceId).toBeNull();
-        expect(point.razorpayPlanId).toBeNull();
       }
     }
   });

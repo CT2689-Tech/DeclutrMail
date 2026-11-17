@@ -111,15 +111,11 @@ _why_, _which tier_, and _where the credential lives_.
 
 ---
 
-### Razorpay (India billing)
+### Razorpay (removed)
 
-| Field            | Value                                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------------------------------ |
-| **Status**       | 🌑 Built, shipped dark (kill switches — see billing go-live runbook)                                         |
-| **Purpose**      | Subscription billing, India                                                                                  |
-| **Key / secret** | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`                                          |
-| **D-reference**  | D117–D120                                                                                                    |
-| **Notes**        | Same fail-closed webhook posture as Paddle. Go-live: `docs/execution/billing-go-live-runbook-2026-07-17.md`. |
+Removed 2026-11-17 (founder decision 4A). A read-only production check
+that day found no Razorpay customers, checkout attempts or subscriptions.
+India pays through Paddle in INR.
 
 ---
 

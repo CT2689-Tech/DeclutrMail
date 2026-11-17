@@ -21,7 +21,7 @@ import { Hero } from '@/features/marketing/landing/hero';
 // No edge geo outside Vercel — the header is genuinely absent locally,
 // in CI, and on any self-hosted deployment, so the empty set IS the
 // common production case and the one the assertions below describe
-// (Paddle/USD). `pricing-region.test.tsx` covers the India rail.
+// (Paddle/USD).
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 
 async function renderLanding() {

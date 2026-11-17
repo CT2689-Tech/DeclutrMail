@@ -17,7 +17,6 @@ import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
   CAPABILITIES,
   fillStory,
-  RAILS,
   SELECTOR_TIERS,
   TIER_IDS,
   TIER_MANIFEST,
@@ -26,8 +25,6 @@ import {
   type TierDefinition,
   type TierId,
 } from '@declutrmail/shared/entitlements';
-
-import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 export type BillingInterval = 'monthly' | 'annual';
 
@@ -76,48 +73,28 @@ export function formatInr(paise: number): string {
 /**
  * The currency a price is actually CHARGED in (D117).
  *
- * Not a display preference — it is a fact about the provider: Paddle
- * settles USD as merchant-of-record for the rest of the world, Razorpay
- * settles INR for India. Rendering one while charging the other is the
- * defect this type exists to make unrepresentable, so every price
- * surface takes a Currency rather than assuming USD.
+ * Not a display preference — rendering one currency while charging the
+ * other is the defect this type exists to make unrepresentable, so every
+ * price surface takes a Currency rather than assuming USD.
  */
 export type Currency = 'USD' | 'INR';
 
-/** Which currency a provider settles in. */
-export function currencyForProvider(provider: 'paddle' | 'razorpay'): Currency {
-  return provider === 'razorpay' ? 'INR' : 'USD';
-}
-
 /**
- * The currency a SPECIFIC price point would actually be charged in on a
- * given rail.
+ * The currency a SPECIFIC price point would actually be charged in.
  *
- * Region preference alone is not enough to quote INR, because provisioning
- * is per PRICE POINT, not per provider. Razorpay went live for India on
- * 2026-07-25 and every paid point currently carries a `razorpayPlanId`
- * (Free is null — it is $0 and never reaches checkout), but that is a fact
- * about today's catalog, not an invariant: a new tier or promo can ship on
- * Paddle first, and a point whose Razorpay id is missing must clamp back to
- * USD rather than quote a price no checkout will honour.
- *
- * Quoting ₹1,599 to an India visitor whose checkout charges $19 is the same
- * defect as the reverse, and region-only resolution makes it easy to
- * reintroduce. Taking the POINT — not just the provider — makes an
- * unpurchasable currency unrepresentable: INR requires that this exact
- * point is purchasable on Razorpay.
+ * Paddle charges INR only to a visitor whose verified country is India
+ * while India checkout is open, and only for a point with an INR amount.
+ * Everything else is USD.
  */
 export function currencyForPricePoint(
   point: {
-    razorpayPlanId: string | null;
     inrPaise?: number;
     inr?: { paise: number };
     usdCents?: number;
   },
-  provider: 'paddle' | 'razorpay',
   geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean },
 ): Currency {
-  if (geo?.pricingV2 === true && !RAILS.razorpay.enabled) {
+  if (geo?.pricingV2 === true) {
     if (geo.country?.toUpperCase() !== 'IN' || geo.indiaCheckoutOpen !== true) return 'USD';
     const paise = point.inr?.paise ?? point.inrPaise ?? 0;
     const usd = point.usdCents ?? 0;
@@ -125,7 +102,7 @@ export function currencyForPricePoint(
     // (usd > 0, no INR amount) stays USD so we never quote ₹0 for a charge.
     return paise > 0 || usd === 0 ? 'INR' : 'USD';
   }
-  return provider === 'razorpay' && point.razorpayPlanId !== null ? 'INR' : 'USD';
+  return 'USD';
 }
 
 /**
@@ -160,14 +137,12 @@ export interface PriceLine {
 export function priceLineFor(
   tier: TierDefinition,
   interval: BillingInterval,
-  provider: 'paddle' | 'razorpay' = 'paddle',
   geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean },
 ): PriceLine | null {
   const point = tier.prices[interval] ?? tier.prices.monthly ?? tier.prices.annual;
   if (!point) return null;
-  // Clamped per point — an unprovisioned Razorpay point renders USD,
-  // matching what checkout will actually charge.
-  const currency = currencyForPricePoint(point, provider, geo);
+  // Clamped per point, matching what checkout will actually charge.
+  const currency = currencyForPricePoint(point, geo);
   const isAnnual = point === tier.prices.annual && tier.prices.annual !== null;
   const zero = currency === 'INR' ? point.inrPaise === 0 : point.usdCents === 0;
   if (zero) {
@@ -380,14 +355,11 @@ export function compareRows(): readonly CompareRow[] {
  * when a cycle is missing, the tier is free, or the saving isn't an
  * exact whole number of months (an approximate claim would be a lie).
  */
-export function annualMonthsFree(
-  tier: TierId,
-  provider: BillingProviderId = 'paddle',
-): number | null {
+export function annualMonthsFree(tier: TierId): number | null {
   const { monthly, annual } = TIER_MANIFEST[tier].prices;
   if (!monthly || !annual) return null;
-  const currency = currencyForPricePoint(monthly, provider);
-  if (currencyForPricePoint(annual, provider) !== currency) return null;
+  const currency = currencyForPricePoint(monthly);
+  if (currencyForPricePoint(annual) !== currency) return null;
   const monthlyAmount = currency === 'INR' ? monthly.inrPaise : monthly.usdCents;
   const annualAmount = currency === 'INR' ? annual.inrPaise : annual.usdCents;
   if (monthlyAmount <= 0) return null;
@@ -400,8 +372,8 @@ export function annualMonthsFree(
  * the tiers disagree — a single toggle badge must not promise a saving
  * some plan doesn't deliver.
  */
-export function sharedAnnualMonthsFree(provider: BillingProviderId = 'paddle'): number | null {
-  const values = (['plus', 'pro'] as const).map((id) => annualMonthsFree(id, provider));
+export function sharedAnnualMonthsFree(): number | null {
+  const values = (['plus', 'pro'] as const).map((id) => annualMonthsFree(id));
   const [first] = values;
   if (first == null || values.some((v) => v !== first)) return null;
   return first;

@@ -59,8 +59,7 @@ vi.mock('@/features/auth/auth-provider', () => {
   return { useAuth: auth, useOptionalAuth: auth };
 });
 
-// Provider launch is a side-effect seam (Paddle overlay / Razorpay
-// navigation) — stub it; the checkout CONTRACT is asserted on the wire
+// Provider launch is a side-effect seam (Paddle overlay) — stub it; the checkout CONTRACT is asserted on the wire
 // and the overlay lifecycle is driven through the captured events arg.
 vi.mock('@/features/billing/checkout', async (importOriginal) => ({
   ...(await importOriginal<typeof CheckoutModule>()),
@@ -113,7 +112,7 @@ const PAUSED_BODY: BillingSubscription = {
   foundingMember: false,
   pendingCheckout: null,
   subscription: {
-    provider: 'razorpay',
+    provider: 'paddle',
     tier: 'plus',
     status: 'paused',
     cycle: 'monthly',
@@ -580,12 +579,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     const panel = await screen.findByTestId('checkout-panel');
     expect(within(panel).queryByText(/Founding Pro/)).not.toBeInTheDocument();
-    // Razorpay went live 2026-07-25, so Pro monthly now carries a plan id
-    // and the rail IS offered. What must not change is the default: this
-    // screen renders without a geo hint, so an unrouted visitor stays on
-    // Paddle and is charged USD unless they pick otherwise.
-    expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeInTheDocument();
-    expect(within(panel).getByLabelText(/Card · PayPal · Apple Pay/)).toBeChecked();
+    // Paddle is the only rail: no provider choice is offered.
+    expect(within(panel).queryByRole('radio')).not.toBeInTheDocument();
     fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
 
     await waitFor(() =>
@@ -596,37 +591,6 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
         provider: 'paddle',
       }),
     );
-  });
-
-  it('pauses new INR checkout without reserving payment or silently switching provider', async () => {
-    stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    render(
-      <QueryWrapper client={createTestQueryClient()}>
-        <BillingScreen
-          initialIntent={{ plan: 'pro', cycle: 'monthly' }}
-          initialProvider="razorpay"
-        />
-      </QueryWrapper>,
-    );
-    const panel = await screen.findByTestId('checkout-panel');
-    expect(within(panel).getByLabelText(/UPI · cards · netbanking/)).toBeChecked();
-    const paused = within(panel).getByRole('button', { name: 'Paused for now' });
-    expect(paused).toBeDisabled();
-    expect(panel).toHaveTextContent(
-      'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
-    );
-    expect(
-      within(panel)
-        .getByLabelText(/UPI · cards · netbanking/)
-        .closest('label'),
-    ).toHaveTextContent('Paused for now');
-    expect(within(panel).queryByText(/billed monthly, starting today/)).not.toBeInTheDocument();
-    fireEvent.click(paused);
-    expect(launchCheckout).not.toHaveBeenCalled();
-    expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
-    fireEvent.click(within(panel).getByLabelText(/Card · PayPal · Apple Pay/));
-    expect(within(panel).getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
-    expect(launchCheckout).not.toHaveBeenCalled();
   });
 
   it('a deep-linked intent opens the confirm step with the exact plan and cycle', async () => {
@@ -3021,45 +2985,6 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.getByText(/Switch to monthly billing/)).toBeInTheDocument();
   });
 
-  // Codex stop-review 2026-07-31: the first cut of the cycle-aware badge
-  // exempted non-Paddle on the grounds the cycle was "unknowable". It is
-  // not — `cycle` is on the record for every provider — so a Razorpay
-  // subscriber kept seeing the exact lie the fix removed for Paddle.
-  it('CURRENT badge is cycle-aware on Razorpay too, without offering a switch', async () => {
-    mockTier = 'plus';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () =>
-          jsonOk({
-            data: {
-              tier: 'plus',
-              foundingMember: false,
-              pendingCheckout: null,
-              complimentary: null,
-              subscription: { ...SUB, provider: 'razorpay', tier: 'plus', cycle: 'annual' },
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-
-    await screen.findByTestId('current-plan-card');
-    await openPlanOptions();
-    expect(within(screen.getByTestId('plan-picker')).getByText('Current plan')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
-
-    await waitFor(() =>
-      expect(within(screen.getByTestId('plan-picker')).queryByText('Current plan')).toBeNull(),
-    );
-    // The badge is a FACT (cycle is known); the switch CTA is an
-    // AFFORDANCE Razorpay does not support. Separate props, separate
-    // answers — the CTA must stay absent.
-    expect(screen.queryByText(/Switch to monthly billing/)).toBeNull();
-  });
-
   // D118 — the way back out of a cancel. Before this, cancelling was a
   // one-way door for up to a year: `resume` only un-pauses, checkout
   // answers SUBSCRIPTION_EXISTS and change-plan answers
@@ -3245,32 +3170,6 @@ describe('BillingScreen — paid subscriber', () => {
     // to that same note asserts a fate ("this will renew") the pause
     // request has put in question.
     expect(card).not.toHaveTextContent('Renews');
-  });
-
-  // Offering a control the API would refuse is the assert-what-we-don't-
-  // know defect; the modal's guard mirrors the service's exactly.
-  it('pause offer: hidden for Razorpay, which has no pause primitive', async () => {
-    mockTier = 'plus';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () =>
-          jsonOk({
-            data: {
-              tier: 'plus',
-              foundingMember: false,
-              pendingCheckout: null,
-              complimentary: null,
-              subscription: { ...SUB, provider: 'razorpay', tier: 'plus' },
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
-    expect(within(screen.getByTestId('cancel-modal')).queryByTestId('pause-offer')).toBeNull();
   });
 
   it('cancel modal stays silent on the guarantee for a PLUS subscriber too', async () => {
@@ -4522,42 +4421,6 @@ describe('BillingScreen — paid subscriber', () => {
     const after = window.localStorage.getItem(pendingCheckoutKey('w'));
     expect((JSON.parse(after!) as { attemptId: string }).attemptId).toBe('attempt-B');
     expect((JSON.parse(after!) as { toTier: string }).toTier).toBe('plus');
-  });
-
-  it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {
-    mockTier = 'plus';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () =>
-          jsonOk({
-            data: {
-              ...PLUS_SUB,
-              subscription: PLUS_SUB.subscription
-                ? { ...PLUS_SUB.subscription, provider: 'razorpay' }
-                : null,
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = screen.getByTestId('razorpay-switch-panel');
-    expect(panel).toHaveTextContent(/aren’t self-serve yet for subscriptions paid via Razorpay/);
-    expect(
-      within(panel)
-        .getByRole('link', { name: /Email support/ })
-        .getAttribute('href'),
-    ).toContain('mailto:support@declutrmail.com');
-    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
-    // No cycle-switch CTA on the current card either — nothing that
-    // routes a Razorpay sub into the unsupported endpoint.
-    expect(
-      screen.queryByRole('button', { name: /Switch to (monthly|annual) billing/ }),
-    ).not.toBeInTheDocument();
   });
 
   it('a paused subscription shows the honest paused notice; Resume POSTs and enters pending', async () => {

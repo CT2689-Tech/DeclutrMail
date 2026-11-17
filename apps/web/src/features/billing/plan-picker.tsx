@@ -14,7 +14,6 @@ import {
 import type {
   CheckoutSession,
   BillingCycle,
-  BillingProviderId,
   BillingSubscription,
 } from '@declutrmail/shared/contracts';
 import {
@@ -91,28 +90,14 @@ const { color, font, motion, radius, shadow, text } = tokens;
 type PaidTier = 'plus' | 'pro';
 
 /**
- * The Razorpay catalog id backing EXACTLY the price point a confirm
- * would buy — null when that point is unprovisioned (D117: India is
- * deferred, so every point is null at launch). Promo and standard
- * annual are separate price points with separate ids, so `founding`
- * has to be part of the question.
- */
-function razorpayIdFor(target: PaidTier, cycle: BillingCycle, founding: boolean): string | null {
-  const tier = TIER_MANIFEST[target];
-  if (founding && tier.promo) return tier.promo.annual.razorpayPlanId;
-  const point = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
-  return point?.razorpayPlanId ?? null;
-}
-
-/**
  * Inline plan picker (D117/D119/D120) — supersedes the PlanChangeModal
  * round-trip. One prominent monthly/annual segmented control drives
  * every price on the three cards; each non-current plan carries ONE
  * primary CTA that expands the confirm panel in place:
  *
  *   - Paid target, no granting subscription → the real checkout confirm
- *     (D226's mandatory preview: provider pick per D117, Founding Pro
- *     claim when Pro-annual per D126, the exact charge line) →
+ *     (D226's mandatory preview: Founding Pro claim when Pro-annual
+ *     per D126, the exact charge line) →
  *     `launchCheckout` opens the provider surface. Two clicks total.
  *   - Paid target with a granting subscription → the SELF-SERVE plan
  *     change (D117/D120): D226 preview of the switch, then
@@ -210,7 +195,6 @@ export function PlanPicker({
   grantingSub,
   disabled,
   initialIntent = null,
-  initialProvider = 'paddle',
   pricingV2 = false,
   passEnabled = false,
   country = null,
@@ -249,10 +233,6 @@ export function PlanPicker({
   disabled: boolean;
   /** Validated pricing-page/gate-nudge choice carried through auth. */
   initialIntent?: BillingIntent | null;
-  /** Geo-derived default rail (D117). Only a DEFAULT — the radio
-   *  overrides it, and `effectiveProvider` still clamps it against the
-   *  catalog so an unprovisioned region can never be preselected. */
-  initialProvider?: BillingProviderId;
   /** From the server. The browser bundle cannot read the pricing env. */
   pricingV2?: boolean;
   /** From `/api/auth/me`. Hidden when false. */
@@ -376,7 +356,6 @@ export function PlanPicker({
   const [passSelected, setPassSelected] = useState(
     !launchOffers && initialIntent?.offer === 'pass_onetime',
   );
-  const [provider, setProvider] = useState<BillingProviderId>(initialProvider);
   // Default OFF. The control reads "Claim Founding Pro", which is the
   // language of an opt-in, and it was pre-ticked — so the quoted price and
   // the confirm button committed to a promotional price point the user never
@@ -502,26 +481,8 @@ export function PlanPicker({
     grantingSub === null &&
     !foundingSoldOut;
   const founding = foundingEligible && claimFounding;
-  // Offering a provider and BILLING with it must read the same fact, or
-  // a `provider` pick outlives the price point that offered it: the
-  // Founding Pro checkbox swaps the purchased price point WITHOUT
-  // remounting the panel, so a Razorpay pick made on standard Pro annual
-  // would ride a promo checkout that has no Razorpay id — straight into
-  // BILLING_NOT_PROVISIONED. Derived once here; the panel renders from
-  // it and `onConfirm` clamps to it.
-  const razorpayOffered =
-    !pricingV2 &&
-    selected !== null &&
-    selected !== 'free' &&
-    razorpayIdFor(selected, cycle, founding) !== null;
-  const effectiveProvider: BillingProviderId = razorpayOffered ? provider : 'paddle';
-  // The STRIP's currency. `razorpayOffered` is per-price-point, so with
-  // no plan selected yet it is false and the strip would snap to USD
-  // even for an India-defaulted picker; fall back to the chosen rail
-  // when there is nothing selected to clamp against.
-  const stripProvider: BillingProviderId = selected === null ? provider : effectiveProvider;
   const errorMessage = checkoutErrorMessage(checkout.error);
-  const monthsFree = sharedAnnualMonthsFree(stripProvider);
+  const monthsFree = sharedAnnualMonthsFree();
 
   function closePanel() {
     setSelected(null);
@@ -533,10 +494,8 @@ export function PlanPicker({
 
   function onSelect(id: StripTierId) {
     if (disabled) return;
-    // The current plan card carries no CTA — but with a PADDLE granting
-    // sub, the CURRENT TIER at the OTHER cycle is a valid switch target
-    // (Razorpay changes aren't self-serve — no cycle switch either).
-    if (id === currentTier && grantingSub !== null && grantingSub.provider !== 'paddle') return;
+    // The current plan card carries no CTA — but with a granting sub,
+    // the CURRENT TIER at the OTHER cycle is a valid switch target.
     checkout.reset();
     changePlan.reset();
     setLaunchError(null);
@@ -557,7 +516,6 @@ export function PlanPicker({
     // ATOMICALLY (Web Locks mutex) and RESERVED (`checkout_intent`)
     // before any payment surface can open. A second tab's claim now
     // finds the reservation and stands down.
-    const panelProvider: BillingProviderId = pass || pricingV2 ? 'paddle' : provider;
     const tier = TIER_MANIFEST[target];
     const manifestPoint = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
     const foundingPoint =
@@ -569,17 +527,13 @@ export function PlanPicker({
           ? PLUS_ANNUAL_2026_10
           : manifestPoint));
     const quotedCurrency = quotedPoint
-      ? currencyForPricePoint(quotedPoint, panelProvider, {
-          pricingV2,
-          country,
-          indiaCheckoutOpen,
-        })
+      ? currencyForPricePoint(quotedPoint, { pricingV2, country, indiaCheckoutOpen })
       : 'USD';
     if (
       disabled ||
       checkout.isPending ||
       confirmInFlight.current ||
-      inrNewPurchasePaused(panelProvider, quotedCurrency, indiaCheckoutOpen)
+      inrNewPurchasePaused(quotedCurrency, indiaCheckoutOpen)
     )
       return;
     confirmInFlight.current = true;
@@ -595,7 +549,7 @@ export function PlanPicker({
     const funnel = {
       tier: target,
       cycle,
-      provider: effectiveProvider,
+      provider: 'paddle',
       founding_pro: founding,
     } as const;
     // Intent only — the POST below is what writes `pending_checkouts`.
@@ -605,7 +559,7 @@ export function PlanPicker({
         attemptId,
         tierId: target,
         cycle: pass ? 'annual' : cycle,
-        provider: effectiveProvider,
+        provider: 'paddle',
         ...(founding ? { promo: 'foundingPro' as const } : {}),
         ...(pass ? { offer: 'pass_onetime' as const } : {}),
         ...(checkoutGeoToken ? { checkoutGeoToken } : {}),
@@ -613,8 +567,7 @@ export function PlanPicker({
       {
         onSuccess: (session) => {
           if (ownsCheckout && !ownsCheckout()) return;
-          if (session.provider === 'paddle' && session.attemptId)
-            onCheckoutSession?.(session.attemptId);
+          if (session.attemptId) onCheckoutSession?.(session.attemptId);
           // Server claim exists from this response; overlay is next.
           void track('checkout_session_created', funnel);
           void withCheckoutLoadDeadline(import('./checkout'))
@@ -628,7 +581,7 @@ export function PlanPicker({
                   onCompleted: () => {
                     if (ownsCheckout && !ownsCheckout()) return;
                     void track('checkout_overlay_completed', funnel);
-                    if (pass && !(session.provider === 'paddle' && session.attemptId)) {
+                    if (pass && !session.attemptId) {
                       try {
                         sessionStorage.setItem('dm.pass.checkout', '1');
                       } catch {
@@ -656,8 +609,7 @@ export function PlanPicker({
             .then(
               () => undefined,
               // Overlay never opened. A Paddle transaction without an
-              // open window is not payable from email (unlike Razorpay
-              // customer_notify). Keep the confirm panel, show the
+              // open window is not payable from email. Keep the confirm panel, show the
               // existing open-failed sentence, and release the local
               // reservation so retry is armed. Do not paint
               // "Checkout started".
@@ -684,8 +636,7 @@ export function PlanPicker({
         // BillingService.createCheckout; the code list below mirrors
         // that ordering). Everything else is POST-CLAIM: the server
         // holds the claim (#433 — a thrown error is not proof the
-        // provider saw nothing, and an orphaned Razorpay subscription
-        // is payable from its emailed link), so releasing locally left
+        // provider saw nothing), so releasing locally left
         // live CTAs beside a server that refused the retry with
         // CHECKOUT_IN_FLIGHT naming a control the user could not see.
         // Those surface the reservation: the banner states the locked
@@ -901,7 +852,6 @@ export function PlanPicker({
                       ? chargedPlanPrice(
                           displayedSubscription.tier,
                           displayedSubscription.cycle,
-                          displayedSubscription.provider,
                           displayedSubscription.foundingMember,
                           displayedSubscription.providerPriceId,
                           displayedSubscription.chargedUsdCents,
@@ -913,7 +863,6 @@ export function PlanPicker({
                   isSelected={id === selected}
                   disabled={disabled}
                   hasGrantingSubscription={grantingSub !== null}
-                  provider={stripProvider}
                   {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
                   {...(pricingV2 && id === 'plus' && cycle === 'annual'
                     ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
@@ -945,13 +894,10 @@ export function PlanPicker({
               target="plus"
               cycle="annual"
               offer="pass_onetime"
-              provider="paddle"
-              razorpayOffered={false}
               pricingV2={pricingV2}
               country={country}
               indiaCheckoutOpen={indiaCheckoutOpen}
               pricePointOverride={OFFERS.backlogPass.price}
-              onProviderChange={setProvider}
               foundingEligible={false}
               claimFounding={false}
               onClaimFoundingChange={setClaimFounding}
@@ -977,31 +923,24 @@ export function PlanPicker({
                 />
               ) : null
             ) : grantingSub !== null ? (
-              grantingSub.provider === 'paddle' ? (
-                <ChangePlanPanel
-                  target={selected}
-                  cycle={cycle}
-                  fromTier={grantingSub.tier}
-                  fromCycle={grantingSub.cycle}
-                  currentPeriodEnd={grantingSub.currentPeriodEnd}
-                  provider={grantingSub.provider}
-                  pricingV2={pricingV2}
-                  isPending={changePlan.isPending}
-                  errorMessage={
-                    changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
-                  }
-                  onConfirm={() => void onConfirmChange(selected)}
-                  onDismiss={closePanel}
-                />
-              ) : (
-                <RazorpaySwitchPanel target={selected} cycle={cycle} onDismiss={closePanel} />
-              )
+              <ChangePlanPanel
+                target={selected}
+                cycle={cycle}
+                fromTier={grantingSub.tier}
+                fromCycle={grantingSub.cycle}
+                currentPeriodEnd={grantingSub.currentPeriodEnd}
+                pricingV2={pricingV2}
+                isPending={changePlan.isPending}
+                errorMessage={
+                  changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
+                }
+                onConfirm={() => void onConfirmChange(selected)}
+                onDismiss={closePanel}
+              />
             ) : (
               <ConfirmPanel
                 target={selected}
                 cycle={cycle}
-                provider={pricingV2 ? 'paddle' : provider}
-                razorpayOffered={razorpayOffered}
                 pricingV2={pricingV2}
                 country={country}
                 indiaCheckoutOpen={indiaCheckoutOpen}
@@ -1010,7 +949,6 @@ export function PlanPicker({
                     ? PLUS_ANNUAL_2026_10
                     : null
                 }
-                onProviderChange={setProvider}
                 foundingEligible={foundingEligible}
                 claimFounding={claimFounding}
                 onClaimFoundingChange={setClaimFounding}
@@ -1223,12 +1161,12 @@ function LaunchOffers({
   onBuy: (kind: 'plus' | 'pass') => void;
 }) {
   const geo = { pricingV2: true, country, indiaCheckoutOpen };
-  const plusCurrency = currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', geo);
-  const passCurrency = currencyForPricePoint(OFFERS.backlogPass.price, 'paddle', geo);
+  const plusCurrency = currencyForPricePoint(PLUS_ANNUAL_2026_10, geo);
+  const passCurrency = currencyForPricePoint(OFFERS.backlogPass.price, geo);
   const plusLocale = plusCurrency === 'INR' ? 'inr' : 'usd';
   const passLocale = passCurrency === 'INR' ? 'inr' : 'usd';
-  const plusPaused = inrNewPurchasePaused('paddle', plusCurrency, indiaCheckoutOpen);
-  const passPaused = inrNewPurchasePaused('paddle', passCurrency, indiaCheckoutOpen);
+  const plusPaused = inrNewPurchasePaused(plusCurrency, indiaCheckoutOpen);
+  const passPaused = inrNewPurchasePaused(passCurrency, indiaCheckoutOpen);
   // Name the live code on each card: the Pass card's line covers both offers,
   // Plus's covers Plus only. Null outside the promo window.
   const termsFor = (
@@ -1451,7 +1389,6 @@ function PlanCard({
   disabled,
   canSwitchCycle,
   hasGrantingSubscription,
-  provider,
   geo,
   priceOverride,
   showFoundingHint,
@@ -1471,12 +1408,9 @@ function PlanCard({
   currentPriceLabel?: string | null | undefined;
   isSelected: boolean;
   disabled: boolean;
-  /** Whether the rail supports a self-serve cycle switch (Paddle). */
+  /** Whether a self-serve cycle switch is offered. */
   canSwitchCycle: boolean;
   hasGrantingSubscription: boolean;
-  /** Rail the strip prices against — clamped per point, so the cards
-   *  agree with the confirm panel one click later. */
-  provider: BillingProviderId;
   geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean };
   priceOverride?: { amount: string; per: string; note?: string };
   /** QA-billing-20260901-05 — show the Founding Pro price on this card,
@@ -1488,10 +1422,10 @@ function PlanCard({
   onSelect: () => void;
 }) {
   const tier = TIER_MANIFEST[tierId];
-  const price = priceOverride ?? priceLineFor(tier, cycle, provider, geo);
+  const price = priceOverride ?? priceLineFor(tier, cycle, geo);
   const foundingPrice =
     showFoundingHint && tier.promo
-      ? formatMoney(tier.promo.annual, currencyForPricePoint(tier.promo.annual, provider))
+      ? formatMoney(tier.promo.annual, currencyForPricePoint(tier.promo.annual))
       : null;
   // The badge marks the plan you are ON — tier AND cycle. Tier alone
   // made it follow the cycle toggle: a Pro ANNUAL subscriber flipping
@@ -1501,14 +1435,8 @@ function PlanCard({
   // below already drew this distinction — "Switch to monthly billing" —
   // so the card contradicted itself.
   //
-  // No cycle carve-out by rail. A first pass exempted non-Paddle on the
-  // grounds that the cycle was "unknowable" — it is not: `cycle` is on
-  // the subscription record for every provider, and the call site was
-  // simply refusing to pass it because the SWITCH CTA is Paddle-only.
-  // That left a Razorpay subscriber seeing the exact lie this fix
-  // removed for Paddle (Codex stop-review, 2026-07-31). The two
-  // questions are now separate props: `currentCycle` is a fact on any
-  // rail, `canSwitchCycle` is the affordance.
+  // `currentCycle` is a fact on the subscription record and
+  // `canSwitchCycle` is the affordance; they stay separate props.
   //
   // `currentCycle` is null when no subscription grants the current plan.
   // Free and complimentary plans have no billing cycle to compare.
@@ -1614,68 +1542,6 @@ function PlanCard({
           </Button>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-/**
- * Razorpay plan changes are not self-serve at launch — the BE fails
- * closed with PLAN_CHANGE_UNSUPPORTED (untested provider update
- * semantics + no Razorpay catalog provisioned; see razorpay.adapter).
- * Say so honestly and hand the user the prefilled support route
- * instead of a confirm button that can only error.
- */
-function RazorpaySwitchPanel({
-  target,
-  cycle,
-  onDismiss,
-}: {
-  target: PaidTier;
-  cycle: BillingCycle;
-  onDismiss: () => void;
-}) {
-  const mailto = `mailto:support@declutrmail.com?subject=${encodeURIComponent(
-    'Plan change request',
-  )}&body=${encodeURIComponent(
-    `Please switch my subscription to ${TIER_MANIFEST[target].name} (${cycle}).`,
-  )}`;
-  return (
-    <div
-      data-testid="razorpay-switch-panel"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        padding: 'clamp(18px, 4vw, 24px)',
-        background: color.card,
-        border: `1px solid ${color.border}`,
-        borderRadius: radius.md,
-        fontSize: text.md,
-        color: color.fgSoft,
-        lineHeight: 1.55,
-      }}
-    >
-      <p style={{ margin: 0 }}>
-        Plan changes aren&rsquo;t self-serve yet for subscriptions paid via Razorpay. Contact
-        support to review a change to {TIER_MANIFEST[target].name} ({cycle}). New INR purchases are
-        temporarily paused; your current plan keeps working in the meantime.
-      </p>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-        <a
-          href={mailto}
-          style={{
-            fontSize: text.sm,
-            color: color.primary,
-            fontWeight: 600,
-            textDecoration: 'none',
-          }}
-        >
-          Email support
-        </a>
-        <Button tone="default" onClick={onDismiss}>
-          Keep current plan
-        </Button>
-      </div>
     </div>
   );
 }

@@ -3,11 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Button, tokens } from '@declutrmail/shared';
 import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
-import type {
-  BillingCycle,
-  BillingProviderId,
-  PurchasableTier as PaidTier,
-} from '@declutrmail/shared/contracts';
+import type { BillingCycle, PurchasableTier as PaidTier } from '@declutrmail/shared/contracts';
 import { apiErrorCode } from '@/lib/api/client';
 import { GroupTitle } from '@/features/settings/settings-list';
 import { PlanConsequences } from './plan-coverage';
@@ -35,7 +31,6 @@ export function ChangePlanPanel({
   fromTier,
   fromCycle,
   currentPeriodEnd,
-  provider,
   isPending,
   errorMessage,
   pricingV2 = false,
@@ -47,9 +42,6 @@ export function ChangePlanPanel({
   fromTier: PaidTier;
   fromCycle: BillingCycle;
   currentPeriodEnd: string | null;
-  /** The GRANTING subscription's own rail — what this account is
-   *  already being charged on, so it is a fact, not a regional guess. */
-  provider: BillingProviderId;
   isPending: boolean;
   errorMessage: string | null;
   /** Server launch flag. The refund line is the deck sentence either way. */
@@ -57,7 +49,7 @@ export function ChangePlanPanel({
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const toLabel = quotedPlanPrice(target, cycle, provider, pricingV2);
+  const toLabel = quotedPlanPrice(target, cycle, pricingV2);
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);

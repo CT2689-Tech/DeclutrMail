@@ -36,7 +36,6 @@ const catalog = new BillingCatalog([
     founding: false,
     usdCents: 900,
     paddlePriceId: 'pri_base',
-    razorpayPlanId: null,
   },
   {
     planCode: 'pro_monthly',
@@ -45,7 +44,6 @@ const catalog = new BillingCatalog([
     founding: false,
     usdCents: 1900,
     paddlePriceId: 'pri_target',
-    razorpayPlanId: null,
   },
 ]);
 let db: DrizzleDb, policy: BillingUpgradeRefundService, projector: BillingWebhookService;

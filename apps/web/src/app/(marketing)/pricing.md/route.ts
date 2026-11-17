@@ -15,7 +15,6 @@
 
 import {
   isPricingV2,
-  RAILS,
   refundLine,
   renderPricingMarkdown,
   type PricePoint,
@@ -38,8 +37,6 @@ import {
   CLEANUP_RESET_NOTE,
   BRIEF_PROCESSING_NOTE,
   BILLING_MANAGEMENT_NOTE,
-  PROVIDER_SWITCH_NOTE,
-  RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
 import { siteUrl } from '@/features/marketing/landing/urls';
 import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
@@ -51,21 +48,18 @@ function activityUndoWindowClause(): string {
     : `for the ${UNIFORM_UNDO_WINDOW_DAYS}-day Activity Undo window`;
 }
 
-/** "$9/mo · ₹749/mo in India" — both real manifest amounts, never an FX rate. */
+/** "$9/mo · ₹749/mo incl. GST" — both real manifest amounts, never an FX rate. */
 function priceLine(point: PricePoint, per: string): string {
   const usd = `${formatUsd(point.usdCents)}${per}`;
   if (isPricingV2()) {
     const paise = point.inr?.paise ?? point.inrPaise;
-    if (!RAILS.razorpay.enabled && paise > 0) {
+    if (paise > 0) {
       return `${usd} · ${formatInr(paise)}${per} ${WS1_COPY['price.inrSuffix']}`;
     }
     return usd;
   }
-  // INR is quoted only where that exact price point is provisioned on
-  // Razorpay, matching what an India checkout will actually charge.
-  return point.razorpayPlanId === null
-    ? usd
-    : `${usd} · ${formatInr(point.inrPaise)}${per} in India`;
+  // Outside the launch catalog an India checkout charges USD on Paddle.
+  return usd;
 }
 
 function planSection(): string {
@@ -151,10 +145,7 @@ export async function GET() {
 > these are published base plan prices. Taxes, discounts, and the final amount
 > due are confirmed at checkout; a plan price is not a confirmed renewal charge.
 
-USD prices use the Paddle catalog. INR prices appear only for price points
-provisioned in the Razorpay catalog; they are independently set, not currency
-conversions. New INR purchases are temporarily paused; INR prices are shown for
-reference. Existing INR subscriptions can still be managed from Billing.
+Prices are in USD and use the Paddle catalog.
 
 ## Plans
 
@@ -203,8 +194,6 @@ ${BRIEF_PROCESSING_NOTE} Privacy details: ${origin}/privacy
 - Cancel any time from billing settings; access continues to the end of the
   paid period.
 - ${BILLING_MANAGEMENT_NOTE}
-- ${RAZORPAY_LIMITATIONS_NOTE}
-- ${PROVIDER_SWITCH_NOTE}
 - After a downgrade, existing connected Gmail accounts keep working; adding another is blocked while above the new plan’s inbox limit.
 - Gmail and Google Workspace only. DeclutrMail is not affiliated with or
   endorsed by Google.

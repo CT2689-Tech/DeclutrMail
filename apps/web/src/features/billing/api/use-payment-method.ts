@@ -15,11 +15,6 @@
  * billing screen's job — its pageshow handler invalidates the billing
  * keys when the page is restored from the back/forward cache, the one
  * return path that would otherwise show the pre-portal state.
- *
- * The `unsupported` arm resolves normally — it is a 200 and an answer
- * (Razorpay has no self-serve path), so it must not land in `error`
- * where the UI would offer a retry that can never succeed. The caller
- * reads the resolved value and renders the support-assisted state.
  */
 
 import { useMutation } from '@tanstack/react-query';
@@ -44,7 +39,6 @@ export function usePaymentMethodSession() {
       return parsed.data;
     },
     onSuccess: (session) => {
-      if (session.kind !== 'url') return;
       window.location.assign(session.url);
     },
   });

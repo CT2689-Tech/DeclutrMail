@@ -606,19 +606,14 @@ required_for() {
 # controllers both live in the API; the worker has no billing credential
 # reads and must not receive these secrets.
 #
-# PER-PROVIDER, not per-service: BILLING_ENABLED=true means "Paddle is
-# live", not "every provider is live" — Paddle and Razorpay launch on
-# independent timelines (D117), and a deferred provider is SUPPOSED to
-# have unbound secrets (its catalog ids are null, so its adapter and the
-# FE gate both refuse it). Checking every provider unconditionally once
-# billing is on made this group permanently red the moment Paddle alone
-# went live (2026-07-24) — a watchdog that cries wolf on a correct state
-# gets ignored, which is worse than not having it.
-BILLING_PROVIDERS='paddle razorpay'
+# PER-PROVIDER, not per-service. Paddle is the only billing provider; a
+# provider whose catalog ids are null is SUPPOSED to have unbound secrets
+# (its adapter and the FE gate both refuse it), so its secrets are only
+# required once it is provisioned.
+BILLING_PROVIDERS='paddle'
 billing_provider_secrets() {
   case "$1" in
     paddle)   echo 'PADDLE_API_KEY PADDLE_CLIENT_TOKEN PADDLE_WEBHOOK_SECRET' ;;
-    razorpay) echo 'RAZORPAY_KEY_ID RAZORPAY_KEY_SECRET RAZORPAY_WEBHOOK_SECRET' ;;
   esac
 }
 # A provider is "launched" once the manifest carries at least one
@@ -629,7 +624,6 @@ billing_provider_secrets() {
 billing_provider_provisioned() {
   case "$1" in
     paddle)   grep -q "paddlePriceId: '" "$MANIFEST" ;;
-    razorpay) grep -q "razorpayPlanId: '" "$MANIFEST" ;;
   esac
 }
 
@@ -932,14 +926,14 @@ EOF
   fi
 
   # E. Hygiene: a runtime-only secret sitting in the CI store is the bug
-  # class. Billing API credentials are deliberately exempt: the catalog
-  # provisioning workflow and vendor watchdog consume PADDLE_API_KEY plus the
-  # Razorpay key pair. Client tokens and webhook secrets remain runtime-only.
+  # class. Billing API credentials are deliberately exempt: the Paddle
+  # sandbox and rehearsal workflows consume PADDLE_API_KEY. Client tokens
+  # and webhook secrets remain runtime-only.
   if command -v gh >/dev/null 2>&1; then
     local ghs stray='' all
     all=$(
       for svc in $SERVICES; do required_for "$svc"; done
-      echo 'PADDLE_CLIENT_TOKEN PADDLE_WEBHOOK_SECRET RAZORPAY_WEBHOOK_SECRET'
+      echo 'PADDLE_CLIENT_TOKEN PADDLE_WEBHOOK_SECRET'
     )
     all=$(printf '%s\n' "$all" | tr ' ' '\n' | sed '/^$/d' | sort -u)
     ghs=$(gh secret list 2>/dev/null | awk '{print $1}')

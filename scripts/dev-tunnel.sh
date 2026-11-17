@@ -23,9 +23,6 @@
 # (the first version) could hijack someone else's destination or a stable
 # endpoint; secret identity cannot (Codex stop-review 2026-07-30).
 #
-# Razorpay standard accounts have no webhook-update API — that side stays
-# a manual dashboard step, printed at the end.
-#
 # Usage:
 #   ./scripts/dev-tunnel.sh          start (idempotent — reuses a live tunnel)
 #   ./scripts/dev-tunnel.sh --stop   stop the tunnel
@@ -40,7 +37,6 @@ TUNNEL_PID="$LOG_DIR/tunnel.pid"
 TUNNEL_URL_FILE="$LOG_DIR/tunnel.url"
 TUNNEL_LOG="$LOG_DIR/tunnel.log"
 PADDLE_PATH="/api/webhooks/billing/paddle"
-RAZORPAY_PATH="/api/webhooks/billing/razorpay"
 TUNNEL_CMD_MATCH="cloudflared tunnel --url http://localhost:4000"
 
 mkdir -p "$LOG_DIR"
@@ -188,9 +184,8 @@ fi
 if [[ "$PADDLE_API_KEY" != pdl_sdbx_* || "$PADDLE_ENV" != "sandbox" || -z "$PADDLE_WEBHOOK_SECRET" ]]; then
   echo "⚠ Paddle auto-repoint SKIPPED — need PADDLE_API_KEY=pdl_sdbx_*, PADDLE_ENV=sandbox"
   echo "  AND PADDLE_WEBHOOK_SECRET set (it selects WHICH destination is ours)."
-  echo "  Manual mode. Point the webhook destinations at:"
+  echo "  Manual mode. Point the webhook destination at:"
   echo "    Paddle:   ${TUNNEL_URL}${PADDLE_PATH}"
-  echo "    Razorpay: ${TUNNEL_URL}${RAZORPAY_PATH}"
   exit 0
 fi
 
@@ -295,6 +290,4 @@ echo ""
 echo "✓ tunnel ready (edge answers HTTP $reach)."
 echo "  tunnel:   $TUNNEL_URL"
 echo "  paddle:   $dest_id → $after (same endpoint secret — PATCHed, not recreated)"
-echo "  razorpay: Razorpay dashboard → Webhooks → set URL to ${TUNNEL_URL}${RAZORPAY_PATH}"
-echo "            (Razorpay standard accounts have no webhook-update API — manual, once per tunnel restart)"
 echo "  stop:     ./scripts/dev-tunnel.sh --stop"

@@ -71,9 +71,8 @@ describe('India Paddle price selection', () => {
     });
     expect(indiaPaddlePriceId(live, 'pass_onetime')).toBe('pri_live_pass');
     expect(indiaPaddlePricesConfigured(live)).toBe(true);
-    expect(inrNewPurchasePaused('paddle', 'INR', false)).toBe(true);
-    expect(inrNewPurchasePaused('paddle', 'INR', true)).toBe(false);
-    expect(inrNewPurchasePaused('paddle', 'USD', false)).toBe(false);
-    expect(inrNewPurchasePaused('razorpay', 'INR', true)).toBe(true);
+    expect(inrNewPurchasePaused('INR', false)).toBe(true);
+    expect(inrNewPurchasePaused('INR', true)).toBe(false);
+    expect(inrNewPurchasePaused('USD', false)).toBe(false);
   });
 });

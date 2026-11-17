@@ -505,14 +505,9 @@ describe('backingStatusNote', () => {
 
   // The note names the card, not a direction: where it sits is the page's
   // job, and the page moves it right under the plan when past due.
-  it.each(['paddle', 'razorpay'] as const)(
-    'points at the %s payment card without a direction',
-    (provider) => {
-      expect(backingStatusNote({ state: 'past_due', sub: { ...SUB, provider } })?.text).not.toMatch(
-        /below|above/,
-      );
-    },
-  );
+  it('points at the payment card without a direction', () => {
+    expect(backingStatusNote({ state: 'past_due', sub: SUB })?.text).not.toMatch(/below|above/);
+  });
 
   it('warns on cancel_scheduled with the period-end date', () => {
     const sub = { ...SUB, cancelAtPeriodEnd: true };
@@ -598,9 +593,8 @@ describe('nonBackingBlocksNewCheckout — mirrors the server SUBSCRIPTION_EXISTS
 
 describe('annual savings reflect the displayed currency', () => {
   it('only advertises exact whole-month savings on both paid plans', () => {
-    expect(sharedAnnualMonthsFree('paddle')).toBe(2);
-    expect(annualMonthsFree('plus', 'razorpay')).toBeNull();
-    expect(sharedAnnualMonthsFree('razorpay')).toBeNull();
+    expect(sharedAnnualMonthsFree()).toBe(2);
+    expect(annualMonthsFree('plus')).toBe(2);
   });
 });
 

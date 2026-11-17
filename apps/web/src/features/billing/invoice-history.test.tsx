@@ -3,9 +3,7 @@
  *
  * The cases that matter here are the honesty ones, not the happy path:
  * a failed read must not read as "no invoices", a partial list must say
- * it is partial, an unmappable status must not be rounded to "Paid",
- * and Razorpay must never render a payment-method button whose only
- * outcome is a refusal.
+ * it is partial, and an unmappable status must not be rounded to "Paid".
  */
 
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -296,11 +294,11 @@ describe('InvoiceHistory', () => {
     expect(screen.queryByText('Payment history didn’t load.')).not.toBeInTheDocument();
   });
 
-  it('says the list is partial when one rail failed but the other returned rows', async () => {
+  it('says the list is partial when one read failed but others returned rows', async () => {
     apiGet.mockResolvedValue({
       data: {
         invoices: [PAID_ROW],
-        unavailableProviders: ['razorpay'],
+        unavailableProviders: ['paddle'],
         truncated: false,
         omittedRows: 0,
       },
@@ -327,16 +325,13 @@ describe('InvoiceHistory', () => {
     expect(screen.queryByText('Due')).not.toBeInTheDocument();
   });
 
-  it('links a Razorpay row straight to its hosted page instead of minting one', async () => {
+  it('links a row that carries a hosted page straight to it instead of minting one', async () => {
     apiGet.mockResolvedValue({
       data: {
         invoices: [
           {
             ...PAID_ROW,
-            provider: 'razorpay' as const,
-            currencyCode: 'INR',
-            amount: '99900',
-            hostedUrl: 'https://rzp.io/i/abc',
+            hostedUrl: 'https://invoices.example.test/abc',
             documentAvailable: false,
           },
         ],
@@ -347,7 +342,7 @@ describe('InvoiceHistory', () => {
     });
     wrap(<InvoiceHistory />);
     const link = await screen.findByRole('link', { name: 'View invoice' });
-    expect(link).toHaveAttribute('href', 'https://rzp.io/i/abc');
+    expect(link).toHaveAttribute('href', 'https://invoices.example.test/abc');
     expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument();
   });
 
@@ -433,33 +428,19 @@ describe('InvoiceHistory', () => {
 
 describe('PaymentMethodCard', () => {
   it('offers Paddle the update button', () => {
-    wrap(<PaymentMethodCard provider="paddle" isPastDue={false} />);
+    wrap(<PaymentMethodCard isPastDue={false} />);
     expect(screen.getByRole('button', { name: 'Update payment method' })).toBeInTheDocument();
   });
 
-  it('gives Razorpay a support path and NO button whose only outcome is a refusal', () => {
-    wrap(<PaymentMethodCard provider="razorpay" isPastDue={false} />);
-    expect(screen.queryByRole('button', { name: 'Update payment method' })).not.toBeInTheDocument();
-    expect(screen.getByText(/authorized mandate/i)).toBeInTheDocument();
-  });
-
   it('states the dunning consequence on past_due, and names updating as the fix', () => {
-    wrap(<PaymentMethodCard provider="paddle" isPastDue />);
+    wrap(<PaymentMethodCard isPastDue />);
     expect(screen.getByText(/didn’t go through/i)).toBeInTheDocument();
     expect(screen.getByText(/restores the plan/i)).toBeInTheDocument();
-  });
-
-  it('does not promise a Paddle-style fix to a past_due Razorpay customer', () => {
-    wrap(<PaymentMethodCard provider="razorpay" isPastDue />);
-    expect(screen.queryByText(/restores the plan/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/contact support to update your payment method/i)).toBeInTheDocument();
-    expect(screen.queryByText(/stays active while we sort this out/i)).not.toBeInTheDocument();
   });
 
   it('withholds the control while a money action is unresolved, and says why', () => {
     wrap(
       <PaymentMethodCard
-        provider="paddle"
         isPastDue={false}
         disabled
         disabledReason="Available once the payment above finishes confirming."
@@ -469,30 +450,14 @@ describe('PaymentMethodCard', () => {
     expect(screen.getByText(/finishes confirming/i)).toBeInTheDocument();
   });
 
-  it('renders a paddle refusal with GENERIC copy — the India-mandate claim belongs to Razorpay', async () => {
-    // A non-Razorpay rail answering `unsupported` is unexpected, and the
-    // mandate sentence is a fact about Razorpay specifically — showing
-    // it to a Paddle customer explains the refusal with a fact that
-    // isn't one (gate network 2026-08-16).
+  it('shows an answer without a session URL as a failure, never as a silent no-op', async () => {
     apiPost.mockResolvedValue({
       data: { kind: 'unsupported', provider: 'paddle', reason: 'no_self_serve' },
     });
-    wrap(<PaymentMethodCard provider="paddle" isPastDue={false} />);
+    wrap(<PaymentMethodCard isPastDue={false} />);
     screen.getByRole('button', { name: 'Update payment method' }).click();
     await waitFor(() =>
-      expect(screen.getByText(/can’t be changed from here right now/i)).toBeInTheDocument(),
+      expect(screen.getByRole('alert')).toHaveTextContent(/couldn’t open the payment form/i),
     );
-    expect(screen.queryByText(/authorized mandate/i)).not.toBeInTheDocument();
-    // A 200 "this rail cannot" must not surface as a retryable error.
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-  });
-
-  it('renders a razorpay refusal with the mandate explanation', async () => {
-    apiPost.mockResolvedValue({
-      data: { kind: 'unsupported', provider: 'razorpay', reason: 'no_self_serve' },
-    });
-    wrap(<PaymentMethodCard provider="paddle" isPastDue={false} />);
-    screen.getByRole('button', { name: 'Update payment method' }).click();
-    await waitFor(() => expect(screen.getByText(/authorized mandate/i)).toBeInTheDocument());
   });
 });

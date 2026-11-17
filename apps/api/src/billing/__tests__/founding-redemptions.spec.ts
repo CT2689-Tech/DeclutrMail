@@ -17,7 +17,7 @@ describe('permanent Founding allocations', () => {
     db = (await freshTestDb()) as unknown as DrizzleDb;
   });
 
-  async function legacy(provider: 'paddle' | 'razorpay' = 'paddle', id = 'sub_legacy') {
+  async function legacy(provider: 'paddle' = 'paddle', id = 'sub_legacy') {
     const [ws] = await db
       .insert(workspaces)
       .values({ name: 'Synthetic Founding account' })
@@ -66,12 +66,12 @@ describe('permanent Founding allocations', () => {
     expect(await db.select().from(subscriptionEvents)).toHaveLength(1);
   });
 
-  it('allocates across both providers under one cap and never reuses an old identity', async () => {
+  it('allocates under one cap and never reuses an old identity', async () => {
     expect(await db.transaction((tx) => claimFoundingRedemption(tx, 'paddle', 'same_ref', 2))).toBe(
       true,
     );
     expect(
-      await db.transaction((tx) => claimFoundingRedemption(tx, 'razorpay', 'same_ref', 2)),
+      await db.transaction((tx) => claimFoundingRedemption(tx, 'paddle', 'second_ref', 2)),
     ).toBe(true);
     expect(await foundingRedemptionCount(db)).toBe(2);
     expect(

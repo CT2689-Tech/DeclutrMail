@@ -6,8 +6,11 @@
  * TS/Zod — no React, importable by api + workers.
  *
  * Vocabulary notes:
- *   - `provider` mirrors the `billing_provider` pg_enum (D117: Paddle
- *     merchant-of-record international + Razorpay India; NO Stripe).
+ *   - `provider` mirrors the `billing_provider` pg_enum. Paddle is the
+ *     only rail (merchant of record, USD and INR). `razorpay` stays in
+ *     the enum because the pg_enum keeps it. That rail was removed
+ *     2026-11-17; a read-only production check that day found no rows
+ *     for it.
  *   - `cycle` mirrors the `billing_cycle` pg_enum.
  *   - `status` mirrors the `subscription_status` pg_enum — NO
  *     `trialing` per D121 (no-trial mechanic, CODEX PATCH on D117).
@@ -22,7 +25,7 @@
 
 import { z } from 'zod';
 
-/** D117 — Paddle (international, merchant-of-record) + Razorpay (India). */
+/** Mirrors the `billing_provider` pg_enum. Only `paddle` is a live rail. */
 export const BillingProviderIdSchema = z.enum(['paddle', 'razorpay']);
 export type BillingProviderId = z.infer<typeof BillingProviderIdSchema>;
 
@@ -41,10 +44,8 @@ export type PurchasableTier = z.infer<typeof PurchasableTierSchema>;
 /**
  * POST /api/billing/checkout request body.
  *
- * `provider` is the user's EXPLICIT choice (D117: India → Razorpay,
- * everywhere else → Paddle); the API records the implied
- * `users.billing_region` rather than re-deriving it from IP at
- * checkout time.
+ * `provider` is always `paddle`, the only checkout rail. The field stays
+ * on the wire so clients from before the Razorpay removal still parse.
  *
  * `country` is accepted and ignored. It does not choose the provider
  * or the checkout currency. India pricing uses the server-signed
@@ -60,7 +61,7 @@ export const CheckoutRequestSchema = z
     tierId: PurchasableTierSchema,
     attemptId: z.uuid().optional(),
     cycle: BillingCycleSchema,
-    provider: BillingProviderIdSchema,
+    provider: z.literal('paddle'),
     promo: z.literal('foundingPro').optional(),
     /** Backlog Pass. Requires Plus annual on Paddle. Not a subscription tier. */
     offer: z.literal('pass_onetime').optional(),
@@ -139,26 +140,8 @@ export const PaddleCheckoutSessionSchema = z.object({
 });
 export type PaddleCheckoutSession = z.infer<typeof PaddleCheckoutSessionSchema>;
 
-/**
- * Razorpay checkout session — the subscription is created server-side
- * (notes carry the workspace id, so webhook attribution never trusts
- * the client); the FE either opens Razorpay Checkout with
- * `subscriptionId` + `keyId` or falls back to `shortUrl`.
- */
-export const RazorpayCheckoutSessionSchema = z.object({
-  provider: z.literal('razorpay'),
-  kind: z.literal('hosted'),
-  subscriptionId: z.string().min(1),
-  shortUrl: z.url(),
-  keyId: z.string().min(1),
-});
-export type RazorpayCheckoutSession = z.infer<typeof RazorpayCheckoutSessionSchema>;
-
 /** POST /api/billing/checkout response `data`. */
-export const CheckoutSessionSchema = z.discriminatedUnion('provider', [
-  PaddleCheckoutSessionSchema,
-  RazorpayCheckoutSessionSchema,
-]);
+export const CheckoutSessionSchema = PaddleCheckoutSessionSchema;
 export type CheckoutSession = z.infer<typeof CheckoutSessionSchema>;
 
 /** A server-owned purchase, separate from the account's entitlement. */
@@ -350,8 +333,8 @@ export type PlanChangeRequest = z.infer<typeof PlanChangeRequestSchema>;
  *   - `none_found` — the provider answered and holds NO matching
  *     subscription. Legitimizes the manual release affordance.
  *   - `payment_in_progress` — the provider holds a subscription for
- *     this checkout in a PRE-GRANT state (Razorpay created/
- *     authenticated — the 3DS window; unmapped provider statuses).
+ *     this checkout in a PRE-GRANT state (a payment still moving, or
+ *     an unmapped provider status).
  *     The release must stay LOCKED: "no payment found" would be false
  *     and a resume here is the double-charge case.
  *   - `no_pending` — no server claim AND no hint to search by. Never a
@@ -433,38 +416,21 @@ export type BillingReconcileResponse = z.infer<typeof BillingReconcileResponseSc
 
 // ── D119 / ADR-0035 — provider-owned billing artifacts ───────────────
 //
-// The merchant-of-record split is NOT symmetric, so neither are these
-// contracts. Paddle is the legal seller: it owns the tax invoice, the
-// payment instrument and the receipt. Razorpay is an aggregator — we
-// are the seller of record for India. Every affordance below therefore
-// carries an explicit "this rail cannot do it" variant rather than a
-// nullable field: a missing CAPABILITY and a failed READ must never
-// render identically (the defect class ADR-0027's derive layer exists
-// to prevent).
+// Paddle is the legal seller: it owns the tax invoice, the payment
+// instrument and the receipt. A missing CAPABILITY and a failed READ
+// must never render identically (the defect class ADR-0027's derive
+// layer exists to prevent).
 
 /**
- * POST /api/billing/payment-method/session response `data`.
- *
- *   - `url` — a provider-hosted session the FE opens. Short-lived and
- *     customer-specific: minted per click, never cached (ADR-0035 §4).
- *   - `unsupported` — the rail has no self-serve path. Razorpay
- *     subscriptions cannot change instrument without re-authorizing the
- *     mandate, so the FE renders support-assisted copy. This mirrors
- *     the existing typed refusals for Razorpay pause/resume; a disabled
- *     button whose only outcome is a refusal is a §10 fake completion.
+ * POST /api/billing/payment-method/session response `data`: a
+ * provider-hosted session the FE opens. Short-lived and
+ * customer-specific: minted per click, never cached (ADR-0035 §4).
  */
-export const PaymentMethodSessionSchema = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('url'),
-    provider: BillingProviderIdSchema,
-    url: z.url(),
-  }),
-  z.object({
-    kind: z.literal('unsupported'),
-    provider: BillingProviderIdSchema,
-    reason: z.literal('no_self_serve'),
-  }),
-]);
+export const PaymentMethodSessionSchema = z.object({
+  kind: z.literal('url'),
+  provider: BillingProviderIdSchema,
+  url: z.url(),
+});
 export type PaymentMethodSession = z.infer<typeof PaymentMethodSessionSchema>;
 
 /**
@@ -474,13 +440,12 @@ export type PaymentMethodSession = z.infer<typeof PaymentMethodSessionSchema>;
  * convention — `formatProviderAmount` divides by the currency's own
  * exponent, never a hard-coded 100).
  *
- * `status` carries `unknown` deliberately: both providers have status
- * vocabularies wider than this enum, and mapping an unrecognized one
+ * `status` carries `unknown` deliberately: the provider's status
+ * vocabulary is wider than this enum, and mapping an unrecognized one
  * onto `paid` or `due` would assert something the read did not say.
  *
- * The two document paths differ by rail (ADR-0035): Razorpay exposes a
- * hosted invoice page directly (`hostedUrl`), while a Paddle invoice is
- * a signed PDF that must be minted per click (`documentAvailable`).
+ * A Paddle invoice is a signed PDF that must be minted per click
+ * (`documentAvailable`). `hostedUrl` is always null on Paddle rows.
  */
 export const BillingInvoiceSchema = z.object({
   id: z.string().min(1),
@@ -502,12 +467,10 @@ export type BillingInvoice = z.infer<typeof BillingInvoiceSchema>;
  * GET /api/billing/invoices response `data`.
  *
  * `unavailableProviders` is load-bearing honesty, not diagnostics. A
- * workspace can hold customer rows under BOTH rails (billing_customers
- * is unique on `(workspace_id, provider)`, so a region switch creates a
- * second row), and one rail being unreachable must not render as "you
- * have no invoices" — an empty or short list that silently omits a
- * provider is the same assert-what-you-don't-know defect the billing
- * screen was rebuilt to avoid. Non-empty ⇒ the list is PARTIAL and the
+ * provider being unreachable must not render as "you have no
+ * invoices" — an empty or short list that silently omits a provider is
+ * the same assert-what-you-don't-know defect the billing screen was
+ * rebuilt to avoid. Non-empty ⇒ the list is PARTIAL and the
  * UI must say so.
  */
 export const BillingInvoiceListSchema = z.object({

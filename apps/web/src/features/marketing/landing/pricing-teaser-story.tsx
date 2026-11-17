@@ -74,6 +74,6 @@ export function PricingTeaserGate({
     return () => controller.abort();
   }, []);
 
-  if (!flags?.pricingV2) return <PricingTeaserView provider="paddle" />;
+  if (!flags?.pricingV2) return <PricingTeaserView />;
   return <PricingTeaserStory passEnabled={flags.passEnabled} locale={locale} />;
 }

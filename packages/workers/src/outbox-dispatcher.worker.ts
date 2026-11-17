@@ -275,7 +275,7 @@ function normalizePositiveMs(value: number | undefined, fallback: number): numbe
  * mutable and this codebase's own Gmail/BIMI/billing HTTP clients
  * already throw a native `TimeoutError`-named `DOMException` from
  * `AbortSignal.timeout()` (`gmail-client.service.ts`, `bimi-resolver.ts`,
- * `paddle.adapter.ts`, `razorpay.adapter.ts`) — a string match would
+ * `paddle.adapter.ts`) — a string match would
  * give a stuck, genuinely-broken call to one of THOSE clients the same
  * `maxAttempts` exemption and orphan-guard treatment this dispatcher
  * reserves for its own bound, forever, since nothing would ever

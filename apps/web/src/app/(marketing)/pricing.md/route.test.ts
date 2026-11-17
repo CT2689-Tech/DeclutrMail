@@ -48,23 +48,21 @@ describe('/pricing.md — machine-readable pricing', () => {
     expect(markdown).toContain('published base plan prices');
     expect(markdown).toContain('not a confirmed renewal charge');
     expect(markdown).not.toContain('You can pay with UPI');
-    expect(markdown).toMatch(/INR prices appear only for price points\s+provisioned/);
+    expect(markdown).toContain('Prices are in USD and use the Paddle catalog.');
+    expect(markdown).not.toContain('Razorpay');
     expect(markdown).not.toMatch(/amounts checkout charges|India visitor is quoted and charged/);
   });
 
-  it('names every purchasable tier and its manifest amounts in both charged currencies', async () => {
+  it('names every purchasable tier and its manifest amounts in USD', async () => {
     const markdown = await body();
 
     for (const tier of PURCHASABLE) {
       expect(markdown, tier.id).toContain(tier.name);
       for (const point of pricePoints(tier)) {
         expect(markdown, `${tier.id} USD`).toContain(formatUsd(point.usdCents));
-        // INR is quoted only where the point is actually provisioned on
-        // Razorpay — quoting it otherwise advertises a price no checkout
-        // can take (D117).
-        if (point.razorpayPlanId !== null) {
-          expect(markdown, `${tier.id} INR`).toContain(formatInr(point.inrPaise));
-        }
+        // Outside the launch catalog an India checkout charges USD, so no
+        // INR amount is quoted for these points (D117).
+        expect(markdown, `${tier.id} INR`).not.toContain(formatInr(point.inrPaise));
       }
       expect(markdown, `${tier.id} inboxes`).toContain(String(tier.inboxLimit));
       expect(markdown, `${tier.id} undo`).toContain(`${tier.undoWindowDays} days`);

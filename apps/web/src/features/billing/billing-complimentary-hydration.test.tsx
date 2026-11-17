@@ -79,7 +79,7 @@ function stubMatchMedia(): void {
 }
 
 function annualLine(tier: 'plus' | 'pro'): string {
-  const line = priceLineFor(TIER_MANIFEST[tier], 'annual', 'paddle');
+  const line = priceLineFor(TIER_MANIFEST[tier], 'annual');
   if (!line) throw new Error(`missing annual price for ${tier}`);
   return `${line.amount}${line.per}`;
 }
@@ -97,12 +97,7 @@ it('hydrates a live Pro complimentary plan when the subscription read is already
   const state = dehydrate(source);
 
   const screen = (
-    <BillingScreen
-      pricingV2={false}
-      initialProvider="paddle"
-      country="US"
-      invoiceHistory={<BillingInvoiceHistoryGate />}
-    />
+    <BillingScreen pricingV2={false} country="US" invoiceHistory={<BillingInvoiceHistoryGate />} />
   );
   const server = new QueryClient();
   const html = renderToString(

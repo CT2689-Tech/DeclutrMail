@@ -29,7 +29,6 @@ const names = [
   'PostHog',
   'GitHub Actions',
   'Paddle (webhooks)',
-  'Razorpay (webhooks)',
 ];
 const snapshot = () => ({
   version: 1,
@@ -124,7 +123,7 @@ test('projection retains current known numeric observations but never copies raw
     (d) => (d.vendors[0].usage = { commands_today: privateMarker }),
     (d) => (d.observedAt = privateMarker),
     (d) => (d.vendors[9].status = 'OK'),
-    (d) => (d.vendors[10].usage = { commands_today: 1 }),
+    (d) => (d.vendors[9].usage = { commands_today: 1 }),
   ]) {
     const broken = snapshot();
     mutation(broken);

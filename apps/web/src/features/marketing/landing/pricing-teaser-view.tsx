@@ -1,4 +1,3 @@
-import type { BillingProviderId } from '@declutrmail/shared/contracts';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, refundLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import {
@@ -10,15 +9,15 @@ import {
 import { TrackedCta } from './tracked-cta';
 
 /**
- * Server-capable presentation of the pre-launch catalog; the caller
- * supplies the display rail. Shares the launch teaser's card layout.
+ * Server-capable presentation of the pre-launch catalog, priced in USD.
+ * Shares the launch teaser's card layout.
  */
-export function PricingTeaserView({ provider }: { provider: BillingProviderId }) {
+export function PricingTeaserView() {
   const { free, plus, pro } = TIER_MANIFEST;
   const founding = pro.promo;
-  const annualMonthsFree = sharedAnnualMonthsFree(provider);
-  const money = (point: { usdCents: number; inrPaise: number; razorpayPlanId: string | null }) =>
-    formatMoney(point, currencyForPricePoint(point, provider));
+  const annualMonthsFree = sharedAnnualMonthsFree();
+  const money = (point: { usdCents: number; inrPaise: number }) =>
+    formatMoney(point, currencyForPricePoint(point));
   const plans = [
     {
       id: 'free',
@@ -114,8 +113,8 @@ export function PricingTeaserView({ provider }: { provider: BillingProviderId })
             {founding
               ? `${founding.name}: ${money(founding.annual)} / year, limited to the first ${founding.maxRedemptions} paid subscriptions. `
               : ''}
-            Monthly prices shown in {provider === 'paddle' ? 'USD' : 'INR'}; local pricing, where
-            available, appears on the full pricing page.
+            Monthly prices shown in USD; local pricing, where available, appears on the full pricing
+            page.
             {annualMonthsFree !== null
               ? ` Annual billing saves ${annualMonthsFree} months on standard paid plans.`
               : ' Annual plans are also available.'}

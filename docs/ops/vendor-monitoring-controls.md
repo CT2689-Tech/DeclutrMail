@@ -40,7 +40,7 @@ Incomplete lists and malformed responses cannot establish a healthy callback.
 
 The existing application `PADDLE_API_KEY` secret and GCP runtime credential are
 separate. Do not replace or copy them to repair monitoring. The nonpayment
-inspection workflow excludes all Paddle and Razorpay credentials before
+inspection workflow excludes all payment-provider credentials before
 starting the collector.
 
 Provider writes (including creating the monitor key and adding a subscribed

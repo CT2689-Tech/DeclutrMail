@@ -69,7 +69,6 @@ One row per metered vendor. Owner is `founder` everywhere (solo).
 | **GitHub Actions**  | Runner minutes                                             | Free org plan, 2000 min/mo; budget with "stop usage" = true hard stop                                                                                                                                         | Org Settings → Billing & licensing → Budgets and alerts (threshold emails)                                   | CI runs on PR only; `concurrency` groups cancel superseded runs                                                  | `GET /organizations/CT2689-Tech/settings/billing/usage` — `netAmount > 0` for `product=actions` fails · `GH_BILLING_PAT`                                                                                                                                                                          | founder |
 | **Resend** (future) | Emails/mo                                                  | Not provisioned — add row + watchdog check in the PR that wires it (D-billing emails)                                                                                                                         | TBD at signup                                                                                                | TBD                                                                                                              | TBD · `RESEND_API_KEY` reserved                                                                                                                                                                                                                                                                   | founder |
 | **Paddle** (D117)   | Revenue (merchant-of-record, ~5% fees) — no spend meter    | n/a — fees scale with revenue; the risk is silent WEBHOOK death (auto-deactivated after sustained failures → tier flips stop)                                                                                 | Paddle emails account owner on payout/dispute anomalies (default)                                            | Webhook handler is replay-safe (insert-first dedup on `subscription_events`); checkout rate-limited 10/min/user  | `GET /notification-settings` — BREACH when zero ACTIVE destinations · `PADDLE_API_KEY` (+ `PADDLE_ENV` var)                                                                                                                                                                                       | founder |
-| **Razorpay** (D117) | Revenue (India: UPI/cards, ~2-3% fees) — no spend meter    | n/a — same posture as Paddle; Razorpay disables a webhook failing consistently for ~24h                                                                                                                       | Razorpay emails account owner when it disables a failing webhook                                             | Same replay-safe webhook handler + checkout rate limit                                                           | `GET /v1/webhooks` — BREACH when zero ACTIVE webhooks · `RAZORPAY_KEY_ID` + `RAZORPAY_KEY_SECRET`                                                                                                                                                                                                 | founder |
 
 **Informational — Gmail API quota (not billing, but a hard limit):**
 `declutrmail-ai-prod` has 15,000 units/min/user and 1,200,000
@@ -100,7 +99,6 @@ below were stale until this pass; verify against a live run, not memory.
 | GitHub Actions | Free (org)                                                    | 2000 minutes/mo included; public repo bills $0 on standard runners regardless of minutes used                                                                                                                                                                                                             | 33,554 min MTD, net spend $0.00 — OK                                                                                                                                                                                                                              |
 | Gmail API      | n/a (quota)                                                   | 15K units/min/user · 1.2M units/min/project (informational)                                                                                                                                                                                                                                               | $0                                                                                                                                                                                                                                                                |
 | Paddle         | Sandbox                                                       | Revenue vendor (~5% + $0.50/txn as merchant-of-record); no spend meter                                                                                                                                                                                                                                    | $0 until revenue — webhook delivery OK                                                                                                                                                                                                                            |
-| Razorpay       | Test mode                                                     | Revenue vendor (~2-3%/txn, India); subscriptions need Razorpay activation                                                                                                                                                                                                                                 | $0 until revenue — webhook delivery OK                                                                                                                                                                                                                            |
 
 ---
 
@@ -383,35 +381,13 @@ gh secret set PADDLE_WEBHOOK_SECRET
 payout/dispute anomalies by default; webhook-failure visibility is the
 watchdog row (layer 3).
 
-### 11. Razorpay (billing provider, D117)
+### 11. Razorpay (removed 2026-11-17)
 
-Same posture as Paddle: revenue vendor, webhook delivery is the
-guardrail. Razorpay disables a webhook that fails consistently for
-~24h; the watchdog asserts ≥1 active webhook daily.
-
-**(a) Watchdog/API keys** — Razorpay dashboard → Account & Settings →
-**API keys** → generate key pair (test mode `rzp_test_…` / live
-`rzp_live_…`; live requires account activation + subscriptions
-feature enablement).
-
-```bash
-gh secret set RAZORPAY_KEY_ID
-gh secret set RAZORPAY_KEY_SECRET
-```
-
-**(b) Webhook** — Account & Settings → **Webhooks** → Add new webhook
-→ URL `https://<api-host>/api/webhooks/billing/razorpay`, set a strong
-secret, events: `subscription.activated`, `subscription.charged`,
-`subscription.updated`, `subscription.pending`, `subscription.halted`,
-`subscription.cancelled`, `subscription.completed`,
-`subscription.paused`, `subscription.resumed`.
-
-```bash
-gh secret set RAZORPAY_WEBHOOK_SECRET
-```
-
-**(c) Vendor-side alert** — Razorpay emails the account owner when it
-disables a failing webhook; keep that address monitored.
+The Razorpay rail was removed (founder decision 4A). A read-only
+production check that day found no Razorpay customers, checkout
+attempts or subscriptions. The API, webhook route,
+catalog provisioning and watchdog check are gone; India pays through
+Paddle in INR.
 
 ---
 

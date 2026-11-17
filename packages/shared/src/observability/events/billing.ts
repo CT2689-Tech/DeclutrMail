@@ -53,8 +53,8 @@ export interface BillingEventPayloads {
     /** Purchasable target tier (D19). */
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    /** D117 — user's explicit provider choice. */
-    provider: 'paddle' | 'razorpay';
+    /** The checkout rail. Paddle is the only one. */
+    provider: 'paddle';
     /** True when the Founding Pro promo price was claimed (D126). */
     founding_pro: boolean;
   };
@@ -68,7 +68,7 @@ export interface BillingEventPayloads {
   checkout_session_created: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
     founding_pro: boolean;
   };
 
@@ -79,7 +79,7 @@ export interface BillingEventPayloads {
   checkout_failed: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
     founding_pro: boolean;
     code: string;
   };
@@ -91,7 +91,7 @@ export interface BillingEventPayloads {
   checkout_overlay_completed: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
     founding_pro: boolean;
   };
 
@@ -102,7 +102,7 @@ export interface BillingEventPayloads {
   checkout_overlay_closed: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
     founding_pro: boolean;
   };
 
@@ -113,7 +113,7 @@ export interface BillingEventPayloads {
   checkout_overlay_blocked: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
     founding_pro: boolean;
   };
 

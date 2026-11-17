@@ -17,7 +17,7 @@ import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
 import { launchPlusQuote, moneyBackNote, quotedPlanPrice } from './billing-model';
-import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
+import { useVisitorPriceLocale } from './billing-currency';
 
 const { color, font, motion, radius, shadow, text } = tokens;
 
@@ -67,19 +67,18 @@ export function TierGate({
     });
   }, [granted, requiredTierId]);
 
-  const regionProvider = useRegionProvider();
   const visitorLocale = useVisitorPriceLocale();
 
   if (granted) return <>{children}</>;
 
-  // Quote the rail this visitor will actually be charged on — the CTA
+  // Quote what this visitor will actually be charged — the CTA
   // below deep-links straight into checkout (D117). Launch pricing
   // sells Plus annual; the flag-off catalog still quotes monthly.
   const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const quotedPrice =
     pricingV2 && requiredTierId === 'plus'
-      ? launchPlusQuote(regionProvider, visitorLocale)
-      : quotedPlanPrice(requiredTierId, 'monthly', regionProvider);
+      ? launchPlusQuote(visitorLocale)
+      : quotedPlanPrice(requiredTierId, 'monthly');
   const requiredTier = TIER_MANIFEST[requiredTierId].name;
   // ONE checkout path (D117): deep-link the required plan into
   // /billing's confirm step via the validated intent — same funnel as

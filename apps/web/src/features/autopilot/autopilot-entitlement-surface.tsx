@@ -10,7 +10,7 @@ import {
 } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
-import { useRegionProvider, useVisitorPriceLocale } from '@/features/billing/billing-currency';
+import { useVisitorPriceLocale } from '@/features/billing/billing-currency';
 import { billingIntentPath } from '@/features/billing/billing-intent';
 import { launchPlusQuote, moneyBackNote } from '@/features/billing/billing-model';
 import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
@@ -59,16 +59,15 @@ export function AutopilotObservePreview() {
   // Was a hardcoded `$` template — an India-bound user read "$19/mo"
   // here and was charged ₹1,599 at the checkout this nudge leads to.
   // Launch pricing sells Plus annual at $59. Flags off still quote monthly.
-  const regionProvider = useRegionProvider();
   const visitorLocale = useVisitorPriceLocale();
   const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const price = pricingV2
     ? grantingPlan === 'plus'
-      ? launchPlusQuote(regionProvider, visitorLocale)
+      ? launchPlusQuote(visitorLocale)
       : null
     : monthly == null
       ? null
-      : `${formatMoney(monthly, currencyForPricePoint(monthly, regionProvider))}/mo`;
+      : `${formatMoney(monthly, currencyForPricePoint(monthly))}/mo`;
 
   return (
     <div

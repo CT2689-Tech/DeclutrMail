@@ -40,12 +40,10 @@ describe('buildCatalog', () => {
     const entries = buildCatalog({
       BILLING_CATALOG_JSON: JSON.stringify({
         paddle: { plus_monthly: 'pri_sbx_1' },
-        razorpay: { pro_annual_founding: 'plan_sbx_9' },
       }),
     } as NodeJS.ProcessEnv);
     const catalog = new BillingCatalog(entries);
     expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBe('pri_sbx_1');
-    expect(catalog.resolvePriceId('razorpay', 'pro', 'annual', true)).toBe('plan_sbx_9');
     // Untouched points keep the manifest value (null until F3 patches it).
     expect(catalog.resolvePriceId('paddle', 'pro', 'annual')).toBe(
       TIER_MANIFEST.pro.prices.annual!.paddlePriceId,
@@ -68,7 +66,6 @@ describe('buildCatalog', () => {
     expect(entries.find((entry) => entry.planCode === 'plus_annual')).toMatchObject({
       usdCents: PLUS_ANNUAL_2026_10.usdCents,
       paddlePriceId: PLUS_ANNUAL_2026_10.paddlePriceId,
-      razorpayPlanId: null,
       founding: false,
     });
     const catalog = new BillingCatalog(entries);
@@ -76,11 +73,9 @@ describe('buildCatalog', () => {
       PLUS_ANNUAL_2026_10.paddlePriceId,
     );
     expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBeNull();
-    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
     expect(catalog.resolvePriceId('paddle', 'pro', 'monthly')).toBeNull();
     for (const [id, legacy] of Object.entries(LEGACY_PRICE_IDS)) {
-      const provider = id.startsWith('pri_') ? 'paddle' : 'razorpay';
-      expect(catalog.resolveByPriceId(provider, id)).toMatchObject({
+      expect(catalog.resolveByPriceId('paddle', id)).toMatchObject({
         planCode: legacy.plan,
         founding: legacy.founding,
         usdCents: legacy.usdCents,
@@ -105,12 +100,10 @@ describe('buildCatalog', () => {
         PRICING_V2: 'true',
         BILLING_CATALOG_JSON: JSON.stringify({
           paddle: { plus_monthly: 'pri_should_not_sell' },
-          razorpay: { plus_monthly: 'plan_should_not_sell' },
         }),
       } as NodeJS.ProcessEnv),
     );
     expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBeNull();
-    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
     expect(catalog.resolveByPriceId('paddle', 'pri_should_not_sell')).toBeNull();
   });
 
@@ -182,16 +175,14 @@ describe('BillingCatalog resolution', () => {
     expect(catalog.resolveByPriceId('paddle', 'pri_unknown')).toBeNull();
   });
 
-  it('resolves Razorpay from the live manifest now that India is provisioned', () => {
-    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBe(
-      TIER_MANIFEST.plus.prices.monthly!.razorpayPlanId,
-    );
+  it('resolves nothing for a retired provider, even a provisioned price point', () => {
+    expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBe('pri_a');
+    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
+    expect(catalog.resolveByPriceId('razorpay', 'pri_a')).toBeNull();
   });
 
-  it('fails closed: an unprovisioned price point resolves to null on BOTH rails', () => {
-    // Built explicitly rather than read off the live manifest. This
-    // assertion used to lean on Razorpay being unprovisioned, so the
-    // go-live on 2026-07-25 turned it into a test of nothing — the
+  it('fails closed: an unprovisioned price point resolves to null', () => {
+    // Built explicitly rather than read off the live manifest — the
     // fail-closed guard is what protects a FUTURE tier added before its
     // SKUs exist, and it has to be provable whatever the catalog holds.
     const bare = new BillingCatalog([
@@ -202,10 +193,8 @@ describe('BillingCatalog resolution', () => {
         founding: false,
         usdCents: 900,
         paddlePriceId: null,
-        razorpayPlanId: null,
       },
     ]);
-    expect(bare.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
     expect(bare.resolvePriceId('paddle', 'plus', 'monthly')).toBeNull();
   });
 

@@ -21,7 +21,6 @@ import {
 import { parseBillingInvoices } from '@/features/billing/api/parse-payload';
 import { getServerBillingSubscription } from '@/features/billing/api/server-billing';
 import { parseBillingIntentParams } from '@/features/billing/parse-billing-intent';
-import { defaultProviderForCountry } from '@/features/billing/billing-region';
 import { mintCheckoutGeo } from '@/features/billing/mint-checkout-geo';
 import {
   indiaCheckoutReady,
@@ -102,7 +101,6 @@ export default async function BillingPage({
       <BillingScreen
         initialIntent={initialIntent}
         returnTo={parseUpgradeReturnTo(params.from)}
-        initialProvider={defaultProviderForCountry(country, flags.pricingV2)}
         pricingV2={flags.pricingV2}
         country={country}
         indiaCheckoutOpen={indiaCheckoutOpen}

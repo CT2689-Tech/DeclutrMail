@@ -8,7 +8,6 @@
 import type { Metadata } from 'next';
 
 import { WS3_COPY } from '@declutrmail/shared/copy/launch';
-import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
 import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { TermsPlansV2 } from '@/features/marketing/pricing/terms-v2';
@@ -98,11 +97,6 @@ function TermsOfServicePage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean
             Paddle is our merchant of record and reseller, so you buy your plan from Paddle. Paddle
             handles payment, tax and invoices, and Paddle&rsquo;s buyer terms apply to the purchase.
             This is the same everywhere, including India.
-          </p>
-          <p>
-            If you already pay in rupees through Razorpay, your plan carries on and you can still
-            manage it in {BILLING_NAME}. You can cancel there; to change, pause or restart it, email
-            support@declutrmail.com. For these plans, DeclutrMail is the seller.
           </p>
           <p>
             Refunds are described in our <a href="/refunds">Refund Policy</a>. To ask for a refund,

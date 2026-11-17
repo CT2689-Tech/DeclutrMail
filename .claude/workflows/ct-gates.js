@@ -74,7 +74,7 @@ const GATES = [
   { type: 'architecture-guardian',     tier: 'gate',     when: /^(apps\/api\/|packages\/(db|workers|events)\/)/ },
   { type: 'schema-migration-reviewer', tier: 'gate',     when: /^packages\/db\/(migrations\/|src\/schema\/)/ },
   { type: 'design-system-agent',       tier: 'gate',     when: /^(apps\/web\/src\/(components|features|app)\/|packages\/shared\/)|\.stories\.tsx$/ },
-  { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$|^apps\/api\/src\/billing\/(paddle|razorpay)\.adapter\.ts$/ },
+  { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$|^apps\/api\/src\/billing\/paddle\.adapter\.ts$/ },
   { type: 'typescript-reviewer',       tier: 'advisory', when: /\.tsx?$/ },
   // §7's "all TS files" (.ts and .tsx), plus scripts, shell hooks, workflows,
   // the acknowledgment lists that mute watchdogs and the hook registrations:

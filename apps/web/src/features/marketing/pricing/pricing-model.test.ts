@@ -11,7 +11,7 @@ import {
   CAPABILITY_LABELS,
   cardBullets,
   compareRows,
-  currencyForProvider,
+  currencyForPricePoint,
   formatInr,
   formatMoney,
   formatUsd,
@@ -74,13 +74,11 @@ describe('priceLineFor — derives every amount from the manifest', () => {
   it('quotes ₹0 for Free when India checkout is open, and $0 otherwise', () => {
     const free = TIER_MANIFEST.free;
     const india = { pricingV2: true, country: 'IN', indiaCheckoutOpen: true } as const;
-    expect(priceLineFor(free, 'monthly', 'paddle', india)).toEqual({ amount: '₹0', per: '' });
-    expect(priceLineFor(free, 'monthly', 'paddle', { ...india, indiaCheckoutOpen: false })).toEqual(
-      {
-        amount: '$0',
-        per: '',
-      },
-    );
+    expect(priceLineFor(free, 'monthly', india)).toEqual({ amount: '₹0', per: '' });
+    expect(priceLineFor(free, 'monthly', { ...india, indiaCheckoutOpen: false })).toEqual({
+      amount: '$0',
+      per: '',
+    });
     expect(priceLineFor(free, 'monthly')).toEqual({ amount: '$0', per: '' });
   });
 
@@ -212,9 +210,18 @@ describe('cardBullets — manifest-derived card copy', () => {
 });
 
 describe('currency (D117)', () => {
-  it('the provider decides the currency — it is a charge fact, not a preference', () => {
-    expect(currencyForProvider('paddle')).toBe('USD');
-    expect(currencyForProvider('razorpay')).toBe('INR');
+  it('charges INR only to a verified India visitor while India checkout is open', () => {
+    const plus = TIER_MANIFEST.plus.prices.monthly!;
+    expect(currencyForPricePoint(plus)).toBe('USD');
+    expect(
+      currencyForPricePoint(plus, { pricingV2: true, country: 'IN', indiaCheckoutOpen: true }),
+    ).toBe('INR');
+    expect(
+      currencyForPricePoint(plus, { pricingV2: true, country: 'IN', indiaCheckoutOpen: false }),
+    ).toBe('USD');
+    expect(
+      currencyForPricePoint(plus, { pricingV2: true, country: 'US', indiaCheckoutOpen: true }),
+    ).toBe('USD');
   });
 
   it('formats INR with Indian digit grouping', () => {

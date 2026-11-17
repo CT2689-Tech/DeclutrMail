@@ -2,8 +2,6 @@ import {
   CLEANUP_COUNT_NOTE,
   CLEANUP_RESET_NOTE,
   BILLING_MANAGEMENT_NOTE,
-  PROVIDER_SWITCH_NOTE,
-  RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
 import { fillWs3, WS1_COPY, WS3_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
 import { fillStory, isPricingV2 } from '@declutrmail/shared/entitlements';
@@ -147,12 +145,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   {
     id: 'billing-management',
     question: 'How do I cancel, update my payment method, or get an invoice?',
-    answer: `${BILLING_MANAGEMENT_NOTE} ${RAZORPAY_LIMITATIONS_NOTE}`,
-  },
-  {
-    id: 'billing-currency',
-    question: 'Can I choose or switch billing currency?',
-    answer: `Checkout lets you choose USD/Paddle or INR/Razorpay when both are available for your selected plan. INR prices are independently set, not converted from USD. ${PROVIDER_SWITCH_NOTE}`,
+    answer: BILLING_MANAGEMENT_NOTE,
   },
   {
     id: 'disconnect-delete',

@@ -1,13 +1,13 @@
 // apps/api/src/billing/billing.module.ts — D117/D118/D126 billing.
 //
-// Owns the authed billing endpoints (`/api/billing/*`) AND the two
-// provider webhook controllers (which live under
-// `apps/api/src/webhooks/` so the webhook-security gate covers them —
-// module wiring here keeps them loaded UNCONDITIONALLY, unlike the
+// Owns the authed billing endpoints (`/api/billing/*`) AND the Paddle
+// webhook controller (which lives under
+// `apps/api/src/webhooks/` so the webhook-security gate covers it —
+// module wiring here keeps it loaded UNCONDITIONALLY, unlike the
 // Pub/Sub WebhooksModule whose verifier requires env at construction).
 // Both surfaces fail closed at request time instead of boot time:
 // endpoints 503 `BILLING_DISABLED` until `BILLING_ENABLED=true`;
-// webhooks 503 until their signing secret env is set.
+// the webhook 503s until its signing secret env is set.
 //
 // Refund / chargeback verdicts retain their provenance across later provider
 // updates. Refund access is bounded while settlement is pending, ends when
@@ -24,7 +24,6 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { AutopilotModule } from '../autopilot/autopilot.module.js';
 import { BillingPaddleWebhookController } from '../webhooks/billing-paddle.controller.js';
-import { BillingRazorpayWebhookController } from '../webhooks/billing-razorpay.controller.js';
 import { BillingCatalog } from './billing-catalog.js';
 import { BillingDeletionGuard } from './billing-deletion-guard.js';
 import { BillingController } from './billing.controller.js';
@@ -34,7 +33,6 @@ import { CheckoutRecoveryScheduler } from './checkout-recovery.scheduler.js';
 import { BillingService } from './billing.service.js';
 import { BillingWebhookService } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
-import { RazorpayAdapter } from './razorpay.adapter.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
 
 @Module({
@@ -42,12 +40,7 @@ import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js
   // tier write demotes through (billing never writes automation_rules
   // directly, D204).
   imports: [AuthModule, AutopilotModule],
-  controllers: [
-    BillingController,
-    PricingPublicController,
-    BillingPaddleWebhookController,
-    BillingRazorpayWebhookController,
-  ],
+  controllers: [BillingController, PricingPublicController, BillingPaddleWebhookController],
   providers: [
     BillingService,
     BillingDeletionGuard,
@@ -59,7 +52,6 @@ import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js
     // constructor args with defaults — Nest must not try to resolve them.
     { provide: BillingCatalog, useFactory: (): BillingCatalog => new BillingCatalog() },
     { provide: PaddleAdapter, useFactory: (): PaddleAdapter => new PaddleAdapter() },
-    { provide: RazorpayAdapter, useFactory: (): RazorpayAdapter => new RazorpayAdapter() },
   ],
   exports: [BillingService, BillingDeletionGuard],
 })
