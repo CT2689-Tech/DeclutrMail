@@ -59,7 +59,7 @@ export const InContext = {
       </ul>
       <h2>Read-only rule preview</h2>
       <RulePreviewSample
-        ruleName="Review low-engagement senders"
+        ruleName="Archive low-engagement senders"
         result={{
           ...RULE_PREVIEW_RESULT,
           sample: [{ ...RULE_PREVIEW_RESULT.sample[0]!, reason: Archive.args.reason }],

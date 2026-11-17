@@ -115,6 +115,28 @@ function launchRows(
   return rows;
 }
 
+/** Search-result budget for a meta description (the skill's working limit). */
+const META_DESCRIPTION_BUDGET = 160;
+
+/**
+ * Meta description for a description over budget: as many whole leading
+ * sentences as fit, so a long two-sentence description loses its second
+ * sentence only when it must, not by rule. `undefined` when the
+ * description already fits and is used as is. A first sentence that alone
+ * runs over budget is still kept whole rather than cut mid-sentence.
+ */
+export function fitMetaDescription(description: string): string | undefined {
+  if (description.length <= META_DESCRIPTION_BUDGET) return undefined;
+  const sentences = description.split(/(?<=\.)\s+/);
+  let fitted = sentences[0] ?? '';
+  for (const sentence of sentences.slice(1)) {
+    const next = `${fitted} ${sentence}`;
+    if (next.length > META_DESCRIPTION_BUDGET) break;
+    fitted = next;
+  }
+  return fitted;
+}
+
 function page(
   slug: ComparisonSlug,
   cells: DeclutrCells,
@@ -128,7 +150,7 @@ function page(
 ): ComparisonDefinition {
   const parsed = parsedCells(lines);
   const description = meta[3] ?? '';
-  const firstSentence = description.split('. ')[0];
+  const metaDescription = fitMetaDescription(description);
   return {
     slug,
     name: meta[0] ?? slug,
@@ -136,8 +158,7 @@ function page(
     verifiedIso: '2026-10-11',
     title: meta[2] ?? `${meta[0]} vs DeclutrMail`,
     description,
-    metaTitle: `${meta[2]} — compared, October 2026`,
-    ...(description.length > 160 && firstSentence ? { metaDescription: `${firstSentence}.` } : {}),
+    ...(metaDescription ? { metaDescription } : {}),
     verdict,
     indexSummary: facts[3]?.replace(/^indexSummary: /, '') ?? '',
     primaryUnit: facts[0]?.replace(/^primaryUnit: /, '') ?? '',

@@ -100,6 +100,7 @@ export {
   senderActionWhere,
   senderHasActionableMail,
   senderInboxActionWhere,
+  messageNotRestoredFromRule,
 } from './predicates';
 export type { SenderActionReach, SenderActionScope, SenderInboxActionScope } from './predicates';
 export {

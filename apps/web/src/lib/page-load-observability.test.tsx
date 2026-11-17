@@ -52,9 +52,15 @@ describe('PageLoadObservability', () => {
     // These routes 404 outside preview/dev. Their own page tests verify
     // that boundary. Keep the exception narrow so future production routes
     // still require attribution.
-    const productionPagePaths = pagePaths.filter(
-      (pathname) => pathname !== '/design-prototype' && pathname !== '/home-preview',
-    );
+    const notRendered = new Set([
+      '/design-prototype',
+      '/home-preview',
+      // Redirect-only: they 308 to /compare on the server and never load in
+      // a browser (`(marketing)/hub-redirects.test.ts` pins the redirect).
+      '/alternatives',
+      '/vs',
+    ]);
+    const productionPagePaths = pagePaths.filter((pathname) => !notRendered.has(pathname));
     expect(productionPagePaths.filter((pathname) => pageLoadSurface(pathname) === 'other')).toEqual(
       [],
     );

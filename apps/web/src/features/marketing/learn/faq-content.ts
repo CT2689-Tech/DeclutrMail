@@ -119,7 +119,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'autopilot',
     question: 'What does Autopilot do at launch?',
     answer:
-      'Plus and Pro include five preset rules. Turning one on first shows a preview of matching email. The low-engagement Archive and new-sender Later presets always collect suggestions for your approval. Other presets can act on future matches if you choose Act now, or collect suggestions if you choose Watch first. Custom rule creation is not part of the launch product, and every rule can be paused.',
+      'Plus and Pro include five preset rules, and you can add your own rules for chosen senders. Turning a rule on first shows a preview of matching email. The new-sender Later preset and Delete rules always collect matches for your approval. Other rules can act on future matches if you choose Act now, or collect suggestions if you choose Watch first. Every rule can be paused.',
   },
   {
     id: 'later-vs-snooze',

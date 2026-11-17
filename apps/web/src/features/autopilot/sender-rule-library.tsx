@@ -1,18 +1,20 @@
 'use client';
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { Button, ScreenIntro, Skeleton } from '@declutrmail/shared';
 import {
   hasCapability,
   minimumTierForCapability,
   TIER_MANIFEST,
+  undoWindowDaysFor,
 } from '@declutrmail/shared/entitlements';
 import { useOptionalAuth, getActiveMailboxEmail } from '@/features/auth/auth-provider';
 import { apiErrorCode } from '@/lib/api/client';
 import { newIdempotencyKey } from '@/lib/api/actions';
 import {
+  fetchSenderRuleAutomaticPreview,
   saveSenderRule,
   retireSenderRule,
   setSenderRuleMode,
@@ -38,6 +40,12 @@ export function senderRuleSummary(
   rule: Pick<SenderRuleConfig, 'action' | 'reach' | 'olderThanDays'>,
 ) {
   return `${verb(rule.action)} · ${rule.reach === 'all_mail' ? 'Inbox and archived' : 'Inbox only'} · ${rule.olderThanDays === null ? 'Any age' : `Older than ${rule.olderThanDays} days`}`;
+}
+/** One word or two for where a sender rule stands; Archive rules may run on their own. */
+export function senderRuleStatus(rule: Pick<SenderRule, 'enabled' | 'mode'>) {
+  if (!rule.enabled) return 'Retired';
+  if (rule.mode === 'paused') return 'Paused';
+  return rule.mode === 'active' ? 'Automatic' : 'Approval first';
 }
 export { senderRuleFailureCopy } from './sender-rule-feedback';
 import { senderRuleFailureCopy } from './sender-rule-feedback';
@@ -113,6 +121,9 @@ export function SenderRuleLibraryScope({
   const auth = useOptionalAuth();
   const email = auth ? getActiveMailboxEmail(auth.me) : undefined;
   const entitled = auth ? hasCapability(auth.me.tier, 'autopilot') : true;
+  const canRunUnattended = auth ? hasCapability(auth.me.tier, 'autopilot-active') : true;
+  const undoDays = undoWindowDaysFor(auth?.me.tier ?? 'free');
+  const [automaticTarget, setAutomaticTarget] = useState<SenderRule | null>(null);
   const requiredPlan = TIER_MANIFEST[minimumTierForCapability('autopilot')].name;
   const qc = useQueryClient();
   const pauseAll = usePauseAll();
@@ -238,9 +249,11 @@ export function SenderRuleLibraryScope({
         JSON.stringify([...rule.senderKeys].sort()) ===
           JSON.stringify([...config.senderKeys].sort());
       setNotice(
-        sameConfig
-          ? 'Rule saved. Email stays where it is.'
-          : 'Showing the saved rule; edit it to make further changes.',
+        !sameConfig
+          ? 'Showing the saved rule; edit it to make further changes.'
+          : editing === 'edit' && selected?.mode === 'active' && rule.mode !== 'active'
+            ? 'Rule saved. It asks for your approval until you turn automatic runs back on.'
+            : 'Rule saved. Email stays where it is.',
       );
       invalidate();
       void track('autopilot_sender_rule_changed', {
@@ -272,20 +285,30 @@ export function SenderRuleLibraryScope({
     },
   });
   const mode = useMutation({
-    mutationFn: (rule: SenderRule) =>
-      setSenderRuleMode(rule, rule.mode === 'paused' ? 'observe' : 'paused', mailboxId),
-    onSuccess: (rule) => {
+    mutationFn: ({ rule, to }: { rule: SenderRule; to: SenderRule['mode'] }) =>
+      setSenderRuleMode(rule, to, mailboxId),
+    onSuccess: (rule, { rule: before }) => {
       setSelected(rule);
+      setAutomaticTarget(null);
       setFocusReview((value) => value + 1);
       invalidate();
       setNotice(
         rule.mode === 'paused'
           ? 'Rule paused.'
-          : 'Rule resumed. Preview a batch when you’re ready.',
+          : rule.mode === 'active'
+            ? 'Rule runs automatically. Undo any run from Activity.'
+            : before.mode === 'active'
+              ? 'Rule now asks for your approval.'
+              : 'Rule resumed. Preview a batch when you’re ready.',
       );
     },
   });
+  /** Pause from any running mode; resume always returns to Approval first. */
+  const toggle = (rule: SenderRule) =>
+    mode.mutate({ rule, to: rule.mode === 'paused' ? 'observe' : 'paused' });
   const busy = save.isPending || retire.isPending || mode.isPending || pauseAll.isPending;
+  const canRunAutomatically = (rule: SenderRule) =>
+    canRunUnattended && rule.enabled && rule.mode === 'observe' && rule.action === 'archive';
   const choose = (rule: SenderRule) => {
     setSelected(rule);
     setEditing(null);
@@ -315,7 +338,7 @@ export function SenderRuleLibraryScope({
       <ScreenIntro
         id="autopilot-sender-rules"
         title="Autopilot"
-        body="Choose senders and save Archive or Delete rules, then preview and approve each batch. Built-in rules have separate Watch first and Active settings."
+        body="Choose senders and save Archive or Delete rules, then preview and approve each batch. Archive rules can also run automatically."
         tip="Use Pause all to pause rules. Resume them individually when you’re ready."
       />
       <header className={styles.header}>
@@ -366,9 +389,11 @@ export function SenderRuleLibraryScope({
       {!planLocked && rules.isSuccess && !rules.isError && presetsAvailable && (
         <QuietWatch
           watching={
-            runningCustom.length + runningPresets.filter((rule) => rule.mode === 'observe').length
+            [...runningCustom, ...runningPresets].filter((rule) => rule.mode === 'observe').length
           }
-          automatic={runningPresets.filter((rule) => rule.mode === 'active').length}
+          automatic={
+            [...runningCustom, ...runningPresets].filter((rule) => rule.mode === 'active').length
+          }
           paused={pausableCount < (rules.data?.length ?? 0) + presetRules.length}
         />
       )}
@@ -458,12 +483,8 @@ export function SenderRuleLibraryScope({
                           <strong>{rule.name}</strong>
                           <small>{senderRuleSummary(rule)}</small>
                           <small>
-                            {rule.enabled
-                              ? rule.mode === 'paused'
-                                ? 'Paused'
-                                : 'Approval first'
-                              : 'Retired'}{' '}
-                            · {num(rule.matchingMessageCount)} matching email
+                            {senderRuleStatus(rule)} · {num(rule.matchingMessageCount)} matching
+                            email
                             {rule.matchingMessageCount === 1 ? '' : 's'} from{' '}
                             {num(rule.matchingSenderCount)}{' '}
                             {rule.matchingSenderCount === 1 ? 'sender' : 'senders'}
@@ -484,22 +505,24 @@ export function SenderRuleLibraryScope({
                         >
                           Edit rule
                         </Button>
-                        <Button
-                          tone="ghost"
-                          size="sm"
-                          ariaLabel={`${rule.mode === 'paused' ? 'Resume rule' : 'Preview batch for'} ${rule.name}`}
-                          disabled={busy || !rule.enabled || rules.isError}
-                          onClick={() => {
-                            choose(rule);
-                            if (rule.mode === 'paused') {
-                              mode.mutate(rule);
-                              return;
-                            }
-                            setPreviewOpen(true);
-                          }}
-                        >
-                          {rule.mode === 'paused' ? 'Resume rule' : 'Preview batch'}
-                        </Button>
+                        {rule.mode !== 'active' && (
+                          <Button
+                            tone="ghost"
+                            size="sm"
+                            ariaLabel={`${rule.mode === 'paused' ? 'Resume rule' : 'Preview batch for'} ${rule.name}`}
+                            disabled={busy || !rule.enabled || rules.isError}
+                            onClick={() => {
+                              choose(rule);
+                              if (rule.mode === 'paused') {
+                                toggle(rule);
+                                return;
+                              }
+                              setPreviewOpen(true);
+                            }}
+                          >
+                            {rule.mode === 'paused' ? 'Resume rule' : 'Preview batch'}
+                          </Button>
+                        )}
                       </div>
                     </li>
                   );
@@ -610,13 +633,7 @@ export function SenderRuleLibraryScope({
                 ) : selected ? (
                   <>
                     <div className={styles.top}>
-                      <span className={styles.badge}>
-                        {!selected.enabled
-                          ? 'Retired'
-                          : selected.mode === 'paused'
-                            ? 'Paused'
-                            : 'Approval first'}
-                      </span>
+                      <span className={styles.badge}>{senderRuleStatus(selected)}</span>
                       <Button
                         tone="ghost"
                         size="sm"
@@ -664,20 +681,47 @@ export function SenderRuleLibraryScope({
                         ? `${Date.now() - Date.parse(selected.checkedAt) > 300000 ? 'Matches may have changed. ' : ''}Checked ${new Date(selected.checkedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Preview refreshes the exact batch.`
                         : 'Preview to check current matches.'}
                     </p>
+                    {selected.mode === 'active' && (
+                      <p className={styles.muted}>
+                        Matching inbox email is archived automatically. Undo any run from Activity.
+                      </p>
+                    )}
                     <div className={styles.actions}>
-                      <Button
-                        tone="primary"
-                        disabled={busy || !selected.enabled || rules.isError}
-                        onClick={() => {
-                          if (selected.mode === 'paused') {
-                            mode.mutate(selected);
-                            return;
-                          }
-                          setPreviewOpen(true);
-                        }}
-                      >
-                        {selected.mode === 'paused' ? 'Resume rule' : 'Preview'}
-                      </Button>
+                      {selected.mode === 'active' ? (
+                        <Button
+                          tone="default"
+                          disabled={busy || !selected.enabled || rules.isError}
+                          onClick={() => mode.mutate({ rule: selected, to: 'observe' })}
+                        >
+                          Ask first
+                        </Button>
+                      ) : (
+                        <Button
+                          tone="primary"
+                          disabled={busy || !selected.enabled || rules.isError}
+                          onClick={() => {
+                            if (selected.mode === 'paused') {
+                              toggle(selected);
+                              return;
+                            }
+                            setPreviewOpen(true);
+                          }}
+                        >
+                          {selected.mode === 'paused' ? 'Resume rule' : 'Preview'}
+                        </Button>
+                      )}
+                      {canRunAutomatically(selected) && (
+                        <Button
+                          tone="default"
+                          disabled={busy || rules.isError}
+                          onClick={() => {
+                            mode.reset();
+                            setAutomaticTarget(selected);
+                          }}
+                        >
+                          Run automatically
+                        </Button>
+                      )}
                       <Button
                         tone="ghost"
                         size="sm"
@@ -693,7 +737,7 @@ export function SenderRuleLibraryScope({
                         <Button
                           tone="ghost"
                           disabled={busy || !selected.enabled}
-                          onClick={() => mode.mutate(selected)}
+                          onClick={() => toggle(selected)}
                         >
                           {mode.isPending ? 'Saving…' : 'Pause rule'}
                         </Button>
@@ -826,7 +870,10 @@ export function SenderRuleLibraryScope({
         >
           <ul>
             {pausableCustom.map((rule) => (
-              <li key={rule.id}>{rule.name}</li>
+              <li key={rule.id}>
+                {rule.name}
+                {rule.mode === 'active' ? ' · Automatic' : ''}
+              </li>
             ))}
             {pausablePresets.map((rule) => (
               <li key={rule.id}>
@@ -836,6 +883,20 @@ export function SenderRuleLibraryScope({
             ))}
           </ul>
         </ConfirmModalFrame>
+      )}
+      {automaticTarget && !planLocked && (
+        <AutomaticRunConfirm
+          rule={rules.data?.find((rule) => rule.id === automaticTarget.id) ?? automaticTarget}
+          mailboxId={mailboxId}
+          undoDays={undoDays}
+          isBusy={mode.isPending}
+          mailboxEmail={email ?? undefined}
+          error={mode.isError ? ruleError(mode.error, 'save') : null}
+          onCancel={() => {
+            if (!mode.isPending) setAutomaticTarget(null);
+          }}
+          onConfirm={(rule) => mode.mutate({ rule, to: 'active' })}
+        />
       )}
       {previewOpen && selected && !planLocked && (
         <FrozenRulePreview
@@ -853,5 +914,74 @@ export function SenderRuleLibraryScope({
         />
       )}
     </div>
+  );
+}
+
+/**
+ * The preview before an Archive rule runs on its own: how much it archives,
+ * where mail goes, and how to undo it. The count is the server's read of
+ * exactly what the workers would move now (Protected senders and mail a
+ * previous undo restored excluded), fetched fresh when this opens.
+ */
+function AutomaticRunConfirm({
+  rule,
+  mailboxId,
+  undoDays,
+  isBusy,
+  mailboxEmail,
+  error,
+  onCancel,
+  onConfirm,
+}: {
+  rule: SenderRule;
+  mailboxId: string | undefined;
+  undoDays: number;
+  isBusy: boolean;
+  mailboxEmail: string | undefined;
+  error: string | null;
+  onCancel: () => void;
+  onConfirm: (rule: SenderRule) => void;
+}) {
+  const preview = useQuery({
+    queryKey: ['autopilot-sender-rule-automatic', mailboxId, rule.id, rule.version],
+    queryFn: ({ signal }) => fetchSenderRuleAutomaticPreview(rule, signal, mailboxId),
+    staleTime: 0,
+    gcTime: 0,
+  });
+  const data = preview.data?.version === rule.version ? preview.data : undefined;
+  const age = rule.olderThanDays === null ? '' : ` older than ${rule.olderThanDays} days`;
+  const emails = data?.messageCount ?? 0;
+  const senders = data?.senderCount ?? 0;
+  return (
+    <ConfirmModalFrame
+      title={`Run ${rule.name} automatically?`}
+      subtitle={
+        preview.isError
+          ? 'Matching email couldn’t be checked.'
+          : !data
+            ? 'Checking matching email…'
+            : emails === 0
+              ? `Nothing to archive yet. New inbox email${age} from these senders will be archived without asking.`
+              : `Archives ${num(emails)} inbox email${emails === 1 ? '' : 's'}${age} from ${num(senders)} ${senders === 1 ? 'sender' : 'senders'}, then new matches without asking.`
+      }
+      note={`Undo any run from Activity within ${undoDays} days.${(data?.protectedSenderCount ?? 0) > 0 ? ' Protected senders are skipped.' : ''}`}
+      trailing={
+        preview.isError ? (
+          <Button tone="ghost" size="sm" onClick={() => void preview.refetch()}>
+            Check again
+          </Button>
+        ) : undefined
+      }
+      confirmLabel="Run automatically"
+      confirmBusyLabel="Turning on…"
+      canConfirm={
+        data !== undefined && rule.enabled && rule.mode === 'observe' && rule.action === 'archive'
+      }
+      isBusy={isBusy}
+      mailboxEmail={mailboxEmail}
+      error={error}
+      onCancel={onCancel}
+      onConfirm={() => onConfirm(rule)}
+    />
   );
 }

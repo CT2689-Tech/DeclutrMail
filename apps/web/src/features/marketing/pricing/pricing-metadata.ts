@@ -26,7 +26,7 @@ export function pricingPageMetadata(
   passEnabled = isBillingPassEnabled(),
 ): Metadata {
   return marketingPageMetadata({
-    title: 'Pricing — DeclutrMail',
+    title: 'Pricing: free email cleanup and paid plans — DeclutrMail',
     description: pricingV2 ? pricingMetaDescription(passEnabled) : CURRENT_DESCRIPTION,
     path: '/pricing',
     markdownAlternate: '/pricing.md',
