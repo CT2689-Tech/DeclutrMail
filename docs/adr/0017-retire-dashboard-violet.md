@@ -1,6 +1,6 @@
 # ADR-0017: Retire dashboard violet accent (supersedes ADR-0009)
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0037](./0037-editorial-plum-palette.md) (editorial plum replaced the teal accent)
 - **Date:** 2026-06-03
 - **Accepted:** 2026-06-03 (founder signed senders-v2 spec v1.2)
 - **Deciders:** chintan.a.thakkar@gmail.com
