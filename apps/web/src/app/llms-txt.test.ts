@@ -39,11 +39,18 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(await renderLlmsTxt()).toContain(needle);
   });
 
-  it('links no retired route: /beta redirects organic visits after GA', async () => {
+  it('lists /sign-in once, and /beta only while the beta is open', async () => {
     const body = await renderLlmsTxt();
+    expect(body.match(/\]\(https:\/\/declutrmail\.com\/sign-in\)/g)).toHaveLength(1);
     if (LAUNCH_STAGE === 'ga') {
+      // /beta 307s organic visits after GA; its open-sign-up fact moves
+      // onto the Sign in entry instead of a second link to the same page.
       expect(body).not.toContain('https://declutrmail.com/beta');
-      expect(body).toContain('- [Get started](https://declutrmail.com/sign-in):');
+      expect(body).toMatch(
+        /^- \[Sign in\]\(https:\/\/declutrmail\.com\/sign-in\): .+\. No invite or waitlist needed\.$/m,
+      );
+    } else {
+      expect(body).toContain('- [Open beta](https://declutrmail.com/beta):');
     }
   });
 

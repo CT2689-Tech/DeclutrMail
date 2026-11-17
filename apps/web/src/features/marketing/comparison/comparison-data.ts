@@ -20,11 +20,16 @@ import { buildLaunchComparisons } from './comparison-launch-pages';
  * 2026-08-04). Bump a page's date only after re-reading ITS sources.
  */
 export function comparisonVerifiedLabel(iso: string): string {
-  return `Last verified ${new Date(iso).toLocaleDateString('en-US', {
+  return `Last verified ${verifiedMonth(iso)}`;
+}
+
+/** "October 2026" from an ISO date: the one month format every freshness claim uses. */
+function verifiedMonth(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
     timeZone: 'UTC',
-  })}`;
+  });
 }
 
 /**
@@ -34,12 +39,7 @@ export function comparisonVerifiedLabel(iso: string): string {
  */
 export function comparisonMetaTitle(comparison: ComparisonDefinition): string {
   if (comparison.metaTitle) return comparison.metaTitle;
-  const month = new Date(comparison.verifiedIso).toLocaleDateString('en-US', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-  return `${comparison.metaSubject ?? comparison.title} — compared, ${month}`;
+  return `${comparison.metaSubject ?? comparison.title} — compared, ${verifiedMonth(comparison.verifiedIso)}`;
 }
 
 export type ComparisonSlug =

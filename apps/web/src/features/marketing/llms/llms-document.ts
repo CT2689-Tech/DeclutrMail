@@ -132,6 +132,12 @@ function withLaunchLinks(body: string): string {
   return `${body.slice(0, lineEnd)}\n${block}${body.slice(lineEnd)}`;
 }
 
+const SIGN_IN_LINE =
+  '- [Sign in](https://declutrmail.com/sign-in): the Gmail permission DeclutrMail needs, what data it uses, what to expect during the first scan, and how to connect';
+
+const OPEN_BETA_LINE =
+  '- [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed';
+
 /**
  * `/pricing.md` is a standalone document with its own H1. Embedded under
  * `## Pricing`, its title becomes a plain line and its plan headings drop
@@ -167,11 +173,12 @@ export async function renderLlmsTxt(resolved?: PricingFlags): Promise<string> {
     );
   if (LAUNCH_STAGE === 'ga') {
     // After GA, /beta only serves the OAuth denial state and 307s organic
-    // visits to /how-it-works, so the GA line points at the real entry.
-    body = body.replace(
-      '- [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed',
-      `- [Get started](https://declutrmail.com/sign-in): ${llmsBetaLine().replace(/^Get started: /, '')}`,
-    );
+    // visits to /how-it-works. Its one fact still worth stating (open
+    // sign-up) joins the Sign in entry, so /sign-in is listed once.
+    const openSignUp = llmsBetaLine().split('. ').pop() ?? '';
+    body = body
+      .replace(`${OPEN_BETA_LINE}\n`, '')
+      .replace(SIGN_IN_LINE, `${SIGN_IN_LINE}. ${openSignUp}`);
   }
   body = withPricingChangelog(withLaunchLinks(body), flags.pricingV2);
   const facts = llmsKeyFacts(flags.passEnabled, flags.pricingV2)

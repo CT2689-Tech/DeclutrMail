@@ -4,6 +4,11 @@ import { TrustRow } from '@/features/marketing/trust/trust-row';
 import { demoForTopic } from './journey-links';
 import { JsonLd } from '@/features/marketing/json-ld';
 import { siteUrl } from '@/features/marketing/landing/urls';
+import {
+  breadcrumbList,
+  organizationId,
+  organizationLogoUrl,
+} from '@/features/marketing/structured-data';
 import { formatReadingDate, ReadingCta, ReadingLayout } from './learn-shell';
 import type { LearnArticle, LearnCallout, SyntheticExample } from './types';
 
@@ -40,14 +45,22 @@ function Callout({ callout }: { callout: LearnCallout }) {
   );
 }
 
-/** The visible breadcrumb above the title; the BreadcrumbList mirrors it. */
-function articleBreadcrumb(article: LearnArticle): { href: string; label: string } {
-  if (article.kind === 'How-to guide') return { href: '/how-to', label: 'Guides' };
-  if (article.kind === 'Direct answer') return { href: '/answers', label: 'Answers' };
-  return { href: '/blog', label: 'Articles' };
+/**
+ * Where an article sits, keyed on its kind alone: the visible breadcrumb,
+ * the BreadcrumbList and the schema type all read from this one switch.
+ */
+function articleHub(article: LearnArticle) {
+  if (article.kind === 'How-to guide') {
+    return { href: '/how-to', label: 'Guides', type: 'HowTo' } as const;
+  }
+  if (article.kind === 'Direct answer') {
+    return { href: '/answers', label: 'Answers', type: 'Article' } as const;
+  }
+  return { href: '/blog', label: 'Articles', type: 'BlogPosting' } as const;
 }
 
 function articleJsonLd(article: LearnArticle) {
+  const hub = articleHub(article);
   const url = `${siteUrl()}${article.path}`;
   // Every learn page uses the default share card (`app/opengraph-image.tsx`),
   // so the schema image is the same crawlable URL as og:image.
@@ -62,11 +75,11 @@ function articleJsonLd(article: LearnArticle) {
     dateModified: article.updatedAt,
   };
 
-  if (article.kind === 'How-to guide') {
+  if (hub.type === 'HowTo') {
     const steps = article.sections.flatMap((section) => section.steps ?? []);
     return {
       '@context': 'https://schema.org',
-      '@type': 'HowTo',
+      '@type': hub.type,
       name: article.title,
       description: article.description,
       ...shared,
@@ -74,18 +87,18 @@ function articleJsonLd(article: LearnArticle) {
     };
   }
 
-  // The same organization node the marketing layout emits, by `@id`, with
-  // the name and logo inline so the node stands alone for Article parsers.
+  // The organization node the marketing layout emits, by `@id`, with the
+  // name and logo inline so the node stands alone for Article parsers.
   const organization = {
     '@type': 'Organization',
-    '@id': `${siteUrl()}/#organization`,
+    '@id': organizationId(),
     name: 'DeclutrMail',
     url: siteUrl(),
-    logo: { '@type': 'ImageObject', url: `${siteUrl()}/icons/icon-512.png` },
+    logo: { '@type': 'ImageObject', url: organizationLogoUrl() },
   };
   return {
     '@context': 'https://schema.org',
-    '@type': article.path.startsWith('/blog/') ? 'BlogPosting' : 'Article',
+    '@type': hub.type,
     headline: article.title,
     description: article.description,
     ...shared,
@@ -95,20 +108,13 @@ function articleJsonLd(article: LearnArticle) {
 }
 
 function breadcrumbJsonLd(article: LearnArticle) {
-  const parent = articleBreadcrumb(article);
+  const hub = articleHub(article);
   return {
     '@context': 'https://schema.org',
-    '@type': 'BreadcrumbList',
-    itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl() },
-      { '@type': 'ListItem', position: 2, name: parent.label, item: `${siteUrl()}${parent.href}` },
-      {
-        '@type': 'ListItem',
-        position: 3,
-        name: article.title,
-        item: `${siteUrl()}${article.path}`,
-      },
-    ],
+    ...breadcrumbList([
+      { name: hub.label, path: hub.href },
+      { name: article.title, path: article.path },
+    ]),
   };
 }
 
@@ -139,6 +145,7 @@ function faqJsonLd(article: LearnArticle) {
 }
 
 export function ArticlePage({ article }: { article: LearnArticle }) {
+  const hub = articleHub(article);
   const faq = faqJsonLd(article);
   const examples = (
     <>
@@ -155,7 +162,7 @@ export function ArticlePage({ article }: { article: LearnArticle }) {
   );
   return (
     <ReadingLayout
-      breadcrumb={articleBreadcrumb(article)}
+      breadcrumb={{ href: hub.href, label: hub.label }}
       title={article.title}
       lede={article.intro}
       meta={

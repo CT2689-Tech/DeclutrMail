@@ -318,9 +318,11 @@ describe('marketing metadata guards', () => {
       );
     }
 
-    expect(inboxSimulator.description).toBe(
-      'Try Senders and Triage with made-up email: open the sender inspector and preview Archive, Later or Delete. No signup or Gmail access needed.',
-    );
+    // Facts, not the sentence: made-up data, the verbs it previews, no access.
+    expect(inboxSimulator.description).toContain('made-up email');
+    expect(inboxSimulator.description).toContain('Archive, Later or Delete');
+    expect(inboxSimulator.description).toContain('No signup or Gmail access needed');
+    expect((inboxSimulator.description ?? '').length).toBeLessThanOrEqual(160);
     expect(howToHub.description).toBe(
       'Step-by-step Gmail guides: delete all emails from one sender, free up storage when Gmail is full, auto archive future email, stop promotional email, and more.',
     );
@@ -366,9 +368,11 @@ describe('marketing metadata guards', () => {
       'DeclutrMail vs. Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail — what each actually does. Official sources, unknowns left unknown.',
     );
     expect(titleText(answerUndo)).toBe('How does undo work for Gmail cleanup? — DeclutrMail');
-    expect(answerUndo.description).toBe(
-      'Archive, Later and Delete have 30-day Activity Undo; Delete also has Gmail Trash recovery. A sent unsubscribe request can’t be recalled.',
-    );
+    // Facts, not the sentence: the window, Trash, and the one-way unsubscribe.
+    expect(answerUndo.description).toContain('30-day Activity Undo');
+    expect(answerUndo.description).toContain('Gmail Trash');
+    expect(answerUndo.description).toContain('can’t be recalled');
+    expect((answerUndo.description ?? '').length).toBeLessThanOrEqual(160);
     expect(titleText(changelog)).toBe('DeclutrMail product updates — what changed, and when');
     expect(changelog.description).toBe(
       'What changed in DeclutrMail and when, listed by date with Added, Improved, and Fixed notes.',

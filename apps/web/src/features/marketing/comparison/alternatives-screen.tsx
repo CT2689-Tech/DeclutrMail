@@ -6,7 +6,8 @@ import { JsonLd } from '../json-ld';
 import { TrustRow } from '../trust/trust-row';
 import { siteUrl } from '../landing/urls';
 import { ALTERNATIVES_SLUGS, alternativesFor, type AlternativesPage } from './comparison-data';
-import { FinalCta, MethodNote, VerificationStamp } from './comparison-screen';
+import { COMPARE_CRUMB, FinalCta, MethodNote, VerificationStamp } from './comparison-screen';
+import { breadcrumbList } from '../structured-data';
 import { COMPARISON_RELATED_GUIDES } from './related-guides';
 
 /**
@@ -44,21 +45,11 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
       url: `${siteUrl()}/vs/${alternative.slug}`,
     })),
   };
-  // Mirrors the visible breadcrumb ("All comparisons / X alternatives"),
-  // with the same Home → Compare trail the /vs pages declare.
+  // The same steps the visible breadcrumb shows.
+  const pageCrumb = { name: `${subject.name} alternatives`, path: `/alternatives/${page.slug}` };
   const breadcrumbJsonLd = {
     '@context': 'https://schema.org',
-    '@type': 'BreadcrumbList',
-    itemListElement: [
-      { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl() },
-      { '@type': 'ListItem', position: 2, name: 'Compare', item: `${siteUrl()}/compare` },
-      {
-        '@type': 'ListItem',
-        position: 3,
-        name: `${subject.name} alternatives`,
-        item: `${siteUrl()}/alternatives/${page.slug}`,
-      },
-    ],
+    ...breadcrumbList([COMPARE_CRUMB, pageCrumb]),
   };
 
   return (
@@ -67,9 +58,9 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
       <JsonLd data={breadcrumbJsonLd} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
-          <Link href="/compare">All comparisons</Link>
+          <Link href={COMPARE_CRUMB.path}>{COMPARE_CRUMB.name}</Link>
           <span aria-hidden="true">/</span>
-          <span>{subject.name} alternatives</span>
+          <span>{pageCrumb.name}</span>
         </nav>
         <h1>{`${subject.name} alternatives for Gmail cleanup`}</h1>
         <p className="dm-compare-lede">
