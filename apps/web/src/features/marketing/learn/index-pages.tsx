@@ -142,7 +142,7 @@ export function FaqPage({ pricingV2 }: { pricingV2?: boolean } = {}) {
   return (
     <ReadingLayout
       variant="faq"
-      title="DeclutrMail FAQ: Gmail access, actions and undo"
+      title="DeclutrMail FAQ: inbox access, actions and undo"
       lede="What is stored, what each action changes, where recovery stops, and how DeclutrMail fits beside Gmail. No universal-undo shorthand."
     >
       <TrustRow />

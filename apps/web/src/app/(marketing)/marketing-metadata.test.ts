@@ -113,7 +113,7 @@ describe('the blog index title — D250 §3.6 row 21', () => {
     // so an appended suffix would drift from the prescribed value unnoticed —
     // which is the failure this assertion exists to catch.
     expect(blog.title).toEqual({
-      absolute: 'DeclutrMail Journal — essays on Gmail cleanup',
+      absolute: 'DeclutrMail Journal — essays on email cleanup',
     });
   });
 });
@@ -349,7 +349,7 @@ describe('marketing metadata guards', () => {
     expect(landing.description).toBe(
       'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
     );
-    expect(titleText(pricing)).toBe('Pricing: free Gmail cleanup and paid plans — DeclutrMail');
+    expect(titleText(pricing)).toBe('Pricing: free email cleanup and paid plans — DeclutrMail');
     expect(pricing.description).toBe(
       'Free includes manual sender cleanup. Plus adds Screener, Autopilot and Quiet hours with no monthly limit. Pro adds the Daily Brief, Follow-ups and more inboxes.',
     );
