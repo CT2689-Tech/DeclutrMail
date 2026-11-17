@@ -154,7 +154,8 @@ const DECLUTR = {
     state: 'supported',
   },
   funding: {
-    summary: 'Subscriptions only',
+    // Not "Subscriptions only": the Backlog Pass is a one-time payment.
+    summary: 'Paid plans',
     detail:
       'The published privacy policy states that Gmail data is not sold and is not used for advertising of any kind, and that it is not transferred to third parties except the subprocessors needed to run the service.',
     state: 'supported',

@@ -211,6 +211,9 @@ describe('comparison data', () => {
     // Cleanfox's funding is quoted from its own FAQ, not characterized.
     const cleanfox = comparisonBySlug('cleanfox')!;
     const funding = cleanfox.rows.find((row) => row.label === 'How the product is funded');
+    // DeclutrMail sells a one-time Backlog Pass as well as Plus, so its own
+    // funding cell must not claim subscriptions are the only revenue.
+    expect(funding?.declutrMail.summary).not.toMatch(/subscriptions only/i);
     expect(funding?.competitor.detail).toContain(
       'we sell data for statistical research purposes related to e-commerce',
     );
@@ -234,15 +237,21 @@ describe('comparison data', () => {
       (row) => row.label === 'Public starting point',
     );
     expect(zapperPrice?.competitor.state).toBe('unknown');
-    expect(zapperPrice?.competitor.summary).toContain('not publicly stated');
+    expect(zapperPrice?.competitor.detail).toContain('not publicly stated');
 
     const chuck = comparisonBySlug('chuck')!;
     expect(chuck.rows.find((row) => row.label === 'Platform')?.competitor.summary).toBe(
       'iPhone app',
     );
-    expect(chuck.rows.find((row) => row.label === 'Preview and recovery')?.competitor.summary).toBe(
-      'Undo in the app',
-    );
+    const chuckRecovery = chuck.rows.find((row) => row.label === 'Preview and recovery');
+    expect(chuckRecovery?.competitor.summary).toBe('Undo in the app');
+    // Its preview is not stated, so the row cannot carry a plain "Published".
+    expect(chuckRecovery?.competitor.state).toBe('limited');
+
+    // The link names the page the way its heading does.
+    for (const slug of ['mailstrom', 'cleanfox', 'chuck'] as const) {
+      expect(comparisonBySlug(slug)!.title, slug).toMatch(/^DeclutrMail vs /);
+    }
   });
 
   it('states the recovery window on the Gmail-filters "choose DeclutrMail" bullet instead of hedging (D245)', () => {

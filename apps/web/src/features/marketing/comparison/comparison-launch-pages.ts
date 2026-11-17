@@ -174,7 +174,9 @@ function page(
     name: meta[0] ?? slug,
     category: meta[1] ?? '',
     verifiedIso,
-    title: meta[2] ?? `${meta[0]} vs DeclutrMail`,
+    // Matches the H1 and the "Compare another approach" list; metaTitle keeps
+    // the competitor-first search title from meta[2].
+    title: `DeclutrMail vs ${meta[0] ?? slug}`,
     description,
     metaTitle: `${meta[2]} — compared, ${verifiedMonth}`,
     ...(description.length > 160 && firstSentence ? { metaDescription: `${firstSentence}.` } : {}),

@@ -72,7 +72,7 @@ describe('llms.txt — marketing surface reconciliation', () => {
       expect(body).not.toMatch(/^## Pricing\s*$/m);
     }
     expect(await renderLlmsFullTxt()).toContain(body.trim());
-    expect(await renderLlmsFullTxt()).toContain('## Mailstrom vs DeclutrMail');
+    expect(await renderLlmsFullTxt()).toContain('## DeclutrMail vs Mailstrom');
   });
 
   it('puts the H1 first and the deck Autopilot lines in place of the hard-coded ones', async () => {
