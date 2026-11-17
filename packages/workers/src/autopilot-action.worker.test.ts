@@ -1262,6 +1262,59 @@ describe('AutopilotActionWorker', () => {
       expect(match).toMatchObject({ intentApplied: true });
     });
 
+    it('never re-moves mail an undo of this rule restored, but takes mail that arrived later', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const { senderKey } = await seedSender(db, mailboxId, 'news@example.com');
+      await inboxMessage(senderKey, 'restored-1', 20);
+      await inboxMessage(senderKey, 'arrived-later', 2);
+      const ruleId = await seedSenderRule({ senderKeys: [senderKey] });
+      // An earlier unattended run of this rule, undone from Activity.
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxId,
+        senderKey,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+      });
+      await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'active');
+
+      const result = await worker.processJob(
+        { mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() },
+        CTX,
+      );
+
+      expect(result.labelActionsExecuted).toBe(1);
+      expect(gmail.calls[0]!.ids).toEqual(['arrived-later']);
+    });
+
+    it('lets a person-approved batch of the same rule move restored mail', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const { senderKey } = await seedSender(db, mailboxId, 'news@example.com');
+      await inboxMessage(senderKey, 'restored-1', 20);
+      const ruleId = await seedSenderRule({ senderKeys: [senderKey] });
+      await db
+        .update(automationRules)
+        .set({ mode: 'observe' })
+        .where(eq(automationRules.id, ruleId));
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxId,
+        senderKey,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+      });
+      await seedApprovedMatch(db, mailboxId, ruleId, senderKey, 'approved', 'observe');
+
+      await worker.processJob({ mailboxAccountId: mailboxId, triggeredAtMs: NOW.getTime() }, CTX);
+      expect(gmail.calls[0]!.ids).toEqual(['restored-1']);
+    });
+
     it('never runs a custom Delete row unattended', async () => {
       const { senderKey } = await seedSender(db, mailboxId, 'news@example.com', {
         inboxMessages: 2,

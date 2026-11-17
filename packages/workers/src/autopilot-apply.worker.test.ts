@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import {
+  activityLog,
   automationRules,
   mailMessages,
   mailboxAccounts,
@@ -1084,6 +1085,68 @@ describe('AutopilotApplyWorker', () => {
       expect(result.activeSkippedNotActionable).toBe(1);
       const matches = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.ruleId, ruleId));
       expect(matches.map((m) => m.senderKey)).toEqual([hasOld]);
+    });
+
+    it('leaves mail an undo of this rule restored, and acts again only on later mail', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      const key = await seedSender(db, mbId, { email: 'news@example.com' });
+      await inboxMessage(db, mbId, key, 'restored-1', 20);
+      const ruleId = await seedSenderRule(db, mbId, { senderKeys: [key] });
+      await db.insert(activityLog).values({
+        mailboxAccountId: mbId,
+        senderKey: key,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+      });
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      const sweep = () =>
+        worker.processJob({ mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() }, FAKE_CTX);
+
+      const restoredOnly = await sweep();
+      expect(restoredOnly.activeMatches).toBe(0);
+      expect(restoredOnly.activeSkippedNotActionable).toBe(1);
+
+      await inboxMessage(db, mbId, key, 'arrived-later', 2);
+      expect((await sweep()).activeMatches).toBe(1);
+    });
+
+    it('applies the same restored-mail rule to an Active preset', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      await seedAutopilotPresets(db as never, mbId);
+      const ruleId = await enablePreset(db, mbId, 'auto_archive_low_engagement', {
+        enabled: true,
+        mode: 'active',
+      });
+      const key = await seedSender(db, mbId, {
+        email: 'promo@example.com',
+        decision: { verdict: 'archive', confidence: 0.9 },
+      });
+      await inboxMessage(db, mbId, key, 'restored-1', 20);
+      await db.insert(activityLog).values({
+        mailboxAccountId: mbId,
+        senderKey: key,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+      });
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      const result = await worker.processJob(
+        { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+      expect(result.activeMatches).toBe(0);
+      expect(result.activeSkippedNotActionable).toBe(1);
     });
 
     it.each([

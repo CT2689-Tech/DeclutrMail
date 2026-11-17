@@ -12,6 +12,7 @@ import {
   automationRules,
   mailMessages,
   mailboxAccounts,
+  messageNotRestoredFromRule,
   ruleMatchIsQueuedAction,
   ruleMatchLog,
   type schema,
@@ -331,8 +332,9 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
           // (`senderInboxActionWhere` with the rule's age), so a match is
           // written only when that archive would move something.
           const named = eligible.filter((s) => senderList.senderKeys.has(s.senderKey));
-          const actionable = await this.senderListInboxCounts(
+          const actionable = await this.unattendedInboxCounts(
             mailboxAccountId,
+            rule.id,
             named.map((s) => s.senderKey),
             senderList.olderThanDays,
           );
@@ -379,6 +381,24 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
             // threshold (or 0 for non-threshold presets) as a stable default.
             const confidence = decision?.confidence ?? threshold ?? def.defaultThreshold ?? 0;
             matchesForRule.push({ senderKey, confidence, reason: result.reason });
+          }
+          // An unattended label move must also clear the restored-mail
+          // exclusion (`messageNotRestoredFromRule`), or the action sweep
+          // would resolve nothing and record an "archived 0" run.
+          if (
+            modeAtMatch === 'active' &&
+            (rule.actionKind === 'archive' || rule.actionKind === 'later') &&
+            matchesForRule.length > 0
+          ) {
+            const movable = await this.unattendedInboxCounts(
+              mailboxAccountId,
+              rule.id,
+              matchesForRule.map((m) => m.senderKey),
+              null,
+            );
+            const kept = matchesForRule.filter((m) => (movable.get(m.senderKey) ?? 0) > 0);
+            activeSkippedNotActionable += matchesForRule.length - kept.length;
+            matchesForRule = kept;
           }
         }
 
@@ -730,11 +750,13 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
   }
 
   /**
-   * INBOX messages per named sender that an Archive would move now: the
-   * action worker's own resolution (`senderInboxActionWhere`), counted.
+   * INBOX messages per sender that this rule's unattended label move would
+   * take now: the action worker's own resolution (`senderInboxActionWhere`
+   * plus `messageNotRestoredFromRule`), counted.
    */
-  private async senderListInboxCounts(
+  private async unattendedInboxCounts(
     mailboxAccountId: string,
+    ruleId: string,
     senderKeys: string[],
     olderThanDays: number | null,
   ): Promise<Map<string, number>> {
@@ -742,7 +764,12 @@ export class AutopilotApplyWorker extends BaseDeclutrWorker<
     const rows = await this.deps.db
       .select({ senderKey: mailMessages.senderKey, n: sql<number>`count(*)::int` })
       .from(mailMessages)
-      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys, olderThanDays }))
+      .where(
+        and(
+          senderInboxActionWhere({ mailboxAccountId, senderKeys, olderThanDays }),
+          messageNotRestoredFromRule(ruleId),
+        ),
+      )
       .groupBy(mailMessages.senderKey);
     return new Map(rows.map((r) => [r.senderKey ?? '', Number(r.n)]));
   }

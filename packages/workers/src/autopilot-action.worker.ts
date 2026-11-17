@@ -12,6 +12,7 @@ import {
   automationRules,
   mailboxAccounts,
   mailMessages,
+  messageNotRestoredFromRule,
   ruleMatchEvidenceIsCurrent,
   ruleMatchIsQueuedAction,
   ruleMatchIsStaleAction,
@@ -1538,6 +1539,8 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
             mailboxAccountId,
             match.senderKey,
             executionOf(match)?.olderThanDays ?? null,
+            // Unattended runs never re-move mail an undo of this rule restored.
+            match.modeAtMatch === 'active' ? match.ruleId : null,
           );
 
     // Zero matching messages — the rule DECIDED but nothing moved.
@@ -2189,11 +2192,17 @@ export class AutopilotActionWorker extends BaseDeclutrWorker<
     mailboxAccountId: string,
     senderKey: string,
     olderThanDays: number | null,
+    unattendedRuleId: string | null,
   ): Promise<string[]> {
     const rows = await this.deps.db
       .select({ providerMessageId: mailMessages.providerMessageId })
       .from(mailMessages)
-      .where(senderInboxActionWhere({ mailboxAccountId, senderKeys: [senderKey], olderThanDays }));
+      .where(
+        and(
+          senderInboxActionWhere({ mailboxAccountId, senderKeys: [senderKey], olderThanDays }),
+          unattendedRuleId === null ? undefined : messageNotRestoredFromRule(unattendedRuleId),
+        ),
+      );
     return rows.map((r) => r.providerMessageId);
   }
 

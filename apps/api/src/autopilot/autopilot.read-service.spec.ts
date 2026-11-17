@@ -663,6 +663,36 @@ describe('AutopilotReadService', () => {
       for (const r of rules) expect(r.mode).toBe('observe');
     });
 
+    it('demotes an Active custom sender rule and neutralizes its unattended matches', async () => {
+      const [custom] = await db
+        .insert(automationRules)
+        .values({
+          mailboxAccountId: mailboxA,
+          isPreset: false,
+          presetKey: null,
+          name: 'Newsletters',
+          enabled: true,
+          mode: 'active',
+          scope: 'account',
+          conditions: { kind: 'sender_list', senderKeys: ['a'.repeat(64)], olderThanDays: null },
+          actionKind: 'archive',
+          actionPayload: { reach: 'inbox_only' },
+        })
+        .returning({ id: automationRules.id });
+      const matchId = await seedActiveMatch(mailboxA, custom!.id, 'a'.repeat(64));
+
+      const out = await service.demoteUnattendedRules(await workspaceOf(mailboxA));
+
+      expect(out).toEqual({ demotedRules: 1, neutralizedMatches: 1 });
+      const [rule] = await db
+        .select({ mode: automationRules.mode })
+        .from(automationRules)
+        .where(eq(automationRules.id, custom!.id));
+      expect(rule!.mode).toBe('observe');
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ resolution: 'dismissed', dismissReason: 'entitlement' });
+    });
+
     it('flips active rules to observe with patchRule mode-change semantics', async () => {
       const activeRule = await getRuleId(db, mailboxA, 'newsletter_graveyard');
       await service.patchRule(mailboxA, activeRule, {
