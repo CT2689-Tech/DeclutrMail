@@ -94,6 +94,10 @@ describe('search and AI first touch', () => {
     'https://user:pass@www.google.com/',
     'https://declutrmail.com/pricing',
     '',
+    // Hostnames that name inherited object members: an object-literal lookup
+    // returned a Function or Object here and wrote it into the cookie.
+    'http://constructor/',
+    'http://__proto__/',
   ])('ignores non-search referrers: %s', (value) => {
     expect(organicSourceFromReferrer(value)).toBeUndefined();
     expect(capture(value)).toBeUndefined();

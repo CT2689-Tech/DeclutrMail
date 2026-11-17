@@ -19,13 +19,19 @@ type DeclutrCells = {
   price: ComparisonCell;
 };
 
-const EVIDENCE_STATES: readonly EvidenceState[] = [
-  'supported',
-  'limited',
-  'not-supported',
-  'unknown',
-  'native',
-];
+// A Record, not an array, so adding a state to `EvidenceState` fails to
+// compile here until it is listed.
+const EVIDENCE_STATES: Readonly<Record<EvidenceState, true>> = {
+  supported: true,
+  limited: true,
+  'not-supported': true,
+  unknown: true,
+  native: true,
+};
+
+function isEvidenceState(value: string): value is EvidenceState {
+  return Object.hasOwn(EVIDENCE_STATES, value);
+}
 
 const UNKNOWN: ComparisonCell = {
   summary: 'Not publicly stated',
@@ -46,9 +52,13 @@ function parsedCells(lines: readonly string[]): Map<string, ComparisonCell> {
     const summary = head.slice(splitAt + 2);
     // An optional third segment names the state outright, for a cell that
     // is sourced but partial (`| limited`) or a sourced absence (`| unknown`).
-    const explicit = EVIDENCE_STATES.find((candidate) => candidate === parts[2]);
+    // A misspelled state must fail the build, not quietly read as supported.
+    const stated = parts[2];
+    if (stated !== undefined && !isEvidenceState(stated)) {
+      throw new Error(`Comparison cell "${key}" names an unknown evidence state: "${stated}"`);
+    }
     const state: EvidenceState =
-      explicit ?? (/its claim/i.test(`${summary} ${detail}`) ? 'limited' : 'supported');
+      stated ?? (/its claim/i.test(`${summary} ${detail}`) ? 'limited' : 'supported');
     cells.set(key, { summary, detail, state });
   }
   return cells;

@@ -23,7 +23,7 @@ import {
   type PricingFlags,
 } from '@/features/marketing/pricing/load-pricing-flags';
 
-import { COMPARISONS } from '../comparison/comparison-data';
+import { COMPARISONS, type ComparisonSlug } from '../comparison/comparison-data';
 import { comparisonFaqs } from '../comparison/comparison-faqs';
 import { LLMS_SOURCE } from './llms-source';
 
@@ -34,7 +34,7 @@ const LAUNCH_SLUGS = [
   'cleanfox',
   'inbox-zapper',
   'chuck',
-] as const;
+] as const satisfies readonly ComparisonSlug[];
 
 const PREVIOUS_AUTOPILOT =
   'Autopilot rules on Plus and Pro find future matches. Both plans support Observe, which waits for batch approval, and Active, which acts on future matches only after you preview and deliberately turn on a rule.';

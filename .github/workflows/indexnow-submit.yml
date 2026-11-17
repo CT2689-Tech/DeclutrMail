@@ -12,6 +12,8 @@
 # https://declutrmail.com/<key>.txt), so no secret is needed.
 #
 # Preview deployment statuses also start this workflow; the job is skipped.
+# A failed deploy-triggered run opens (or comments on) an issue, because
+# Vercel's bot starts it and GitHub emails no one about a bot's run.
 
 name: IndexNow submit
 
@@ -39,6 +41,9 @@ jobs:
       github.event.deployment.environment == 'Production')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v7
 
@@ -54,4 +59,26 @@ jobs:
             node scripts/indexnow-submit.mjs --dry-run
           else
             node scripts/indexnow-submit.mjs
+          fi
+
+      # A deploy-triggered run is started by Vercel's bot, so GitHub's
+      # failed-workflow email has no person to go to and a failure would sit
+      # unseen. An issue notifies the repository's watchers. One open issue
+      # collects repeat failures. A manual run's failure already emails its
+      # starter, so this step skips it.
+      - name: Report a failure as an issue
+        if: failure() && github.event_name == 'deployment_status'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title='IndexNow submission failed'
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "in:title \"$title\"" --json number,title \
+            --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+              --body "The IndexNow submission after a Production deploy failed. The run log names the cause: $RUN_URL"
           fi
