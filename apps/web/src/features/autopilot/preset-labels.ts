@@ -15,7 +15,7 @@
  * and the override map can be deleted.
  */
 
-import { isReviewOnlyRule } from '@declutrmail/shared/contracts';
+import { isReviewOnlyRule } from '@declutrmail/shared/contracts/autopilot-review-only';
 import type { AutopilotPresetKey } from '@/lib/api/autopilot';
 
 const PRESET_LABEL_OVERRIDES: Partial<Record<AutopilotPresetKey, string>> = {
