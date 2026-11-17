@@ -54,18 +54,11 @@ describe('landing page — D134', () => {
     expect(container.querySelector('.dm-mkt-hero')?.getAttribute('aria-labelledby')).toBe(h1?.id);
   });
 
-  it('states the D228 trust copy once, in Privacy, plus one collapsed scope disclosure', async () => {
+  it('states the trust copy in Privacy, plus one collapsed scope disclosure', async () => {
     const { container } = await renderLanding();
-    // Once, at the Privacy section: never on the hero (CLAUDE.md §8.5).
-    // The only further copy stays inside the collapsed scope disclosure
-    // beside the final "Start free".
-    const visible = container.cloneNode(true) as HTMLElement;
-    visible.querySelectorAll('details').forEach((node) => node.remove());
-    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(1);
+    // Marketing pages may lead with or repeat the exact privacy sentence
+    // (CLAUDE.md §8.5, founder decision 2026-11-17); Privacy must carry it.
     expect(container.querySelector('#privacy')?.textContent).toContain(PRIVACY_BADGE_HEADLINE);
-    expect(container.querySelector('.dm-mkt-hero')?.textContent).not.toContain(
-      PRIVACY_BADGE_HEADLINE,
-    );
     expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(1);
     expect(container.querySelector('.dm-home-inventory-lists')).toBeInTheDocument();
     // What actually needs guarding is that the generated list reaches the

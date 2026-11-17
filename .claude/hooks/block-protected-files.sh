@@ -59,6 +59,12 @@ blocked_patterns=(
   '^coverage/'
 )
 
+# Example env files hold placeholder names, never secrets, and are tracked so
+# contributors know what to set (2026-11-17).
+if echo "$rel_path" | grep -qE '(^|/)\.env\.example$'; then
+  exit 0
+fi
+
 for pattern in "${blocked_patterns[@]}"; do
   if echo "$rel_path" | grep -qE "$pattern"; then
     echo "❌ block-protected-files: edits to '$rel_path' are not allowed." >&2
