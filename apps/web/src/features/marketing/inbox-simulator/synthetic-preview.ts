@@ -79,7 +79,7 @@ export const SYNTHETIC_RULE: AutopilotRuleDto = {
   id: 'demo-rule-archive-low-engagement',
   presetKey: 'auto_archive_low_engagement',
   isPreset: true,
-  name: 'Review low-engagement senders for Archive',
+  name: 'Archive low-engagement senders',
   enabled: false,
   mode: 'observe',
   modeChangedAt: '2026-08-01T00:00:00.000Z',

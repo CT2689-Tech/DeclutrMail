@@ -116,7 +116,7 @@ for (const width of [320, 375, 1280]) {
       await page.getByRole('button', { name: /^Your rules/ }).click();
       const library = page.getByRole('complementary', { name: 'Rule library' });
       const edit = library.getByRole('button', {
-        name: 'Edit rule Review low-engagement senders for Archive',
+        name: 'Edit rule Archive low-engagement senders',
         exact: true,
       });
       await edit.click();
@@ -126,7 +126,7 @@ for (const width of [320, 375, 1280]) {
       await expect(page.getByRole('heading', { name: 'Needs review' })).not.toBeVisible();
       await library
         .getByRole('button', {
-          name: 'Close rule Review low-engagement senders for Archive',
+          name: 'Close rule Archive low-engagement senders',
           exact: true,
         })
         .click();

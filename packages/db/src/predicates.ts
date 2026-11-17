@@ -200,6 +200,33 @@ export function senderInboxActionWhere(scope: SenderInboxActionScope): SQL {
 }
 
 /**
+ * Mail a rule may still move ON ITS OWN: none that was already there from
+ * this sender when a run of the same rule was undone.
+ *
+ * Undo from Activity restores a run's mail to the inbox. An Active rule
+ * re-matches that sender on its next sweep, so without this it would archive
+ * the restored mail again within minutes and Undo would mean nothing. After
+ * an undo, the rule leaves the sender's existing mail alone and acts only on
+ * mail that arrives later. Reads `activity_log.reverted_at`, the durable copy
+ * of the reversal (the undo journal itself is pruned after expiry).
+ *
+ * Unattended execution only: a person who approves a batch decides afresh.
+ * Correlates on an unaliased outer `mail_messages`.
+ */
+export function messageNotRestoredFromRule(ruleId: string): SQL {
+  return sql`not exists (
+  select 1
+  from activity_log a
+  where a.mailbox_account_id = ${sql.raw('mail_messages.mailbox_account_id')}
+    and a.sender_key = ${sql.raw('mail_messages.sender_key')}
+    and a.rule_id = ${ruleId}
+    and a.source = 'autopilot'
+    and a.reverted_at is not null
+    and ${sql.raw('mail_messages.internal_date')} <= a.reverted_at
+)`;
+}
+
+/**
  * `ARRAY['TRASH',…]::text[]` literal. Static, sourced from the const
  * above (system label ids — no user data), so `sql.raw` is safe and the
  * planner sees a plain array literal.

@@ -47,7 +47,7 @@ describe('/how-it-works', () => {
     // still hold is the automation BOUNDARY: nothing runs unless the
     // user turned it on, and they saw what it would do first.
     expect(copy).toContain('only a rule you deliberately turn on acts without asking');
-    expect(copy).toContain('Turning a preset on shows what it would do first');
+    expect(copy).toContain('Turning a rule on shows what it would do first');
     expect(copy).not.toContain('starts in Observe');
   });
 
