@@ -3,7 +3,12 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import { baselineKey, scanGlossaryHits, type BaselineEntry } from './ui-glossary-scan';
+import {
+  baselineKey,
+  MARKETING_TRUTH_BANS,
+  scanGlossaryHits,
+  type BaselineEntry,
+} from './ui-glossary-scan';
 import { glossaryHits, loadUiGlossary, parseUiGlossary } from './ui-glossary';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -53,6 +58,16 @@ describe('ui glossary', () => {
     const parsed = parseUiGlossary('allowed_names:\n  - "Home"\nbanned:\nallow_exact:\ndefs:\n');
     expect(parsed.allowedNames).toEqual(['Home']);
     expect(parsed.banned).toEqual([]);
+  });
+
+  it('holds marketing routes to the truth bans only', () => {
+    const banIds = new Set(glossary.banned.map((ban) => ban.id));
+    for (const id of MARKETING_TRUTH_BANS) expect(banIds.has(id), id).toBe(true);
+    expect(MARKETING_TRUTH_BANS.has('clean_verb')).toBe(false);
+    const marketing = scanGlossaryHits(glossary).filter((hit) =>
+      hit.file.includes('/(marketing)/'),
+    );
+    for (const hit of marketing) expect(MARKETING_TRUTH_BANS.has(hit.id), hit.file).toBe(true);
   });
 
   it('does not grow the shrink-only baseline', () => {

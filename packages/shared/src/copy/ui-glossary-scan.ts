@@ -40,11 +40,20 @@ const REPO = join(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const require = createRequire(import.meta.url);
 const ts = require(join(REPO, 'node_modules/typescript/lib/typescript.js')) as TsApi;
 const ROOTS = ['apps/web/src', 'packages/shared/src'];
-// `marketing` skips features/marketing; `(marketing)` skips the route group.
-// The route group was meant to be skipped all along: this is the in-app UI
-// lint, and marketing pages need words like "clean", "best" and competitor
-// names ("Clean Email") that in-app copy avoids.
-const SKIP_DIR = new Set(['marketing', '(marketing)', 'node_modules', 'design-prototype']);
+const SKIP_DIR = new Set(['marketing', 'node_modules', 'design-prototype']);
+// Marketing route files (`app/(marketing)/**`) keep only the bans that guard a
+// claim's truth. The vocabulary bans (clean, action, sync, metadata,
+// workspace, quota, allowance) are in-app house style; marketing pages need
+// those words and competitor names such as "Clean Email".
+export const MARKETING_TRUTH_BANS: ReadonlySet<string> = new Set([
+  'certification_claim',
+  'body_counterclaim',
+  'superlative',
+  'price_literal',
+  'opened_claim',
+  'contact_promise',
+  'storage_claim',
+]);
 const SKIP_FILE = /\.(test|spec|stories)\.[cm]?[jt]sx?$/;
 
 export interface BaselineEntry {
@@ -87,6 +96,7 @@ function collect(path: string, glossary: UiGlossary, hits: BaselineEntry[]) {
     TsNode;
   const scope =
     path.includes('/inbox-report/') || path.includes('/features/report/') ? 'report' : 'all';
+  const marketingRoute = path.includes('/(marketing)/');
   const visit = (node: TsNode) => {
     if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       const text = node.text;
@@ -95,6 +105,7 @@ function collect(path: string, glossary: UiGlossary, hits: BaselineEntry[]) {
       // the shrink-only check for that path.
       if (text && !isModuleSpecifier(node))
         for (const hit of glossaryHits(text, glossary, scope)) {
+          if (marketingRoute && !MARKETING_TRUTH_BANS.has(hit.id)) continue;
           const line = file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1;
           hits.push({
             file: relative(REPO, path),
