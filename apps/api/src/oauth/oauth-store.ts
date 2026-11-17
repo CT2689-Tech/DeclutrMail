@@ -61,23 +61,40 @@ export async function findLiveGrant(db: DrizzleDb, grantId: string) {
   return row;
 }
 
+/** The grant a call to `revokeGrant` actually revoked. */
+export interface RevokedGrant {
+  grantId: string;
+  userId: string;
+  workspaceId: string;
+  clientId: string;
+}
+
 /**
  * Revoke one grant and everything minted under it. Idempotent: a second
- * call changes nothing. Returns whether THIS call revoked it.
+ * call changes nothing. Returns the grant when THIS call revoked it, and
+ * undefined when it was unknown or already revoked.
  */
-export async function revokeGrant(db: DrizzleDb, grantId: string): Promise<boolean> {
-  if (!isGrantId(grantId)) return false;
-  const revoked = await db
+export async function revokeGrant(
+  db: DrizzleDb,
+  grantId: string,
+): Promise<RevokedGrant | undefined> {
+  if (!isGrantId(grantId)) return undefined;
+  const [revoked] = await db
     .update(oauthGrants)
     .set({ revokedAt: sql`now()` })
     .where(and(eq(oauthGrants.id, grantId), isNull(oauthGrants.revokedAt)))
-    .returning({ id: oauthGrants.id });
+    .returning({
+      grantId: oauthGrants.id,
+      userId: oauthGrants.userId,
+      workspaceId: oauthGrants.workspaceId,
+      clientId: oauthGrants.clientId,
+    });
   await db
     .update(oauthTokens)
     .set({ revokedAt: sql`now()` })
     .where(and(eq(oauthTokens.grantId, grantId), isNull(oauthTokens.revokedAt)));
   await db.delete(oauthAuthCodes).where(eq(oauthAuthCodes.grantId, grantId));
-  return revoked.length > 0;
+  return revoked;
 }
 
 /**

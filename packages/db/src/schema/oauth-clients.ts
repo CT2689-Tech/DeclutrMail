@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { check, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { check, index, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 /**
  * OAuth clients (ADR-0048 rule 4, spec §7) — the apps that registered with
@@ -29,6 +29,8 @@ export const oauthClients = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   },
   (t) => [
+    /** Retention sweep: clients nobody approved, oldest first. */
+    index('oauth_clients_created_at_idx').on(t.createdAt),
     check('oauth_clients_registration_type_check', sql`${t.registrationType} IN ('dynamic')`),
   ],
 );

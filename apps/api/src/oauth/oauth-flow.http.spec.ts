@@ -190,8 +190,10 @@ describe('OAuth authorization server', () => {
       const response = await new Browser(harness.base, ada).get(
         `${authorizeUrl(clientId, pkce().challenge)}&scope=cleanup`,
       );
-      expect(response.status).not.toBe(303);
-      expect(response.text + (response.location ?? '')).toMatch(/invalid_request/);
+      // Sent back to the app with an error — never on to the consent page.
+      const redirect = new URL(response.location!, harness.base);
+      expect(redirect.origin + redirect.pathname).toBe(REDIRECT_URI);
+      expect(redirect.searchParams.get('error')).toBe('invalid_request');
     });
 
     it('refuses a resource other than /mcp (RFC 8707)', async () => {
@@ -490,7 +492,30 @@ describe('OAuth authorization server', () => {
       expect(second.status).toBe(400);
       expect(second.json.error).toBe('invalid_grant');
       expect((await mcp(first.json.access_token)).status).toBe(401);
+      expect(harness.securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'connected_app.token_reuse_revoked',
+          severity: 'warning',
+          userId: ada.userId,
+          workspaceId: ada.workspaceId,
+          payload: expect.objectContaining({ kind: 'authorization_code', clientId }),
+        }),
+      );
       await harness.db.delete(oauthGrants);
+    });
+
+    it('an ordinary failed exchange is not reported as reuse', async () => {
+      harness.securityEvents.record.mockClear();
+      const clientId = await registerClient(harness.base);
+      const response = await api.form('/oauth/token', {
+        grant_type: 'refresh_token',
+        refresh_token: 'never-issued',
+        client_id: clientId,
+      });
+      expect(response.status).toBe(400);
+      expect(harness.securityEvents.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'connected_app.token_reuse_revoked' }),
+      );
     });
 
     it('rotates the refresh token on every use and links the chain', async () => {
@@ -552,6 +577,15 @@ describe('OAuth authorization server', () => {
         .from(oauthGrants)
         .where(eq(oauthGrants.clientId, clientId));
       expect(grant!.revokedAt).toBeInstanceOf(Date);
+      // …and the audit log says why the connection ended.
+      expect(harness.securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'connected_app.token_reuse_revoked',
+          severity: 'warning',
+          userId: ada.userId,
+          payload: { kind: 'refresh_token', clientId, grantId: grant!.id },
+        }),
+      );
       await harness.db.delete(oauthGrants);
     });
 
@@ -569,6 +603,7 @@ describe('OAuth authorization server', () => {
     });
 
     it('revoking the refresh token (RFC 7009) ends the connection', async () => {
+      harness.securityEvents.record.mockClear();
       const { tokens, clientId } = await connect(harness, ada);
       const revoked = await api.form('/oauth/revoke', {
         token: tokens.refresh_token,
@@ -582,6 +617,10 @@ describe('OAuth authorization server', () => {
         client_id: clientId,
       });
       expect(refreshed.status).toBe(400);
+      // A client ending its own connection is not token reuse.
+      expect(harness.securityEvents.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'connected_app.token_reuse_revoked' }),
+      );
       await harness.db.delete(oauthGrants);
     });
 
@@ -885,13 +924,22 @@ describe('rate limits', () => {
   });
 
   it('caps unauthenticated client registration per address', async () => {
-    const register = () =>
-      client(harness.base).json('/oauth/register', { redirect_uris: [REDIRECT_URI] });
-    const statuses: number[] = [];
-    for (let i = 0; i < 61; i += 1) statuses.push((await register()).status);
-    expect(statuses.slice(0, 60).every((status) => status === 201)).toBe(true);
-    expect(statuses[60]).toBe(429);
-    expect(await harness.db.select().from(oauthClients)).toHaveLength(60);
+    // 60 a minute. The bucket refills about one token a second, so the
+    // burst is sent at once and the assertions hold however slow the run.
+    const statuses = await Promise.all(
+      Array.from({ length: 90 }, () =>
+        client(harness.base)
+          .json('/oauth/register', { redirect_uris: [REDIRECT_URI] })
+          .then((response) => response.status),
+      ),
+    );
+    const registered = statuses.filter((status) => status === 201).length;
+    const limited = statuses.filter((status) => status === 429).length;
+    expect(registered + limited).toBe(90);
+    expect(registered).toBeGreaterThanOrEqual(60);
+    expect(limited).toBeGreaterThanOrEqual(1);
+    // A refused registration writes nothing.
+    expect(await harness.db.select().from(oauthClients)).toHaveLength(registered);
   });
 });
 

@@ -6,7 +6,7 @@ import { oauthAuthCodes, oauthClients, oauthInteractions, oauthTokens } from '@d
 import type { DrizzleDb } from '../db/db.module.js';
 import { oauthIssuer } from '../mcp/mcp-config.js';
 import { hashOAuthSecret } from './oauth-hash.js';
-import { findLiveGrant, revokeGrant } from './oauth-store.js';
+import { findLiveGrant, revokeGrant, type RevokedGrant } from './oauth-store.js';
 
 /**
  * Storage adapter between `oidc-provider` and our tables (ADR-0048 rule
@@ -34,6 +34,14 @@ import { findLiveGrant, revokeGrant } from './oauth-store.js';
  */
 
 type Row = Record<string, unknown>;
+
+/**
+ * A used authorization code or a rotated refresh token was presented
+ * again and its grant was revoked for it — the textbook sign of a stolen
+ * credential. Reported once per grant, by whichever call revoked it.
+ */
+export type ReuseRevocation = RevokedGrant & { kind: 'refresh_token' | 'authorization_code' };
+export type ReuseReporter = (event: ReuseRevocation) => void;
 
 /** The authorization endpoint; a request resumes at `<this>/<request id>`. */
 export const OAUTH_RESUME_PATH = '/oauth/authorize';
@@ -130,6 +138,14 @@ class ClientStore extends BaseStore {
  * A grant has no expiry of its own: it lives while its refresh chain does.
  */
 class GrantStore extends BaseStore {
+  constructor(
+    db: DrizzleDb,
+    model: string,
+    private readonly reportReuse: ReuseReporter,
+  ) {
+    super(db, model);
+  }
+
   async upsert(): Promise<void> {
     unsupported(this.model, 'upsert');
   }
@@ -147,8 +163,20 @@ class GrantStore extends BaseStore {
     } as AdapterPayload;
   }
 
+  /**
+   * The library destroys a grant in two situations: a client revoking its
+   * own token (the revocation endpoint), and a used code or a rotated
+   * refresh token being presented again (the token endpoint). Only the
+   * second is reuse.
+   */
   async destroy(id: string): Promise<void> {
-    await revokeGrant(this.db, id);
+    const revoked = await revokeGrant(this.db, id);
+    const oidc = Provider.ctx?.oidc;
+    if (revoked && oidc?.route === 'token') {
+      const kind =
+        oidc.params?.grant_type === 'authorization_code' ? 'authorization_code' : 'refresh_token';
+      this.reportReuse({ ...revoked, kind });
+    }
   }
 }
 
@@ -157,6 +185,7 @@ class TokenStore extends BaseStore {
     db: DrizzleDb,
     model: string,
     private readonly kind: 'access' | 'refresh',
+    private readonly reportReuse: ReuseReporter,
   ) {
     super(db, model);
   }
@@ -247,7 +276,8 @@ class TokenStore extends BaseStore {
       .from(oauthTokens)
       .where(eq(oauthTokens.tokenHash, tokenHash))
       .limit(1);
-    if (row) await revokeGrant(this.db, row.grantId);
+    const revoked = row ? await revokeGrant(this.db, row.grantId) : undefined;
+    if (revoked) this.reportReuse({ ...revoked, kind: 'refresh_token' });
     throw new errors.InvalidGrant('refresh token already used');
   }
 
@@ -279,6 +309,14 @@ class TokenStore extends BaseStore {
 }
 
 class AuthorizationCodeStore extends BaseStore {
+  constructor(
+    db: DrizzleDb,
+    model: string,
+    private readonly reportReuse: ReuseReporter,
+  ) {
+    super(db, model);
+  }
+
   async upsert(id: string, payload: AdapterPayload, expiresIn?: number): Promise<void> {
     if (!payload.grantId) throw new Error('Authorization code was issued without a grant.');
     // PKCE S256 is mandatory; a code without a challenge must never be
@@ -326,7 +364,8 @@ class AuthorizationCodeStore extends BaseStore {
       .from(oauthAuthCodes)
       .where(eq(oauthAuthCodes.codeHash, codeHash))
       .limit(1);
-    if (row) await revokeGrant(this.db, row.grantId);
+    const revoked = row ? await revokeGrant(this.db, row.grantId) : undefined;
+    if (revoked) this.reportReuse({ ...revoked, kind: 'authorization_code' });
     throw new errors.InvalidGrant('authorization code already consumed');
   }
 
@@ -416,19 +455,22 @@ class UnsupportedStore extends BaseStore {
 }
 
 /** The `adapter` option for `oidc-provider`: one store per model name. */
-export function createOAuthStorageAdapter(db: DrizzleDb): (model: string) => Adapter {
+export function createOAuthStorageAdapter(
+  db: DrizzleDb,
+  reportReuse: ReuseReporter = () => undefined,
+): (model: string) => Adapter {
   return (model) => {
     switch (model) {
       case 'Client':
         return new ClientStore(db, model);
       case 'Grant':
-        return new GrantStore(db, model);
+        return new GrantStore(db, model, reportReuse);
       case 'AccessToken':
-        return new TokenStore(db, model, 'access');
+        return new TokenStore(db, model, 'access', reportReuse);
       case 'RefreshToken':
-        return new TokenStore(db, model, 'refresh');
+        return new TokenStore(db, model, 'refresh', reportReuse);
       case 'AuthorizationCode':
-        return new AuthorizationCodeStore(db, model);
+        return new AuthorizationCodeStore(db, model, reportReuse);
       case 'Interaction':
         return new InteractionStore(db, model);
       case 'Session':

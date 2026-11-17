@@ -13,6 +13,5 @@ import { McpTokenGuard } from './mcp-token.guard.js';
 @Module({
   controllers: [McpController],
   providers: [McpTokenGuard],
-  exports: [McpTokenGuard],
 })
 export class McpModule {}

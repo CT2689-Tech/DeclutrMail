@@ -24,6 +24,8 @@ export interface OpsRetentionResult {
   productEventsDeleted: number;
   /** OAuth rows past retention removed this pass, all five tables together. */
   oauthRowsDeleted: number;
+  /** Grants that owned no token or code any more and were marked revoked. */
+  oauthGrantsRetired: number;
   /** True when a table hit the batch ceiling and has more to remove. */
   moreRemaining: boolean;
   durationMs: number;
@@ -168,6 +170,7 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
       deadLetterDeleted,
       productEventsDeleted,
       oauthRowsDeleted: oauth.deleted,
+      oauthGrantsRetired: oauth.retired,
       moreRemaining:
         cronRunsDeleted >= RETENTION_BATCH_LIMIT ||
         deadLetterDeleted >= RETENTION_BATCH_LIMIT ||
@@ -185,7 +188,11 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
    * It is marked revoked here; the 30-day rule then removes it like any
    * other. Deleting a grant cascades to whatever it still owns.
    */
-  private async sweepOAuth(): Promise<{ deleted: number; moreRemaining: boolean }> {
+  private async sweepOAuth(): Promise<{
+    deleted: number;
+    retired: number;
+    moreRemaining: boolean;
+  }> {
     const { db } = this.deps;
     const days = (n: number) => sql.raw(`interval '${n} days'`);
     const counts: number[] = [];
@@ -220,14 +227,23 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
       DELETE FROM oauth_tokens WHERE ctid IN (SELECT ctid FROM doomed)
       RETURNING 1
     `);
-    // Not a delete and not counted: retire grants that own nothing.
-    await db.execute(sql`
-      UPDATE oauth_grants g SET revoked_at = now()
-      WHERE g.revoked_at IS NULL
-        AND g.created_at < now() - ${days(1)}
-        AND NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = g.id)
-        AND NOT EXISTS (SELECT 1 FROM oauth_auth_codes c WHERE c.grant_id = g.id)
-    `);
+    // Not a delete: retire grants that own nothing. Bounded and counted
+    // like the deletes — it writes the field that decides whether a
+    // connection is live.
+    const retired = rowCount(
+      await db.execute(sql`
+        WITH doomed AS (
+          SELECT g.ctid FROM oauth_grants g
+          WHERE g.revoked_at IS NULL
+            AND g.created_at < now() - ${days(1)}
+            AND NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = g.id)
+            AND NOT EXISTS (SELECT 1 FROM oauth_auth_codes c WHERE c.grant_id = g.id)
+          LIMIT ${RETENTION_BATCH_LIMIT}
+        )
+        UPDATE oauth_grants SET revoked_at = now() WHERE ctid IN (SELECT ctid FROM doomed)
+        RETURNING 1
+      `),
+    );
     await sweep(sql`
       WITH doomed AS (
         SELECT g.ctid FROM oauth_grants g
@@ -250,7 +266,9 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
 
     return {
       deleted: counts.reduce((sum, n) => sum + n, 0),
-      moreRemaining: counts.some((n) => n >= RETENTION_BATCH_LIMIT),
+      retired,
+      moreRemaining:
+        retired >= RETENTION_BATCH_LIMIT || counts.some((n) => n >= RETENTION_BATCH_LIMIT),
     };
   }
 }

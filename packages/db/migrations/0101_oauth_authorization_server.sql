@@ -16,6 +16,10 @@ CREATE TABLE oauth_clients (
 -- Server-only: no browser/public policies.
 ALTER TABLE oauth_clients ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
+-- Registration is unauthenticated, so this table's size is not ours to
+-- choose; the retention sweep must find old rows without scanning it.
+CREATE INDEX oauth_clients_created_at_idx ON oauth_clients(created_at);
+--> statement-breakpoint
 CREATE TABLE oauth_grants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,

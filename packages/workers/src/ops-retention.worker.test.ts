@@ -299,8 +299,9 @@ describe('OpsRetentionWorker', () => {
       const justApproved = await seedGrant(owner, 'c1');
       await db.insert(oauthTokens).values(token(live, 'live', new Date(Date.now() + 3_600_000)));
 
-      await run();
+      const result = await run();
 
+      expect(result.oauthGrantsRetired).toBe(1);
       const rows = await db
         .select({ id: oauthGrants.id, revokedAt: oauthGrants.revokedAt })
         .from(oauthGrants);
@@ -353,6 +354,7 @@ describe('OpsRetentionWorker', () => {
         })
         .find((line) => line?.kind === 'worker.succeeded');
       expect(succeeded?.result).toHaveProperty('oauthRowsDeleted', 1);
+      expect(succeeded?.result).toHaveProperty('oauthGrantsRetired', 0);
     });
   });
 

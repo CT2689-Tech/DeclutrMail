@@ -15,6 +15,7 @@ import {
   mcpResourceUrl,
   oauthIssuer,
 } from '../mcp/mcp-config.js';
+import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { applyClientRegistrationPolicy } from './oauth-client-policy.js';
 import { createOAuthStorageAdapter, OAUTH_RESUME_PATH } from './oauth-storage.adapter.js';
 import { findAuthorizableUser } from './oauth-store.js';
@@ -78,7 +79,10 @@ export class OAuthProviderService implements OnModuleInit {
   private readonly logger = new Logger(OAuthProviderService.name);
   private instance: Provider | undefined;
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDb,
+    private readonly securityEvents: SecurityEventsService,
+  ) {}
 
   /** Fail at boot, not on the first person's request, when enabled but misconfigured. */
   onModuleInit(): void {
@@ -113,7 +117,16 @@ export class OAuthProviderService implements OnModuleInit {
     const db = this.db;
 
     const configuration: Configuration = {
-      adapter: createOAuthStorageAdapter(db),
+      adapter: createOAuthStorageAdapter(db, (reuse) => {
+        // The grant is already revoked; this is the audit row saying why.
+        void this.securityEvents.record({
+          eventType: 'connected_app.token_reuse_revoked',
+          severity: 'warning',
+          userId: reuse.userId,
+          workspaceId: reuse.workspaceId,
+          payload: { kind: reuse.kind, clientId: reuse.clientId, grantId: reuse.grantId },
+        });
+      }),
 
       // --- what is offered -------------------------------------------
       responseTypes: ['code'],
@@ -245,15 +258,30 @@ export class OAuthProviderService implements OnModuleInit {
       }
     });
 
+    // The library answers its own errors, so a failure inside it never
+    // reaches AllExceptionsFilter. Without this, a broken token endpoint
+    // would disconnect every app with nothing but a log line to show for it.
     provider.on('server_error', (ctx: KoaContextWithOIDC, error: Error) => {
+      const route = ctx.oidc?.route ?? 'unknown';
       this.logger.error(
         JSON.stringify({
           kind: 'oauth.server_error',
-          route: ctx.oidc?.route ?? 'unknown',
+          route,
           error: error.name,
           message: error.message,
         }),
       );
+      void import('@sentry/node')
+        .then((Sentry) => {
+          Sentry.withScope((scope) => {
+            scope.setLevel('error');
+            scope.setTag('oauth_route', route);
+            Sentry.captureException(error);
+          });
+        })
+        .catch(() => {
+          // Sentry is unavailable; the log line above is the record.
+        });
     });
 
     return provider;

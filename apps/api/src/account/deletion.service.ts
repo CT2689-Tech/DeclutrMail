@@ -54,6 +54,13 @@ export const DELETION_EMAIL_QUEUE_TOKEN = 'ACCOUNT_DELETION_EMAIL_QUEUE';
  * resolution. This service only writes the request row those guards
  * read.
  *
+ * Connected apps (ADR-0048, MCP connector spec §7): the transaction
+ * that inserts the request row ALSO revokes every OAuth grant, token
+ * and pending code the person holds — a database write only, through
+ * `revokeGrantsForUser`. An account on its way out stops taking actions
+ * from an assistant at once. `cancel` does not restore them; the person
+ * reconnects each app.
+ *
  * The actual purge is the worker's job (`packages/workers/src/
  * deletion.worker.ts`), NOT this service — the API never deletes user
  * data inline in a request cycle.

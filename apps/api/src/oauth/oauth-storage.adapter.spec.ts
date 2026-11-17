@@ -28,13 +28,15 @@ describe('OAuth storage adapter', () => {
   let db: DrizzleDb;
   let adapter: ReturnType<typeof createOAuthStorageAdapter>;
   let grantId: string;
+  const reportReuse = vi.fn();
 
   const exp = () => Math.floor(Date.now() / 1000) + 600;
 
   beforeEach(async () => {
     vi.stubEnv('API_URL', 'https://api.example.test');
     db = drizzle(await freshTestPglite(), { schema }) as unknown as DrizzleDb;
-    adapter = createOAuthStorageAdapter(db);
+    reportReuse.mockClear();
+    adapter = createOAuthStorageAdapter(db, reportReuse);
     const [workspace] = await db.insert(workspaces).values({ name: 'WS' }).returning();
     const [user] = await db
       .insert(users)
@@ -69,9 +71,15 @@ describe('OAuth storage adapter', () => {
 
       // Two requests that both read the token as unused, then both consume it.
       await store.consume('refresh-1');
+      expect(reportReuse).not.toHaveBeenCalled();
       await expect(store.consume('refresh-1')).rejects.toBeInstanceOf(errors.InvalidGrant);
 
       expect(await grantRevokedAt()).toBeInstanceOf(Date);
+      // Reported once, with who it belonged to; a third attempt adds nothing.
+      await expect(store.consume('refresh-1')).rejects.toBeInstanceOf(errors.InvalidGrant);
+      expect(reportReuse).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ grantId, clientId: 'client-1', kind: 'refresh_token' }),
+      );
     });
 
     it('reports a consumed token as consumed, so the library can see reuse', async () => {
@@ -120,6 +128,9 @@ describe('OAuth storage adapter', () => {
       await store.consume('code-1');
       await expect(store.consume('code-1')).rejects.toBeInstanceOf(errors.InvalidGrant);
       expect(await grantRevokedAt()).toBeInstanceOf(Date);
+      expect(reportReuse).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ grantId, kind: 'authorization_code' }),
+      );
     });
 
     it.each([
@@ -175,6 +186,8 @@ describe('OAuth storage adapter', () => {
       expect(await adapter('Grant').find(grantId)).toBeUndefined();
       const [token] = await db.select().from(oauthTokens);
       expect(token!.revokedAt).toBeInstanceOf(Date);
+      // Outside a token request this is an ordinary revocation, not reuse.
+      expect(reportReuse).not.toHaveBeenCalled();
     });
 
     it('treats a malformed id as unknown instead of asking Postgres to parse it', async () => {
