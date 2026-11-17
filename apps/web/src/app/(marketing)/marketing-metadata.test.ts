@@ -113,7 +113,7 @@ describe('the blog index title — D250 §3.6 row 21', () => {
     // so an appended suffix would drift from the prescribed value unnoticed —
     // which is the failure this assertion exists to catch.
     expect(blog.title).toEqual({
-      absolute: 'DeclutrMail Journal — essays on email cleanup',
+      absolute: 'DeclutrMail articles — essays on email cleanup',
     });
   });
 });

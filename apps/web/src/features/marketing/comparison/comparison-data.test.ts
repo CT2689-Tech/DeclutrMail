@@ -357,6 +357,12 @@ describe('comparison search-result metadata', () => {
         new RegExp(`— compared, ${month}$`),
       );
     }
+    // Every page is verified in the same month today, so the loop alone
+    // would stay green if a literal month came back. A re-verified page
+    // must carry its own month.
+    const undated = COMPARISONS.find((comparison) => !comparison.metaTitle)!;
+    const reverified = { ...undated, verifiedIso: '2026-12-02' };
+    expect(comparisonMetaTitle(reverified)).toMatch(/— compared, December 2026$/);
   });
 
   it('keeps every whole sentence that fits in a meta description', () => {

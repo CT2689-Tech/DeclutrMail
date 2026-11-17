@@ -217,7 +217,7 @@ export const WS3_COPY = {
     'InboxPurge',
     'In-Gmail bulk unsubscriber',
     'InboxPurge vs DeclutrMail',
-    'InboxPurge is a Chrome extension for bulk unsubscribe and delete inside Gmail. DeclutrMail reviews email by sender, with previews and 30-day Undo.',
+    'InboxPurge is a Chrome extension for bulk unsubscribe and delete inside Gmail. DeclutrMail lets you review email by sender, with previews and 30-day Undo.',
   ],
   'ws3.vsNew.inboxpurge.facts': [
     'primaryUnit: Sender',
