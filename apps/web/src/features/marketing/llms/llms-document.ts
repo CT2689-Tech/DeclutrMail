@@ -132,6 +132,28 @@ function withLaunchLinks(body: string): string {
   return `${body.slice(0, lineEnd)}\n${block}${body.slice(lineEnd)}`;
 }
 
+const SIGN_IN_LINE =
+  '- [Sign in](https://declutrmail.com/sign-in): the Gmail permission DeclutrMail needs, what data it uses, what to expect during the first scan, and how to connect';
+
+const OPEN_BETA_LINE =
+  '- [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed';
+
+/**
+ * `/pricing.md` is a standalone document with its own H1. Embedded under
+ * `## Pricing`, its title becomes a plain line and its plan headings drop
+ * to H3, so llms.txt keeps a single H1 and a flat list of H2 sections.
+ */
+function nestUnderPricing(markdown: string): string {
+  return markdown
+    .split('\n')
+    .map((line) => {
+      if (line.startsWith('# ')) return line.slice(2);
+      if (line.startsWith('## ')) return `#${line}`;
+      return line;
+    })
+    .join('\n');
+}
+
 export async function renderLlmsTxt(resolved?: PricingFlags): Promise<string> {
   // Same source as /pricing. The web process env stays off; Cloud Run
   // is where PRICING_V2 and BILLING_PASS_ENABLED are set.
@@ -150,16 +172,21 @@ export async function renderLlmsTxt(resolved?: PricingFlags): Promise<string> {
       `- [Pricing](https://declutrmail.com/pricing): ${pricingLine}`,
     );
   if (LAUNCH_STAGE === 'ga') {
-    body = body.replace(
-      '- [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed',
-      `- [Get started](https://declutrmail.com/beta): ${llmsBetaLine().replace(/^Get started: /, '')}`,
-    );
+    // After GA, /beta only serves the OAuth denial state and 307s organic
+    // visits to /how-it-works. Its one fact still worth stating (open
+    // sign-up) joins the Sign in entry, so /sign-in is listed once.
+    const openSignUp = llmsBetaLine().split('. ').pop() ?? '';
+    body = body
+      .replace(`${OPEN_BETA_LINE}\n`, '')
+      .replace(SIGN_IN_LINE, `${SIGN_IN_LINE}. ${openSignUp}`);
   }
   body = withPricingChangelog(withLaunchLinks(body), flags.pricingV2);
   const facts = llmsKeyFacts(flags.passEnabled, flags.pricingV2)
     .map((fact) => `- ${fact}`)
     .join('\n');
-  const pricing = renderPricingMarkdown(flags.passEnabled, flags.pricingV2).trim();
+  const pricing = nestUnderPricing(
+    renderPricingMarkdown(flags.passEnabled, flags.pricingV2).trim(),
+  );
   const pricingSection = pricing === '' ? '\n' : `\n\n## Pricing\n\n${pricing}\n`;
   return `${withOpeningFacts(body.trim(), facts)}${pricingSection}`;
 }

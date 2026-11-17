@@ -217,7 +217,7 @@ export const WS3_COPY = {
     'InboxPurge',
     'In-Gmail bulk unsubscriber',
     'InboxPurge vs DeclutrMail',
-    'InboxPurge is a Chrome extension for bulk unsubscribe and delete inside Gmail. DeclutrMail is a web app for sender-by-sender Gmail decisions with previews and 30-day Undo.',
+    'InboxPurge is a Chrome extension for bulk unsubscribe and delete inside Gmail. DeclutrMail lets you review email by sender, with previews and 30-day Undo.',
   ],
   'ws3.vsNew.inboxpurge.facts': [
     'primaryUnit: Sender',
@@ -281,7 +281,7 @@ export const WS3_COPY = {
     'price: Free hosted plan, a paid plan, or self-host | See mailmop.com.',
   ],
   'ws3.vsNew.mailmop.sources': [
-    'MailMop home | https://www.mailmop.com/ | Browser processing; free hosted plan; self-hosting',
+    'MailMop home | https://mailmop.com/ | Browser processing; free hosted plan; self-hosting',
     'MailMop GitHub README | https://github.com/neilbhammar/mailmop | Source-available license; full Gmail access to read unsubscribe links',
   ],
   'ws3.security.glance.title': 'At a glance',
@@ -452,13 +452,13 @@ export const WS3_COPY = {
   'ws3.pr1019.howItWorks.unsubscribe':
     'An unsubscribe request asks a sender to stop future mail. The email already in Gmail stays where it is unless you also choose Archive, Later or Delete.',
   'ws3.pr1019.simulator.description':
-    'Try Senders and Triage with made-up email. Open the sender inspector, filter and select senders, and preview Archive, Later or Delete. No signup or Gmail access needed.',
+    'Try Senders and Triage with made-up email: open the sender inspector and preview Archive, Later or Delete. No signup or Gmail access needed.',
   'ws3.pr1019.terms.instruction':
     'DeclutrMail changes your Gmail only at your instruction: a choice you approve directly, or a rule you turned on. Before you archive, move to Later or delete email in Triage or Senders, DeclutrMail shows the current matching count, a sample when one is available, and the planned Gmail changes.',
   'ws3.pr1019.howTo.unsubscribe':
     'Unsubscribe is different: it asks the sender to stop future delivery and leaves existing email where it is unless you also approve Archive, Later or Delete. Keep records your current sender decision, while Protected is the standing safety control.',
   'ws3.pr1019.blog.recovery.description':
-    'Why every Archive, Later and Delete in Gmail needs its own recovery explanation, visible previews, small batches, and honest one-way warnings even when Undo exists.',
+    'Why every Archive, Later and Delete in Gmail needs its own recovery explanation, visible previews, small batches, and honest one-way warnings, even with Undo.',
   'ws3.pr1019.blog.recovery.moveBack':
     'A generic “move back” command is not enough. An email may already have labels, may already be outside Inbox, or may change again after you archive it. DeclutrMail must remember the exact Gmail label changes for that Gmail account so a retry does not repeat or compound them.',
   'ws3.changelog.refundAligned':

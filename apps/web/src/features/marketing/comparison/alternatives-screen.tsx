@@ -6,7 +6,8 @@ import { JsonLd } from '../json-ld';
 import { TrustRow } from '../trust/trust-row';
 import { siteUrl } from '../landing/urls';
 import { ALTERNATIVES_SLUGS, alternativesFor, type AlternativesPage } from './comparison-data';
-import { FinalCta, MethodNote, VerificationStamp } from './comparison-screen';
+import { COMPARE_CRUMB, FinalCta, MethodNote, VerificationStamp } from './comparison-screen';
+import { breadcrumbList } from '../structured-data';
 import { COMPARISON_RELATED_GUIDES } from './related-guides';
 
 /**
@@ -44,15 +45,22 @@ export function AlternativesScreen({ page }: { page: AlternativesPage }) {
       url: `${siteUrl()}/vs/${alternative.slug}`,
     })),
   };
+  // The same steps the visible breadcrumb shows.
+  const pageCrumb = { name: `${subject.name} alternatives`, path: `/alternatives/${page.slug}` };
+  const breadcrumbJsonLd = {
+    '@context': 'https://schema.org',
+    ...breadcrumbList([COMPARE_CRUMB, pageCrumb]),
+  };
 
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={jsonLd} />
+      <JsonLd data={breadcrumbJsonLd} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
-          <Link href="/compare">All comparisons</Link>
+          <Link href={COMPARE_CRUMB.path}>{COMPARE_CRUMB.name}</Link>
           <span aria-hidden="true">/</span>
-          <span>{subject.name} alternatives</span>
+          <span>{pageCrumb.name}</span>
         </nav>
         <h1>{`${subject.name} alternatives for Gmail cleanup`}</h1>
         <p className="dm-compare-lede">

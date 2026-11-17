@@ -343,6 +343,11 @@ describe('marketing metadata guards', () => {
       expect(metadata.description, path).toContain('No rankings, no affiliates.');
     }
 
+    // Facts, not the sentence: made-up data, the verbs it previews, no access.
+    expect(inboxSimulator.description).toContain('made-up email');
+    expect(inboxSimulator.description).toContain('Archive, Later or Delete');
+    expect(inboxSimulator.description).toContain('No signup or Gmail access needed');
+    expect((inboxSimulator.description ?? '').length).toBeLessThanOrEqual(160);
     expect(cookies.description).toContain('PostHog analytics runs only with your consent');
     expect(privacy.description).toContain('We do not sell Gmail data or use it for advertising.');
   });

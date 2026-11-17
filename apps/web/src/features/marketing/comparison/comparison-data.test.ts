@@ -9,9 +9,11 @@ import {
   ALTERNATIVES_SLUGS,
   alternativesFor,
   comparisonBySlug,
+  comparisonMetaTitle,
   comparisonVerifiedLabel,
   ROUNDUP_DIMENSIONS,
 } from './comparison-data';
+import { fitMetaDescription } from './comparison-launch-pages';
 
 const EXPECTED_SLUGS = [
   'clean-email',
@@ -81,7 +83,7 @@ describe('comparison data', () => {
       'www.meta.com',
       'mailstrom.co',
       'www.inboxpurge.com',
-      'www.mailmop.com',
+      'mailmop.com',
       'github.com',
     ]);
 
@@ -343,5 +345,36 @@ describe('the multi-way matrix is pivoted, never restated', () => {
     for (const [, cell] of gaps) {
       expect(cell).toBeUndefined();
     }
+  });
+});
+
+describe('comparison search-result metadata', () => {
+  it('dates every /vs title from its own verified month, like the visible stamp', () => {
+    for (const comparison of COMPARISONS) {
+      if (comparison.metaTitle) continue;
+      const month = comparisonVerifiedLabel(comparison.verifiedIso).replace('Last verified ', '');
+      expect(comparisonMetaTitle(comparison), comparison.slug).toMatch(
+        new RegExp(`— compared, ${month}$`),
+      );
+    }
+    // Every page is verified in the same month today, so the loop alone
+    // would stay green if a literal month came back. A re-verified page
+    // must carry its own month.
+    const undated = COMPARISONS.find((comparison) => !comparison.metaTitle)!;
+    const reverified = { ...undated, verifiedIso: '2026-12-02' };
+    expect(comparisonMetaTitle(reverified)).toMatch(/— compared, December 2026$/);
+  });
+
+  it('keeps every whole sentence that fits in a meta description', () => {
+    const first = 'A'.repeat(70) + '.';
+    const second = 'B'.repeat(70) + '.';
+    const third = 'C'.repeat(40) + '.';
+    // Fits as is: no override.
+    expect(fitMetaDescription(`${first} ${second}`)).toBeUndefined();
+    // Over budget: keeps the first two sentences (143), drops the third.
+    expect(fitMetaDescription(`${first} ${second} ${third}`)).toBe(`${first} ${second}`);
+    // A lone sentence over budget stays whole rather than cut mid-sentence.
+    const long = 'D'.repeat(170) + '.';
+    expect(fitMetaDescription(`${long} ${first}`)).toBe(long);
   });
 });

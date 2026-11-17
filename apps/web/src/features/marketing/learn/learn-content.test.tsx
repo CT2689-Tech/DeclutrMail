@@ -295,8 +295,8 @@ describe('shared learning surfaces', () => {
       (script) => JSON.parse(script.textContent ?? '{}') as Record<string, unknown>,
     );
 
-    expect(nodes.map((node) => node['@type'])).toEqual(['Article', 'FAQPage']);
-    expect(nodes[1]?.mainEntity).toEqual([
+    expect(nodes.map((node) => node['@type'])).toEqual(['Article', 'BreadcrumbList', 'FAQPage']);
+    expect(nodes[2]?.mainEntity).toEqual([
       {
         '@type': 'Question',
         name: article.title,
@@ -312,8 +312,51 @@ describe('shared learning surfaces', () => {
     const types = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (script) => (JSON.parse(script.textContent ?? '{}') as Record<string, unknown>)['@type'],
     );
-    expect(types).toEqual(['Article']);
+    expect(types).toEqual(['Article', 'BreadcrumbList']);
   });
+
+  it.each([
+    ['/how-to', 'Guides', HOW_TO_ARTICLES['gmail-storage-full'], 'HowTo'],
+    ['/answers', 'Answers', ANSWER_ARTICLES['is-it-safe-to-connect-gmail-app'], 'Article'],
+    ['/blog', 'Articles', BLOG[0]!, 'BlogPosting'],
+  ] as const)(
+    'marks up %s pages with the visible breadcrumb, a crawlable image and the publisher',
+    (hubPath, hubLabel, article, type) => {
+      const { container } = render(<ArticlePage article={article} />);
+      const nodes = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
+        (script) => JSON.parse(script.textContent ?? '{}') as Record<string, unknown>,
+      );
+      const url = `https://declutrmail.com${article.path}`;
+      expect(nodes[0]).toMatchObject({
+        '@type': type,
+        url,
+        mainEntityOfPage: url,
+        image: 'https://declutrmail.com/opengraph-image',
+      });
+      if (type !== 'HowTo') {
+        expect(nodes[0]?.publisher).toMatchObject({
+          '@id': 'https://declutrmail.com/#organization',
+          logo: { url: 'https://declutrmail.com/icons/icon-512.png' },
+        });
+      }
+      // The BreadcrumbList must mirror the breadcrumb a reader sees.
+      expect(screen.getByRole('link', { name: hubLabel })).toHaveAttribute('href', hubPath);
+      expect(nodes[1]).toEqual({
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://declutrmail.com' },
+          {
+            '@type': 'ListItem',
+            position: 2,
+            name: hubLabel,
+            item: `https://declutrmail.com${hubPath}`,
+          },
+          { '@type': 'ListItem', position: 3, name: article.title, item: url },
+        ],
+      });
+    },
+  );
 
   it('renders all three published posts on the article index', () => {
     render(<BlogIndexPage />);

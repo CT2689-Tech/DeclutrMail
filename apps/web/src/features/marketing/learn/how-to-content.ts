@@ -285,7 +285,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     quickAnswer:
       'Check which of Gmail, Drive, or Photos is using your shared storage. In Gmail, review Spam and Trash, then search has:attachment larger:10M for large email you can delete. Trash still uses storage until emptied, and emptying it ends recovery. Archiving and unsubscribing do not free existing storage.',
     description:
-      'Free space when Gmail says storage is full: empty Trash and Spam first, find large attachments with Gmail’s size operators, and see why archiving frees nothing.',
+      'Free space when Gmail storage is full: empty Trash and Spam, find large attachments with Gmail’s size operators, and see why archiving frees nothing.',
     intro:
       'A full Gmail is usually not a Gmail problem. Google gives each personal account up to 15 GB shared across Gmail, Drive, and Photos, so the email is competing with backups and photo libraries for the same quota. That also means most cleanup advice aimed at tidiness — archive, unsubscribe, inbox zero — recovers no space at all.',
     readingMinutes: 8,
@@ -448,7 +448,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     kind: 'How-to guide',
     title: 'How to auto archive emails in Gmail',
     description:
-      'Archive Gmail automatically with a Skip Inbox filter, or use DeclutrMail’s observed low-engagement preset without confusing one-time Archive with a future rule.',
+      'Archive Gmail automatically with a Skip Inbox filter or DeclutrMail’s observed low-engagement preset, without confusing one-time Archive with a future rule.',
     intro:
       'A one-time Archive removes Inbox from email that already exists. Future auto-archive requires a separate filter or automation rule. Keeping that distinction visible is the safest way to avoid email disappearing unexpectedly.',
     readingMinutes: 7,
@@ -822,6 +822,7 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/vs/gmail',
     '/compare',
     '/answers/sender-level-vs-message-level-cleanup',
+    '/answers/best-way-to-clean-gmail-2026',
   ],
   'bulk-delete-emails-from-one-sender': [
     '/how-to/clean-gmail-by-sender',
@@ -837,6 +838,7 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/stop-promotional-emails-gmail',
     '/vs/clean-email',
     '/answers/how-undo-works-for-gmail-cleanup',
+    '/answers/best-way-to-clean-gmail-2026',
   ],
   'auto-archive-future-emails-in-gmail': [
     '/how-to/gmail-storage-full',

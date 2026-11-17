@@ -21,7 +21,7 @@ export async function generateMetadata({
   if (!isBlogSlug(slug)) return {};
   const article = getBlogArticle(slug);
   return marketingPageMetadata({
-    title: `${article.title} — DeclutrMail Journal`,
+    title: `${article.title} — DeclutrMail`,
     description: article.description,
     path: article.path,
   });
