@@ -194,15 +194,30 @@ describe('pricing story builders', () => {
 
   it('snapshots listed JSON-LD and markdown while the flag is on', () => {
     vi.stubEnv('PRICING_V2', 'true');
-    expect(buildOffersJsonLd()).toEqual([
-      {
-        '@type': 'Offer',
-        name: 'Free',
-        price: '0',
-        priceCurrency: 'USD',
-        url: 'https://declutrmail.com/pricing',
-      },
-    ]);
+    // Real price ids are listed (founder decision 2026-11-17); the Pass only
+    // while it can be bought, and INR only while rupee checkout is open
+    // (ADR-0045).
+    const currencies = () =>
+      buildOffersJsonLd().map((offer) => (offer as { priceCurrency: string }).priceCurrency);
+    vi.stubEnv('BILLING_PASS_ENABLED', 'false');
+    vi.stubEnv('PADDLE_ENV', 'production');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', '');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', '');
+    expect(currencies()).toEqual(['USD', 'USD']);
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_live_india_plus');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_live_india_pass');
+    expect(currencies()).toEqual(['USD', 'USD', 'INR']);
+    const live = buildOffersJsonLd();
+    expect(live[0]).toEqual({
+      '@type': 'Offer',
+      name: 'Free',
+      price: '0',
+      priceCurrency: 'USD',
+      url: 'https://declutrmail.com/pricing',
+    });
+    expect(live[1]).toMatchObject({ name: 'Plus', price: 59 });
+    vi.stubEnv('BILLING_PASS_ENABLED', 'true');
+    expect(buildOffersJsonLd()).toEqual(buildOffersJsonLd({ plus: true, pass: true }));
     const listed = buildOffersJsonLd({ plus: true, pass: true });
     expect(listed).toHaveLength(4);
     expect(listed[1]).toMatchObject({
