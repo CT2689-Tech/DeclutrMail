@@ -84,7 +84,9 @@ export function SenderRuleEditor({
       }}
     >
       <div className={styles.top}>
-        <span className={styles.badge}>Approval first</span>
+        <span className={styles.badge}>
+          {rule?.mode === 'active' ? 'Automatic' : 'Approval first'}
+        </span>
         <Button type="button" tone="ghost" onClick={onCancel} disabled={saving}>
           Cancel
         </Button>
@@ -268,7 +270,9 @@ export function SenderRuleEditor({
         </Button>
       </div>
       <p className={styles.muted}>
-        Saving a rule never moves email. Preview a batch when you’re ready.
+        {rule?.mode === 'active'
+          ? 'Changing its senders or email age makes this rule ask first again.'
+          : 'Saving a rule never moves email. Preview a batch when you’re ready.'}
       </p>
     </form>
   );

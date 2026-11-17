@@ -332,9 +332,8 @@ export interface ListedOfferOverride {
 }
 
 /**
- * Listed offers only. Placeholders stay unlisted, so the live function
- * returns Free until a price id is real. Tests pass `listed` to pin the
- * shape Plus and the Pass take once they are listed.
+ * Listed offers only. A price with a placeholder id stays unlisted.
+ * Tests pass `listed` to pin the shape each offer takes.
  */
 const FREE_OFFER = {
   '@type': 'Offer',
@@ -363,18 +362,22 @@ export function buildOffersJsonLd(listed?: ListedOfferOverride): object[] {
         billingDuration: 'P1Y',
       },
     });
-    offers.push({
-      '@type': 'Offer',
-      name: planName('plus'),
-      price: inr,
-      priceCurrency: 'INR',
-      priceSpecification: {
-        '@type': 'UnitPriceSpecification',
+    // ADR-0045: no INR offer while rupee checkout is paused, i.e. until both
+    // India Paddle price ids are configured in this environment.
+    if (listed ? listed.plus : indiaPaddlePricesConfigured()) {
+      offers.push({
+        '@type': 'Offer',
+        name: planName('plus'),
         price: inr,
         priceCurrency: 'INR',
-        billingDuration: 'P1Y',
-      },
-    });
+        priceSpecification: {
+          '@type': 'UnitPriceSpecification',
+          price: inr,
+          priceCurrency: 'INR',
+          billingDuration: 'P1Y',
+        },
+      });
+    }
   }
   if (passListed) {
     offers.push({

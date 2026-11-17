@@ -273,7 +273,9 @@ function launchPrice(usdCents: number, paise: number, paddlePriceId: string): Pr
     inrPaise: paise,
     paddlePriceId,
     razorpayPlanId: null,
-    listed: false,
+    // Listed in search structured data once the price id is real
+    // (founder decision 2026-11-17). A placeholder id stays unlisted.
+    listed: paddlePriceId !== UNPROVISIONED_PRICE_ID,
     version: '2026-10',
     inr: { paise, taxInclusive: true },
   };
@@ -282,7 +284,7 @@ function launchPrice(usdCents: number, paise: number, paddlePriceId: string): Pr
 /** Plus annual 2026-10 ($59 / ₹1,999). */
 export const PLUS_ANNUAL_2026_10 = launchPrice(5900, 199_900, 'pri_01m4qk99878y7jynh1h00jfhy8');
 
-/** Backlog Pass config. `listed` stays false; JSON-LD does not follow the price id. */
+/** Backlog Pass config. Always purchasable; JSON-LD lists it once its price id is real. */
 export const OFFERS = {
   backlogPass: {
     kind: 'one_time',

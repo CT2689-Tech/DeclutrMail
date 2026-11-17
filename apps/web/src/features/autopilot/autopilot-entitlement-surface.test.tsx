@@ -54,9 +54,7 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     const retry = await screen.findByRole('button', { name: 'Try again' });
     fireEvent.click(retry);
 
-    expect(
-      await screen.findByText('Review low-engagement senders for Archive'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Archive low-engagement senders')).toBeInTheDocument();
     expect(reads).toBe(2);
   });
 
@@ -115,9 +113,7 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     expect(screen.getByTestId('autopilot-observe-preview')).toBeInTheDocument();
     expect(screen.getByText(/previews are read-only/i)).toBeInTheDocument();
     await waitFor(() => expect(rulesReads).toBe(1));
-    expect(
-      await screen.findByText('Review low-engagement senders for Archive'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Archive low-engagement senders')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview current matches' }));
     await waitFor(() => expect(previewReads).toBe(1));

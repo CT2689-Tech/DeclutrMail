@@ -46,6 +46,8 @@ export const AutopilotRuleConfigurationSchema = z
   });
 export type AutopilotRuleConfiguration = z.infer<typeof AutopilotRuleConfigurationSchema>;
 
+export { isReviewOnlyRule } from './autopilot-review-only';
+
 /** Empty stored conditions retain the installed preset's original behavior. */
 export function defaultAutopilotConditions(
   key: string | null,

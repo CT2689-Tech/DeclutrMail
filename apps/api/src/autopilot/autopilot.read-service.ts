@@ -56,7 +56,9 @@ import {
   ruleMatchSenderIsProtected,
   ruleMatchUnsubscribeAlreadyDone,
   workspaces,
+  messageNotRestoredFromRule,
   senderActionWhere,
+  senderInboxActionWhere,
   senderPolicies,
   senders,
   triageDecisions,
@@ -79,6 +81,7 @@ import {
   AUTOPILOT_PENDING_PAGE_SIZE,
   encodeCursor,
   defaultAutopilotConditions,
+  isReviewOnlyRule,
   AutopilotRuleConditionsSchema,
   AutopilotRuleConfigurationSchema,
 } from '@declutrmail/shared/contracts';
@@ -568,18 +571,12 @@ export class AutopilotReadService {
           ),
         )
         .limit(1);
-      if (target?.actionKind === 'delete')
-        throw new BadRequestException('Delete batches always require preview and approval.');
-      if (target?.presetKey === 'auto_screen_new_senders') {
+      if (target && isReviewOnlyRule(target))
         throw new BadRequestException(
-          'New-sender matches require review before moving mail to Later.',
+          target.actionKind === 'delete'
+            ? 'Delete batches always require preview and approval.'
+            : 'New-sender matches require review before moving mail to Later.',
         );
-      }
-      if (target?.presetKey === 'auto_archive_low_engagement') {
-        throw new BadRequestException(
-          'Low-engagement archive matches require review before moving mail.',
-        );
-      }
     }
 
     const materialChange = configuration !== undefined || patch.confidenceThreshold !== undefined;
@@ -1594,8 +1591,34 @@ export class AutopilotReadService {
             .groupBy(mailMessages.senderKey)
         : [];
     const deleteCounts = new Map(eligibleCounts.map((r) => [r.senderKey, r.n]));
+    // Archive and Later count what the rule's own run would move: never mail
+    // a previous undo of this rule restored (`messageNotRestoredFromRule`),
+    // which an Active run leaves alone. Without this the turn-on preview
+    // promises a number of emails that do not move.
+    const labelVerb = rule.actionKind === 'archive' || rule.actionKind === 'later';
+    const labelRows =
+      labelVerb && matched.length > 0
+        ? await this.db
+            .select({ senderKey: mailMessages.senderKey, n: sql<number>`count(*)::int` })
+            .from(mailMessages)
+            .where(
+              and(
+                senderInboxActionWhere({
+                  mailboxAccountId,
+                  senderKeys: matched.map((m) => m.senderKey),
+                }),
+                messageNotRestoredFromRule(rule.id),
+              ),
+            )
+            .groupBy(mailMessages.senderKey)
+        : [];
+    const labelCounts = new Map(labelRows.map((r) => [r.senderKey, Number(r.n)]));
     const actionableCount = (m: { senderKey: string; inboxCount: number }) =>
-      rule.actionKind === 'delete' ? (deleteCounts.get(m.senderKey) ?? 0) : m.inboxCount;
+      rule.actionKind === 'delete'
+        ? (deleteCounts.get(m.senderKey) ?? 0)
+        : labelVerb
+          ? (labelCounts.get(m.senderKey) ?? 0)
+          : m.inboxCount;
 
     const actionable = matched.filter((m) =>
       rule.actionKind === 'unsubscribe' ? !m.isUnsubscribed : actionableCount(m) > 0,
@@ -1808,13 +1831,10 @@ function projectRule(
   // from the LAST mode transition (`patchRule` resets `modeChangedAt`).
   // No auto-promotion happens at elapse (locked safe variant) — the FE
   // day-7 banner (U15) prompts the user off `observeWindowElapsed`.
-  // Older mailboxes may retain either of these presets in Active mode. The apply
-  // worker treats them as review-only, so the API must show the effective
-  // behavior rather than promise unattended moves that cannot happen.
-  const reviewOnly =
-    row.actionKind === 'delete' ||
-    row.presetKey === 'auto_screen_new_senders' ||
-    row.presetKey === 'auto_archive_low_engagement';
+  // A review-only rule stored as Active (migration 0100 converged the ones
+  // that existed) is shown as what the workers do with it: Observe. Never
+  // promise unattended moves that cannot happen.
+  const reviewOnly = isReviewOnlyRule(row);
   const mode = reviewOnly && row.mode === 'active' ? 'observe' : row.mode;
   const inObserve = mode === 'observe';
   const observeWindowEndsAtMs = row.modeChangedAt.getTime() + OBSERVE_WINDOW_MS;

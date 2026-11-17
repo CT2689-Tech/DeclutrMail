@@ -278,21 +278,43 @@ export function ruleMatchUnsubscribeAlreadyDone(): SQL {
 }
 
 /**
+ * An unattended (`mode_at_match = 'active'`) match the sweep will retire
+ * instead of running (Guard 3): its rule is no longer Active, is
+ * review-only (mirrors `isReviewOnlyRule` in `@declutrmail/shared`: Delete,
+ * and the new-sender preset), or is a custom rule that no longer names the
+ * sender. A paused rule's matches are not retired, they wait;
+ * {@link ruleMatchRuleCanStart} covers those.
+ */
+export function ruleMatchUnattendedRetired(): SQL {
+  return sql`(${sql.raw('rule_match_log.mode_at_match')} = 'active' and exists (
+  select 1
+  from automation_rules ar
+  where ar.id = ${sql.raw('rule_match_log.rule_id')}
+    and ar.mode <> 'paused'
+    and (ar.mode <> 'active'
+         or ar.action_kind = 'delete'
+         or ar.preset_key = 'auto_screen_new_senders'
+         or (not ar.is_preset
+             and not coalesce(ar.conditions -> 'senderKeys' ? ${sql.raw('rule_match_log.sender_key')}, false)))
+))`;
+}
+
+/**
  * What the Quiet screen counts as held: a queued action whose rule may
  * start it (Guard 3), whose sender is not Protected (Guard 4) and, for an
  * unsubscribe, not already unsubscribed (Guard 5). The sweep still loads
  * the others — it retires them or waits for the rule — so the exclusions
  * are the count's alone. Not every exit is mirrored; among those left out:
  * the rule's daily cap, the tier gate, an in-flight claim (it finishes even
- * during quiet), a legacy superseded Active match, an unknown preset, and
- * a claim abandoned after a rebuild. Correlates on an unaliased outer
- * `rule_match_log`.
+ * during quiet), an unknown preset, and a claim abandoned after a rebuild.
+ * Correlates on an unaliased outer `rule_match_log`.
  */
 export function ruleMatchIsHeldAction(): SQL {
   // Non-empty predicate list, so `and()` can never return undefined.
   return and(
     ruleMatchIsQueuedAction(),
     ruleMatchRuleCanStart(),
+    not(ruleMatchUnattendedRetired()),
     not(ruleMatchSenderIsProtected()),
     not(ruleMatchUnsubscribeAlreadyDone()),
   )!;

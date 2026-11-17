@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SenderRulesController } from './sender-rules.controller.js';
 import type { SenderRulesService } from './sender-rules.service.js';
+import type { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 
 const mailbox = { id: 'owned-mailbox' };
 const id = '11111111-1111-4111-8111-111111111111';
@@ -11,7 +12,9 @@ const definition = {
   reach: 'inbox_only',
   olderThanDays: 30,
 };
-function setup() {
+const principal = { workspaceId: 'workspace' } as never;
+function setup(tier: 'free' | 'plus' | 'pro' = 'plus') {
+  const entitlements = { tierForWorkspace: vi.fn().mockResolvedValue(tier) };
   const rules = {
     list: vi.fn().mockResolvedValue([]),
     create: vi.fn().mockResolvedValue({ id }),
@@ -20,7 +23,14 @@ function setup() {
     execute: vi.fn().mockResolvedValue({ previewId: id }),
     search: vi.fn().mockResolvedValue({ senders: [], nextCursor: null }),
   };
-  return { rules, controller: new SenderRulesController(rules as unknown as SenderRulesService) };
+  return {
+    rules,
+    entitlements,
+    controller: new SenderRulesController(
+      rules as unknown as SenderRulesService,
+      entitlements as unknown as EntitlementsService,
+    ),
+  };
 }
 
 describe('sender-rule HTTP boundary', () => {
@@ -34,7 +44,7 @@ describe('sender-rule HTTP boundary', () => {
       controller.create(mailbox, { ...definition, mailboxId: 'forged' }, 'save-request'),
     ).rejects.toThrow();
   });
-  it('rejects Active, protection overrides, unknown conditions and arbitrary message IDs', async () => {
+  it('rejects Active on create or with an edit, protection overrides, unknown conditions and arbitrary message IDs', async () => {
     const { controller, rules } = setup();
     for (const body of [
       { ...definition, mode: 'active' },
@@ -43,13 +53,32 @@ describe('sender-rule HTTP boundary', () => {
       { ...definition, messageIds: ['forged'] },
     ])
       await expect(controller.create(mailbox, body, 'save-request')).rejects.toThrow();
-    await expect(controller.patch(mailbox, id, { version: 1, mode: 'active' })).rejects.toThrow();
+    await expect(
+      controller.patch(mailbox, principal, id, { ...definition, version: 1, mode: 'active' }),
+    ).rejects.toThrow();
+    expect(rules.patch).not.toHaveBeenCalled();
     await expect(controller.preview(mailbox, id, { version: 1, override: true })).rejects.toThrow();
     await expect(
       controller.execute(mailbox, id, { previewId: id, messageIds: ['forged'] }, 'unique-key'),
     ).rejects.toThrow();
     expect(rules.create).not.toHaveBeenCalled();
     expect(rules.execute).not.toHaveBeenCalled();
+  });
+  it('lets an Archive rule run on its own only on a tier with autopilot-active', async () => {
+    const plus = setup('plus');
+    await plus.controller.patch(mailbox, principal, id, { version: 3, mode: 'active' });
+    expect(plus.entitlements.tierForWorkspace).toHaveBeenCalledWith('workspace');
+    expect(plus.rules.patch).toHaveBeenCalledWith(mailbox.id, id, { version: 3, mode: 'active' });
+
+    const free = setup('free');
+    await expect(
+      free.controller.patch(mailbox, principal, id, { version: 3, mode: 'active' }),
+    ).rejects.toThrow();
+    expect(free.rules.patch).not.toHaveBeenCalled();
+    // Leaving Active needs no unattended capability: a downgraded user can
+    // always stop a rule.
+    await free.controller.patch(mailbox, principal, id, { version: 3, mode: 'observe' });
+    expect(free.entitlements.tierForWorkspace).toHaveBeenCalledTimes(1);
   });
   it('requires a current version and stable request key for confirmation', async () => {
     const { controller, rules } = setup();

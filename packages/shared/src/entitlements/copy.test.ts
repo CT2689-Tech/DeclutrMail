@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { INR_CHECKOUT_PAUSED_MESSAGE } from '../contracts/billing-availability';
 import {
@@ -150,8 +150,23 @@ describe('promoBanner', () => {
 });
 
 describe('pricing story builders', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('snapshots listed JSON-LD and markdown', () => {
-    expect(buildOffersJsonLd()).toEqual([
+    // Real price ids are listed (founder decision 2026-11-17); INR only while
+    // rupee checkout is open (ADR-0045). The Pass is always purchasable now.
+    const currencies = () =>
+      buildOffersJsonLd().map((offer) => (offer as { priceCurrency: string }).priceCurrency);
+    vi.stubEnv('PADDLE_ENV', 'production');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', '');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', '');
+    expect(currencies()).toEqual(['USD', 'USD', 'USD']);
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_live_india_plus');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_live_india_pass');
+    expect(buildOffersJsonLd()).toEqual(buildOffersJsonLd({ plus: true, pass: true }));
+    expect(buildOffersJsonLd().slice(0, 1)).toEqual([
       {
         '@type': 'Offer',
         name: 'Free',
