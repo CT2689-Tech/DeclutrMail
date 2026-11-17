@@ -262,10 +262,14 @@ test('free user hits the paywall; signed Paddle webhook flips the tier; Plus gat
   // so the date itself is not fixed here, only the shape.
   await expect(planCard).toContainText('No free emails left');
   await expect(planCard).toContainText(/· resets [A-Z][a-z]{2} \d{1,2}(?!,)/);
-  await expect(page.getByTestId('checkout-panel')).toBeVisible();
-  await expect(page.getByTestId('checkout-panel')).toContainText(
-    fillStory(WS1_COPY['checkout.title']),
-  );
+  // Launch pricing (the only path since 2026-11-17): a Free workspace's
+  // deep link points at the Plus launch offer and focuses it. It never
+  // opens a payment surface on load; the user clicks "Get Plus".
+  const plusOffer = page.getByTestId('launch-offer-plus');
+  await expect(plusOffer).toBeVisible();
+  await expect(plusOffer).toBeFocused();
+  await expect(plusOffer.getByRole('button', { name: 'Get Plus' })).toBeEnabled();
+  await expect(page.getByTestId('checkout-panel')).toHaveCount(0);
 
   // ---- 2. Paid-surface paywall: /screener renders the upsell for a
   // Free workspace (client tier gate) AND the API 402s underneath.

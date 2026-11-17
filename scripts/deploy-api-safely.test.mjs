@@ -271,9 +271,16 @@ test('workflow gates worker boot through HTTP, preserves production OAuth identi
     workflow.indexOf('- name: Deploy declutrmail-api'),
     workflow.indexOf('- name: Verify billing notice API producers'),
   );
-  // The 2026-10 pricing is unconditional; its retired flags stay gone.
+  // The code no longer reads these three flags (retired 2026-11-17), but the
+  // deploy keeps setting them for at least one release. The documented
+  // rollback (`gcloud run services update --image=<older sha>`) keeps the
+  // current env, and pre-retirement code with the flags absent would make
+  // Pro purchasable and restore the old 50-action Free cap. Drop them only
+  // once no rollback target predates 890b8f6c.
   for (const block of [worker, api]) {
-    assert.doesNotMatch(block, /PRICING_V2|METER_V2|BILLING_PASS_ENABLED/);
+    assert.match(block, /PRICING_V2=true/);
+    assert.match(block, /METER_V2=true/);
+    assert.match(block, /BILLING_PASS_ENABLED=true/);
   }
   assert.match(api, /scripts\/live-india-billing-env\.mjs --api-env/);
   assert.match(api, /BILLING_GEO_HMAC_SECRET: \$\{\{ secrets\.BILLING_GEO_HMAC_SECRET \}\}/);
