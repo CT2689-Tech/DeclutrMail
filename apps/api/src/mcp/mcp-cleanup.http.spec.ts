@@ -11,7 +11,7 @@ import {
   senderPolicies,
   undoJournal,
 } from '@declutrmail/db';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { METER } from '@declutrmail/shared/entitlements';
 import {
   LabelActionWorker,
   OutboxPublisher,
@@ -51,7 +51,7 @@ import {
  * harness's queues, so both staying empty means Gmail was never asked.
  */
 
-const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
+const FREE_LIMIT = METER.free.limit;
 
 class FakeGmail implements GmailMutationClient {
   calls: string[][] = [];
@@ -631,19 +631,20 @@ describe('MCP connector — previews, confirmation and apply', () => {
 
     it('refuses at the plan’s monthly limit and applies nothing', async () => {
       const s = await scene();
-      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
-      for (let i = 0; i < FREE_LIMIT; i += 1) {
-        await harness.db.insert(actionJobs).values({
-          mailboxAccountId: s.mailboxId,
-          verb: 'archive',
-          direction: 'forward',
-          selector: { type: 'sender', senderId: shop.id, senderKey: shop.senderKey },
-          requestedCount: 1,
-          affectedCount: 1,
-          status: 'done',
-          idempotencyKey: `archive-fill-${s.mailboxId}-${i}`,
-        });
-      }
+      // The limit counts emails: two are left, and this sender has three.
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 3 });
+      const used = FREE_LIMIT - 2;
+      await harness.db.insert(actionJobs).values({
+        mailboxAccountId: s.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: shop.id, senderKey: shop.senderKey },
+        requestedCount: used,
+        affectedCount: used,
+        quotaUnits: used,
+        status: 'done',
+        idempotencyKey: `archive-fill-${s.mailboxId}`,
+      });
       const preview = await s.mcp.call('preview_cleanup', {
         verb: 'archive',
         sender_ids: [shop.id],
@@ -658,11 +659,12 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(applied.error).toMatchObject({
         code: 'QUOTA_EXHAUSTED',
         limit: FREE_LIMIT,
-        remaining: 0,
+        used: FREE_LIMIT - 2,
+        remaining: 2,
         upgrade_url: 'http://localhost:3000/billing',
       });
       expect(applied.error.resets_at).toEqual(expect.any(String));
-      expect(await jobs(s.mailboxId)).toHaveLength(FREE_LIMIT);
+      expect(await jobs(s.mailboxId)).toHaveLength(1);
       expect(harness.queued.label.length).toBe(before);
     });
 

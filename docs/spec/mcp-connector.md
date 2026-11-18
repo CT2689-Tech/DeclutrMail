@@ -33,7 +33,7 @@ has logic of its own beyond validation and shaping.
 | `list_mailboxes`      | read-only                                    | `MailboxAccountsService` list                                                                             | address, status, sync state, which one is active                                                                           |
 | `list_senders`        | read-only                                    | senders list (`sort` = `total` \| `last_seen`, `q`, Gmail tab, `protected_only`, `limit` ≤ 100, `cursor`) | one row per sender (fields in §5)                                                                                          |
 | `get_sender`          | read-only                                    | `ActionsService.previewComposite` + sender detail                                                         | counts by window (all / 30 / 90 / 180 / 365 days), 5 most recent subjects with dates, Protected state, unsubscribe method  |
-| `get_usage`           | read-only                                    | `EntitlementsService`                                                                                     | tier, cleanup actions used / limit, reset date                                                                             |
+| `get_usage`           | read-only                                    | `EntitlementsService`                                                                                     | tier, emails used / limit, reset date                                                                                      |
 | `preview_cleanup`     | read-only (writes a preview row, never mail) | `previewComposite` (one sender) / `previewBulkComposite` (2+), then inserts `action_previews`             | `preview_id`, expiry, sender count, email count, where the email goes, how to undo, senders skipped and why, `confirm_url` |
 | `apply_cleanup`       | destructive, idempotent                      | confirmation (§3), then the route the web app uses for that verb and sender count (table below)           | action or batch id + status, or `needs_confirmation`                                                                       |
 | `get_action_status`   | read-only                                    | `getStatus` / `getBatchStatus`                                                                            | queued / running / done / failed, counts, undo availability                                                                |
@@ -182,8 +182,8 @@ instructions or tool descriptions.
   keyed by user as today. Add a per-grant ceiling on
   `preview_cleanup` (60 / minute) so a looping assistant cannot fill
   the previews table.
-- Quota: Free's 50 cleanup actions a month (`pricing.config.ts`) apply
-  exactly as in the web app. `QUOTA_EXHAUSTED` returns the reset date
+- Quota: Free's monthly email limit (`METER` in `pricing.config.ts`)
+  applies exactly as in the web app. `QUOTA_EXHAUSTED` returns the reset date
   and an upgrade link; nothing is applied.
 - Tier: every tier. All ten tools sit on Free capabilities (`senders`,
   `sender-detail`, `activity`, `cleanup-actions`). Founder decision 3.

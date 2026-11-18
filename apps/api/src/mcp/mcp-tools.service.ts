@@ -3,7 +3,6 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { ActionJobStatus } from '@declutrmail/db';
 import { actionPreviewFacts } from '@declutrmail/shared/actions';
 import { decodeCursor, encodeCursor } from '@declutrmail/shared/contracts';
-import { isMeterV2 } from '@declutrmail/shared/entitlements';
 
 import { ActionsService } from '../actions/actions.service.js';
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
@@ -178,7 +177,7 @@ export class McpToolsService {
       const usage = await this.entitlements.cleanupSummary(principal.workspaceId);
       return {
         plan: usage.tier,
-        unit: isMeterV2() ? 'emails' : 'cleanup_actions',
+        unit: 'emails',
         limit: usage.limit,
         used: usage.used,
         remaining: usage.remaining,

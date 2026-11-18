@@ -199,7 +199,8 @@ const outputs = {
   }),
   get_usage: z.object({
     plan: tag(z.string(), 'not-gmail-data'),
-    unit: tag(z.enum(['cleanup_actions', 'emails']), 'not-gmail-data'),
+    /** What `limit`, `used` and `remaining` count. */
+    unit: tag(z.literal('emails'), 'not-gmail-data'),
     /** null on a plan with no monthly limit. */
     limit: tag(z.number().int().nullable(), 'not-gmail-data'),
     used: tag(z.number().int(), 'not-gmail-data'),
@@ -353,7 +354,7 @@ export const MCP_TOOLS = {
   }),
   get_usage: spec('get_usage', {
     title: 'Get plan usage',
-    description: 'The DeclutrMail plan, and how much of its monthly cleanup limit is used.',
+    description: 'The DeclutrMail plan, and how many emails of its monthly cleanup limit are used.',
     scope: 'read',
     budget: 'read',
     annotations: READ_ONLY,

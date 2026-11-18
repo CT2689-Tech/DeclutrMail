@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { METER } from '@declutrmail/shared/entitlements';
+
 import {
   createOAuthTestApp,
   type OAuthTestApp,
@@ -223,7 +225,13 @@ describe('MCP tools — transport and the read-only tools', () => {
   it('get_usage reports the plan and its monthly limit', async () => {
     const answer = await mcp.call('get_usage');
     expect(answer.isError).toBe(false);
-    expect(answer.data).toMatchObject({ plan: 'free', used: 0 });
-    expect(answer.data.limit).toBeGreaterThan(0);
+    expect(answer.data).toMatchObject({
+      plan: 'free',
+      unit: 'emails',
+      limit: METER.free.limit,
+      used: 0,
+      remaining: METER.free.limit,
+    });
+    expect(answer.data.resets_at).toEqual(expect.any(String));
   });
 });
