@@ -23,6 +23,7 @@
     "@declutrmail/shared": "workspace:*",
     "@declutrmail/workers": "workspace:*",
     "@google-cloud/kms": "^6.2.0",
+    "@modelcontextprotocol/node": "2.1.2",
     "@modelcontextprotocol/server": "2.4.0",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^3.3.0",
