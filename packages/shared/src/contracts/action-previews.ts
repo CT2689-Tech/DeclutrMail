@@ -50,9 +50,19 @@ export const ActionPreviewOutcomeSchema = z.object({
 });
 export type ActionPreviewOutcome = z.infer<typeof ActionPreviewOutcomeSchema>;
 
+/** What Unsubscribe may do with the senders' existing email in the same confirmation. */
+export const ActionPreviewAlsoVerbSchema = z.enum(['archive', 'delete']);
+export type ActionPreviewAlsoVerb = z.infer<typeof ActionPreviewAlsoVerbSchema>;
+
 export const ActionPreviewViewSchema = z.object({
   id: z.string(),
   verb: ActionPreviewVerbSchema,
+  /**
+   * Unsubscribe only: also Archive or Delete the email these senders
+   * already sent, in the same confirmation. Optional on the wire, so a
+   * page served ahead of its API reads a missing value as "no".
+   */
+  alsoVerb: ActionPreviewAlsoVerbSchema.nullable().optional(),
   /**
    * `pending` — waiting for the person. `confirmed` — they pressed the
    * verb but the action did not start; pressing again retries.

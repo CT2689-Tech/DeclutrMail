@@ -10,12 +10,13 @@ import {
 import {
   connectedClient,
   mailboxIdOf,
+  rpcBody,
   seedSender,
   setSyncState,
   type McpTestClient,
   type SeededSender,
 } from './mcp-test-kit.js';
-import { MCP_TOOL_NAMES } from './mcp-tool-contract.js';
+import { MCP_TOOL_NAMES, MCP_TOOLS } from './mcp-tool-contract.js';
 import type { McpPrincipal } from './mcp-token.guard.js';
 import { McpToolsService } from './mcp-tools.service.js';
 
@@ -220,6 +221,18 @@ describe('MCP tools — transport and the read-only tools', () => {
     expect(listen.headers.get('content-type')).toContain('application/json');
     const body = (await listen.json()) as { error: { message: string } };
     expect(body.error.message).toBe('Subscription limit reached');
+  });
+
+  it('offers one prompt, start, that lists everything this connection can ask for', async () => {
+    const listed = rpcBody(await mcp.rpc('prompts/list'))?.result as {
+      prompts: Array<{ name: string; title: string }>;
+    };
+    expect(listed.prompts).toEqual([
+      expect.objectContaining({ name: 'start', title: 'What DeclutrMail can do' }),
+    ]);
+    const text = await mcp.promptText('start');
+    for (const name of MCP_TOOL_NAMES) expect(text, name).toContain(MCP_TOOLS[name].ask);
+    expect(text).not.toContain('can only read');
   });
 
   it('get_usage reports the plan and its monthly limit', async () => {

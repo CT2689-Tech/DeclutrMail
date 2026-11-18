@@ -31,16 +31,19 @@ export const MCP_ROOT_ROUTES: readonly string[] = [
 /**
  * Per-IP abuse backstops, not user quotas. Hosted clients (Claude,
  * ChatGPT) reach the discovery, registration and token endpoints from a
- * small set of addresses on behalf of everyone using them, so those
- * ceilings sit far above one person's traffic. Registration and the
- * authorization endpoint are the tightest: each writes a row for a
- * caller nobody has identified (a client, a parked request). The
- * authorization endpoint is reached from a person's own browser.
+ * small set of addresses on behalf of everyone using them, so one
+ * address's ceiling is shared by all of their users connecting at once.
+ * Registration is still the tightest of those: each one writes a row for
+ * a caller nobody has identified. What bounds that table is the row caps
+ * and the 30-day removal of clients nobody approved, not this number; a
+ * caller with many addresses was never held by a per-address limit. The
+ * authorization endpoint is reached from a person's own browser, so it
+ * stays at one person's scale.
  */
-const REGISTER_LIMIT = { bucket: 'default', limit: 20, windowSec: 60 } as const;
+const REGISTER_LIMIT = { bucket: 'default', limit: 120, windowSec: 60 } as const;
 const TOKEN_LIMIT = { bucket: 'default', limit: 600, windowSec: 60 } as const;
 const AUTHORIZE_LIMIT = { bucket: 'default', limit: 30, windowSec: 60 } as const;
-const DISCOVERY_LIMIT = { bucket: 'default', limit: 120, windowSec: 60 } as const;
+const DISCOVERY_LIMIT = { bucket: 'default', limit: 600, windowSec: 60 } as const;
 
 /**
  * The OAuth protocol endpoints (spec §4), served by `oidc-provider`.

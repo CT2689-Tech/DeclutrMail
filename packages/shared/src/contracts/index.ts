@@ -429,6 +429,7 @@ export { gmailComposeUrlFromMailto } from './gmail-compose-link';
 export {
   ACTION_PREVIEW_SKIP_REASONS,
   ACTION_PREVIEW_VERBS,
+  ActionPreviewAlsoVerbSchema,
   ActionPreviewOutcomeSchema,
   ActionPreviewSkipReasonSchema,
   ActionPreviewSkippedSchema,
@@ -436,6 +437,7 @@ export {
   ActionPreviewViewSchema,
 } from './action-previews';
 export type {
+  ActionPreviewAlsoVerb,
   ActionPreviewOutcome,
   ActionPreviewSkipReason as ActionPreviewViewSkipReason,
   ActionPreviewSkipped,

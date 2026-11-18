@@ -14,6 +14,7 @@ import { mailboxAccounts, schema, users, workspaces } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
 
 import { ActionsService } from '../actions/actions.service.js';
+import { UnsubscribeBacklogService } from '../actions/unsubscribe-backlog.service.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CsrfService } from '../auth/csrf.service.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
@@ -174,6 +175,10 @@ export async function createOAuthTestApp(
       { provide: MailboxAccountsService, useValue: mailboxes },
       { provide: SecurityEventsService, useValue: securityEvents },
       { provide: ActionsService, useValue: actions },
+      {
+        provide: UnsubscribeBacklogService,
+        useValue: new UnsubscribeBacklogService(actions, entitlements, db),
+      },
       { provide: EntitlementsService, useValue: entitlements },
       { provide: SyncService, useValue: sync },
       { provide: SendersReadService, useValue: new SendersReadService(db) },

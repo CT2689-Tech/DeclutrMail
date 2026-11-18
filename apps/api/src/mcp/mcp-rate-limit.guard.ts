@@ -15,11 +15,13 @@ import type { ResolvedRateLimit, TokenBucketStore } from '../common/rate-limit/r
 
 /**
  * Requests per minute to `/mcp` from one address, counted BEFORE the
- * token is looked up. Well above what an assistant working through a
- * large inbox sends; the per-user budgets inside the tools are the
- * limits a real client meets first.
+ * token is looked up. A hosted client (Claude, ChatGPT) calls from a few
+ * shared addresses for all of its users, so this is sized for many
+ * people at once, not one; the per-user budgets inside the tools are the
+ * limits a real person meets first. What it bounds is the token lookups
+ * one address can cause, each a single indexed read.
  */
-const PER_ADDRESS: ResolvedRateLimit = { bucket: 'default', limit: 600, windowSec: 60 };
+const PER_ADDRESS: ResolvedRateLimit = { bucket: 'default', limit: 3000, windowSec: 60 };
 
 /**
  * A guard, not `@RateLimit`: Nest runs guards before interceptors, so

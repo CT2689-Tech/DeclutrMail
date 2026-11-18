@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, eq, isNull, or, sql } from 'drizzle-orm';
 import { type Adapter, type AdapterPayload, errors, Provider } from 'oidc-provider';
 
 import { oauthAuthCodes, oauthClients, oauthInteractions, oauthTokens } from '@declutrmail/db';
@@ -36,7 +36,21 @@ import {
  * was not already, in one statement. Losing that race is reuse: the grant
  * is revoked (its own committed statements, never inside a transaction a
  * thrown error would roll back) and the request is refused.
+ *
+ * REFRESH GRACE. A refresh token presented again within
+ * `REFRESH_REUSE_GRACE_SEC` of its first use is honoured once more: a
+ * client that lost the response, or refreshed twice at once, gets new
+ * tokens instead of being disconnected. After the grace, reuse revokes
+ * the grant as above. Authorization codes get no grace. The trade-off:
+ * someone holding a stolen refresh token who uses it inside that window
+ * gets working tokens without the grant being revoked — the same
+ * allowance the web session makes (F034).
  */
+
+/** Seconds after its first use that a refresh token may be used again. */
+export const REFRESH_REUSE_GRACE_SEC = 30;
+/** The same window, judged by the database clock. */
+const IN_GRACE = sql<boolean>`${oauthTokens.consumedAt} > now() - make_interval(secs => ${sql.raw(String(REFRESH_REUSE_GRACE_SEC))})`;
 
 type Row = Record<string, unknown>;
 
@@ -261,7 +275,11 @@ class TokenStore extends BaseStore {
    */
   async find(id: string): Promise<AdapterPayload | undefined> {
     const [row] = await this.db
-      .select({ payload: oauthTokens.payload, consumedAt: oauthTokens.consumedAt })
+      .select({
+        payload: oauthTokens.payload,
+        consumedAt: oauthTokens.consumedAt,
+        inGrace: IN_GRACE,
+      })
       .from(oauthTokens)
       .where(
         and(
@@ -272,10 +290,13 @@ class TokenStore extends BaseStore {
       )
       .limit(1);
     if (!row) return undefined;
+    // Inside the grace a used refresh token reads as unused, so the
+    // library rotates it again instead of revoking (see REFRESH GRACE).
+    const reusable = this.kind === 'refresh' && row.inGrace === true;
     return {
       ...row.payload,
       jti: id,
-      ...(row.consumedAt ? { consumed: epoch(row.consumedAt) } : {}),
+      ...(row.consumedAt && !reusable ? { consumed: epoch(row.consumedAt) } : {}),
     } as AdapterPayload;
   }
 
@@ -283,12 +304,16 @@ class TokenStore extends BaseStore {
     const tokenHash = hashOAuthSecret(id);
     const consumed = await this.db
       .update(oauthTokens)
-      .set({ consumedAt: sql`now()` })
+      // The first use starts the grace; a use inside it does not extend it.
+      .set({ consumedAt: sql`coalesce(${oauthTokens.consumedAt}, now())` })
       .where(
         and(
           eq(oauthTokens.tokenHash, tokenHash),
           eq(oauthTokens.kind, this.kind),
-          isNull(oauthTokens.consumedAt),
+          isNull(oauthTokens.revokedAt),
+          this.kind === 'refresh'
+            ? or(isNull(oauthTokens.consumedAt), IN_GRACE)
+            : isNull(oauthTokens.consumedAt),
         ),
       )
       .returning({ id: oauthTokens.id });

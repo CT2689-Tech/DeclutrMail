@@ -21,6 +21,25 @@ import { McpToolError, toToolError } from './mcp-tool-errors.js';
 import { McpToolsService } from './mcp-tools.service.js';
 import type { McpPrincipal } from './mcp-token.guard.js';
 
+/**
+ * The `start` prompt: what this connection lets the person ask for, from
+ * each tool's own `ask`, limited to the scopes the grant holds.
+ */
+export function startPromptText(scopes: readonly string[]): string {
+  const granted = MCP_TOOL_NAMES.filter((name) => scopes.includes(MCP_TOOLS[name].scope));
+  const lines = [
+    'Using DeclutrMail, tell me in a short list what I can ask you to do. This connection allows:',
+    ...granted.map((name) => `- ${MCP_TOOLS[name].ask}`),
+  ];
+  if (!scopes.includes('cleanup')) {
+    lines.push(
+      'This connection can only read. To prepare changes, I would reconnect DeclutrMail and allow changes.',
+    );
+  }
+  lines.push('Then show the 10 senders who send me the most email.');
+  return lines.join('\n');
+}
+
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
@@ -99,10 +118,28 @@ export class McpServerService implements OnModuleDestroy {
   private buildServer(principal: McpPrincipal): McpServer {
     const server = new McpServer(
       { name: 'declutrmail', title: 'DeclutrMail', version: '1.0.0' },
-      // The tool list is fixed, so there is no change to subscribe to.
-      { instructions: SERVER_INSTRUCTIONS, capabilities: { tools: { listChanged: false } } },
+      // The tool and prompt lists are fixed, so there is no change to subscribe to.
+      {
+        instructions: SERVER_INSTRUCTIONS,
+        capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
+      },
     );
     for (const name of MCP_TOOL_NAMES) this.register(server, name, principal);
+    // Clients that show prompts offer this as a command (in Claude Code,
+    // `/mcp__declutrmail__start`). It reads no data itself.
+    server.registerPrompt(
+      'start',
+      {
+        title: 'What DeclutrMail can do',
+        description:
+          'Lists what you can ask DeclutrMail to do, then shows who sends you the most email.',
+      },
+      () => ({
+        messages: [
+          { role: 'user', content: { type: 'text', text: startPromptText(principal.scopes) } },
+        ],
+      }),
+    );
     return server;
   }
 

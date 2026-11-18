@@ -22,6 +22,7 @@ export type {
 export { actionOrigins } from './schema/action-origins';
 export type { ActionOrigin } from './schema/action-origins';
 export {
+  ACTION_PREVIEW_ALSO_VERBS,
   ACTION_PREVIEW_SKIP_REASONS,
   ACTION_PREVIEW_STATES,
   ACTION_PREVIEW_VERBS,
@@ -29,6 +30,7 @@ export {
 } from './schema/action-previews';
 export type {
   ActionPreview,
+  ActionPreviewAlsoVerb,
   ActionPreviewResult,
   ActionPreviewSkipReason,
   ActionPreviewState,

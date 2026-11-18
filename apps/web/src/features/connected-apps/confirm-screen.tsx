@@ -115,6 +115,17 @@ const SKIP_REASON: Record<ActionPreviewSkipped['reason'], string> = {
 const plural = (count: number, one: string, many: string): string =>
   `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`;
 
+/**
+ * The request in a verb or two: "Archive", or "Unsubscribe and archive"
+ * when Unsubscribe also clears the senders' existing email. A missing
+ * `alsoVerb` (an API older than this page) reads as none.
+ */
+function requestLabel(preview: ActionPreviewView): string {
+  const verb = verbById(preview.verb).label;
+  const also = preview.alsoVerb ?? null;
+  return also === null ? verb : `${verb} and ${verbById(also).label.toLowerCase()}`;
+}
+
 /** The verbs that move email already in the inbox; the others have no count to show. */
 const movesEmail = (verb: ActionPreviewView['verb']): boolean =>
   verb === 'archive' || verb === 'later' || verb === 'delete';
@@ -282,7 +293,11 @@ function SenderList({ names, total }: { names: readonly string[]; total: number 
 function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'ready' }> }) {
   const { preview, confirming, failure } = state;
   const verb = verbById(preview.verb);
-  const facts = actionPreviewFacts(preview.verb);
+  const alsoVerb = preview.alsoVerb ?? null;
+  const label = requestLabel(preview);
+  const facts = actionPreviewFacts(preview.verb, alsoVerb);
+  // A Delete in the request colours the button, whichever verb leads it.
+  const tone = alsoVerb === 'delete' ? verbById('delete').tone : verb.tone;
   const failureLink = failure ? FAILURE_LINK[failure] : undefined;
   // Later's shared line ends "until the time you pick"; here the time is
   // already picked. If that wording ever changes, fall back to two lines.
@@ -293,7 +308,7 @@ function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'rea
   return (
     <>
       <h1 style={headingStyle}>
-        {verb.label} {plural(preview.senderCount, 'sender', 'senders')}?
+        {label} {plural(preview.senderCount, 'sender', 'senders')}?
       </h1>
       <p style={{ ...mutedStyle, marginTop: 8, overflowWrap: 'anywhere' }}>
         <strong style={{ color: color.fg }}>{appDisplayName(preview.appName)}</strong> asked for
@@ -303,7 +318,7 @@ function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'rea
         // Pressed earlier, and the server has no result on record. Whether
         // any of it began is not something this page can see.
         <p role="status" style={{ ...mutedStyle, marginTop: 12 }}>
-          Confirmed earlier, with no record that it started. Press {verb.label} to try again.
+          Confirmed earlier, with no record that it started. Press {label} to try again.
         </p>
       )}
 
@@ -311,7 +326,7 @@ function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'rea
 
       <h2 style={subheadingStyle}>What happens</h2>
       <ul style={listStyle}>
-        {movesEmail(preview.verb) && (
+        {(movesEmail(preview.verb) || alsoVerb !== null) && (
           <li>
             {plural(preview.emailCount, 'email', 'emails')} in your inbox
             {preview.olderThanDays !== null && `, older than ${preview.olderThanDays} days`}
@@ -353,13 +368,8 @@ function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'rea
         aria-live="polite"
         style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, marginTop: 24 }}
       >
-        <Button
-          tone={BUTTON_TONE[verb.tone]}
-          size="lg"
-          inert={confirming}
-          onClick={state.onConfirm}
-        >
-          {confirming ? 'Confirming…' : verb.label}
+        <Button tone={BUTTON_TONE[tone]} size="lg" inert={confirming} onClick={state.onConfirm}>
+          {confirming ? 'Confirming…' : label}
         </Button>
         {/* Leaving changes nothing: the request stays unconfirmed and expires. */}
         <Link href="/home" style={linkStyle}>
@@ -380,7 +390,6 @@ function Receipt({
   preview: ActionPreviewView;
   outcome: ActionPreviewOutcome;
 }) {
-  const verb = verbById(preview.verb);
   if (outcome.actionStatus === 'failed') {
     // Never a receipt: the job behind this confirmation ended as failed.
     // That covers one that never ran and one that stopped part-way, so
@@ -400,13 +409,14 @@ function Receipt({
     );
   }
   const { appliedSenders, requestedEmails, skipped } = outcome;
+  const label = requestLabel(preview);
   const began = preview.verb === 'keep' ? 'recorded' : 'started';
   const summary =
     appliedSenders === 0
-      ? `${verb.label} was not ${began} for any sender.`
+      ? `${label} was not ${began} for any sender.`
       : appliedSenders === preview.senderCount
-        ? `${verb.label} ${began} for ${plural(appliedSenders, 'sender', 'senders')}.`
-        : `${verb.label} ${began} for ${appliedSenders.toLocaleString('en-US')} of ${plural(preview.senderCount, 'sender', 'senders')}.`;
+        ? `${label} ${began} for ${plural(appliedSenders, 'sender', 'senders')}.`
+        : `${label} ${began} for ${appliedSenders.toLocaleString('en-US')} of ${plural(preview.senderCount, 'sender', 'senders')}.`;
   return (
     <>
       {/* "Confirmed" would read as success when no sender was acted on. */}
@@ -444,7 +454,11 @@ function Receipt({
         </>
       )}
 
+      {/* The assistant learns the outcome only when it asks again. */}
       <p style={{ margin: '20px 0 0' }}>
+        Go back to {preview.appName?.trim() || 'your assistant'} and tell it you confirmed.
+      </p>
+      <p style={{ margin: '12px 0 0' }}>
         <Link href="/activity" style={linkStyle}>
           Open Activity
         </Link>

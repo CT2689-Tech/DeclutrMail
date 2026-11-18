@@ -10,7 +10,9 @@ import {
   oauthGrants,
   senderPolicies,
   undoJournal,
+  workspaces,
 } from '@declutrmail/db';
+import { actionPreviewFacts } from '@declutrmail/shared/actions';
 import { METER } from '@declutrmail/shared/entitlements';
 import {
   LabelActionWorker,
@@ -629,7 +631,7 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(row!.reach).toBe('inbox_only');
     });
 
-    it('refuses at the plan’s monthly limit and applies nothing', async () => {
+    it('refuses at the plan’s monthly limit, and after an upgrade only a new press starts it', async () => {
       const s = await scene();
       // The limit counts emails: two are left, and this sender has three.
       const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 3 });
@@ -649,23 +651,42 @@ describe('MCP connector — previews, confirmation and apply', () => {
         verb: 'archive',
         sender_ids: [shop.id],
       });
+      const id = preview.data.preview_id;
       const before = harness.queued.label.length;
 
-      const confirmed = await s.page.post(confirmPath(preview.data.preview_id));
+      const confirmed = await s.page.post(confirmPath(id));
       expect(confirmed.status).toBe(402);
       expect(confirmed.json.error.code).toBe('FREE_CAP_REACHED');
-      // The person did confirm; the tool reports why it did not start.
-      const applied = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
-      expect(applied.error).toMatchObject({
-        code: 'QUOTA_EXHAUSTED',
-        limit: FREE_LIMIT,
-        used: FREE_LIMIT - 2,
-        remaining: 2,
-        upgrade_url: 'http://localhost:3000/billing',
+      // The press is spent: the request waits for a new one, and the
+      // assistant is told why the last one started nothing.
+      expect(await previewRow(id)).toMatchObject({
+        state: 'pending',
+        confirmedAt: null,
+        refusedCode: 'QUOTA_EXHAUSTED',
       });
-      expect(applied.error.resets_at).toEqual(expect.any(String));
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(applied.isError).toBe(false);
+      expect(applied.data).toMatchObject({
+        status: 'needs_confirmation',
+        confirm_url: `http://localhost:3000/confirm/${id}`,
+        refused: { code: 'QUOTA_EXHAUSTED', upgrade_url: 'http://localhost:3000/billing' },
+      });
+
+      // After an upgrade the app still cannot start it on its own...
+      await harness.db
+        .update(workspaces)
+        .set({ tier: 'plus' })
+        .where(eq(workspaces.id, s.person.workspaceId));
+      const afterUpgrade = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(afterUpgrade.data.status).toBe('needs_confirmation');
       expect(await jobs(s.mailboxId)).toHaveLength(1);
       expect(harness.queued.label.length).toBe(before);
+
+      // ...only the person pressing again does, and the refusal is cleared.
+      expect((await s.page.post(confirmPath(id))).status).toBe(200);
+      const done = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(done.data).toMatchObject({ status: 'applied', refused: null });
+      expect(harness.queued.label.length).toBe(before + 1);
     });
 
     it('survives a queue outage: the confirmation stands and a retry starts the action', async () => {
@@ -902,6 +923,237 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(applied.data.batch_id).toEqual(expect.any(String));
       const status = await s.mcp.call('get_action_status', { batch_id: applied.data.batch_id });
       expect(status.data).toMatchObject({ status: 'queued', requested_emails: 5 });
+    });
+  });
+
+  describe('Unsubscribe with its existing email, in one confirmation', () => {
+    /** Verbs of the jobs recorded as started by a connected app, in this mailbox. */
+    async function originVerbs(mailboxId: string): Promise<string[]> {
+      const rows = await harness.db
+        .select({ verb: actionJobs.verb })
+        .from(actionOrigins)
+        .innerJoin(actionJobs, eq(actionJobs.id, actionOrigins.actionJobId))
+        .where(eq(actionJobs.mailboxAccountId, mailboxId));
+      return [...new Set(rows.map((row) => row.verb))].sort();
+    }
+
+    it('previews both, then one press archives their email and sends the unsubscribes', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 3 });
+      const club = await seedSender(harness, s.mailboxId, {
+        email: 'list@club.example',
+        mail: 2,
+        unsubscribe: 'mailto',
+      });
+      const labelBefore = harness.queued.label.length;
+      const unsubBefore = harness.queued.unsubscribe.length;
+
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_ids: [shop.id, club.id],
+      });
+      const id = preview.data.preview_id;
+      const facts = actionPreviewFacts('unsubscribe', 'archive');
+      expect(preview.data).toMatchObject({
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_count: 2,
+        email_count: 5,
+        destination: facts.destination,
+        undo: facts.undo,
+      });
+      // Nothing moves, and nothing is sent, before the press.
+      expect(harness.queued.label.length).toBe(labelBefore);
+      expect(harness.queued.unsubscribe.length).toBe(unsubBefore);
+      const page = await s.page.get(`/api/action-previews/${id}`);
+      expect(page.json.data).toMatchObject({
+        verb: 'unsubscribe',
+        alsoVerb: 'archive',
+        emailCount: 5,
+      });
+
+      expect((await s.page.post(confirmPath(id))).status).toBe(200);
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(applied.data).toMatchObject({
+        status: 'applied',
+        applied_senders: 1,
+        requested_emails: 5,
+        refused: null,
+      });
+      expect(applied.data.batch_id).toEqual(expect.any(String));
+      // The email-only sender: its email was archived; the unsubscribe is
+      // the person's to send.
+      expect(applied.data.skipped).toEqual([
+        {
+          sender_id: club.id,
+          reason: 'mailto',
+          compose_url: expect.stringContaining('to=leave%40club.example'),
+        },
+      ]);
+      expect(harness.queued.label.length).toBeGreaterThan(labelBefore);
+      expect(harness.queued.unsubscribe.length).toBe(unsubBefore + 1);
+      // Activity can say which app started both halves.
+      expect(await originVerbs(s.mailboxId)).toEqual(['archive', 'unsubscribe']);
+    });
+
+    it('with no email left to move, still unsubscribes and names the app in Activity', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 0 });
+      const unsubBefore = harness.queued.unsubscribe.length;
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_ids: [shop.id],
+      });
+      expect(preview.data.email_count).toBe(0);
+      await s.page.post(confirmPath(preview.data.preview_id));
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
+      expect(applied.data).toMatchObject({
+        status: 'applied',
+        applied_senders: 1,
+        requested_emails: 0,
+      });
+      expect(harness.queued.unsubscribe.length).toBe(unsubBefore + 1);
+      // No Archive started, so nothing links the unsubscribe to it: it is
+      // recorded as the app's on its own.
+      expect(await originVerbs(s.mailboxId)).toEqual(['unsubscribe']);
+    });
+
+    it('one sender with Delete: deletes from the inbox only, and unsubscribes', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 2 });
+      const unsubBefore = harness.queued.unsubscribe.length;
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'delete',
+        sender_ids: [shop.id],
+      });
+      expect(preview.data.destination).toBe(
+        actionPreviewFacts('unsubscribe', 'delete').destination,
+      );
+      await s.page.post(confirmPath(preview.data.preview_id));
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
+      expect(applied.data).toMatchObject({
+        status: 'applied',
+        applied_senders: 1,
+        requested_emails: 2,
+      });
+      const deletes = (await jobs(s.mailboxId)).filter((job) => job.verb === 'delete');
+      expect(deletes).toHaveLength(1);
+      expect(deletes[0]!.reach).toBe('inbox_only');
+      expect(harness.queued.unsubscribe.length).toBe(unsubBefore + 1);
+    });
+
+    it('counts only the older email when older_than_days is given, and needs existing_email for it', async () => {
+      const s = await scene();
+      const old = await seedSender(harness, s.mailboxId, {
+        email: 'old@shop.example',
+        mail: 3,
+        newestDaysAgo: 100,
+      });
+      const recent = await seedSender(harness, s.mailboxId, { email: 'new@shop.example', mail: 2 });
+      const alone = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        older_than_days: 90,
+        sender_ids: [old.id],
+      });
+      expect(alone.error.code).toBe('INVALID_REQUEST');
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        older_than_days: 90,
+        sender_ids: [old.id, recent.id],
+      });
+      expect(preview.data.email_count).toBe(3);
+    });
+
+    it('is offered for Unsubscribe only', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
+      const answer = await s.mcp.call('preview_cleanup', {
+        verb: 'archive',
+        existing_email: 'delete',
+        sender_ids: [shop.id],
+      });
+      expect(answer.error.code).toBe('INVALID_REQUEST');
+      expect(await jobs(s.mailboxId)).toEqual([]);
+    });
+
+    it('a plan limit refuses it before any email moves or any unsubscribe is sent', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 3 });
+      const used = FREE_LIMIT - 2;
+      await harness.db.insert(actionJobs).values({
+        mailboxAccountId: s.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: shop.id, senderKey: shop.senderKey },
+        requestedCount: used,
+        affectedCount: used,
+        quotaUnits: used,
+        status: 'done',
+        idempotencyKey: `archive-fill-${s.mailboxId}`,
+      });
+      const unsubBefore = harness.queued.unsubscribe.length;
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_ids: [shop.id],
+      });
+      const pressed = await s.page.post(confirmPath(preview.data.preview_id));
+      expect(pressed.status).toBe(402);
+      expect(harness.queued.unsubscribe.length).toBe(unsubBefore);
+      expect(await jobs(s.mailboxId)).toHaveLength(1);
+      expect(await previewRow(preview.data.preview_id)).toMatchObject({
+        state: 'pending',
+        refusedCode: 'QUOTA_EXHAUSTED',
+      });
+    });
+
+    it('with sending switched off, refuses before moving any email', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 2 });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_ids: [shop.id],
+      });
+      const labelBefore = harness.queued.label.length;
+      vi.stubEnv('UNSUB_SEND_ENABLED', 'false');
+      try {
+        const pressed = await s.page.post(confirmPath(preview.data.preview_id));
+        expect(pressed.status).toBe(409);
+        expect(pressed.json.error.code).toBe('UNSUB_SEND_DISABLED');
+      } finally {
+        vi.stubEnv('UNSUB_SEND_ENABLED', 'true');
+      }
+      expect(harness.queued.label.length).toBe(labelBefore);
+      expect(await jobs(s.mailboxId)).toEqual([]);
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
+      expect(applied.data.refused).toMatchObject({ code: 'UNSUBSCRIBE_UNAVAILABLE' });
+    });
+
+    it('skips a sender that became Protected after the preview, and leaves its email alone', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 2 });
+      const bank = await seedSender(harness, s.mailboxId, {
+        email: 'alerts@bank.example',
+        mail: 4,
+      });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_ids: [shop.id, bank.id],
+      });
+      expect(preview.data.email_count).toBe(6);
+      await protectSender(harness, s.mailboxId, bank.id);
+      await s.page.post(confirmPath(preview.data.preview_id));
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
+      expect(applied.data).toMatchObject({ applied_senders: 1, requested_emails: 2 });
+      expect(applied.data.skipped).toEqual([
+        { sender_id: bank.id, reason: 'protected', compose_url: null },
+      ]);
     });
   });
 

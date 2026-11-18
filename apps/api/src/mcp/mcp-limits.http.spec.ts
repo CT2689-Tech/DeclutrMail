@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { accountDeletionRequests, actionJobs, actionPreviews } from '@declutrmail/db';
 
@@ -7,6 +7,7 @@ import { InMemoryTokenBucketStore } from '../common/rate-limit/in-memory-token-b
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
 import { createOAuthTestApp, type OAuthTestApp } from '../oauth/oauth-test-harness.js';
 import { McpRateLimitGuard } from './mcp-rate-limit.guard.js';
+import { MCP_TOOL_NAMES, MCP_TOOLS } from './mcp-tool-contract.js';
 import {
   connectedClient,
   mailboxIdOf,
@@ -52,6 +53,14 @@ describe('MCP connector — scopes', () => {
     expect(
       await harness.db.select().from(actionPreviews).where(eq(actionPreviews.userId, ada.userId)),
     ).toEqual([]);
+
+    // The start prompt offers only what this connection can do, and says so.
+    const start = await readOnly.promptText('start');
+    for (const name of MCP_TOOL_NAMES) {
+      const offered = start.includes(MCP_TOOLS[name].ask);
+      expect(offered, name).toBe(MCP_TOOLS[name].scope === 'read');
+    }
+    expect(start).toContain('This connection can only read.');
   });
 });
 
@@ -163,16 +172,22 @@ describe('McpRateLimitGuard — per address, before the token is looked up', () 
     };
   };
 
-  it('lets 600 requests a minute through from one address and refuses the next with Retry-After', async () => {
-    const guard = new McpRateLimitGuard(new InMemoryTokenBucketStore());
-    for (let call = 0; call < 600; call += 1) {
-      expect(await guard.canActivate(context('203.0.113.7').ctx)).toBe(true);
+  it('lets 3,000 requests a minute through from one address and refuses the next with Retry-After', async () => {
+    // The bucket refills 50 a second; the clock stands still so the count is exact.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const guard = new McpRateLimitGuard(new InMemoryTokenBucketStore());
+      for (let call = 0; call < 3000; call += 1) {
+        expect(await guard.canActivate(context('203.0.113.7').ctx)).toBe(true);
+      }
+      const refused = context('203.0.113.7');
+      await expect(guard.canActivate(refused.ctx)).rejects.toMatchObject({ status: 429 });
+      expect(Number(refused.set['Retry-After'])).toBeGreaterThan(0);
+      // Another address is not held back by the first.
+      expect(await guard.canActivate(context('203.0.113.8').ctx)).toBe(true);
+    } finally {
+      vi.useRealTimers();
     }
-    const refused = context('203.0.113.7');
-    await expect(guard.canActivate(refused.ctx)).rejects.toMatchObject({ status: 429 });
-    expect(Number(refused.set['Retry-After'])).toBeGreaterThan(0);
-    // Another address is not held back by the first.
-    expect(await guard.canActivate(context('203.0.113.8').ctx)).toBe(true);
   });
 
   it('fails open when the store errors, as the HTTP limiter does', async () => {

@@ -116,6 +116,9 @@ CREATE TABLE action_previews (
   -- The connected app that asked. Disconnecting it removes what it asked for.
   grant_id uuid NOT NULL REFERENCES oauth_grants(id) ON DELETE CASCADE,
   verb text NOT NULL,
+  -- Unsubscribe only: Archive or Delete the senders' existing email in the
+  -- same confirmation, as the web app's unsubscribe backlog does.
+  also_verb text,
   older_than_days integer,
   wake_at timestamptz,
   -- Frozen when the preview was made: senders that were Protected or unknown
@@ -133,19 +136,26 @@ CREATE TABLE action_previews (
   action_id uuid REFERENCES action_jobs(id) ON DELETE SET NULL,
   -- What applying it did: counts, sender ids and reason codes only.
   result jsonb,
+  -- Why the last press could not start it (a tool error code). The press
+  -- is spent: the row is back to pending until the person presses again.
+  refused_code text,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT action_previews_verb_check
     CHECK (verb IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')),
   CONSTRAINT action_previews_state_check
     CHECK (state IN ('pending', 'confirmed', 'applied')),
+  CONSTRAINT action_previews_also_verb_check
+    CHECK (also_verb IS NULL OR (verb = 'unsubscribe' AND also_verb IN ('archive', 'delete'))),
   CONSTRAINT action_previews_window_check
     CHECK (older_than_days IS NULL
-      OR (older_than_days IN (30, 90, 180, 365) AND verb IN ('archive', 'later', 'delete'))),
+      OR (older_than_days IN (30, 90, 180, 365)
+        AND (verb IN ('archive', 'later', 'delete') OR also_verb IS NOT NULL))),
   CONSTRAINT action_previews_wake_at_check
     CHECK ((verb = 'later') = (wake_at IS NOT NULL)),
   CONSTRAINT action_previews_selection_check
     CHECK (cardinality(sender_ids) BETWEEN 1 AND 1000 AND email_count >= 0),
-  -- The three states move forward only, and each carries exactly its own facts.
+  -- Each state carries exactly its own facts. A refused start moves a row
+  -- from confirmed back to pending; applied is final.
   CONSTRAINT action_previews_lifecycle_check
     CHECK ((state = 'pending' AND confirmed_at IS NULL AND applied_at IS NULL
         AND action_id IS NULL AND result IS NULL)
@@ -153,6 +163,8 @@ CREATE TABLE action_previews (
         AND action_id IS NULL AND result IS NULL)
       OR (state = 'applied' AND confirmed_at IS NOT NULL AND applied_at IS NOT NULL
         AND result IS NOT NULL)),
+  CONSTRAINT action_previews_refused_check
+    CHECK (refused_code IS NULL OR (state = 'pending' AND refused_code ~ '^[A-Z_]{1,40}$')),
   CONSTRAINT action_previews_expiry_check CHECK (expires_at > created_at)
 );
 --> statement-breakpoint

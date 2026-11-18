@@ -5,6 +5,7 @@ import { UNIFORM_UNDO_WINDOW_DAYS } from '../entitlements/undo-window';
 import {
   ACTION_SEMANTICS,
   actionHasRecovery,
+  actionPreviewFacts,
   activityUndoSummary,
   buildActionPresentation,
   buildActionReceiptResult,
@@ -698,5 +699,27 @@ describe('ADR-0028 — Delete copy follows the chosen reach', () => {
     // never picks up 'archived' from a reach it cannot honour.
     expect(p.primary.effectCopy).toContain('Moves out of your inbox');
     expect(p.primary.effectCopy).not.toMatch(/or archived/i);
+  });
+});
+
+describe('connector preview facts for Unsubscribe with its existing email', () => {
+  it.each(['archive', 'delete'] as const)(
+    'Unsubscribe + %s says where the email goes, then future email, and whose undo is whose',
+    (alsoVerb) => {
+      const move = actionPreviewFacts(alsoVerb);
+      const unsubscribe = actionPreviewFacts('unsubscribe');
+      const facts = actionPreviewFacts('unsubscribe', alsoVerb);
+      expect(facts.destination).toBe(`${move.destination} ${unsubscribe.destination}`);
+      expect(facts.undo).toBe(
+        `${ACTION_SEMANTICS[alsoVerb].label} — ${move.undo} Unsubscribe — ${unsubscribe.undo}`,
+      );
+      // Delete alone says future email is unchanged; next to Unsubscribe it is not.
+      expect(facts.alsoTrue).toEqual([]);
+    },
+  );
+
+  it('ignores the paired verb for anything but Unsubscribe', () => {
+    expect(actionPreviewFacts('archive', 'delete')).toEqual(actionPreviewFacts('archive'));
+    expect(actionPreviewFacts('unsubscribe', null)).toEqual(actionPreviewFacts('unsubscribe'));
   });
 });

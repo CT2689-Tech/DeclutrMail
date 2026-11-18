@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { errors } from 'oidc-provider';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -65,15 +65,48 @@ describe('OAuth storage adapter', () => {
     (await db.select().from(oauthGrants).where(eq(oauthGrants.id, grantId)))[0]!.revokedAt;
 
   describe('refresh tokens', () => {
-    it('lets exactly one of two exchanges of the same token win, and revokes the grant', async () => {
+    const firstUsedAt = async (token: string) =>
+      (
+        await db
+          .select({ consumedAt: oauthTokens.consumedAt })
+          .from(oauthTokens)
+          .where(eq(oauthTokens.tokenHash, hashOAuthSecret(token)))
+      )[0]!.consumedAt;
+    /** Moves a token's first use back past the grace, by the database clock. */
+    const pastGrace = (token: string) =>
+      db
+        .update(oauthTokens)
+        .set({ consumedAt: sql`now() - interval '31 seconds'` })
+        .where(eq(oauthTokens.tokenHash, hashOAuthSecret(token)));
+
+    it('honours a second use within 30 seconds, and does not extend the window', async () => {
       const store = adapter('RefreshToken');
       await store.upsert('refresh-1', { grantId, exp: exp(), kind: 'RefreshToken' }, 600);
 
       // Two requests that both read the token as unused, then both consume it.
       await store.consume('refresh-1');
-      expect(reportReuse).not.toHaveBeenCalled();
-      await expect(store.consume('refresh-1')).rejects.toBeInstanceOf(errors.InvalidGrant);
+      const first = await firstUsedAt('refresh-1');
+      await store.consume('refresh-1');
 
+      expect(reportReuse).not.toHaveBeenCalled();
+      expect(await grantRevokedAt()).toBeNull();
+      // Read as unused, so the library rotates it again instead of revoking.
+      expect(await store.find('refresh-1')).not.toHaveProperty('consumed');
+      // The grace runs from the first use, however often it is used inside it.
+      expect(await firstUsedAt('refresh-1')).toEqual(first);
+    });
+
+    it('after 30 seconds, reports the token as used and a second use revokes the grant, once', async () => {
+      const store = adapter('RefreshToken');
+      await store.upsert('refresh-1', { grantId, exp: exp(), kind: 'RefreshToken' }, 600);
+      expect(await store.find('refresh-1')).not.toHaveProperty('consumed');
+      await store.consume('refresh-1');
+      await pastGrace('refresh-1');
+
+      const found = await store.find('refresh-1');
+      expect(found?.consumed).toBeTypeOf('number');
+      expect(found?.jti).toBe('refresh-1');
+      await expect(store.consume('refresh-1')).rejects.toBeInstanceOf(errors.InvalidGrant);
       expect(await grantRevokedAt()).toBeInstanceOf(Date);
       // Reported once, with who it belonged to; a third attempt adds nothing.
       await expect(store.consume('refresh-1')).rejects.toBeInstanceOf(errors.InvalidGrant);
@@ -82,14 +115,14 @@ describe('OAuth storage adapter', () => {
       );
     });
 
-    it('reports a consumed token as consumed, so the library can see reuse', async () => {
-      const store = adapter('RefreshToken');
-      await store.upsert('refresh-1', { grantId, exp: exp(), kind: 'RefreshToken' }, 600);
-      expect(await store.find('refresh-1')).not.toHaveProperty('consumed');
-      await store.consume('refresh-1');
-      const found = await store.find('refresh-1');
-      expect(found?.consumed).toBeTypeOf('number');
-      expect(found?.jti).toBe('refresh-1');
+    it('gives an access token no grace: a used one is never read as unused', async () => {
+      const store = adapter('AccessToken');
+      await store.upsert('access-1', { grantId, exp: exp() }, 600);
+      await db
+        .update(oauthTokens)
+        .set({ consumedAt: sql`now()` })
+        .where(eq(oauthTokens.tokenHash, hashOAuthSecret('access-1')));
+      expect((await store.find('access-1'))?.consumed).toBeTypeOf('number');
     });
 
     it('does not serve an access token to a refresh lookup, or the reverse', async () => {

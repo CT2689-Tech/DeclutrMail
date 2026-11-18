@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, gt, inArray, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
 import {
@@ -11,18 +11,21 @@ import {
   senders,
   type ActionJobStatus,
   type ActionPreview,
+  type ActionPreviewAlsoVerb,
   type ActionPreviewResult,
   type ActionPreviewSkipReason,
   type ActionPreviewVerb,
 } from '@declutrmail/db';
 import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
 import { gmailComposeUrlFromMailto } from '@declutrmail/shared/contracts';
-import { createLimiter } from '@declutrmail/workers';
+import { createLimiter, UNSUB_SEND_DISABLED_CODE, unsubSendsEnabled } from '@declutrmail/workers';
 
 import { ActionsService } from '../actions/actions.service.js';
+import type { UnsubscribeBacklogSenderResult } from '../actions/actions.types.js';
+import { UnsubscribeBacklogService } from '../actions/unsubscribe-backlog.service.js';
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { exceptionCode, McpToolError } from './mcp-tool-errors.js';
+import { exceptionCode, McpToolError, toToolError } from './mcp-tool-errors.js';
 
 /** How long a person has to confirm (spec §3). */
 export const PREVIEW_TTL_MS = 15 * 60 * 1000;
@@ -114,10 +117,13 @@ const SINGLE_SENDER_SKIP: Record<string, ActionPreviewSkipReason> = {
  */
 @Injectable()
 export class ActionPreviewsService {
+  private readonly logger = new Logger(ActionPreviewsService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly actions: ActionsService,
     private readonly entitlements: EntitlementsService,
+    private readonly unsubscribeBacklog: UnsubscribeBacklogService,
   ) {}
 
   /** `preview_cleanup`: count what the verb would touch and store the request. */
@@ -125,13 +131,15 @@ export class ActionPreviewsService {
     owner: PreviewOwner;
     mailboxAccountId: string;
     verb: ActionPreviewVerb;
+    /** Unsubscribe only: Archive or Delete the senders' existing email too. */
+    alsoVerb: ActionPreviewAlsoVerb | null;
     senderIds: readonly string[];
     olderThanDays: 30 | 90 | 180 | 365 | null;
     wakeAt: Date | null;
   }): Promise<{ preview: ActionPreview; skipped: PreviewSkip[] }> {
-    const { owner, mailboxAccountId, verb, olderThanDays, wakeAt } = input;
+    const { owner, mailboxAccountId, verb, alsoVerb, olderThanDays, wakeAt } = input;
     const expiresAt = new Date(Date.now() + PREVIEW_TTL_MS);
-    assertVerbArguments(verb, olderThanDays, wakeAt, expiresAt);
+    assertVerbArguments(verb, alsoVerb, olderThanDays, wakeAt, expiresAt);
 
     const ids = [...new Set(input.senderIds.map((id) => id.toLowerCase()))];
     const facts = await this.senderFacts(mailboxAccountId, ids);
@@ -150,7 +158,13 @@ export class ActionPreviewsService {
       );
     }
 
-    const emailCount = await this.countEmail(mailboxAccountId, verb, frozen, olderThanDays);
+    const emailCount = await this.countEmail(
+      mailboxAccountId,
+      verb,
+      alsoVerb,
+      frozen,
+      olderThanDays,
+    );
     const [preview] = await this.db
       .insert(actionPreviews)
       .values({
@@ -159,6 +173,7 @@ export class ActionPreviewsService {
         userId: owner.userId,
         grantId: owner.grantId,
         verb,
+        alsoVerb,
         olderThanDays,
         wakeAt,
         senderIds: frozen,
@@ -238,7 +253,8 @@ export class ActionPreviewsService {
       // not what authorizes the transition.
       await this.db
         .update(actionPreviews)
-        .set({ state: 'confirmed', confirmedAt: sql`now()` })
+        // A new press: whatever refused the last one is history.
+        .set({ state: 'confirmed', confirmedAt: sql`now()`, refusedCode: null })
         .where(
           and(
             eq(actionPreviews.id, previewId),
@@ -320,15 +336,40 @@ export class ActionPreviewsService {
     let outcome: Awaited<ReturnType<ActionPreviewsService['execute']>>;
     try {
       outcome = await this.execute(preview);
-      if (outcome.actionId) await this.recordOrigin(preview, outcome.actionId);
+      const started = [outcome.actionId, ...(outcome.alsoStarted ?? [])].filter(
+        (id): id is string => id !== null,
+      );
+      if (started.length > 0) await this.recordOrigin(preview, started);
     } catch (error) {
-      // Give the claim back, so a retry does not wait out the lease. A
-      // failure to do so only delays that retry; the lease lapses.
-      await this.db
-        .update(actionPreviews)
-        .set({ claimedAt: null })
-        .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
-        .catch(() => undefined);
+      const refusal = refusalOf(error);
+      if (refusal) {
+        // Refused for a reason the person must act on (the monthly limit,
+        // a plan, sending switched off). Their press is spent: back to
+        // pending, so after an upgrade or a reset the assistant cannot
+        // start it without a new press.
+        await this.db
+          .update(actionPreviews)
+          .set({ state: 'pending', confirmedAt: null, claimedAt: null, refusedCode: refusal })
+          .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
+          .catch((cause: unknown) => {
+            // The original refusal is what the caller needs; this one is
+            // logged. The lease still lapses, and the next start meets
+            // the same refusal while the reason holds.
+            this.logger.error(
+              `action_preview.refusal_not_recorded id=${preview.id} code=${refusal}: ${String(cause)}`,
+            );
+          });
+      } else {
+        // A fault, not a decision (the queue was down, say): the press
+        // stands and a retry continues the same attempt. Give the claim
+        // back so that retry does not wait out the lease; a failure to do
+        // so only delays it.
+        await this.db
+          .update(actionPreviews)
+          .set({ claimedAt: null })
+          .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
+          .catch(() => undefined);
+      }
       throw error;
     }
     await this.db
@@ -423,9 +464,12 @@ export class ActionPreviewsService {
   /* ───────────────────────────── internals ───────────────────────────── */
 
   /** Send the verb to the method the web app uses for it (spec §2). */
-  private async execute(
-    preview: ActionPreview,
-  ): Promise<{ result: ActionPreviewResult; actionId: string | null }> {
+  private async execute(preview: ActionPreview): Promise<{
+    result: ActionPreviewResult;
+    actionId: string | null;
+    /** Other jobs it started, for the "via <app>" record. */
+    alsoStarted?: readonly string[];
+  }> {
     const { mailboxAccountId, verb } = preview;
     const ids = preview.senderIds;
     const idempotencyKey = `mcp-preview:${preview.id}`;
@@ -460,6 +504,47 @@ export class ActionPreviewsService {
           handle: null,
           appliedSenders: ids.length - skipped.length,
           requestedEmails: 0,
+          skipped,
+        },
+      };
+    }
+
+    if (verb === 'unsubscribe' && preview.alsoVerb !== null) {
+      // Refused before anything moves, as the web app's bulk unsubscribe
+      // refuses: otherwise the email would be moved and every unsubscribe
+      // would then fail.
+      if (!unsubSendsEnabled()) {
+        throw new ConflictException({
+          code: UNSUB_SEND_DISABLED_CODE,
+          message: 'Unsubscribe sending is disabled in this environment.',
+        });
+      }
+      // The web app's own one-confirmation path: the Archive or Delete is
+      // enqueued first (a plan limit refuses it before any unsubscribe is
+      // recorded), then one unsubscribe per sender, linked to it.
+      const done = await this.unsubscribeBacklog.confirm({
+        mailboxAccountId,
+        idempotencyKey,
+        mode: preview.alsoVerb,
+        senderIds: [...ids],
+        olderThanDays: preview.olderThanDays,
+        // ADR-0048 rule 2: the connector never reaches past the inbox.
+        reach: 'inbox_only',
+        override: false,
+      });
+      const skipped = done.senders.flatMap((sender) => {
+        const reason = backlogSkip(sender);
+        return reason ? [{ senderId: sender.senderId, reason }] : [];
+      });
+      return {
+        actionId: done.backlog?.actionId ?? null,
+        alsoStarted: done.senders.flatMap((sender) =>
+          sender.executionActionId ? [sender.executionActionId] : [],
+        ),
+        result: {
+          handle: done.backlog?.handle ?? null,
+          appliedSenders: ids.length - skipped.length,
+          requestedEmails: done.backlog?.requestedCount ?? 0,
           skipped,
         },
       };
@@ -594,6 +679,7 @@ export class ActionPreviewsService {
   private async countEmail(
     mailboxAccountId: string,
     verb: ActionPreviewVerb,
+    alsoVerb: ActionPreviewAlsoVerb | null,
     senderIds: readonly string[],
     olderThanDays: 30 | 90 | 180 | 365 | null,
   ): Promise<number> {
@@ -608,7 +694,8 @@ export class ActionPreviewsService {
           'multi-sender',
         );
       }
-      return 0;
+      // With an Archive or Delete, the email it moves is counted below.
+      if (alsoVerb === null) return 0;
     }
     const bucket = olderThanDays === null ? 'all' : WINDOW_KEY[olderThanDays];
     if (senderIds.length === 1) {
@@ -683,7 +770,11 @@ export class ActionPreviewsService {
    * the enqueue, never inside it: the action pipeline is untouched. One
    * row per job of the action or batch; a repeat changes nothing.
    */
-  private async recordOrigin(preview: ActionPreview, actionId: string): Promise<void> {
+  private async recordOrigin(preview: ActionPreview, actionIds: readonly string[]): Promise<void> {
+    const ids = sql.join(
+      actionIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
     // A grant purged between the enqueue and here leaves no row to write;
     // the INSERT then selects nothing.
     await this.db.execute(sql`
@@ -692,7 +783,7 @@ export class ActionPreviewsService {
       FROM action_jobs j
       JOIN oauth_grants g ON g.id = ${preview.grantId}::uuid
       WHERE j.mailbox_account_id = ${preview.mailboxAccountId}::uuid
-        AND (j.id = ${actionId}::uuid OR j.composite_id = ${actionId}::uuid)
+        AND (j.id IN (${ids}) OR j.composite_id IN (${ids}))
       ON CONFLICT (action_job_id) DO NOTHING
     `);
   }
@@ -730,14 +821,21 @@ function skipAtPreview(
 
 function assertVerbArguments(
   verb: ActionPreviewVerb,
+  alsoVerb: ActionPreviewAlsoVerb | null,
   olderThanDays: number | null,
   wakeAt: Date | null,
   expiresAt: Date,
 ): void {
-  if (olderThanDays !== null && (verb === 'keep' || verb === 'unsubscribe')) {
+  if (alsoVerb !== null && verb !== 'unsubscribe') {
+    throw new McpToolError('INVALID_REQUEST', 'existing_email applies to Unsubscribe only.');
+  }
+  if (
+    olderThanDays !== null &&
+    (verb === 'keep' || (verb === 'unsubscribe' && alsoVerb === null))
+  ) {
     throw new McpToolError(
       'INVALID_REQUEST',
-      'older_than_days applies to Archive, Later and Delete only.',
+      'older_than_days applies to Archive, Later and Delete, and to Unsubscribe with existing_email.',
     );
   }
   if (verb === 'later') {
@@ -781,4 +879,38 @@ function mailboxDisconnected(): McpToolError {
     'MAILBOX_RECONNECT_REQUIRED',
     'This Gmail account is no longer connected to DeclutrMail. Reconnect it in Settings.',
   );
+}
+
+/**
+ * A start refused for a reason the person has to act on, as the tool
+ * error code that names it; null for a fault (the queue was down, an
+ * unexpected error), where the press stands and a retry continues.
+ */
+function refusalOf(error: unknown): string | null {
+  const tool = toToolError(error);
+  if (!tool || tool.code === 'QUEUE_UNAVAILABLE') return null;
+  return tool.code;
+}
+
+/** Why one sender of an Unsubscribe-with-Archive/Delete was not unsubscribed. */
+function backlogSkip(sender: UnsubscribeBacklogSenderResult): ActionPreviewSkipReason | null {
+  if (sender.unsubStatus === 'requested') return null;
+  // The person sends it themself (D230); the email was still moved.
+  if (sender.unsubStatus === 'manual') return 'mailto';
+  switch (sender.reasonCode) {
+    case 'protected':
+      return 'protected';
+    case 'not_found':
+      return 'not_found';
+    case 'in_flight':
+      return 'in_progress';
+    case 'mailto_only':
+      return 'mailto';
+    case 'no_link':
+      return 'no_channel';
+    case 'method_unknown':
+      return 'unknown';
+    default:
+      return 'failed';
+  }
 }

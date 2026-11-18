@@ -561,7 +561,12 @@ describe('OAuth authorization server', () => {
       expect(rotated.status).toBe(200);
       expect((await mcp(rotated.json.access_token)).status).toBe(200);
 
-      // The first refresh token is presented again — by a thief or a bug.
+      // Past the 30-second grace, the first refresh token is presented
+      // again — by a thief or a bug.
+      await harness.db
+        .update(oauthTokens)
+        .set({ consumedAt: sql`now() - interval '31 seconds'` })
+        .where(eq(oauthTokens.tokenHash, hashOAuthSecret(tokens.refresh_token)));
       const reuse = await refresh(tokens.refresh_token);
       expect(reuse.status).toBe(400);
       expect(reuse.json.error).toBe('invalid_grant');
@@ -585,6 +590,37 @@ describe('OAuth authorization server', () => {
           userId: ada.userId,
           payload: { kind: 'refresh_token', clientId, grantId: grant!.id },
         }),
+      );
+      await harness.db.delete(oauthGrants);
+    });
+
+    it('a refresh repeated within 30 seconds gets new tokens and the connection stays', async () => {
+      const { tokens, clientId } = await connect(harness, ada);
+      const refresh = (token: string) =>
+        api.form('/oauth/token', {
+          grant_type: 'refresh_token',
+          refresh_token: token,
+          client_id: clientId,
+        });
+      // A client whose first answer was lost, or that refreshed twice at once.
+      const first = await refresh(tokens.refresh_token);
+      const again = await refresh(tokens.refresh_token);
+      expect(first.status).toBe(200);
+      expect(again.status).toBe(200);
+      expect(again.json.refresh_token).not.toBe(first.json.refresh_token);
+
+      // Both answers work; nothing was revoked or reported.
+      expect((await mcp(first.json.access_token)).status).toBe(200);
+      expect((await mcp(again.json.access_token)).status).toBe(200);
+      expect((await refresh(first.json.refresh_token)).status).toBe(200);
+      expect((await refresh(again.json.refresh_token)).status).toBe(200);
+      const [grant] = await harness.db
+        .select()
+        .from(oauthGrants)
+        .where(eq(oauthGrants.clientId, clientId));
+      expect(grant!.revokedAt).toBeNull();
+      expect(harness.securityEvents.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'connected_app.token_reuse_revoked' }),
       );
       await harness.db.delete(oauthGrants);
     });
@@ -929,10 +965,11 @@ describe('rate limits', () => {
   });
 
   it('caps unauthenticated client registration per address', async () => {
-    // 20 a minute. The bucket refills one token every three seconds, so
-    // the burst is sent at once and the assertions hold however slow the run.
+    // 120 a minute: room for a hosted client registering for many people
+    // from one address. The bucket refills two tokens a second, so the
+    // burst is sent at once and the assertions hold however slow the run.
     const statuses = await Promise.all(
-      Array.from({ length: 40 }, () =>
+      Array.from({ length: 200 }, () =>
         client(harness.base)
           .json('/oauth/register', { redirect_uris: [REDIRECT_URI] })
           .then((response) => response.status),
@@ -940,9 +977,9 @@ describe('rate limits', () => {
     );
     const registered = statuses.filter((status) => status === 201).length;
     const limited = statuses.filter((status) => status === 429).length;
-    expect(registered + limited).toBe(40);
-    expect(registered).toBeGreaterThanOrEqual(20);
-    expect(limited).toBeGreaterThanOrEqual(10);
+    expect(registered + limited).toBe(200);
+    expect(registered).toBeGreaterThanOrEqual(120);
+    expect(limited).toBeGreaterThanOrEqual(40);
     // A refused registration writes nothing.
     expect(await harness.db.select().from(oauthClients)).toHaveLength(registered);
   });

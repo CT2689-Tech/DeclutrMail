@@ -37,7 +37,7 @@ export interface ToolAnswer {
 }
 
 /** A JSON-RPC body from either response framing the SDK uses. */
-function rpcBody(http: HttpResult): Record<string, unknown> | undefined {
+export function rpcBody(http: HttpResult): Record<string, unknown> | undefined {
   if (http.json !== undefined) return http.json as Record<string, unknown>;
   const data = http.text
     .split('\n')
@@ -65,6 +65,15 @@ export class McpTestClient {
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: this.nextId++, method, params }),
     });
+  }
+
+  /** The text of a prompt's first message. */
+  async promptText(name: string): Promise<string> {
+    const http = await this.rpc('prompts/get', { name });
+    const result = rpcBody(http)?.result as
+      { messages: Array<{ content: { type: string; text: string } }> } | undefined;
+    if (!result) throw new Error(`prompts/get failed: ${http.status} ${http.text}`);
+    return result.messages[0]!.content.text;
   }
 
   async listTools(): Promise<Array<Record<string, unknown>>> {

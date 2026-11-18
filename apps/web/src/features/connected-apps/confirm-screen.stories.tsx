@@ -4,6 +4,8 @@
 // presentational.
 //
 //   • Archive · Delete90Days · Later · Unsubscribe · Keep — one per verb
+//   • UnsubscribeAndArchive · UnsubscribeAndDelete — Unsubscribe that also
+//     clears the senders' existing email, in one confirmation
 //   • OneSender · UnnamedAppLongNames  — singular copy; text that wraps
 //   • ManySenders                      — five listed, the rest behind a disclosure
 //   • ConfirmedEarlier                 — pressed before, no result on record
@@ -11,7 +13,8 @@
 //   • MonthlyLimit · MailboxDisconnected · UnsubscribeOff · NotStarted ·
 //     ConfirmFailed                    — the press did not go through
 //   • Receipt · ReceiptFinished · ReceiptKeep · ReceiptPartial ·
-//     ReceiptNothingStarted · ReceiptMailto — what confirming did
+//     ReceiptNothingStarted · ReceiptMailto · ReceiptUnsubscribeAndArchive
+//                                      — what confirming did
 //   • DidNotComplete                   — the job failed: never a receipt
 //   • Loading · Unavailable · Expired · LoadFailed
 
@@ -113,6 +116,13 @@ export const Later = ready({
 });
 export const Unsubscribe = ready({ verb: 'unsubscribe', emailCount: 0 });
 export const Keep = ready({ verb: 'keep', emailCount: 0 });
+export const UnsubscribeAndArchive = ready({ verb: 'unsubscribe', alsoVerb: 'archive' });
+export const UnsubscribeAndDelete = ready({
+  verb: 'unsubscribe',
+  alsoVerb: 'delete',
+  olderThanDays: 90,
+  emailCount: 1_284,
+});
 export const OneSender = ready({ senderCount: 1, senderNames: ['The Shop'], emailCount: 1 });
 export const UnnamedAppLongNames = ready({
   appName: null,
@@ -185,6 +195,21 @@ export const ReceiptMailto = receipt(
     ],
   },
   { verb: 'unsubscribe', senderCount: 4, emailCount: 0 },
+);
+export const ReceiptUnsubscribeAndArchive = receipt(
+  {
+    appliedSenders: 6,
+    skipped: [
+      {
+        senderId: 's1',
+        name: 'The Club',
+        reason: 'mailto',
+        composeUrl:
+          'https://mail.google.com/mail/?authuser=ada%40example.com&view=cm&fs=1&to=leave%40club.example&su=unsubscribe',
+      },
+    ],
+  },
+  { verb: 'unsubscribe', alsoVerb: 'archive' },
 );
 export const DidNotComplete = receipt({ actionStatus: 'failed' });
 

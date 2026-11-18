@@ -80,10 +80,18 @@ const inputs = {
       mailbox: mailboxArg,
       verb: z.enum(MCP_VERBS),
       sender_ids: z.array(uuid()).min(1).max(MCP_SENDERS_MAX),
+      existing_email: z
+        .enum(['archive', 'delete'])
+        .optional()
+        .describe(
+          'Unsubscribe only: also Archive or Delete the email these senders already sent, in the same confirmation. Without it, Unsubscribe leaves existing email where it is.',
+        ),
       older_than_days: z
         .literal([...MCP_OLDER_THAN_DAYS])
         .optional()
-        .describe('Archive, Later and Delete only: act on email older than this many days.'),
+        .describe(
+          'Archive, Later and Delete, or Unsubscribe with existing_email: act on email older than this many days.',
+        ),
       wake_at: z
         .string()
         .datetime({ offset: true })
@@ -215,6 +223,8 @@ const outputs = {
     confirm_url: tag(z.string(), 'not-gmail-data'),
     expires_at: tag(iso(), 'action-previews'),
     verb: tag(z.enum(MCP_VERBS), 'action-previews'),
+    /** Unsubscribe only: what happens to the senders' existing email; null leaves it. */
+    existing_email: tag(z.enum(['archive', 'delete']).nullable(), 'action-previews'),
     sender_count: tag(z.number().int(), 'action-previews'),
     email_count: tag(z.number().int(), 'action-previews'),
     destination: tag(z.string(), 'not-gmail-data'),
@@ -243,6 +253,17 @@ const outputs = {
     applied_senders: tag(z.number().int().nullable(), 'action-previews'),
     requested_emails: tag(z.number().int().nullable(), 'action-previews'),
     skipped,
+    /**
+     * Set when the person's last press could not start it. Nothing was
+     * started, and only a new press on confirm_url can start it.
+     */
+    refused: z
+      .object({
+        code: tag(z.string(), 'action-previews'),
+        message: tag(z.string(), 'not-gmail-data'),
+        upgrade_url: tag(z.string().nullable(), 'not-gmail-data'),
+      })
+      .nullable(),
   }),
   get_action_status: z.object({
     mailbox: mailboxOut(),
@@ -297,6 +318,11 @@ export interface McpToolSpec<N extends McpToolName = McpToolName> {
   name: N;
   title: string;
   description: string;
+  /**
+   * What a person can ask for, in their words. The `start` prompt lists
+   * these, so a tool cannot be added without saying what it is for.
+   */
+  ask: string;
   /** OAuth scope the grant must hold. */
   scope: 'read' | 'cleanup';
   /** Which per-user rate budget a call draws from (spec §6). */
@@ -330,6 +356,7 @@ function spec<N extends McpToolName>(
 export const MCP_TOOLS = {
   list_mailboxes: spec('list_mailboxes', {
     title: 'List Gmail accounts',
+    ask: 'See which Gmail accounts are connected and which one is active.',
     description:
       'List the Gmail accounts connected to DeclutrMail, their sync state, and which one is active.',
     scope: 'read',
@@ -338,6 +365,7 @@ export const MCP_TOOLS = {
   }),
   list_senders: spec('list_senders', {
     title: 'List senders',
+    ask: 'List who sends you email, biggest first, with read rates and how to unsubscribe.',
     description:
       'List who sends email to a Gmail account, with counts, read rate, Protected state and unsubscribe method. Sorted by total email by default.',
     scope: 'read',
@@ -346,6 +374,7 @@ export const MCP_TOOLS = {
   }),
   get_sender: spec('get_sender', {
     title: 'Get one sender',
+    ask: 'Look closer at one sender: how much is in your inbox, and their recent subject lines.',
     description:
       'Details for one sender: how much of their email is in the inbox by age, and the subjects and dates of their five most recent emails.',
     scope: 'read',
@@ -354,6 +383,7 @@ export const MCP_TOOLS = {
   }),
   get_usage: spec('get_usage', {
     title: 'Get plan usage',
+    ask: 'Check your plan and how much of its monthly limit is used.',
     description: 'The DeclutrMail plan, and how many emails of its monthly cleanup limit are used.',
     scope: 'read',
     budget: 'read',
@@ -361,6 +391,7 @@ export const MCP_TOOLS = {
   }),
   preview_cleanup: spec('preview_cleanup', {
     title: 'Preview a cleanup',
+    ask: 'Prepare Keep, Archive, Unsubscribe, Later or Delete for one sender or many. Unsubscribe can also archive or delete their existing email. Nothing changes until you confirm on DeclutrMail.',
     description:
       'Prepare Keep, Archive, Unsubscribe, Later or Delete for one or more senders. Changes nothing in Gmail. Returns a preview and a confirm_url: give that link to the person, who confirms in DeclutrMail. Protected senders are skipped.',
     scope: 'cleanup',
@@ -369,6 +400,7 @@ export const MCP_TOOLS = {
   }),
   apply_cleanup: spec('apply_cleanup', {
     title: 'Apply a confirmed cleanup',
+    ask: 'Find out whether you confirmed a prepared change, and what it did.',
     description:
       'Apply a preview the person has confirmed in DeclutrMail. Until they confirm, this returns needs_confirmation and the confirm_url, and changes nothing. Calling it again returns the same result; in_progress means it is starting, so call again shortly.',
     scope: 'cleanup',
@@ -382,6 +414,7 @@ export const MCP_TOOLS = {
   }),
   get_action_status: spec('get_action_status', {
     title: 'Get action status',
+    ask: 'Check how far a change has got.',
     description:
       'Progress of an applied cleanup or an undo: status, emails changed, and whether it can still be undone. Pass action_id or batch_id.',
     scope: 'read',
@@ -390,6 +423,7 @@ export const MCP_TOOLS = {
   }),
   list_recent_actions: spec('list_recent_actions', {
     title: 'List actions that can be undone',
+    ask: 'List recent changes that can still be undone.',
     description: 'Recent cleanups that can still be undone, newest first, with when Undo expires.',
     scope: 'read',
     budget: 'read',
@@ -397,6 +431,7 @@ export const MCP_TOOLS = {
   }),
   undo: spec('undo', {
     title: 'Undo a cleanup',
+    ask: 'Undo an Archive, Later or Delete.',
     description:
       'Put back the email an Archive, Later or Delete moved, using its undo_token. An unsubscribe request cannot be undone.',
     scope: 'cleanup',
@@ -410,6 +445,7 @@ export const MCP_TOOLS = {
   }),
   protect_sender: spec('protect_sender', {
     title: 'Protect a sender',
+    ask: 'Protect a sender, so cleanups skip it.',
     description:
       'Mark a sender as Protected, so cleanups skip it. Removing protection is done in DeclutrMail, not here.',
     scope: 'cleanup',

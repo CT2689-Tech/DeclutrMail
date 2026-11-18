@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { actionPreviewFacts } from '@declutrmail/shared/actions';
 import type { ActionPreviewOutcome, ActionPreviewView } from '@declutrmail/shared/contracts';
 
 import { installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
@@ -197,6 +198,32 @@ describe('ConfirmCard — the request', () => {
     expect(bodyText()).not.toContain('Future email is unchanged.');
   });
 
+  it('Unsubscribe with Archive names both, counts the email, and says whose undo is whose', () => {
+    renderReady(view({ verb: 'unsubscribe', alsoVerb: 'archive' }));
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
+      'Unsubscribe and archive 7 senders?',
+    );
+    const facts = actionPreviewFacts('unsubscribe', 'archive');
+    expect(items().slice(-3)).toEqual(['412 emails in your inbox', facts.destination, facts.undo]);
+    expect(facts.undo).toContain('Archive — ');
+    expect(facts.undo).toContain('Unsubscribe — ');
+    expect(screen.getByRole('button').textContent).toBe('Unsubscribe and archive');
+  });
+
+  it('Unsubscribe with Delete does not say future email is unchanged', () => {
+    renderReady(view({ verb: 'unsubscribe', alsoVerb: 'delete' }));
+    expect(screen.getByRole('button').textContent).toBe('Unsubscribe and delete');
+    expect(bodyText()).toContain('Gmail Trash');
+    expect(bodyText()).not.toContain('Future email is unchanged.');
+  });
+
+  it('reads a request from an API that does not send alsoVerb as Unsubscribe alone', () => {
+    const { alsoVerb: _dropped, ...older } = view({ verb: 'unsubscribe', emailCount: 0 });
+    renderReady(older as ActionPreviewView);
+    expect(screen.getByRole('button').textContent).toBe('Unsubscribe');
+    expect(bodyText()).not.toContain('in your inbox');
+  });
+
   it('does not invent a name for an app that registered without one', () => {
     renderReady(view({ appName: null }));
     expect(bodyText()).toContain('Unnamed app asked for this in ada@example.com.');
@@ -390,6 +417,16 @@ describe('ConfirmCard — the receipt', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
+  it('sends the person back to the app, which learns the outcome only when it asks', () => {
+    renderReceipt(applied());
+    expect(bodyText()).toContain('Go back to Claude and tell it you confirmed.');
+  });
+
+  it('says "your assistant" when the app gave no name', () => {
+    renderReceipt(applied({}, { appName: '  ' }));
+    expect(bodyText()).toContain('Go back to your assistant and tell it you confirmed.');
+  });
+
   it('does not title it "Confirmed" when no sender was acted on', () => {
     renderReceipt(
       applied({
@@ -407,6 +444,13 @@ describe('ConfirmCard — the receipt', () => {
     renderReceipt(applied({ actionStatus: 'done' }));
     expect(screen.getByRole('status').textContent).toContain('It has finished.');
     expect(screen.getByRole('status').textContent).not.toContain('running');
+  });
+
+  it('names both halves of Unsubscribe with Archive', () => {
+    renderReceipt(applied({}, { verb: 'unsubscribe', alsoVerb: 'archive' }));
+    expect(screen.getByRole('status').textContent).toBe(
+      'Unsubscribe and archive started for 7 senders. It covers 412 emails.',
+    );
   });
 
   it('Keep records a decision: no email count and no progress line', () => {

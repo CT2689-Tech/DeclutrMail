@@ -379,11 +379,28 @@ export function staticActionPreviewCopy(verb: ActionVerb): string {
  * page, so the assistant and the page describe one preview in the same
  * words.
  */
-export function actionPreviewFacts(verb: ActionVerb): {
+export function actionPreviewFacts(
+  verb: ActionVerb,
+  /** Unsubscribe only: the Archive or Delete of existing email it comes with. */
+  alsoVerb: 'archive' | 'delete' | null = null,
+): {
   destination: string;
   undo: string;
   alsoTrue: readonly string[];
 } {
+  if (verb === 'unsubscribe' && alsoVerb !== null) {
+    const move = actionPreviewFacts(alsoVerb);
+    const unsubscribe = actionPreviewFacts('unsubscribe');
+    return {
+      // What happens to the email already here, then to future email.
+      destination: `${move.destination} ${unsubscribe.destination}`,
+      // Two actions, so each recovery sentence says which one it is for
+      // (see `composeRecoveryFacts`, rule 2).
+      undo: `${ACTION_SEMANTICS[alsoVerb].label} — ${move.undo} ${ACTION_SEMANTICS.unsubscribe.label} — ${unsubscribe.undo}`,
+      // Delete's "Future email is unchanged." is not true next to Unsubscribe.
+      alsoTrue: [],
+    };
+  }
   const semantics = ACTION_SEMANTICS[verb];
   const actsOnFutureMail = semantics.currentMail.scope === 'none';
   const destination = actsOnFutureMail

@@ -36,7 +36,7 @@ import {
   type McpToolName,
   type McpToolOutput,
 } from './mcp-tool-contract.js';
-import { exceptionCode, McpToolError, settingsUrl } from './mcp-tool-errors.js';
+import { billingUrl, exceptionCode, McpToolError, settingsUrl } from './mcp-tool-errors.js';
 import type { McpPrincipal } from './mcp-token.guard.js';
 
 /** A looping assistant cannot fill the previews table (spec §6). */
@@ -192,11 +192,12 @@ export class McpToolsService {
         owner: owner(principal),
         mailboxAccountId: mailbox.id,
         verb: args.verb,
+        alsoVerb: args.existing_email ?? null,
         senderIds: args.sender_ids,
         olderThanDays: args.older_than_days ?? null,
         wakeAt: args.wake_at === undefined ? null : new Date(args.wake_at),
       });
-      const facts = actionPreviewFacts(preview.verb);
+      const facts = actionPreviewFacts(preview.verb, preview.alsoVerb);
       return {
         mailbox: mailbox.email,
         preview_id: preview.id,
@@ -204,6 +205,7 @@ export class McpToolsService {
         confirm_url: confirmUrl(preview.id),
         expires_at: preview.expiresAt.toISOString(),
         verb: preview.verb,
+        existing_email: preview.alsoVerb,
         sender_count: preview.senderIds.length,
         email_count: preview.emailCount,
         // With the lines a person would otherwise assume the opposite of
@@ -362,6 +364,10 @@ export class McpToolsService {
         reason: skip.reason,
         compose_url: skip.composeUrl,
       })),
+      refused:
+        preview.state === 'pending' && preview.refusedCode !== null
+          ? refusalOutput(preview.refusedCode)
+          : null,
     };
   }
 
@@ -487,4 +493,43 @@ function senderRow(row: SenderFacts): McpToolOutput<'get_sender'>['sender'] {
     protected: row.protectionFlags.isProtected,
     unsubscribe_method: row.unsubscribeMethod ?? 'unknown',
   };
+}
+
+/**
+ * What the assistant is told when the person's last press was refused.
+ * Historical, so it stays true after an upgrade: it says why that press
+ * did not start anything, and that a new one is needed.
+ */
+function refusalOutput(code: string): {
+  code: string;
+  message: string;
+  upgrade_url: string | null;
+} {
+  const again = 'Nothing was started. Only a new confirmation at confirm_url can start it.';
+  switch (code) {
+    case 'QUOTA_EXHAUSTED':
+      return {
+        code,
+        message: `The person confirmed, but it would go over the plan's monthly limit. ${again} get_usage shows the limit and when it resets.`,
+        upgrade_url: billingUrl(),
+      };
+    case 'UPGRADE_REQUIRED':
+      return {
+        code,
+        message: `The person confirmed, but their plan does not include this. ${again}`,
+        upgrade_url: billingUrl(),
+      };
+    case 'UNSUBSCRIBE_UNAVAILABLE':
+      return {
+        code,
+        message: `The person confirmed, but unsubscribe requests cannot be sent right now. ${again}`,
+        upgrade_url: null,
+      };
+    default:
+      return {
+        code,
+        message: `The person confirmed, but it could not start. ${again}`,
+        upgrade_url: null,
+      };
+  }
 }

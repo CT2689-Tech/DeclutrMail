@@ -72,6 +72,7 @@ export class ActionPreviewsController {
     return {
       id: preview.id,
       verb: preview.verb,
+      alsoVerb: preview.alsoVerb,
       state: detail.expired ? 'expired' : preview.state,
       appName: detail.appName,
       mailboxEmail: detail.mailboxEmail,
