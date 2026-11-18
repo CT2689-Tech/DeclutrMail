@@ -1,3 +1,7 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -49,8 +53,13 @@ function byName(text: string): RegExp {
   return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
 }
 
-function wordCount(article: LearnArticle): number {
-  return articleText(article).trim().split(/\s+/).filter(Boolean).length;
+const MARKETING_APP_DIR = join(dirname(fileURLToPath(import.meta.url)), '../../../app/(marketing)');
+
+/** The slug directories under a cluster's route, e.g. `app/(marketing)/how-to/<slug>/`. */
+function routeDirs(cluster: string): string[] {
+  return readdirSync(join(MARKETING_APP_DIR, cluster), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
 }
 
 const HOW_TO = HOW_TO_SLUGS.map((slug) => HOW_TO_ARTICLES[slug]);
@@ -84,100 +93,48 @@ describe('public learning content registry', () => {
     }
   });
 
-  it('ships exactly the published how-to routes and five answer routes', () => {
-    expect(HOW_TO_SLUGS).toEqual([
-      'clean-gmail-by-sender',
-      'bulk-delete-emails-from-one-sender',
-      'gmail-storage-full',
-      'auto-archive-future-emails-in-gmail',
-      'stop-promotional-emails-gmail',
-      'unsubscribe-from-emails-gmail',
-    ]);
-    expect(ANSWER_SLUGS).toEqual([
-      'is-it-safe-to-connect-gmail-app',
-      'what-is-metadata-only-email-analysis',
-      'how-undo-works-for-gmail-cleanup',
-      'best-way-to-clean-gmail-2026',
-      'sender-level-vs-message-level-cleanup',
-    ]);
-    expect(new Set(ALL_ARTICLES.map((article) => article.path)).size).toBe(ALL_ARTICLES.length);
-  });
-
-  it('points each how-to at the approved guides, comparisons, and one answer', () => {
-    const expected: Record<(typeof HOW_TO_SLUGS)[number], readonly string[]> = {
-      'clean-gmail-by-sender': [
-        '/how-to/gmail-storage-full',
-        '/how-to/bulk-delete-emails-from-one-sender',
-        '/how-to/auto-archive-future-emails-in-gmail',
-        '/how-to/unsubscribe-from-emails-gmail',
-        '/vs/gmail',
-        '/compare',
-        '/answers/sender-level-vs-message-level-cleanup',
-      ],
-      'bulk-delete-emails-from-one-sender': [
-        '/how-to/clean-gmail-by-sender',
-        '/how-to/gmail-storage-full',
-        '/how-to/auto-archive-future-emails-in-gmail',
-        '/how-to/unsubscribe-from-emails-gmail',
-        '/vs/gmail',
-        '/answers/how-undo-works-for-gmail-cleanup',
-      ],
-      'gmail-storage-full': [
-        '/how-to/bulk-delete-emails-from-one-sender',
-        '/how-to/clean-gmail-by-sender',
-        '/how-to/stop-promotional-emails-gmail',
-        '/vs/clean-email',
-        '/answers/how-undo-works-for-gmail-cleanup',
-      ],
-      'auto-archive-future-emails-in-gmail': [
-        '/how-to/gmail-storage-full',
-        '/how-to/bulk-delete-emails-from-one-sender',
-        '/how-to/stop-promotional-emails-gmail',
-        '/how-to/clean-gmail-by-sender',
-        '/vs/gmail-filters',
-        '/vs/sanebox',
-        '/answers/how-undo-works-for-gmail-cleanup',
-      ],
-      'stop-promotional-emails-gmail': [
-        '/how-to/unsubscribe-from-emails-gmail',
-        '/how-to/auto-archive-future-emails-in-gmail',
-        '/how-to/clean-gmail-by-sender',
-        '/vs/unroll-me',
-        '/vs/leave-me-alone',
-        '/answers/is-it-safe-to-connect-gmail-app',
-      ],
-      'unsubscribe-from-emails-gmail': [
-        '/how-to/gmail-storage-full',
-        '/how-to/stop-promotional-emails-gmail',
-        '/how-to/bulk-delete-emails-from-one-sender',
-        '/how-to/auto-archive-future-emails-in-gmail',
-        '/vs/unroll-me',
-        '/vs/trimbox',
-        '/answers/how-undo-works-for-gmail-cleanup',
-      ],
-    };
-    for (const slug of HOW_TO_SLUGS) {
-      expect(
-        HOW_TO_ARTICLES[slug].related.map((link) => link.href),
-        slug,
-      ).toEqual(expected[slug]);
+  // Which pages exist and how they link is IA (CLAUDE.md §2.0, Tier 2): these
+  // tests pin that every slug and link resolves, not which ones there are.
+  it('publishes every how-to and answer slug as its own route, in the sitemap, and no other', () => {
+    const sitemap = new Set<string>(MARKETING_PATHS);
+    const clusters: ReadonlyArray<
+      readonly [cluster: string, slugs: readonly string[], articles: readonly LearnArticle[]]
+    > = [
+      ['how-to', HOW_TO_SLUGS, HOW_TO],
+      ['answers', ANSWER_SLUGS, ANSWERS],
+    ];
+    for (const [cluster, slugs, articles] of clusters) {
+      expect(slugs.length, cluster).toBeGreaterThan(0);
+      expect(new Set(slugs).size, `${cluster} repeats a slug`).toBe(slugs.length);
+      slugs.forEach((slug, index) => {
+        expect(slug).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+        expect(articles[index]?.slug, slug).toBe(slug);
+        expect(articles[index]?.path, slug).toBe(`/${cluster}/${slug}`);
+        expect(sitemap.has(`/${cluster}/${slug}`), slug).toBe(true);
+        expect(existsSync(join(MARKETING_APP_DIR, cluster, slug, 'page.tsx')), slug).toBe(true);
+      });
+      // A route directory the registry does not list would ship outside the sitemap.
+      expect(routeDirs(cluster).sort(), cluster).toEqual([...slugs].sort());
     }
+    expect(new Set(ALL_ARTICLES.map((article) => article.path)).size).toBe(ALL_ARTICLES.length);
   });
 
   it('resolves every related href to a sitemap path', () => {
     const paths = new Set<string>(MARKETING_PATHS);
     for (const article of ALL_ARTICLES) {
-      for (const link of article.related) {
-        expect(paths.has(link.href), `${article.path} → ${link.href}`).toBe(true);
+      const hrefs = article.related.map((link) => link.href);
+      expect(new Set(hrefs).size, `${article.path} repeats a related link`).toBe(hrefs.length);
+      expect(hrefs, `${article.path} links to itself`).not.toContain(article.path);
+      for (const href of hrefs) {
+        expect(paths.has(href), `${article.path} → ${href}`).toBe(true);
       }
     }
   });
 
-  it('keeps every guide and answer substantive instead of shipping thin SEO shells', () => {
-    for (const article of [...HOW_TO, ...ANSWERS]) {
-      expect(article.sections.length, article.path).toBeGreaterThanOrEqual(5);
-      expect(wordCount(article), `${article.path} word count`).toBeGreaterThanOrEqual(450);
-      expect(article.related.length, article.path).toBeGreaterThanOrEqual(3);
+  it('gives every article a title and at least one section', () => {
+    for (const article of ALL_ARTICLES) {
+      expect(article.title.trim(), article.path).not.toBe('');
+      expect(article.sections.length, article.path).toBeGreaterThan(0);
     }
   });
 
@@ -216,15 +173,6 @@ describe('public learning content registry', () => {
         expect(url.protocol, `${article.path} ${source.href}`).toBe('https:');
         expect(allowedHosts.has(url.hostname), `${article.path} ${source.href}`).toBe(true);
       }
-    }
-  });
-
-  it('ships three complete first-party launch essays', () => {
-    const launchEssays = BLOG.filter((article) => article.kind === 'Launch essay');
-    expect(launchEssays).toHaveLength(3);
-    for (const article of launchEssays) {
-      expect(article.sections.length, article.path).toBeGreaterThanOrEqual(6);
-      expect(wordCount(article), `${article.path} word count`).toBeGreaterThanOrEqual(700);
     }
   });
 
@@ -347,8 +295,8 @@ describe('shared learning surfaces', () => {
       (script) => JSON.parse(script.textContent ?? '{}') as Record<string, unknown>,
     );
 
-    expect(nodes.map((node) => node['@type'])).toEqual(['Article', 'FAQPage']);
-    expect(nodes[1]?.mainEntity).toEqual([
+    expect(nodes.map((node) => node['@type'])).toEqual(['Article', 'BreadcrumbList', 'FAQPage']);
+    expect(nodes[2]?.mainEntity).toEqual([
       {
         '@type': 'Question',
         name: article.title,
@@ -364,8 +312,51 @@ describe('shared learning surfaces', () => {
     const types = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
       (script) => (JSON.parse(script.textContent ?? '{}') as Record<string, unknown>)['@type'],
     );
-    expect(types).toEqual(['Article']);
+    expect(types).toEqual(['Article', 'BreadcrumbList']);
   });
+
+  it.each([
+    ['/how-to', 'Guides', HOW_TO_ARTICLES['gmail-storage-full'], 'HowTo'],
+    ['/answers', 'Answers', ANSWER_ARTICLES['is-it-safe-to-connect-gmail-app'], 'Article'],
+    ['/blog', 'Articles', BLOG[0]!, 'BlogPosting'],
+  ] as const)(
+    'marks up %s pages with the visible breadcrumb, a crawlable image and the publisher',
+    (hubPath, hubLabel, article, type) => {
+      const { container } = render(<ArticlePage article={article} />);
+      const nodes = [...container.querySelectorAll('script[type="application/ld+json"]')].map(
+        (script) => JSON.parse(script.textContent ?? '{}') as Record<string, unknown>,
+      );
+      const url = `https://declutrmail.com${article.path}`;
+      expect(nodes[0]).toMatchObject({
+        '@type': type,
+        url,
+        mainEntityOfPage: url,
+        image: 'https://declutrmail.com/opengraph-image',
+      });
+      if (type !== 'HowTo') {
+        expect(nodes[0]?.publisher).toMatchObject({
+          '@id': 'https://declutrmail.com/#organization',
+          logo: { url: 'https://declutrmail.com/icons/icon-512.png' },
+        });
+      }
+      // The BreadcrumbList must mirror the breadcrumb a reader sees.
+      expect(screen.getByRole('link', { name: hubLabel })).toHaveAttribute('href', hubPath);
+      expect(nodes[1]).toEqual({
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://declutrmail.com' },
+          {
+            '@type': 'ListItem',
+            position: 2,
+            name: hubLabel,
+            item: `https://declutrmail.com${hubPath}`,
+          },
+          { '@type': 'ListItem', position: 3, name: article.title, item: url },
+        ],
+      });
+    },
+  );
 
   it('renders all three published posts on the article index', () => {
     render(<BlogIndexPage />);

@@ -1,6 +1,6 @@
 ---
 name: schema-migration-reviewer
-description: Migration safety + schema correctness reviewer for DeclutrMail. Verifies Drizzle schema definitions + Atlas migration plans, the no-body-column invariant (CLAUDE.md §2.1), required indexes for hot queries, undo journal columns, and partitioning awareness. Use on PRs touching packages/db/migrations/** or packages/db/src/schema/**. Reports findings; never refactors.
+description: Migration safety + schema correctness reviewer for DeclutrMail. Verifies Drizzle schema definitions + Atlas migration plans, the no-body-column invariant (CLAUDE.md §2.1), required indexes for hot queries, and undo journal columns. Use on PRs touching packages/db/migrations/** or packages/db/src/schema/**. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -97,16 +97,10 @@ For new tables / new columns referenced in hot queries:
   query) need indexes. Flag missing indexes as **[WARNING]**.
 - Composite indexes should match the leftmost-prefix usage pattern.
 
-#### Check D — Partitioning awareness (CLAUDE.md §2.7)
+#### Check D — Partitioning (retired 2026-11-17)
 
-Postgres partitioning is deferred until 25M rows OR 2M/mailbox OR p95
-> 150ms — a product choice (CLAUDE.md §2.7), not an
-external constraint. Migrations that ADD partitioning before those triggers are
-**[BLOCKING]** — premature.
-
-Migrations that change the shape of the `mail_messages` or `triage_decisions`
-tables must be flagged **[WARNING]** for partitioning compatibility — once
-partitioning lands, partition keys are immutable.
+There is no partitioning rule. Partition a table when measurements show it
+needs it; judge such a migration like any other production migration.
 
 ### Step 4: Undo journal coverage (CLAUDE.md §2.6)
 
@@ -161,9 +155,9 @@ If no findings: `## Schema Migration Review — PR #<NN>: no findings.`
 
 - **[BLOCKING]** — direct violation of the §2.1 privacy rule, irreversible
   in-place edit of an applied migration, drop of an object still referenced,
-  missing required index on FK, drizzle/atlas drift, premature partitioning
+  missing required index on FK, drizzle/atlas drift
 - **[WARNING]** — possibly-slow rewrite (default on huge table),
-  missing index on suspected hot query, partition-key-affecting change
+  missing index on suspected hot query
 - **[INFO]** — observation worth surfacing (e.g. "consider adding a
   test that locks the index ordering")
 
@@ -176,7 +170,6 @@ Surface to founder immediately if the PR:
 - Modifies the `undo_journal` table shape
 - Adds a column that could hold body content
 - Modifies CLAUDE.md §2.1 (privacy guardrail)
-- Touches the `mail_messages` partitioning strategy before the Check D triggers fire
 
 ## Non-goals
 

@@ -7,24 +7,24 @@
  * the served text to the SAME `MARKETING_PATHS` array the sitemap is built
  * from, so the three (routes → sitemap → llms.txt) reconcile through one
  * source and the next omission fails here. The pricing changelog is not
- * in that array: it is appended only while pricing v2 is on.
+ * in that array: it is appended after the pricing link.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { fillWs3, llmsStorageAiLine, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  fillWs3,
+  LAUNCH_STAGE,
+  llmsStorageAiLine,
+  WS3_COPY,
+} from '@declutrmail/shared/copy/launch';
 import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 
 import { renderLlmsFullTxt, renderLlmsTxt } from '@/features/marketing/llms/llms-document';
-import { installFetchStub } from '@/test/fetch-stub';
 
 import { GET as llmsFullTxt } from './llms-full.txt/route';
 import { GET as llmsTxt } from './llms.txt/route';
 import { MARKETING_PATHS } from './sitemap';
-
-afterEach(() => {
-  vi.unstubAllEnvs();
-});
 
 describe('llms.txt — marketing surface reconciliation', () => {
   it.each(MARKETING_PATHS)('references the public marketing route %s', async (route) => {
@@ -34,14 +34,23 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(await renderLlmsTxt()).toContain(needle);
   });
 
-  it('omits /pricing/changelog while PRICING_V2 is off', async () => {
-    vi.stubEnv('PRICING_V2', '');
-    expect(await renderLlmsTxt()).not.toContain('https://declutrmail.com/pricing/changelog');
+  it('lists /sign-in once, and /beta only while the beta is open', async () => {
+    const body = await renderLlmsTxt();
+    expect(body.match(/\]\(https:\/\/declutrmail\.com\/sign-in\)/g)).toHaveLength(1);
+    if (LAUNCH_STAGE === 'ga') {
+      // /beta 307s organic visits after GA; its open-sign-up fact moves
+      // onto the Sign in entry instead of a second link to the same page.
+      expect(body).not.toContain('https://declutrmail.com/beta');
+      expect(body).toMatch(
+        /^- \[Sign in\]\(https:\/\/declutrmail\.com\/sign-in\): .+\. No invite or waitlist needed\.$/m,
+      );
+    } else {
+      expect(body).toContain('- [Open beta](https://declutrmail.com/beta):');
+    }
   });
 
-  it('lists /pricing/changelog only when PRICING_V2 is on', async () => {
-    vi.stubEnv('PRICING_V2', 'true');
-    const body = await renderLlmsTxt();
+  it('lists /pricing/changelog beside the pricing link', () => {
+    const body = renderLlmsTxt();
     expect(body).toContain(
       '- [Pricing changelog](https://declutrmail.com/pricing/changelog): dated record of pricing changes',
     );
@@ -65,11 +74,10 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(body).not.toMatch(/\baudited\b/i);
     expect(body.startsWith('# DeclutrMail\n')).toBe(true);
     const pricing = renderPricingMarkdown().trim();
-    if (pricing) {
-      expect(body).toContain('## Pricing');
-      expect(body).toContain(pricing);
-    } else {
-      expect(body).not.toMatch(/^## Pricing\s*$/m);
+    expect(body).toContain('## Pricing');
+    // Embedded one level down: each /pricing.md plan heading becomes H3.
+    for (const heading of pricing.match(/^## .+$/gm) ?? []) {
+      expect(body).toContain(`#${heading}\n`);
     }
     expect(await renderLlmsFullTxt()).toContain(body.trim());
     expect(await renderLlmsFullTxt()).toContain('## Mailstrom vs DeclutrMail');
@@ -99,8 +107,8 @@ describe('llms.txt — marketing surface reconciliation', () => {
       '## Journal and build log',
       '## Legal',
     ];
-    const pricing = renderPricingMarkdown().trim();
-    expect(headings).toEqual(pricing ? [...sections, '## Pricing'] : sections);
+    // /pricing.md is embedded one level down, so its plan headings are H3.
+    expect(headings).toEqual([...sections, '## Pricing']);
 
     expect(LLMS_TXT).toContain(llmsStorageAiLine());
     expect(LLMS_TXT).toContain(fillWs3(WS3_COPY['ws3.llms.storageAi.gate']));
@@ -117,22 +125,15 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(await renderLlmsFullTxt()).not.toContain('You can pay with UPI');
   });
 
-  it('uses the API launch flags when the web env is off', async () => {
-    vi.stubEnv('PRICING_V2', '');
-    vi.stubEnv('BILLING_PASS_ENABLED', '');
-    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/pricing/public',
-        respond: () =>
-          Response.json({ data: { pricingV2: true, passEnabled: true, meterV2: true } }),
-      },
-    ]);
-    const body = await (await llmsTxt()).text();
-    const full = await (await llmsFullTxt()).text();
+  it('serves the launch pricing from both routes', async () => {
+    const body = await llmsTxt().text();
+    const full = await llmsFullTxt().text();
     expect(body).toContain('## Pricing');
-    expect(body).toContain('## Backlog Pass');
+    expect(body).toContain('\n### Backlog Pass\n');
+    // The embedded /pricing.md keeps its plans under `## Pricing`: one H1,
+    // and no plan heading at H2 beside the document's own sections.
+    expect(body.match(/^# .+$/gm)).toEqual(['# DeclutrMail']);
+    expect(body).not.toMatch(/^## Backlog Pass$/m);
     expect(body).toContain('$59 a year');
     expect(body).toContain('$19 once');
     expect(body).toContain('https://declutrmail.com/pricing/changelog');
@@ -148,25 +149,5 @@ describe('llms.txt — marketing surface reconciliation', () => {
     expect(full).not.toContain('$9/mo');
     expect(body).not.toContain('You can pay with UPI');
     expect(full).not.toContain('You can pay with UPI');
-  });
-
-  it('falls back to the web env when the pricing API is down', async () => {
-    vi.stubEnv('PRICING_V2', '');
-    vi.stubEnv('BILLING_PASS_ENABLED', '');
-    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/pricing/public',
-        respond: () => new Response('unavailable', { status: 503 }),
-      },
-    ]);
-    const body = await (await llmsTxt()).text();
-    expect(body.startsWith('# DeclutrMail\n')).toBe(true);
-    expect(body).not.toContain('## Backlog Pass');
-    expect(body).not.toContain('one-time Backlog Pass');
-    expect(body).not.toContain('$59 a year');
-    expect(body).not.toContain('https://declutrmail.com/pricing/changelog');
-    expect(body).not.toMatch(/^## Pricing\s*$/m);
   });
 });

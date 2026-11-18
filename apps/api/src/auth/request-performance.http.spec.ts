@@ -6,6 +6,7 @@ import cookieParser from 'cookie-parser';
 import { drizzle } from 'drizzle-orm/pglite';
 import { mailboxAccounts, schema, users, workspaces } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
+import { METER } from '@declutrmail/shared/entitlements';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Redis } from 'ioredis';
 
@@ -200,7 +201,7 @@ describe('shared request performance HTTP smoke', () => {
       data: {
         activeMailboxId: mailboxId,
         tier: 'free',
-        cleanupRemaining: 50,
+        cleanupRemaining: METER.free.limit,
         mailboxes: [{ id: mailboxId, readiness: null, needsReconnect: false }],
       },
     });

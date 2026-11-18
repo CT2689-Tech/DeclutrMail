@@ -11,7 +11,7 @@ import {
   workspaces,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { METER } from '@declutrmail/shared/entitlements';
 import { describe, expect, it } from 'vitest';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
@@ -25,7 +25,7 @@ import {
 } from '../../../../scripts/launch-funnel-sql';
 import { formatFunnelReport } from '../../../../scripts/launch-funnel-report';
 
-const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
+const FREE_LIMIT = METER.free.limit;
 
 describe('product event writer', () => {
   it('binds the real writer instead of the no-op', () => {
@@ -108,7 +108,7 @@ describe('product event writer', () => {
     expect(rows[0]).toMatchObject({
       event: 'free_cap_hit',
       userId: null,
-      props: { requested_bucket: '11-100' },
+      props: { requested_bucket: '1001+' },
     });
   });
 
@@ -145,7 +145,7 @@ describe('product event writer', () => {
     expect(rows[0]).toMatchObject({
       event: 'free_cap_hit',
       userId: earlier!.id,
-      props: { requested_bucket: '11-100' },
+      props: { requested_bucket: '1001+' },
     });
     expect(JSON.stringify(rows)).not.toContain('@');
     expect(await earliestWorkspaceUserId(db, ws!.id)).toBe(earlier!.id);

@@ -38,12 +38,6 @@
     },
     {
       "guard": "verify-no-body-storage",
-      "file": "apps/api/src/senders/senders.controller.ts",
-      "hits": ["* nobody read (audit 2026-08-21). Optional, not zeroed: a zero would"],
-      "reason": "False positive: a comment reading \"nobody read (audit 2026-08-21)\" matches bod(y|ies)\\s+read.*0, which has no word boundary before \"body\"."
-    },
-    {
-      "guard": "verify-no-body-storage",
       "file": "apps/web/src/app/(marketing)/legal-pages.test.tsx",
       "hits": [
         "*      banned pre-D228 phrase \"Bodies read: 0\" must not appear.",
@@ -115,15 +109,6 @@
         "- **Trust copy (D7, D228; CLAUDE.md §2.1):** the badge line is exactly `We never fetch or store full email contents.` plus the generated storage list from `packages/shared/src/contracts/gmail-data-inventory.ts`. Counter-style claims are banned — never `Full bodies fetched: 0` or `Bodies read: 0 forever`."
       ],
       "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
-    },
-    {
-      "guard": "verify-no-body-storage",
-      "file": "FOUNDER-FOLLOWUPS.md",
-      "hits": [
-        "**Verifies by:** `rg \"no bodies read\" apps/web/src/app/senders-lab-v2/` returns 0 results.",
-        "**Why:** `apps/web/src/app/senders-lab-v2/page.tsx` line 1063 + 1402 use \"no bodies read\" — the canonical D228 copy is \"Full bodies fetched: 0\" (CLAUDE.md §2.1) and the spec's in-product line is \"Metadata only · No email bodies\" / \"Subjects only · we never read email bodies\". The literal banned regex `/bod(y|ies) read.*0/i` doesn't match, so no automated trip, but the phrasing drift risks getting copy-pasted forward when the chosen variant hardens."
-      ],
-      "reason": "Founder log entry quoting the banned trust copy in order to ban it; not product copy."
     }
   ]
 }

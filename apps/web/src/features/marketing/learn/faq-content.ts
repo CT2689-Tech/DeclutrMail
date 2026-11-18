@@ -6,7 +6,7 @@ import {
   RAZORPAY_LIMITATIONS_NOTE,
 } from '@/features/billing/billing-copy';
 import { fillWs3, WS1_COPY, WS3_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, isPricingV2 } from '@declutrmail/shared/entitlements';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { FaqEntry } from './types';
@@ -121,7 +121,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'autopilot',
     question: 'What does Autopilot do at launch?',
     answer:
-      'Plus and Pro include five preset rules. Turning one on first shows a preview of matching email. The low-engagement Archive and new-sender Later presets always collect suggestions for your approval. Other presets can act on future matches if you choose Act now, or collect suggestions if you choose Watch first. Custom rule creation is not part of the launch product, and every rule can be paused.',
+      'Plus and Pro include five preset rules, and you can add your own rules for chosen senders. Turning a rule on first shows a preview of matching email. The new-sender Later preset and Delete rules always collect matches for your approval. Other rules can act on future matches if you choose Act now, or collect suggestions if you choose Watch first. Every rule can be paused.',
   },
   {
     id: 'later-vs-snooze',
@@ -176,21 +176,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   },
 ];
 
-/** Live refund answer. The window comes from `pricing.faq.refunds.a`. */
-export function refundSupportAnswer(_pricingV2 = isPricingV2()): string {
-  return fillStory(WS1_COPY['pricing.faq.refunds.a']);
-}
-
-/** FAQ entries with the refund answer read at render time. */
-export function publishedFaqEntries(pricingV2 = isPricingV2()): readonly FaqEntry[] {
-  return FAQ_ENTRIES.map((entry) =>
-    entry.id === 'refunds-support' ? { ...entry, answer: refundSupportAnswer(pricingV2) } : entry,
-  );
-}
-
 /** Help and acquisition FAQ share the same answer for overlapping product questions. */
-export function faqAnswer(id: string, pricingV2 = isPricingV2()): string {
-  if (id === 'refunds-support') return refundSupportAnswer(pricingV2);
+export function faqAnswer(id: string): string {
   const entry = FAQ_ENTRIES.find((item) => item.id === id);
   if (!entry) throw new Error(`Unknown public FAQ: ${id}`);
   return entry.answer;

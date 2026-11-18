@@ -132,7 +132,6 @@ describe('plan price under launch pricing', () => {
           fromCycle="annual"
           currentPeriodEnd={effectiveAt}
           provider="paddle"
-          pricingV2
           isPending={false}
           errorMessage={null}
           onConfirm={vi.fn()}

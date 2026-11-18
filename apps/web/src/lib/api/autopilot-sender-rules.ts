@@ -3,6 +3,7 @@ import { apiGet, apiPatch, apiPost } from './client';
 import type {
   AutopilotRuleSender,
   AutopilotSenderRule,
+  AutopilotSenderRuleAutomaticPreview,
   AutopilotSenderRuleCreate,
   AutopilotSenderSearchPage,
   AutopilotSenderRulePreview,
@@ -78,13 +79,19 @@ export const executeSenderRule = (
     { headers: { 'Idempotency-Key': idempotencyKey }, mailboxId },
   ).then((e) => e.data);
 
-export const setSenderRuleMode = (
-  rule: SenderRule,
-  mode: 'observe' | 'paused',
-  mailboxId?: string,
-) =>
+export const setSenderRuleMode = (rule: SenderRule, mode: SenderRule['mode'], mailboxId?: string) =>
   apiPatch<SenderRule>(
     `${base}/${encodeURIComponent(rule.id)}`,
     { version: rule.version, mode },
     { mailboxId },
+  ).then((e) => e.data);
+/** What "Run automatically" would archive now; read-only. */
+export const fetchSenderRuleAutomaticPreview = (
+  rule: Pick<SenderRule, 'id'>,
+  signal: AbortSignal,
+  mailboxId?: string,
+) =>
+  apiGet<AutopilotSenderRuleAutomaticPreview>(
+    `${base}/${encodeURIComponent(rule.id)}/automatic-preview`,
+    { signal, mailboxId },
   ).then((e) => e.data);

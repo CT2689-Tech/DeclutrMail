@@ -188,24 +188,19 @@ export type { UiState, UiActions, ScreenHelp } from './state/ui-store';
 // tree). Composes with the Action Registry — see entitlements/types.ts.
 export { TIER_MANIFEST } from './entitlements/index';
 export {
-  cleanupActionsPerMonthFor,
   hasCapability,
   inboxLimitFor,
   satisfiesActionTier,
   tierById,
   undoWindowDaysFor,
 } from './entitlements/index';
-export { CAPABILITIES, PROMO_IDS, TIER_IDS, TIER_RANK } from './entitlements/index';
+export { CAPABILITIES, TIER_IDS, TIER_RANK } from './entitlements/index';
 export type {
   Capability,
-  NonPurchasableRow,
   PricePoint,
-  PromoDefinition,
-  PromoId,
   TierDefinition,
   TierId,
   TierManifest,
-  TierPrices,
 } from './entitlements/index';
 
 // ADR-0025 — feature-flag manifest + resolution. Pure TS (also

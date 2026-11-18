@@ -1,6 +1,6 @@
 # ADR-0010: Dashboard-surface motion budget extension (amends D213)
 
-- **Status:** Accepted
+- **Status:** Superseded (2026-11-17) — `packages/shared/src/tokens/tokens.ts` now defines two durations (120ms / 220ms) and one easing
 - **Date:** 2026-05-25
 - **Accepted:** 2026-05-25
 - **Deciders:** chintan.a.thakkar@gmail.com, design-direction agent

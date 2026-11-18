@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import { FaqPage as FaqSurface } from '@/features/marketing/learn/index-pages';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 export const metadata: Metadata = marketingPageMetadata({
   title: 'DeclutrMail FAQ — Gmail access, actions, undo, and privacy',
@@ -10,7 +9,6 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/faq',
 });
 
-export default async function FaqPage() {
-  const flags = await loadPricingFlags();
-  return <FaqSurface pricingV2={flags.pricingV2} />;
+export default function FaqPage() {
+  return <FaqSurface />;
 }

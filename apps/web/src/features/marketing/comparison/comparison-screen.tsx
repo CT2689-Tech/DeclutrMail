@@ -1,11 +1,6 @@
 import Link from 'next/link';
 
-import {
-  declutrPriceDetail,
-  declutrPriceSummary,
-  refundSentence,
-  WS3_COPY,
-} from '@declutrmail/shared/copy/launch';
+import { refundSentence, WS3_COPY } from '@declutrmail/shared/copy/launch';
 import { OAUTH_SCOPE_DISCLOSURE } from '@declutrmail/shared';
 
 import { TrustRow } from '../trust/trust-row';
@@ -14,6 +9,7 @@ import { comparisonFaqJsonLd, comparisonFaqs } from './comparison-faqs';
 import { JsonLd } from '../json-ld';
 import { TrackedCta } from '../landing/tracked-cta';
 import { permissionEntryUrl, siteUrl } from '../landing/urls';
+import { breadcrumbList, type Crumb } from '../structured-data';
 import {
   ALTERNATIVES_SLUGS,
   comparisonBySlug,
@@ -57,23 +53,6 @@ const STATE_LABEL: Readonly<Record<EvidenceState, string>> = {
   native: 'Native',
 };
 
-const PRICE_ROW = 'Public starting point';
-
-type LaunchFlags = {
-  pricingV2?: boolean | undefined;
-  passEnabled?: boolean | undefined;
-};
-
-/** Baked cells stay for callers that have not resolved the public API. */
-function launchPriceCell(cell: ComparisonCell, flags: LaunchFlags | undefined): ComparisonCell {
-  if (flags?.pricingV2 === undefined && flags?.passEnabled === undefined) return cell;
-  return {
-    ...cell,
-    summary: declutrPriceSummary(flags.passEnabled, flags.pricingV2),
-    detail: declutrPriceDetail(flags.passEnabled, flags.pricingV2),
-  };
-}
-
 function EvidenceCell({ cell }: { cell: ComparisonCell }) {
   if (!cell.summary && !cell.detail) return null;
   return (
@@ -110,15 +89,7 @@ export function MethodNote() {
   );
 }
 
-export function FinalCta({
-  competitorName,
-  pricingV2,
-}: {
-  competitorName?: string;
-  topic?: string;
-  pricingV2?: boolean | undefined;
-}) {
-  const refund = refundSentence(pricingV2);
+export function FinalCta({ competitorName }: { competitorName?: string; topic?: string }) {
   return (
     <section className="dm-compare-final" aria-labelledby="comparison-final-title">
       <h2 id="comparison-final-title">
@@ -148,11 +119,9 @@ export function FinalCta({
           See every tier
         </TrackedCta>
       </div>
-      {refund ? (
-        <p>
-          <Link href="/refunds">{refund}</Link>
-        </p>
-      ) : null}
+      <p>
+        <Link href="/refunds">{refundSentence()}</Link>
+      </p>
       <details className="dm-story-scope">
         <summary>What Google will ask you to allow</summary>
         <p>{OAUTH_SCOPE_DISCLOSURE}</p>
@@ -206,7 +175,7 @@ const QUICK_FITS = [
   },
 ] as const;
 
-export function ComparisonIndexScreen({ pricingV2, passEnabled }: LaunchFlags = {}) {
+export function ComparisonIndexScreen() {
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={INDEX_JSON_LD} />
@@ -314,12 +283,12 @@ export function ComparisonIndexScreen({ pricingV2, passEnabled }: LaunchFlags = 
         </ul>
       </section>
 
-      <MatrixSection pricingV2={pricingV2} passEnabled={passEnabled} />
+      <MatrixSection />
 
       <div className="dm-compare-narrow">
         <MethodNote />
       </div>
-      <FinalCta pricingV2={pricingV2} />
+      <FinalCta />
     </div>
   );
 }
@@ -335,7 +304,7 @@ export function ComparisonIndexScreen({ pricingV2, passEnabled }: LaunchFlags = 
  * renders as an explicit dash with a screen-reader phrase, never as a
  * blank a reader could read as "no".
  */
-function MatrixSection({ pricingV2, passEnabled }: LaunchFlags) {
+function MatrixSection() {
   return (
     <section className="dm-compare-section dm-compare-wide" aria-labelledby="matrix-title">
       <div className="dm-compare-narrow-inner">
@@ -377,10 +346,7 @@ function MatrixSection({ pricingV2, passEnabled }: LaunchFlags) {
             </thead>
             <tbody>
               {ROUNDUP_DIMENSIONS.map((dimension) => {
-                const declutrMail =
-                  dimension.label === PRICE_ROW
-                    ? launchPriceCell(dimension.declutrMail, { pricingV2, passEnabled })
-                    : dimension.declutrMail;
+                const declutrMail = dimension.declutrMail;
                 return (
                   <tr key={dimension.label}>
                     <th scope="row">{dimension.label}</th>
@@ -416,6 +382,9 @@ function MatrixSection({ pricingV2, passEnabled }: LaunchFlags) {
   );
 }
 
+/** First step of every comparison breadcrumb, visible and structured. */
+export const COMPARE_CRUMB: Crumb = { name: 'All comparisons', path: '/compare' };
+
 function comparisonJsonLd(comparison: ComparisonDefinition) {
   return {
     '@context': 'https://schema.org',
@@ -424,19 +393,10 @@ function comparisonJsonLd(comparison: ComparisonDefinition) {
     description: comparison.description,
     url: `${siteUrl()}/vs/${comparison.slug}`,
     dateModified: comparison.verifiedIso,
-    breadcrumb: {
-      '@type': 'BreadcrumbList',
-      itemListElement: [
-        { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl() },
-        { '@type': 'ListItem', position: 2, name: 'Compare', item: `${siteUrl()}/compare` },
-        {
-          '@type': 'ListItem',
-          position: 3,
-          name: comparison.name,
-          item: `${siteUrl()}/vs/${comparison.slug}`,
-        },
-      ],
-    },
+    breadcrumb: breadcrumbList([
+      COMPARE_CRUMB,
+      { name: comparison.name, path: `/vs/${comparison.slug}` },
+    ]),
   };
 }
 
@@ -486,21 +446,16 @@ function RelatedGuides({ slug }: { slug: ComparisonSlug }) {
   );
 }
 
-export function ComparisonDetailScreen({
-  comparison,
-  pricingV2,
-  passEnabled,
-}: { comparison: ComparisonDefinition } & LaunchFlags) {
+export function ComparisonDetailScreen({ comparison }: { comparison: ComparisonDefinition }) {
   const alternativesHref = alternativesPageHref(comparison.slug);
-  const flags = { pricingV2, passEnabled };
-  const faqs = comparisonFaqs(comparison, passEnabled, pricingV2);
+  const faqs = comparisonFaqs(comparison);
   return (
     <div className="dm-story dm-comparison">
       <JsonLd data={comparisonJsonLd(comparison)} />
-      <JsonLd data={comparisonFaqJsonLd(comparison, passEnabled, pricingV2)} />
+      <JsonLd data={comparisonFaqJsonLd(comparison)} />
       <header className="dm-compare-hero dm-compare-narrow">
         <nav className="dm-compare-breadcrumb" aria-label="Breadcrumb">
-          <Link href="/compare">All comparisons</Link>
+          <Link href={COMPARE_CRUMB.path}>{COMPARE_CRUMB.name}</Link>
           <span aria-hidden="true">/</span>
           <span>{comparison.name}</span>
         </nav>
@@ -579,13 +534,7 @@ export function ComparisonDetailScreen({
                 <tr key={row.label}>
                   <th scope="row">{row.label}</th>
                   <td data-col="DeclutrMail">
-                    <EvidenceCell
-                      cell={
-                        row.label === PRICE_ROW
-                          ? launchPriceCell(row.declutrMail, flags)
-                          : row.declutrMail
-                      }
-                    />
+                    <EvidenceCell cell={row.declutrMail} />
                   </td>
                   <td data-col={comparison.name}>
                     <EvidenceCell cell={row.competitor} />
@@ -636,7 +585,7 @@ export function ComparisonDetailScreen({
         ))}
       </section>
 
-      <FinalCta competitorName={comparison.name} topic={comparison.slug} pricingV2={pricingV2} />
+      <FinalCta competitorName={comparison.name} topic={comparison.slug} />
 
       <RelatedGuides slug={comparison.slug} />
 

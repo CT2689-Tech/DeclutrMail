@@ -31,7 +31,6 @@ export {
   llmsPricingLine,
   llmsStorageAiLine,
   LLMS_AI_BEFORE_GATE,
-  passListed,
   priceFaqAnswer,
   privacyFaqAnswer,
   REFUNDS_PAGE_WINDOW_DAYS,

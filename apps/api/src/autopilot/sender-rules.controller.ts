@@ -18,19 +18,31 @@ import {
   AutopilotSenderRuleRetireRequestSchema,
   ok,
 } from '@declutrmail/shared/contracts';
-import { JwtGuard } from '../auth/jwt.guard.js';
+import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
+import type { SessionPrincipal } from '../auth/sessions.service.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { CapabilityGuard, RequiresCapability } from '../common/entitlements/capability.guard.js';
+import {
+  assertTierCapability,
+  EntitlementsService,
+} from '../common/entitlements/entitlements.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { SenderRulesService } from './sender-rules.service.js';
 
-/** Custom sender rules are approval-only. Preset routes retain their existing policy. */
+/**
+ * Custom sender rules. Delete batches always need approval of a frozen
+ * preview; an Archive rule may also run on its own (`mode: 'active'`), which
+ * needs `autopilot-active` on top of the class-level `autopilot`.
+ */
 @Controller('autopilot')
 @UseGuards(JwtGuard, CurrentMailboxGuard, CsrfGuard, CapabilityGuard)
 @RequiresCapability('autopilot')
 export class SenderRulesController {
-  constructor(private readonly rules: SenderRulesService) {}
+  constructor(
+    private readonly rules: SenderRulesService,
+    private readonly entitlements: EntitlementsService,
+  ) {}
 
   @Get('sender-rules')
   @RateLimit('triage-load')
@@ -78,6 +90,7 @@ export class SenderRulesController {
   @RateLimit('triage-load')
   async patch(
     @CurrentMailbox() mailbox: { id: string },
+    @CurrentUser() principal: SessionPrincipal,
     @Param('id') id: string,
     @Body() body: unknown,
   ) {
@@ -86,6 +99,13 @@ export class SenderRulesController {
     if (!parsed.success)
       throw new BadRequestException(
         'Provide the current rule version and valid sender rule changes.',
+      );
+    // Per-field requirement the class guard cannot express; mirrors the
+    // preset PATCH in AutopilotController.
+    if (parsed.data.mode === 'active')
+      assertTierCapability(
+        await this.entitlements.tierForWorkspace(principal.workspaceId),
+        'autopilot-active',
       );
     return ok(await this.rules.patch(mailbox.id, id, parsed.data));
   }
@@ -115,6 +135,13 @@ export class SenderRulesController {
     if (!parsed.success)
       throw new BadRequestException('Provide the current rule version and valid preview options.');
     return ok(await this.rules.preview(mailbox.id, id, parsed.data));
+  }
+
+  @Get('sender-rules/:id/automatic-preview')
+  @RateLimit('triage-load')
+  async automaticPreview(@CurrentMailbox() mailbox: { id: string }, @Param('id') id: string) {
+    assertUuid(id);
+    return ok(await this.rules.automaticPreview(mailbox.id, id));
   }
 
   @Post('sender-rules/:id/execute')

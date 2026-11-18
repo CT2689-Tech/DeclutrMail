@@ -14,7 +14,7 @@ import {
 } from '@declutrmail/db';
 import { parseEmailPrefs } from '@declutrmail/shared/contracts';
 
-import { TIER_IDS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { TIER_IDS } from '@declutrmail/shared/entitlements';
 
 import { BaseDeclutrWorker } from './base-declutr-worker.js';
 import { validTimeZoneOrUtc } from './brief-timezone.js';
@@ -23,20 +23,21 @@ import type { EmailSendJobData } from './email-send.worker.js';
 import type { WorkerContext } from './worker-context.js';
 
 /**
- * Workspaces that get a weekly receipt — every tier without a monthly
- * cleanup cap, i.e. every tier that is paid in BEHAVIOUR.
+ * Workspaces that get a weekly receipt — every tier outside Free's
+ * meter (`METER` meters Free only), i.e. every tier that is paid in
+ * BEHAVIOUR.
  *
  * Was the literal `['plus','pro']`. The receipt is not a `Capability`,
  * so nothing type-checks that list, and it silently excluded `team` and
  * `enterprise` — which carry the Pro capability set and would have been
  * missed the moment either was assigned.
  *
- * Deliberately NOT anchored on `prices.monthly`: team and enterprise
- * are not purchasable, so a price test reproduces the same exclusion
- * while looking derived. The uncapped quota is what actually separates
+ * Deliberately NOT anchored on a price: team and enterprise are not
+ * purchasable, so a price test reproduces the same exclusion while
+ * looking derived. The unmetered allowance is what actually separates
  * a paying workspace from a metered one.
  */
-const PAID_TIERS = TIER_IDS.filter((id) => TIER_MANIFEST[id].cleanupActionsPerMonth === null);
+const PAID_TIERS = TIER_IDS.filter((id) => id !== 'free');
 
 type WorkerDb = PostgresJsDatabase<typeof schema>;
 

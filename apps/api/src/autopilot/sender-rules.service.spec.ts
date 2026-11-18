@@ -1,10 +1,12 @@
 import {
   actionJobs,
   actionRecoveryPreviews,
+  activityLog,
   AUTOPILOT_PRESET_KEYS,
   automationRules,
   mailMessages,
   mailboxAccounts,
+  outboxEvents,
   senderPolicies,
   ruleMatchLog,
   senders,
@@ -13,6 +15,7 @@ import {
   undoJournal,
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { TOPICS } from '@declutrmail/events';
 import { eq } from 'drizzle-orm';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -776,6 +779,145 @@ describe('sender-list Autopilot rules', () => {
       });
       expect(rule.senders).toHaveLength(2);
     }
+  });
+
+  describe('running an Archive rule on its own (founder decision 3A)', () => {
+    async function activations() {
+      return db
+        .select({ topic: outboxEvents.topic, payload: outboxEvents.payload })
+        .from(outboxEvents)
+        .where(eq(outboxEvents.topic, TOPICS.AUTOPILOT_RULE_ACTIVATED));
+    }
+
+    it('turns an Archive rule Active and starts its first sweep in the same commit', async () => {
+      const rule = await service.create(mailbox, definition);
+      const active = await service.patch(mailbox, rule.id, { version: 1, mode: 'active' });
+      expect(active).toMatchObject({ mode: 'active', version: 2, action: 'archive' });
+      expect((await service.list(mailbox))[0]).toMatchObject({ mode: 'active' });
+      const events = await activations();
+      expect(events).toHaveLength(1);
+      expect(events[0]!.payload).toMatchObject({
+        mailboxAccountId: mailbox,
+        ruleId: rule.id,
+        mode: 'active',
+      });
+      // Re-sending Active is not a second turn-on.
+      await service.patch(mailbox, rule.id, { version: 2, mode: 'active' });
+      expect(await activations()).toHaveLength(1);
+    });
+
+    it('never lets Delete run on its own', async () => {
+      const rule = await service.create(mailbox, {
+        ...definition,
+        action: 'delete',
+        reach: 'all_mail',
+      });
+      await expect(service.patch(mailbox, rule.id, { version: 1, mode: 'active' })).rejects.toThrow(
+        'Delete rules always wait for your approval.',
+      );
+      expect((await service.list(mailbox))[0]).toMatchObject({ mode: 'observe', version: 1 });
+      expect(await activations()).toHaveLength(0);
+    });
+
+    it('re-enters approval first when an edit changes which email the rule reaches', async () => {
+      const rule = await service.create(mailbox, definition);
+      await service.patch(mailbox, rule.id, { version: 1, mode: 'active' });
+      // A rename changes nothing the rule acts on: it keeps running.
+      const renamed = await service.patch(mailbox, rule.id, {
+        ...definition,
+        name: 'Renamed',
+        version: 2,
+      });
+      expect(renamed.mode).toBe('active');
+      const widenings: Array<{
+        senderKeys?: string[];
+        olderThanDays?: null;
+        action?: 'delete';
+        reach?: 'all_mail';
+      }> = [
+        { senderKeys: [A, B] },
+        { olderThanDays: null },
+        { action: 'delete', reach: 'all_mail' },
+      ];
+      for (const change of widenings) {
+        // Each widening is checked from Active.
+        let current = (await service.list(mailbox))[0]!;
+        if (current.mode !== 'active') {
+          await service.patch(mailbox, rule.id, { version: current.version, mode: 'active' });
+          current = (await service.list(mailbox))[0]!;
+        }
+        expect(current.mode).toBe('active');
+        const edited = await service.patch(mailbox, rule.id, {
+          ...definition,
+          name: current.name,
+          senderKeys: current.senderKeys,
+          olderThanDays: current.olderThanDays,
+          ...change,
+          version: current.version,
+        });
+        expect(edited.mode).toBe('observe');
+      }
+    });
+
+    it('always lets an automatic rule stop, even after a sender left the index', async () => {
+      const rule = await service.create(mailbox, definition);
+      await service.patch(mailbox, rule.id, { version: 1, mode: 'active' });
+      await db.delete(senders).where(eq(senders.senderKey, A));
+      const asking = await service.patch(mailbox, rule.id, { version: 2, mode: 'observe' });
+      expect(asking.mode).toBe('observe');
+      expect((await service.patch(mailbox, rule.id, { version: 3, mode: 'paused' })).mode).toBe(
+        'paused',
+      );
+    });
+
+    it('previews exactly what an automatic run would archive now', async () => {
+      await message(db, mailbox, 'old-a', A, 100);
+      await message(db, mailbox, 'young-a', A, 3);
+      await message(db, mailbox, 'old-b', B, 100);
+      await message(db, mailbox, 'restored-a', A, 200);
+      await db.insert(senderPolicies).values({
+        mailboxAccountId: mailbox,
+        senderKey: B,
+        isProtected: true,
+        protectionReason: 'user_defined',
+      });
+      const rule = await service.create(mailbox, { ...definition, senderKeys: [A, B] });
+      // A previous automatic run of this rule, undone, restored A's older mail.
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailbox,
+        senderKey: A,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId: rule.id,
+        occurredAt: new Date(Date.now() - 150 * 86_400_000),
+        revertedAt: new Date(Date.now() - 150 * 86_400_000 + 3_600_000),
+      });
+
+      const preview = await service.automaticPreview(mailbox, rule.id);
+      // old-a only: young-a is under the 30-day age, old-b is Protected,
+      // restored-a was restored by the undo.
+      expect(preview).toMatchObject({
+        ruleId: rule.id,
+        version: 1,
+        messageCount: 1,
+        senderCount: 1,
+        protectedSenderCount: 1,
+      });
+      await expect(service.automaticPreview(other, rule.id)).rejects.toThrow('not found');
+    });
+
+    it('refuses a frozen batch for an Active rule, which archives on its own', async () => {
+      await message(db, mailbox, 'old');
+      const rule = await service.create(mailbox, definition);
+      const preview = await service.preview(mailbox, rule.id, { version: 1 });
+      await service.patch(mailbox, rule.id, { version: 1, mode: 'active' });
+      // The preview was frozen at version 1; refresh at the Active version.
+      const fresh = await service.preview(mailbox, rule.id, { version: 2 });
+      await expect(service.execute(mailbox, rule.id, preview.previewId)).rejects.toThrow('changed');
+      await expect(service.execute(mailbox, rule.id, fresh.previewId)).rejects.toThrow('changed');
+      expect(queue.add).not.toHaveBeenCalled();
+    });
   });
 
   it('uses optimistic versions for edits, pause and retire; stale previews cannot execute', async () => {

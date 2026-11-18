@@ -15,7 +15,7 @@ const auth = vi.hoisted(() => ({ tier: 'free' }));
 
 vi.mock('@/features/auth/auth-provider', () => ({
   useOptionalAuth: () => ({
-    me: { tier: auth.tier, mailboxes: [], inboxLimit: 1, pricingV2: false },
+    me: { tier: auth.tier, mailboxes: [], inboxLimit: 1 },
   }),
 }));
 

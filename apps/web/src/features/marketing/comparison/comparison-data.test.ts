@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { declutrPriceDetail, declutrPriceSummary } from '@declutrmail/shared/copy/launch';
+import { passAmount, plusAmount } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
@@ -9,9 +10,11 @@ import {
   ALTERNATIVES_SLUGS,
   alternativesFor,
   comparisonBySlug,
+  comparisonMetaTitle,
   comparisonVerifiedLabel,
   ROUNDUP_DIMENSIONS,
 } from './comparison-data';
+import { fitMetaDescription } from './comparison-launch-pages';
 
 const EXPECTED_SLUGS = [
   'clean-email',
@@ -81,7 +84,7 @@ describe('comparison data', () => {
       'www.meta.com',
       'mailstrom.co',
       'www.inboxpurge.com',
-      'www.mailmop.com',
+      'mailmop.com',
       'github.com',
     ]);
 
@@ -116,17 +119,22 @@ describe('comparison data', () => {
     expect(copy).toContain('Unsubscribe is not a reversible DeclutrMail action');
     expect(copy).not.toMatch(/every decision keeps running|all actions are undoable/i);
     expect(copy).not.toMatch(/founding offer/i);
-    const summary = declutrPriceSummary();
-    const detail = declutrPriceDetail();
-    if (summary === '') {
-      for (const comparison of COMPARISONS) {
-        const price = comparison.rows.find((row) => row.label === 'Public starting point');
-        expect(price?.declutrMail.summary).toBe('');
-        expect(price?.declutrMail.detail ?? '').toBe('');
-      }
-    } else {
-      expect(copy).toContain(summary);
-      expect(copy).toContain(detail);
+    expect(copy).toContain(declutrPriceSummary());
+    expect(copy).toContain(declutrPriceDetail());
+  });
+
+  it('prices DeclutrMail at the launch catalog on every comparison', () => {
+    for (const comparison of COMPARISONS) {
+      const price = comparison.rows.find((row) => row.label === 'Public starting point');
+      expect(price?.declutrMail.summary, comparison.slug).toBe(
+        'Free, Plus or a one-time Backlog Pass',
+      );
+      expect(price?.declutrMail.detail, comparison.slug).toContain(
+        `Plus is ${plusAmount('usd')} a year`,
+      );
+      expect(price?.declutrMail.detail, comparison.slug).toContain(
+        `Backlog Pass is ${passAmount('usd')} once`,
+      );
     }
   });
 
@@ -343,5 +351,36 @@ describe('the multi-way matrix is pivoted, never restated', () => {
     for (const [, cell] of gaps) {
       expect(cell).toBeUndefined();
     }
+  });
+});
+
+describe('comparison search-result metadata', () => {
+  it('dates every /vs title from its own verified month, like the visible stamp', () => {
+    for (const comparison of COMPARISONS) {
+      if (comparison.metaTitle) continue;
+      const month = comparisonVerifiedLabel(comparison.verifiedIso).replace('Last verified ', '');
+      expect(comparisonMetaTitle(comparison), comparison.slug).toMatch(
+        new RegExp(`— compared, ${month}$`),
+      );
+    }
+    // Every page is verified in the same month today, so the loop alone
+    // would stay green if a literal month came back. A re-verified page
+    // must carry its own month.
+    const undated = COMPARISONS.find((comparison) => !comparison.metaTitle)!;
+    const reverified = { ...undated, verifiedIso: '2026-12-02' };
+    expect(comparisonMetaTitle(reverified)).toMatch(/— compared, December 2026$/);
+  });
+
+  it('keeps every whole sentence that fits in a meta description', () => {
+    const first = 'A'.repeat(70) + '.';
+    const second = 'B'.repeat(70) + '.';
+    const third = 'C'.repeat(40) + '.';
+    // Fits as is: no override.
+    expect(fitMetaDescription(`${first} ${second}`)).toBeUndefined();
+    // Over budget: keeps the first two sentences (143), drops the third.
+    expect(fitMetaDescription(`${first} ${second} ${third}`)).toBe(`${first} ${second}`);
+    // A lone sentence over budget stays whole rather than cut mid-sentence.
+    const long = 'D'.repeat(170) + '.';
+    expect(fitMetaDescription(`${long} ${first}`)).toBe(long);
   });
 });

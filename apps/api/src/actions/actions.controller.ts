@@ -227,7 +227,6 @@ export class ActionsController {
       mailboxAccountId: mailbox.id,
       senderId: parsed.data.senderId,
       idempotencyKey: idempotencyKey.trim(),
-      includesBacklogAction: parsed.data.includesBacklogAction,
       override: parsed.data.override,
     });
     return ok(result);

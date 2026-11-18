@@ -124,12 +124,10 @@ describe('inbox report fix set after sender decisions', () => {
       new EntitlementsService(db as never),
       db as never,
     );
-    delete process.env.METER_V2;
   });
 
   afterEach(() => {
     process.env.UNSUB_SEND_ENABLED = 'true';
-    delete process.env.METER_V2;
   });
 
   // Normalize audit timestamps to the report fixture clock after the real

@@ -6,7 +6,7 @@ vi.mock('server-only', () => ({}));
 vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
 vi.mock('next/headers', () => ({ headers: async () => new Headers({ cookie: request.cookie }) }));
 vi.mock('@/features/marketing/pricing/load-pricing-flags', () => ({
-  loadPricingFlags: async () => ({ pricingV2: true, indiaCheckoutOpen: false }),
+  loadPricingFlags: async () => ({ indiaCheckoutOpen: false }),
   indiaCheckoutReady: () => false,
 }));
 

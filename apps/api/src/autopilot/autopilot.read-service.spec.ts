@@ -404,28 +404,31 @@ describe('AutopilotReadService', () => {
   });
 
   describe('patchRule', () => {
-    it('keeps low-engagement Archive review-only, including legacy Active rows', async () => {
+    it('lets low-engagement Archive run Active, with an Observe window first (founder decision 3A)', async () => {
       const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
-      await expect(
-        service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' }),
-      ).rejects.toThrow('Low-engagement archive matches require review');
-
-      const enabled = await service.patchRule(mailboxA, ruleId, {
+      const watching = await service.patchRule(mailboxA, ruleId, {
         enabled: true,
         mode: 'observe',
       });
-      expect(enabled?.mode).toBe('observe');
-      expect(enabled?.observeWindowEndsAt).toBeNull();
-      expect(enabled?.observeWindowElapsed).toBe(false);
+      expect(watching?.mode).toBe('observe');
+      // No longer review-only, so it earns the 7-day window and day-7 prompt.
+      expect(watching?.observeWindowEndsAt).not.toBeNull();
 
+      const active = await service.patchRule(mailboxA, ruleId, { mode: 'active' });
+      expect(active?.mode).toBe('active');
+      expect(active?.observeWindowEndsAt).toBeNull();
+      expect((await service.getRule(mailboxA, ruleId))?.mode).toBe('active');
+    });
+
+    it('keeps a Delete-configured low-engagement rule review-only', async () => {
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
       await db
         .update(automationRules)
-        .set({ mode: 'active' })
+        .set({ actionKind: 'delete' })
         .where(eq(automationRules.id, ruleId));
-      const projected = await service.getRule(mailboxA, ruleId);
-      expect(projected?.mode).toBe('observe');
-      expect(projected?.observeWindowEndsAt).toBeNull();
-      expect(projected?.observeWindowElapsed).toBe(false);
+      await expect(
+        service.patchRule(mailboxA, ruleId, { enabled: true, mode: 'active' }),
+      ).rejects.toThrow('Delete batches always require preview and approval.');
     });
 
     it('keeps new-sender matches review-only, including legacy Active rows', async () => {
@@ -658,6 +661,36 @@ describe('AutopilotReadService', () => {
       expect(out).toEqual({ demotedRules: 0, neutralizedMatches: 0 });
       const rules = await service.listRules(mailboxA);
       for (const r of rules) expect(r.mode).toBe('observe');
+    });
+
+    it('demotes an Active custom sender rule and neutralizes its unattended matches', async () => {
+      const [custom] = await db
+        .insert(automationRules)
+        .values({
+          mailboxAccountId: mailboxA,
+          isPreset: false,
+          presetKey: null,
+          name: 'Newsletters',
+          enabled: true,
+          mode: 'active',
+          scope: 'account',
+          conditions: { kind: 'sender_list', senderKeys: ['a'.repeat(64)], olderThanDays: null },
+          actionKind: 'archive',
+          actionPayload: { reach: 'inbox_only' },
+        })
+        .returning({ id: automationRules.id });
+      const matchId = await seedActiveMatch(mailboxA, custom!.id, 'a'.repeat(64));
+
+      const out = await service.demoteUnattendedRules(await workspaceOf(mailboxA));
+
+      expect(out).toEqual({ demotedRules: 1, neutralizedMatches: 1 });
+      const [rule] = await db
+        .select({ mode: automationRules.mode })
+        .from(automationRules)
+        .where(eq(automationRules.id, custom!.id));
+      expect(rule!.mode).toBe('observe');
+      const [match] = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.id, matchId));
+      expect(match).toMatchObject({ resolution: 'dismissed', dismissReason: 'entitlement' });
     });
 
     it('flips active rules to observe with patchRule mode-change semantics', async () => {
@@ -1990,6 +2023,46 @@ describe('AutopilotReadService', () => {
       expect(result!.sample.some((sender) => sender.senderKey === protectedKey)).toBe(false);
       expect(result!.senderPage!.senders.map((sender) => sender.senderKey)).toEqual([eligibleKey]);
       expect(() => AutopilotRulePreviewResultSchema.parse(result)).not.toThrow();
+    });
+
+    it('does not promise to Archive mail an undo of this rule restored', async () => {
+      const day = 86_400_000;
+      const key = 'a'.repeat(64);
+      await indexSenders(db, mailboxA, [key]);
+      await db.insert(triageDecisions).values({
+        mailboxAccountId: mailboxA,
+        senderKey: key,
+        verdict: 'archive',
+        confidence: '0.90',
+        reasoning: 'test',
+        generatedBy: 'template',
+        producedAt: new Date(),
+        expiresAt: new Date(Date.now() + day),
+      });
+      const message = (id: string, daysOld: number) => ({
+        mailboxAccountId: mailboxA,
+        providerMessageId: id,
+        providerThreadId: `t-${id}`,
+        senderKey: key,
+        internalDate: new Date(Date.now() - daysOld * day),
+        labelIds: ['INBOX'],
+        isUnread: true,
+      });
+      await db.insert(mailMessages).values([message('restored', 20), message('later', 2)]);
+      const ruleId = await getRuleId(db, mailboxA, 'auto_archive_low_engagement');
+      await db.insert(activityLog).values({
+        mailboxAccountId: mailboxA,
+        senderKey: key,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+      });
+
+      const result = await service.previewRule(mailboxA, ruleId);
+      expect(result).toMatchObject({ actionableSenderCount: 1, actionableMessageCount: 1 });
     });
 
     it('pages through one complete actionable preview without repeating the rule evaluation', async () => {

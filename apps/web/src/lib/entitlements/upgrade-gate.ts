@@ -6,7 +6,7 @@
  * The BE's entitlement gates return 402 with one of four codes:
  *
  *   - `FREE_CAP_REACHED`   — a Free workspace spent its monthly
- *     cleanup-action quota (action enqueue paths).
+ *     emails-cleared allowance (action enqueue paths).
  *   - `INBOX_LIMIT_REACHED` — connecting another Gmail account would
  *     exceed the tier's inbox limit (connect path).
  *   - `ACTION_TIER_REQUIRED` — the requested Action Registry selector
@@ -29,8 +29,8 @@ import { create } from 'zustand';
 
 import {
   CAPABILITIES,
+  METER,
   minimumTierForCapability,
-  TIER_MANIFEST,
   type Capability,
   type TierId,
 } from '@declutrmail/shared/entitlements';
@@ -46,8 +46,8 @@ export interface FreeCapDetails {
   /** Next anniversary reset (ISO) — server-computed; null if absent. */
   resetsAt: string | null;
   /**
-   * Present only on the emails-cleared 402 (`METER_V2`).
-   * Absent means the cleanup-action meter, whose copy stays as it is.
+   * Present on the emails-cleared 402. Absent only on a client-built
+   * hit made before the meter summary loaded.
    */
   requested?: number;
   /** Largest window preset that fits, or null when none does. */
@@ -117,7 +117,7 @@ export const useUpgradeGateStore = create<UpgradeGateState>((set) => ({
  * `details`. Never a literal: the quota number comes from the pricing
  * config so this surface cannot invent a figure it was never told.
  */
-const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+const FREE_LIMIT = METER.free.limit;
 const FREE_CAP_FALLBACK: FreeCapDetails = {
   remaining: 0,
   limit: FREE_LIMIT,

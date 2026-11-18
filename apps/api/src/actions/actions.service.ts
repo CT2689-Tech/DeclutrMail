@@ -60,7 +60,6 @@ import {
 } from '@declutrmail/shared/contracts';
 import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
 import {
-  isMeterV2,
   METER,
   quotaUnitsForEnqueue,
   WINDOW_PRESET_DAYS,
@@ -370,12 +369,7 @@ export class ActionsService {
       const fresh = accepted.filter((t) => !t.replay);
       await this.entitlements.assertCleanupCapacityForWorkspace(
         workspace,
-        isMeterV2()
-          ? fresh.reduce(
-              (n, t) => n + this.meterUnits(workspace.tier, input.action, t.ids.length),
-              0,
-            )
-          : fresh.length,
+        fresh.reduce((n, t) => n + this.meterUnits(workspace.tier, input.action, t.ids.length), 0),
         tx,
       );
       const rows: Array<{ existing: boolean; row: typeof actionJobs.$inferSelect }> = [];
@@ -807,10 +801,9 @@ export class ActionsService {
           'inbox_only',
         )
       : null;
-    const presetCounts =
-      isMeterV2() && this.verbCountsTowardMeter(primary.type)
-        ? await this.windowPresetCounts(mailboxAccountId, [senderKey], primaryReach)
-        : undefined;
+    const presetCounts = this.verbCountsTowardMeter(primary.type)
+      ? await this.windowPresetCounts(mailboxAccountId, [senderKey], primaryReach)
+      : undefined;
 
     // The workspace lock remains held through BOTH inserts. That makes a
     // fresh composite one atomic quota-consuming write: no concurrent
@@ -821,12 +814,11 @@ export class ActionsService {
     const persisted = await this.db.transaction(async (tx) => {
       const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
       if (!(await this.hasJobWithKey(primaryStorageKey, tx))) {
-        const unitsNeeded = isMeterV2()
-          ? this.meterUnits(workspace?.tier, primary.type, primaryCount) +
-            (secondary && secondaryCount !== null
-              ? this.meterUnits(workspace?.tier, secondary.type, secondaryCount)
-              : 0)
-          : 1;
+        const unitsNeeded =
+          this.meterUnits(workspace?.tier, primary.type, primaryCount) +
+          (secondary && secondaryCount !== null
+            ? this.meterUnits(workspace?.tier, secondary.type, secondaryCount)
+            : 0);
         await this.entitlements.assertCleanupCapacityForWorkspace(
           workspace,
           unitsNeeded,
@@ -1221,10 +1213,9 @@ export class ActionsService {
           'inbox_only',
         )
       : null;
-    const bulkPresetCounts =
-      isMeterV2() && this.verbCountsTowardMeter(primary.type)
-        ? await this.windowPresetCounts(mailboxAccountId, keys, primaryReach)
-        : undefined;
+    const bulkPresetCounts = this.verbCountsTowardMeter(primary.type)
+      ? await this.windowPresetCounts(mailboxAccountId, keys, primaryReach)
+      : undefined;
 
     // A3 mandatory concurrency fix: the replay recheck, the capacity
     // check and EVERY insert share ONE transaction holding the finite-
@@ -1236,23 +1227,21 @@ export class ActionsService {
     const persisted = await this.db.transaction(async (tx) => {
       const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
       if (!(await this.hasJobWithKey(anchorKey, tx))) {
-        const unitsNeeded = isMeterV2()
-          ? actionable.reduce((sum, sender) => {
-              const primaryUnits = this.meterUnits(
+        const unitsNeeded = actionable.reduce((sum, sender) => {
+          const primaryUnits = this.meterUnits(
+            workspace?.tier,
+            primary.type,
+            primaryCounts.get(sender.senderKey) ?? 0,
+          );
+          const secondaryUnits = secondary
+            ? this.meterUnits(
                 workspace?.tier,
-                primary.type,
-                primaryCounts.get(sender.senderKey) ?? 0,
-              );
-              const secondaryUnits = secondary
-                ? this.meterUnits(
-                    workspace?.tier,
-                    secondary.type,
-                    secondaryCounts?.get(sender.senderKey) ?? 0,
-                  )
-                : 0;
-              return sum + primaryUnits + secondaryUnits;
-            }, 0)
-          : actionable.length;
+                secondary.type,
+                secondaryCounts?.get(sender.senderKey) ?? 0,
+              )
+            : 0;
+          return sum + primaryUnits + secondaryUnits;
+        }, 0);
         await this.entitlements.assertCleanupCapacityForWorkspace(
           workspace,
           unitsNeeded,
@@ -1510,17 +1499,10 @@ export class ActionsService {
       });
     }
 
-    const anchorKey = rowKey(actionable[0]!.id);
-
     const persisted = await this.db.transaction(async (tx) => {
-      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
-      if (!(await this.hasJobWithKey(anchorKey, tx))) {
-        await this.entitlements.assertCleanupCapacityForWorkspace(
-          workspace,
-          isMeterV2() ? 0 : actionable.length,
-          tx,
-        );
-      }
+      // Unsubscribe draws nothing from the Free meter. The workspace lock
+      // still serializes this write with concurrent cleanup writes.
+      await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
 
       let anchorId: string | null = null;
       let status: ActionJobStatus = 'queued';
@@ -2115,7 +2097,7 @@ export class ActionsService {
     return new Map(rows.map((r) => [r.senderKey, toCount(r.n)]));
   }
 
-  /** Emails this enqueue holds while the meter is on. Flag off stamps 0. */
+  /** Emails this enqueue holds against the Free meter. */
   private meterUnits(tier: TierId | undefined, verb: string, requestedCount: number): number {
     if (!tier) return 0;
     return quotaUnitsForEnqueue({ tier, verb, requestedCount });
@@ -2209,15 +2191,6 @@ export class ActionsService {
     mailboxAccountId: string;
     senderId: string;
     idempotencyKey: string;
-    /** Separate backlog Archive/Delete will follow this same confirmation. */
-    includesBacklogAction?: boolean;
-    /**
-     * The combined unsubscribe-backlog route already charged the backlog
-     * (or is unsub-only, which the launch meter does not charge). Skip
-     * the extra unit assert. Default false so Autopilot and Screener
-     * keep today's charge.
-     */
-    skipCleanupCharge?: boolean;
     /**
      * When the backlog row already exists, link this intent to it so the
      * cleanup meter counts one sender-group, not a second unit.
@@ -2226,15 +2199,7 @@ export class ActionsService {
     /** "Unsubscribe anyway" on a sender shown as Protected (D245). */
     override?: boolean;
   }): Promise<UnsubscribeIntentResult> {
-    const {
-      mailboxAccountId,
-      senderId,
-      idempotencyKey,
-      includesBacklogAction = false,
-      skipCleanupCharge = false,
-      compositeId,
-      override = false,
-    } = input;
+    const { mailboxAccountId, senderId, idempotencyKey, compositeId, override = false } = input;
     // ADR-0008 §3 exception: actions → senders. The single-sender twin of
     // the bulk resolve above — read-only capability lookup that decides
     // which unsubscribe path this intent takes.
@@ -2512,11 +2477,11 @@ export class ActionsService {
     }
 
     const txResult = await this.db.transaction(async (tx) => {
-      // Finite cleanup quotas are serialized per workspace. Re-check
-      // both deterministic keys after acquiring the lock so a request
-      // that waited behind the original commit replays before quota is
-      // evaluated. Keep the lock through the consuming intent insert.
-      const workspace = await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
+      // Writes are serialized per Free workspace. Re-check both
+      // deterministic keys after acquiring the lock so a request that
+      // waited behind the original commit replays. Keep the lock through
+      // the intent insert.
+      await this.entitlements.lockCleanupWorkspace(mailboxAccountId, tx);
       const lockedOwners = await tx
         .select({
           idempotencyKey: actionJobs.idempotencyKey,
@@ -2562,20 +2527,6 @@ export class ActionsService {
           executionActionId: lockedCachedExecution?.id ?? null,
           executionStatus: lockedCachedExecution?.status ?? null,
         };
-      }
-
-      // D19 Free taste: an actionable Unsubscribe is one cleanup
-      // decision. No-channel preferences consume no unit. The optional
-      // backlog hint preflights two available units under this lock, but
-      // it does not reserve the second unit for the later Archive/Delete
-      // request; a durable guarantee would require a reservation ledger.
-      // Only the `unsub:*` intent row counts — not `unsubexec-*`.
-      if (method !== 'none' && !skipCleanupCharge) {
-        await this.entitlements.assertCleanupCapacityForWorkspace(
-          workspace,
-          isMeterV2() ? 0 : includesBacklogAction ? 2 : 1,
-          tx,
-        );
       }
 
       // Reserve the globally-unique intent key BEFORE any policy,
@@ -3673,8 +3624,8 @@ export class ActionsService {
       resolvedMessageIds: string[];
       requestedCount: number;
       /**
-       * Emails held against the Free meter. 0 while `METER_V2` is off,
-       * and 0 for verbs the meter does not count.
+       * Emails held against the Free meter. 0 for verbs the meter does
+       * not count and on unlimited tiers.
        */
       quotaUnits?: number;
       idempotencyKey: string;

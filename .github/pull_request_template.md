@@ -19,7 +19,6 @@ See CLAUDE.md §6 (naming conventions) and §8 (definition of done) for full rul
 
 <!-- Tick at least one verification source. -->
 - [ ] Unit / integration tests added (list test names: ``)
-- [ ] Storybook story added (for new components)
 - [ ] Playwright E2E added (for user flows)
 - [ ] Gate subagent: [ ] privacy-auditor / [ ] architecture-guardian / [ ] schema-migration-reviewer / [ ] design-system-agent / [ ] webhook-security-auditor
 - [ ] Manual smoke (describe): 
@@ -28,9 +27,6 @@ See CLAUDE.md §6 (naming conventions) and §8 (definition of done) for full rul
 
 <!-- Migration PR -->
 - [ ] **Migration PR:** Atlas dry-run output attached. Rollback path: 
-
-<!-- Component PR -->
-- [ ] **Component PR:** Storybook story covers default + loading + error + empty states.
 
 <!-- API PR -->
 - [ ] **API PR:** Contract tests pass. OpenAPI updated. Response uses the shared API envelope.

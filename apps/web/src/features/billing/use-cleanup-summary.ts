@@ -6,18 +6,13 @@ import { useOptionalAuth } from '@/features/auth/auth-provider';
 
 /**
  * Emails-cleared position from `GET /api/auth/me`.
- * Absent meter fields (an older API, or the flag off) leave the chip unmetered.
+ * Absent meter fields (an older API) leave the chip unmetered.
  */
 export function useCleanupSummary(): { data?: CleanupSummaryDto; isLoading: boolean } {
   const auth = useOptionalAuth();
   if (!auth) return { isLoading: false };
   const me = auth.me;
-  if (
-    me.meterV2 !== true ||
-    me.cleanupLimit == null ||
-    me.cleanupRemaining == null ||
-    !me.cleanupResetsAt
-  ) {
+  if (me.cleanupLimit == null || me.cleanupRemaining == null || !me.cleanupResetsAt) {
     return { isLoading: false };
   }
   return {

@@ -139,10 +139,8 @@ test('isolated browser matrix preserves every suite and its coverage assertion',
   for (const lane of ['accessibility', 'responsive', 'hydration-billing', 'journeys']) {
     assert.match(browser, new RegExp(`- lane: ${lane}\\b`));
   }
-  const journeysAt = browser.indexOf('- lane: journeys');
-  assert.ok(journeysAt > 0);
-  assert.doesNotMatch(browser.slice(0, journeysAt), /pricing_v2: 'true'/);
-  assert.match(browser.slice(journeysAt), /pricing_v2: 'true'/);
+  // The 2026-10 pricing is unconditional; no lane carries a pricing flag.
+  assert.doesNotMatch(browser, /pricing_v2|PRICING_V2|METER_V2|BILLING_PASS_ENABLED/);
   for (const [name, lane, command] of [
     ['Run the shared-component paint specs', 'responsive', 'e2e:render'],
     ['Run the accessibility gate (authenticated + public)', 'accessibility', 'e2e:a11y:wcag'],

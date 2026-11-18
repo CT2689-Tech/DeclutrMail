@@ -10,7 +10,6 @@ import {
   ProductCloseUp,
 } from '@/features/marketing/landing/sections';
 import { PricingTeaserGate } from '@/features/marketing/landing/pricing-teaser-story';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 import { FinalCta } from '@/features/marketing/landing/footer';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 
@@ -68,17 +67,8 @@ export const metadata: Metadata = marketingPageMetadata({
  * and `/billing` — where checkout actually opens — reads geo server-side
  * and charges correctly. No one is charged a price they were not shown
  * at the point of sale; the landing strip is simply denominated in USD.
- *
- * The teaser still has to be the launch catalog. `loadPricingFlags`
- * with `revalidate` fetches the public pricing API at generation time
- * and on that interval, so the prerendered HTML is v2 while this route
- * stays static. `cache: 'no-store'` is not used here: that would make
- * `/` dynamic and push the social tags back out of `<head>`.
  */
-export const revalidate = 60;
-
-export default async function LandingPage() {
-  const flags = await loadPricingFlags({ revalidate: 60 });
+export default function LandingPage() {
   return (
     <div className="dm-mkt dm-mkt-landing">
       <Hero />
@@ -88,7 +78,7 @@ export default async function LandingPage() {
       <Companion />
       <EverydayTools />
       <PrivacyDesk />
-      <PricingTeaserGate pricingV2={flags.pricingV2} passEnabled={flags.passEnabled} />
+      <PricingTeaserGate />
       <FinalCta />
     </div>
   );

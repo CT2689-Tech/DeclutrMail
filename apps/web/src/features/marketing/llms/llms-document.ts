@@ -4,7 +4,7 @@ import {
   CASA_VERIFICATION_APPROVED_ON,
   formatVerificationDate,
 } from '@declutrmail/shared';
-import { isPricingV2, renderPricingMarkdown } from '@declutrmail/shared/entitlements';
+import { renderPricingMarkdown } from '@declutrmail/shared/entitlements';
 import {
   fillWs3,
   LAUNCH_STAGE,
@@ -18,10 +18,6 @@ import {
 } from '@declutrmail/shared/copy/launch';
 
 import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
-import {
-  loadPricingFlags,
-  type PricingFlags,
-} from '@/features/marketing/pricing/load-pricing-flags';
 
 import { COMPARISONS } from '../comparison/comparison-data';
 import { comparisonFaqs } from '../comparison/comparison-faqs';
@@ -98,9 +94,7 @@ function withOpeningFacts(body: string, facts: string): string {
 const CHANGELOG_LINE =
   '- [Pricing changelog](https://declutrmail.com/pricing/changelog): dated record of pricing changes';
 
-/** The changelog page redirects while pricing v2 is off, so crawlers see it only then. */
-function withPricingChangelog(body: string, pricingV2 = isPricingV2()): string {
-  if (!pricingV2) return body;
+function withPricingChangelog(body: string): string {
   const marker = '- [Pricing](https://declutrmail.com/pricing):';
   const at = body.indexOf(marker);
   if (at === -1) return `${body}\n${CHANGELOG_LINE}\n`;
@@ -132,47 +126,64 @@ function withLaunchLinks(body: string): string {
   return `${body.slice(0, lineEnd)}\n${block}${body.slice(lineEnd)}`;
 }
 
-export async function renderLlmsTxt(resolved?: PricingFlags): Promise<string> {
-  // Same source as /pricing. The web process env stays off; Cloud Run
-  // is where PRICING_V2 and BILLING_PASS_ENABLED are set.
-  const flags = resolved ?? (await loadPricingFlags());
+const SIGN_IN_LINE =
+  '- [Sign in](https://declutrmail.com/sign-in): the Gmail permission DeclutrMail needs, what data it uses, what to expect during the first scan, and how to connect';
+
+const OPEN_BETA_LINE =
+  '- [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed';
+
+/**
+ * `/pricing.md` is a standalone document with its own H1. Embedded under
+ * `## Pricing`, its title becomes a plain line and its plan headings drop
+ * to H3, so llms.txt keeps a single H1 and a flat list of H2 sections.
+ */
+function nestUnderPricing(markdown: string): string {
+  return markdown
+    .split('\n')
+    .map((line) => {
+      if (line.startsWith('# ')) return line.slice(2);
+      if (line.startsWith('## ')) return `#${line}`;
+      return line;
+    })
+    .join('\n');
+}
+
+export function renderLlmsTxt(): string {
   let body = LLMS_SOURCE.replaceAll('LLMS_SECURITY_FACTS', llmsSecurityFacts());
   const autopilot = llmsAutopilotLine();
   if (autopilot) body = body.replace(PREVIOUS_AUTOPILOT, autopilot);
   body = applyDeckFixes(body);
-  const pricingLine = llmsPricingLine(flags.passEnabled, flags.pricingV2).replace(
-    /^Pricing:\s*/,
-    '',
-  );
+  const pricingLine = llmsPricingLine().replace(/^Pricing:\s*/, '');
   if (pricingLine)
     body = body.replace(
       PREVIOUS_PRICING,
       `- [Pricing](https://declutrmail.com/pricing): ${pricingLine}`,
     );
   if (LAUNCH_STAGE === 'ga') {
-    body = body.replace(
-      '- [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed',
-      `- [Get started](https://declutrmail.com/beta): ${llmsBetaLine().replace(/^Get started: /, '')}`,
-    );
+    // After GA, /beta only serves the OAuth denial state and 307s organic
+    // visits to /how-it-works. Its one fact still worth stating (open
+    // sign-up) joins the Sign in entry, so /sign-in is listed once.
+    const openSignUp = llmsBetaLine().split('. ').pop() ?? '';
+    body = body
+      .replace(`${OPEN_BETA_LINE}\n`, '')
+      .replace(SIGN_IN_LINE, `${SIGN_IN_LINE}. ${openSignUp}`);
   }
-  body = withPricingChangelog(withLaunchLinks(body), flags.pricingV2);
-  const facts = llmsKeyFacts(flags.passEnabled, flags.pricingV2)
+  body = withPricingChangelog(withLaunchLinks(body));
+  const facts = llmsKeyFacts()
     .map((fact) => `- ${fact}`)
     .join('\n');
-  const pricing = renderPricingMarkdown(flags.passEnabled, flags.pricingV2).trim();
-  const pricingSection = pricing === '' ? '\n' : `\n\n## Pricing\n\n${pricing}\n`;
-  return `${withOpeningFacts(body.trim(), facts)}${pricingSection}`;
+  const pricing = nestUnderPricing(renderPricingMarkdown().trim());
+  return `${withOpeningFacts(body.trim(), facts)}\n\n## Pricing\n\n${pricing}\n`;
 }
 
-export async function renderLlmsFullTxt(): Promise<string> {
-  const flags = await loadPricingFlags();
+export function renderLlmsFullTxt(): string {
   const pages = COMPARISONS.map((comparison) => {
-    const faqs = comparisonFaqs(comparison, flags.passEnabled, flags.pricingV2)
+    const faqs = comparisonFaqs(comparison)
       .map((faq) => `### ${faq.q}\n\n${faq.a}`)
       .join('\n\n');
     return `## ${comparison.title}\n\n${comparison.verdict}\n\n${faqs}`;
   }).join('\n\n');
-  return `${await renderLlmsTxt(flags)}\n${pages}\n`;
+  return `${renderLlmsTxt()}\n${pages}\n`;
 }
 
 export function llmsResponse(body: string): Response {

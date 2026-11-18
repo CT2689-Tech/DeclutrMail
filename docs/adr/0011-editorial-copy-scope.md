@@ -1,6 +1,6 @@
 # ADR-0011: Editorial copy voice scope (amends D209)
 
-- **Status:** Accepted
+- **Status:** Accepted; word list demoted to voice guidance 2026-11-17
 - **Date:** 2026-05-25
 - **Accepted:** 2026-05-25
 - **Deciders:** chintan.a.thakkar@gmail.com, design-direction agent
@@ -42,6 +42,10 @@ This ADR is written to make that impossible — the relaxation is
 scoped narrowly and the forbidden list is preserved everywhere.
 
 ## Decision
+
+> **Amended 2026-11-17.** The forbidden-word list below ("smart", "AI", "nuke", "magic"…)
+> is no longer enforced. It is voice guidance in `.agents/product-marketing.md`. The
+> trust-first truth rules still apply everywhere.
 
 D209's forbidden-word list and trust-first rule continue to apply
 **everywhere**. They are non-negotiable.

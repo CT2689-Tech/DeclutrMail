@@ -50,7 +50,7 @@ export function RefundsV2() {
         <p>
           If you purchased outside India, your payment was processed by Paddle, our merchant of
           record. Paddle is the seller of record for the transaction, and{' '}
-          <a href="https://www.paddle.com/legal/checkout-buyer-terms" rel="noopener noreferrer">
+          <a href="https://www.paddle.com/legal/buyer-terms" rel="noopener noreferrer">
             Paddle&rsquo;s buyer terms
           </a>{' '}
           apply to it. You can request a refund either from us directly (

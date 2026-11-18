@@ -271,9 +271,9 @@ export function AutomationBoundaryFigure() {
           <h3>Autopilot rules</h3>
           <p className="dm-story-plan">{AUTOPILOT_PLANS}</p>
           <p>
-            Turning a preset on shows what it would do first. Low-engagement Archive and new-sender
-            Later always collect suggestions for approval. Other presets offer Act now or Watch
-            first. Every rule can be paused.
+            Turning a rule on shows what it would do first. New-sender Later and Delete rules always
+            collect matches for your approval. Other rules offer Act now or Watch first. Every rule
+            can be paused.
           </p>
         </div>
       </div>

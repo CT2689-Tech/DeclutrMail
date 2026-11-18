@@ -12,17 +12,10 @@ import {
 } from '@declutrmail/shared/entitlements';
 
 /**
- * Launch teaser. Loaded only after the public catalog says PRICING_V2 is
- * on. Names, prices and bullets are the /pricing story's own copy, so the
- * two pages cannot quote different plans.
+ * Landing pricing teaser. Names, prices and bullets are the /pricing
+ * story's own copy, so the two pages cannot quote different plans.
  */
-export function PricingTeaserStory({
-  passEnabled,
-  locale = 'usd',
-}: {
-  passEnabled: boolean;
-  locale?: 'usd' | 'inr';
-}) {
+export function PricingTeaserStory({ locale = 'usd' }: { locale?: 'usd' | 'inr' }) {
   const prices = launchPriceDisplay(locale);
   const fill = (template: string) => fillStory(template, locale);
   const plans = [
@@ -36,21 +29,17 @@ export function PricingTeaserStory({
       cta: fill(WS1_COPY['pricing.free.cta']),
       href: '/sign-in',
     },
-    ...(passEnabled
-      ? [
-          {
-            id: 'pass',
-            badge: fill(WS1_COPY['pricing.pass.badge']),
-            name: fill(WS1_COPY['pricing.pass.name']),
-            tagline: fill(WS1_COPY['pricing.pass.tagline']),
-            price: passAmount(locale),
-            terms: `${fill(WS1_COPY['pricing.pass.priceSuffix'])} · ${fill(WS1_COPY['pricing.pass.renewal'])}`,
-            features: fillStoryList(WS1_COPY['pricing.pass.features'], locale),
-            cta: fill(WS1_COPY['pricing.pass.cta']),
-            href: '/billing?plan=plus&cycle=annual&offer=pass_onetime',
-          },
-        ]
-      : []),
+    {
+      id: 'pass',
+      badge: fill(WS1_COPY['pricing.pass.badge']),
+      name: fill(WS1_COPY['pricing.pass.name']),
+      tagline: fill(WS1_COPY['pricing.pass.tagline']),
+      price: passAmount(locale),
+      terms: `${fill(WS1_COPY['pricing.pass.priceSuffix'])} · ${fill(WS1_COPY['pricing.pass.renewal'])}`,
+      features: fillStoryList(WS1_COPY['pricing.pass.features'], locale),
+      cta: fill(WS1_COPY['pricing.pass.cta']),
+      href: '/billing?plan=plus&cycle=annual&offer=pass_onetime',
+    },
     {
       id: 'plus',
       name: fill(WS1_COPY['pricing.plus.name']),
@@ -62,9 +51,7 @@ export function PricingTeaserStory({
       href: '/billing?plan=plus&cycle=annual',
     },
   ];
-  const [lead, ...rest] = fill(
-    WS1_COPY[passEnabled ? 'pricing.h1.passOn' : 'pricing.h1.passOff'],
-  ).split(/(?<=\.)\s+/);
+  const [lead, ...rest] = fill(WS1_COPY['pricing.h1.passOn']).split(/(?<=\.)\s+/);
   return (
     <section
       id="plans"

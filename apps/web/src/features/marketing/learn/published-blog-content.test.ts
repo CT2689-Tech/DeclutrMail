@@ -43,7 +43,7 @@ describe('approved publication integration', () => {
     expect(generateStaticParams()).toContainEqual({ slug });
     const meta = await generateMetadata({ params: Promise.resolve({ slug }) });
     expect(meta.title).toMatchObject({
-      absolute: 'Approved Gmail search example — DeclutrMail Journal',
+      absolute: 'Approved Gmail search example — DeclutrMail',
     });
     expect(sitemap().find((row) => row.url.endsWith(`/blog/${slug}`))).toMatchObject({
       lastModified: '2026-10-30',

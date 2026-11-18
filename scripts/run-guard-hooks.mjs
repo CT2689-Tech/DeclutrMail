@@ -80,11 +80,6 @@ export const POSITIVE_CONTROLS = {
     content: 'export const label = predictCategory(message);\n',
     expect: 'violation',
   },
-  'require-no-gmail-hot-path': {
-    path: 'apps/api/src/control-gmail.ts',
-    content: "export const list = (gmail) => gmail.users.messages.list({ userId: 'me' });\n",
-    expect: 'violation',
-  },
   'require-idempotency': {
     path: 'packages/workers/src/control-worker.ts',
     content: 'export class ControlWorker extends BaseDeclutrWorker {}\n',

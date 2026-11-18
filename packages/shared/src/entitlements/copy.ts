@@ -29,21 +29,6 @@ export interface QuotaExceededMessageInput {
   requested: number;
 }
 
-/** Server env `PRICING_V2`. Not a public Next.js env flag. */
-export function isPricingV2(): boolean {
-  return process.env.PRICING_V2 === 'true';
-}
-
-/** Server env `METER_V2`. Not a public Next.js env flag. */
-export function isMeterV2(): boolean {
-  return process.env.METER_V2 === 'true';
-}
-
-/** Server env `BILLING_PASS_ENABLED`. Default off. Not a public Next flag. */
-export function isBillingPassEnabled(): boolean {
-  return process.env.BILLING_PASS_ENABLED === 'true';
-}
-
 function fill(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (token, key: string) => {
     const value = values[key];
@@ -275,7 +260,7 @@ export function quotaUnitsForEnqueue(input: {
   verb: string;
   requestedCount: number;
 }): number {
-  if (!isMeterV2() || input.tier !== 'free') return 0;
+  if (input.tier !== 'free') return 0;
   const counts = METER.countsVerbs[input.verb as keyof typeof METER.countsVerbs];
   if (!counts) return 0;
   return Math.max(0, input.requestedCount);
@@ -347,9 +332,8 @@ export interface ListedOfferOverride {
 }
 
 /**
- * Listed offers only. Placeholders stay unlisted, so the live function
- * returns Free until a price id is real. Tests pass `listed` to pin the
- * shape Plus and the Pass take once they are listed.
+ * Listed offers only. A price with a placeholder id stays unlisted.
+ * Tests pass `listed` to pin the shape each offer takes.
  */
 const FREE_OFFER = {
   '@type': 'Offer',
@@ -360,7 +344,6 @@ const FREE_OFFER = {
 } as const;
 
 export function buildOffersJsonLd(listed?: ListedOfferOverride): object[] {
-  if (!isPricingV2()) return [FREE_OFFER];
   const plusListed = listed?.plus ?? PLUS_ANNUAL_2026_10.listed === true;
   const passListed = listed?.pass ?? OFFERS.backlogPass.price.listed === true;
   const offers: object[] = [FREE_OFFER];
@@ -379,18 +362,22 @@ export function buildOffersJsonLd(listed?: ListedOfferOverride): object[] {
         billingDuration: 'P1Y',
       },
     });
-    offers.push({
-      '@type': 'Offer',
-      name: planName('plus'),
-      price: inr,
-      priceCurrency: 'INR',
-      priceSpecification: {
-        '@type': 'UnitPriceSpecification',
+    // ADR-0045: no INR offer while rupee checkout is paused, i.e. until both
+    // India Paddle price ids are configured in this environment.
+    if (listed ? listed.plus : indiaPaddlePricesConfigured()) {
+      offers.push({
+        '@type': 'Offer',
+        name: planName('plus'),
         price: inr,
         priceCurrency: 'INR',
-        billingDuration: 'P1Y',
-      },
-    });
+        priceSpecification: {
+          '@type': 'UnitPriceSpecification',
+          price: inr,
+          priceCurrency: 'INR',
+          billingDuration: 'P1Y',
+        },
+      });
+    }
   }
   if (passListed) {
     offers.push({
@@ -403,21 +390,15 @@ export function buildOffersJsonLd(listed?: ListedOfferOverride): object[] {
   return offers;
 }
 
-/** India FAQ with the Pass clause removed. The deck has no separate pass-off key.
- * The paused line is the India answer only while new INR purchases are paused. */
+/** The paused line is the India answer only while new INR purchases are paused. */
 export function indiaFaqAnswer(
-  passEnabled: boolean,
   locale: 'usd' | 'inr' = 'inr',
   purchasesPaused = !indiaPaddlePricesConfigured(),
 ): string {
-  const values = storyValues(locale);
   const template = purchasesPaused
     ? WS1_COPY['pricing.faq.india.a.paused']
     : WS1_COPY['pricing.faq.india.a'];
-  const full = fill(template, values);
-  if (passEnabled) return full;
-  const clause = ` and ${values.passPrice} once for the ${values.passName}`;
-  return full.replace(clause, '');
+  return fill(template, storyValues(locale));
 }
 
 /** Deck snapshot keeps the literal 14. Render substitutes `POLICY.dunningDays`. */
@@ -425,16 +406,8 @@ export function termsPastDue(): string {
   return WS1_COPY['terms.pastDue'].replace(/\b14\b/, String(POLICY.dunningDays));
 }
 
-/**
- * Shared by `/pricing.md` and WS3's `/llms.txt`.
- * `pricingV2` defaults to this process's env. A route that already
- * resolved the public API flags passes that boolean instead.
- */
-export function renderPricingMarkdown(
-  passEnabled = isBillingPassEnabled(),
-  pricingV2 = isPricingV2(),
-): string {
-  if (!pricingV2) return '';
+/** Shared by `/pricing.md` and WS3's `/llms.txt`. */
+export function renderPricingMarkdown(): string {
   const locale = 'usd' as const;
   const values = storyValues(locale);
   const features = (lines: readonly string[]) =>
@@ -442,7 +415,7 @@ export function renderPricingMarkdown(
       .map((line) => `- ${line}`)
       .join('\n');
   const sections = [
-    `# ${fillStory(WS1_COPY[passEnabled ? 'pricing.h1.passOn' : 'pricing.h1.passOff'], locale)}`,
+    `# ${fillStory(WS1_COPY['pricing.h1.passOn'], locale)}`,
     '',
     fillStory(WS1_COPY['pricing.sub'], locale),
     '',
@@ -451,18 +424,12 @@ export function renderPricingMarkdown(
     fillStory(WS1_COPY['pricing.free.tagline'], locale),
     fillStory(WS1_COPY['pricing.free.renewal'], locale),
     features(WS1_COPY['pricing.free.features']),
-  ];
-  if (passEnabled) {
-    sections.push(
-      '',
-      `## ${values.passName}`,
-      '',
-      fillStory(WS1_COPY['price.passLine'], locale),
-      fillStory(WS1_COPY['pricing.pass.renewal'], locale),
-      features(WS1_COPY['pricing.pass.features']),
-    );
-  }
-  sections.push(
+    '',
+    `## ${values.passName}`,
+    '',
+    fillStory(WS1_COPY['price.passLine'], locale),
+    fillStory(WS1_COPY['pricing.pass.renewal'], locale),
+    features(WS1_COPY['pricing.pass.features']),
     '',
     `## ${values.plusName}`,
     '',
@@ -481,12 +448,15 @@ export function renderPricingMarkdown(
     `## ${fillStory(WS1_COPY['pricing.promise.title'], locale)}`,
     '',
     ...pricePromiseLines(),
-  );
+  ];
   return sections.join('\n');
 }
 
-/** Shown only while `startsAt <= now < endsAt`. */
-export function promoBanner(now: Date, passEnabled = isBillingPassEnabled()): string | null {
+/**
+ * Shown only while `startsAt <= now < endsAt`. `passEnabled` false picks
+ * the deck line that names Plus alone (the Plus card's own banner).
+ */
+export function promoBanner(now: Date, passEnabled = true): string | null {
   const start = new Date(PROMO.startsAt);
   const end = new Date(PROMO.endsAt);
   if (now < start || now >= end) return null;
