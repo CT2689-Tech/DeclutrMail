@@ -1,17 +1,22 @@
 -- Dropping these tables disconnects every connected app: all OAuth clients,
--- grants and tokens are discarded and people must connect again. No Gmail
--- data, action history or undo state lives here.
+-- grants and tokens are discarded and people must connect again. Cleanups
+-- waiting for a confirmation are discarded, and Activity stops naming the
+-- app an earlier action came from. No Gmail data, action history or undo
+-- state lives here.
 --
 -- ROLL THE CODE BACK FIRST. Account deletion and the daily retention worker
 -- run statements against these tables whether or not MCP_ENABLED is on, so
 -- dropping them under the code that shipped with this migration breaks both.
 --
 -- One transaction, so a failure part-way leaves the schema whole. Dropping
--- oauth_grants removes foreign-key triggers from users and workspaces, which
--- needs a brief exclusive lock on both: bound the wait so a long reader fails
--- this rollback instead of queueing every query behind it.
+-- these tables removes foreign-key triggers from users, workspaces,
+-- mailbox_accounts and action_jobs, which needs a brief exclusive lock on
+-- each: bound the wait so a long reader fails this rollback instead of
+-- queueing every query behind it.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
+DROP TABLE action_origins;
+DROP TABLE action_previews;
 DROP TABLE oauth_interactions;
 DROP TABLE oauth_auth_codes;
 DROP TABLE oauth_tokens;

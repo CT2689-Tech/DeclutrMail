@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable, Logger, NotFoundException } from
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import {
+  actionPreviews,
   mailboxAccounts,
   mailboxDataDeletionRequests,
   ruleMatchIsHeldAction,
@@ -560,6 +561,11 @@ export class MailboxAccountsService {
         keyVersion: null,
       })
       .where(eq(mailboxAccounts.id, row.id));
+
+    // A cleanup an assistant prepared for this mailbox must not outlive
+    // its connection (docs/spec/mcp-connector.md §7). The confirm path
+    // also refuses a disconnected mailbox; this removes the request.
+    await this.db.delete(actionPreviews).where(eq(actionPreviews.mailboxAccountId, row.id));
 
     return this.summaryForRow({ ...row, status: 'disconnected' });
   }

@@ -13,20 +13,34 @@ import { vi } from 'vitest';
 import { mailboxAccounts, schema, users, workspaces } from '@declutrmail/db';
 import { freshTestPglite } from '@declutrmail/db/testing';
 
+import { ActionsService } from '../actions/actions.service.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CsrfService } from '../auth/csrf.service.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { JwtService } from '../auth/jwt.service.js';
 import { SessionsService } from '../auth/sessions.service.js';
 import { AllExceptionsFilter } from '../common/all-exceptions.filter.js';
+import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { InMemoryTokenBucketStore } from '../common/rate-limit/in-memory-token-bucket.store.js';
-import { RateLimitInterceptor } from '../common/rate-limit/rate-limit.interceptor.js';
+import {
+  RateLimitInterceptor,
+  TOKEN_BUCKET_STORE,
+} from '../common/rate-limit/rate-limit.interceptor.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
+import { ActionPreviewsController } from '../mcp/action-previews.controller.js';
+import { ActionPreviewsService } from '../mcp/action-previews.service.js';
 import { McpController } from '../mcp/mcp.controller.js';
 import { McpEnabledGuard } from '../mcp/mcp-enabled.guard.js';
+import { McpRateLimitGuard } from '../mcp/mcp-rate-limit.guard.js';
+import { McpServerService } from '../mcp/mcp-server.service.js';
 import { McpTokenGuard } from '../mcp/mcp-token.guard.js';
+import { McpToolsService } from '../mcp/mcp-tools.service.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
+import { SendersPolicyService } from '../senders/senders-policy.service.js';
+import { SendersReadService } from '../senders/senders.read-service.js';
+import { SyncService } from '../sync/sync.service.js';
+import { UndoService } from '../undo/undo.service.js';
 import { OAuthConsentController } from './oauth-consent.controller.js';
 import { OAuthConsentService } from './oauth-consent.service.js';
 import { OAuthGrantsController } from './oauth-grants.controller.js';
@@ -62,6 +76,16 @@ export interface OAuthTestApp {
   base: string;
   resource: string;
   securityEvents: { record: ReturnType<typeof vi.fn> };
+  /** The real action service the tools call, over the same database. */
+  actions: ActionsService;
+  /**
+   * Every job the API handed to a queue. Nothing consumes them: a job
+   * here is the only way mail could change, so an empty list is "no
+   * mail was touched".
+   */
+  queued: { label: unknown[]; unsubscribe: unknown[] };
+  /** Make the next queue adds fail, as a Redis outage would. */
+  queueDown(down: boolean): void;
   person(email: string, mailboxes?: string[]): Promise<TestPerson>;
   close(): Promise<void>;
 }
@@ -88,6 +112,8 @@ export async function createOAuthTestApp(
   vi.stubEnv('API_URL', base);
   vi.stubEnv('WEB_URL', WEB_URL);
   vi.stubEnv('MCP_ENABLED', 'true');
+  // The unsubscribe pipeline refuses to queue a send unless this is on.
+  vi.stubEnv('UNSUB_SEND_ENABLED', 'true');
 
   const pg = await freshTestPglite();
   const db = drizzle(pg, { schema }) as unknown as DrizzleDb;
@@ -101,9 +127,36 @@ export async function createOAuthTestApp(
   const sessions = new SessionsService(db, cache as unknown as Redis, jwt);
   const csrf = new CsrfService();
   const mailboxes = new MailboxAccountsService(
-    ...([db, {}, {}, {}] as unknown as ConstructorParameters<typeof MailboxAccountsService>),
+    ...([db, {}, { stopMailbox: async () => undefined }, {}] as unknown as ConstructorParameters<
+      typeof MailboxAccountsService
+    >),
   );
   const securityEvents = { record: vi.fn().mockResolvedValue(undefined) };
+
+  // The connector's tools over the REAL services, the way `McpModule`
+  // wires them. Only the queues are fakes: they record what was added.
+  const queued = { label: [] as unknown[], unsubscribe: [] as unknown[] };
+  let queueIsDown = false;
+  const fakeQueue = (sink: unknown[]) => ({
+    add: async (_name: string, data: unknown) => {
+      if (queueIsDown) throw new Error('queue is down');
+      sink.push(data);
+    },
+    getJob: async () => null,
+  });
+  const entitlements = new EntitlementsService(db);
+  const actions = new ActionsService(
+    ...([
+      db,
+      fakeQueue(queued.label),
+      undefined,
+      fakeQueue(queued.unsubscribe),
+      entitlements,
+    ] as unknown as ConstructorParameters<typeof ActionsService>),
+  );
+  const sync = new SyncService(
+    ...([{}, {}, db] as unknown as ConstructorParameters<typeof SyncService>),
+  );
 
   const moduleRef = await Test.createTestingModule({
     controllers: [
@@ -111,6 +164,7 @@ export async function createOAuthTestApp(
       OAuthConsentController,
       OAuthGrantsController,
       McpController,
+      ActionPreviewsController,
     ],
     providers: [
       { provide: DRIZZLE, useValue: db },
@@ -119,6 +173,20 @@ export async function createOAuthTestApp(
       { provide: CsrfService, useValue: csrf },
       { provide: MailboxAccountsService, useValue: mailboxes },
       { provide: SecurityEventsService, useValue: securityEvents },
+      { provide: ActionsService, useValue: actions },
+      { provide: EntitlementsService, useValue: entitlements },
+      { provide: SyncService, useValue: sync },
+      { provide: SendersReadService, useValue: new SendersReadService(db) },
+      { provide: SendersPolicyService, useValue: new SendersPolicyService(db) },
+      { provide: UndoService, useValue: new UndoService(db) },
+      {
+        provide: TOKEN_BUCKET_STORE,
+        useValue: options.rateLimit ? new InMemoryTokenBucketStore() : null,
+      },
+      ActionPreviewsService,
+      McpToolsService,
+      McpServerService,
+      McpRateLimitGuard,
       OAuthProviderService,
       OAuthConsentService,
       CsrfGuard,
@@ -148,6 +216,11 @@ export async function createOAuthTestApp(
     base,
     resource: `${base}/mcp`,
     securityEvents,
+    actions,
+    queued,
+    queueDown(down) {
+      queueIsDown = down;
+    },
     async person(email, mailboxEmails = [email]) {
       const [workspace] = await db.insert(workspaces).values({ name: email }).returning();
       const [user] = await db
@@ -281,10 +354,20 @@ export function client(base: string) {
         body: new URLSearchParams(body).toString(),
       }),
     get: (path: string, headers: Record<string, string> = {}) => send(path, { headers }),
-    bearer: (path: string, token: string, body: unknown = { jsonrpc: '2.0', id: 1 }) =>
+    /** An authenticated MCP call; by default the smallest valid one. */
+    bearer: (
+      path: string,
+      token: string,
+      body: unknown = { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+    ) =>
       send(path, {
         method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': '2025-06-18',
+        },
         body: JSON.stringify(body),
       }),
   };

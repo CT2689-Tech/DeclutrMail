@@ -429,6 +429,21 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'Account deletion is scheduled. Cancel it in Settings to connect an app.',
   },
+  // --- MCP connector: the confirm page (ADR-0048 rule 1) ---
+  // Another person's preview, a made-up id, and one whose app was
+  // disconnected are the same answer on purpose.
+  PREVIEW_NOT_FOUND: {
+    status: 404,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This request is not available. Ask your assistant to prepare it again.',
+  },
+  PREVIEW_EXPIRED: {
+    status: 410,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This request expired. Ask your assistant to prepare it again.',
+  },
   DELETION_ALREADY_PENDING: {
     status: 409,
     severityTier: 'inline_recoverable',

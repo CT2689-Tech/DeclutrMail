@@ -739,19 +739,24 @@ describe('OAuth authorization server', () => {
       await harness.db.delete(oauthGrants);
     });
 
-    it('answers an authenticated call truthfully: the server has no methods yet', async () => {
+    it('hands an authenticated call to the MCP server', async () => {
       const { tokens } = await connect(harness, ada);
       const response = await api.bearer('/mcp', tokens.access_token, {
         jsonrpc: '2.0',
         id: 7,
         method: 'tools/list',
+        params: {},
       });
       expect(response.status).toBe(200);
-      expect(response.json).toEqual({
-        jsonrpc: '2.0',
-        id: 7,
-        error: { code: -32601, message: 'Method not found' },
-      });
+      // The SDK answers a pre-2026 client over an event stream.
+      const body = JSON.parse(
+        response.text
+          .split('\n')
+          .find((line) => line.startsWith('data:'))!
+          .slice('data:'.length),
+      );
+      expect(body.id).toBe(7);
+      expect(body.result.tools).toHaveLength(10);
       await harness.db.delete(oauthGrants);
     });
 

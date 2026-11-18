@@ -99,6 +99,8 @@ describe('migration round-trip', () => {
     expect(objects).toEqual([
       'table:account_deletion_requests',
       'table:action_jobs',
+      'table:action_origins',
+      'table:action_previews',
       'table:action_recovery_previews',
       'table:active_sessions',
       'table:activity_log',

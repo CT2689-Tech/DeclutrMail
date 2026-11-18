@@ -1,15 +1,4 @@
-import {
-  BadRequestException,
-  Controller,
-  Get,
-  GoneException,
-  NotFoundException,
-  NotImplementedException,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import {
   ok,
   paginated,
@@ -22,6 +11,7 @@ import { CsrfGuard } from '../auth/csrf.guard.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
 import { CurrentMailbox, CurrentMailboxGuard } from '../mailboxes/current-mailbox.guard.js';
 import { RateLimit } from '../common/rate-limit/index.js';
+import { revertDecision } from './revert-decision.js';
 import { UndoService } from './undo.service.js';
 import type { UndoActionKind, UndoResult } from './undo.types.js';
 
@@ -168,95 +158,11 @@ export class UndoController {
     token: string,
     scope?: 'action',
   ): Promise<Envelope<UndoResult>> {
-    if (!isUuid(token)) {
-      throw new BadRequestException('token must be a UUID.');
-    }
-    const found = await this.undo.findRevertable(token, mailbox.id);
-    if (found.outcome === 'not-found') {
-      // Top-level { code, message }, NOT { error: { … } }. The filter
-      // owns the envelope: it reads `code` and `message` off the
-      // exception body, so pre-wrapping made BOTH extractions miss and
-      // Nest's `initMessage()` fallback shipped the literal string
-      // "Http Exception" to the user as their error message
-      // (audit 2026-08-21).
-      throw new NotFoundException({ code: 'NOT_FOUND', message: 'Undo token not found.' });
-    }
-    if (found.outcome === 'expired') {
-      // D58 — "Undo expired" path. The tooltip copy lives client-side
-      // (D210); the server signals via HTTP 410.
-      throw new GoneException({ code: 'GONE', message: 'Undo window has expired.' });
-    }
-    if (
-      found.outcome === 'already-reverted' &&
-      (scope === 'action' ||
-        !(await this.actions.hasUnrevertedCompositeSiblings(token, mailbox.id)))
-    ) {
-      // Recorded success — no new reverse job.
-      return ok({
-        token: found.entry.token,
-        actionKind: found.entry.actionKind,
-        reverted: true,
-        expired: false,
-        revertedAt: found.entry.revertedAt ? found.entry.revertedAt.toISOString() : null,
-        actionId: null,
-        actionIds: [],
-      });
-    }
-
-    // 'ready' — enqueue the reverse job(s) for the verb's label change.
-    // Composite-aware (ADR-0020): `enqueueCompositeRevert` resolves the
-    // primary + any secondaries via `action_jobs.composite_id` and fires
-    // a reverse row for each in primary-first order. For a single-verb
-    // action this returns just the one row.
-    //
-    // Only the label-modify family has an async reverter today
-    // (archive / later / delete). Unsubscribe + apply-rule keep their
-    // 501 fail-closed signal until their reverter pipelines land.
-    if (!LABEL_MODIFY_UNDO_KINDS.has(found.entry.actionKind)) {
-      throw new NotImplementedException({
-        code: 'UNSUPPORTED_UNDO',
-        message: `Undo for "${found.entry.actionKind}" is not available yet.`,
-      });
-    }
-
-    const reverts = await this.actions.enqueueCompositeRevert({
-      mailboxAccountId: mailbox.id,
-      token,
-      ...(scope === 'action' ? { scope: 'action' as const } : {}),
-    });
-    // Retain the first handle for rolling web/API deploys. Current clients
-    // poll the whole frozen set in one read; the first job cannot confirm
-    // restoration of its siblings.
-    const primary = reverts[0];
-    const allDone = reverts.length > 0 && reverts.every((r) => r.status === 'done');
-    const completed = allDone
-      ? await this.actions.getUndoStatus(
-          reverts.map((revert) => revert.actionId),
-          mailbox.id,
-        )
-      : null;
-    return ok({
-      token,
-      actionKind: found.entry.actionKind,
-      reverted: allDone,
-      expired: false,
-      revertedAt: completed?.undoRevertedAt ?? null,
-      actionId: primary?.actionId ?? null,
-      actionIds: reverts.map((revert) => revert.actionId),
-    });
+    return ok(
+      await revertDecision({ undo: this.undo, actions: this.actions }, mailbox.id, token, scope),
+    );
   }
 }
-
-/**
- * Undo kinds whose reverter pipeline is wired end-to-end (label-modify
- * family). `unsubscribe` and `apply-rule` are reserved for their own
- * pipeline PRs and return 501 from the undo controller until then.
- */
-const LABEL_MODIFY_UNDO_KINDS: ReadonlySet<UndoActionKind> = new Set<UndoActionKind>([
-  'archive',
-  'later',
-  'delete',
-]);
 
 /** Clamp the requested limit to the server-side max for the tray. */
 function clampLimit(raw: string | undefined): number {
@@ -266,9 +172,4 @@ function clampLimit(raw: string | undefined): number {
   const parsed = Number.parseInt(raw, 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT;
   return Math.min(parsed, MAX);
-}
-
-/** UUID v4 (relaxed — accepts any UUID per RFC 4122 hex layout). */
-function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }

@@ -1,0 +1,76 @@
+import { z } from 'zod';
+
+/**
+ * The confirm page's view of a stored preview (ADR-0048 rule 1,
+ * docs/spec/mcp-connector.md §3) — `GET /api/action-previews/:id` and
+ * `POST /api/action-previews/:id/confirm`.
+ *
+ * An assistant asked for a cleanup; this is what the person is shown and
+ * what pressing the verb did. Sender names and counts only: no subject,
+ * no snippet.
+ */
+export const ACTION_PREVIEW_VERBS = ['keep', 'archive', 'unsubscribe', 'later', 'delete'] as const;
+export const ActionPreviewVerbSchema = z.enum(ACTION_PREVIEW_VERBS);
+export type ActionPreviewVerb = z.infer<typeof ActionPreviewVerbSchema>;
+
+/** Why a sender in a confirmed preview was not acted on. */
+export const ACTION_PREVIEW_SKIP_REASONS = [
+  'protected',
+  'not_found',
+  'in_progress',
+  'mailto',
+  'no_channel',
+  'unknown',
+  'failed',
+] as const;
+export const ActionPreviewSkipReasonSchema = z.enum(ACTION_PREVIEW_SKIP_REASONS);
+export type ActionPreviewSkipReason = z.infer<typeof ActionPreviewSkipReasonSchema>;
+
+export const ActionPreviewSkippedSchema = z.object({
+  senderId: z.string(),
+  /** Null when the sender is no longer in the mailbox's index. */
+  name: z.string().nullable(),
+  reason: ActionPreviewSkipReasonSchema,
+  /** `mailto` only: a Gmail compose link the person sends themself. */
+  composeUrl: z.string().nullable(),
+});
+export type ActionPreviewSkipped = z.infer<typeof ActionPreviewSkippedSchema>;
+
+export const ActionPreviewOutcomeSchema = z.object({
+  /** Senders the verb was applied to. */
+  appliedSenders: z.number().int(),
+  /** Emails the started action was asked to move. */
+  requestedEmails: z.number().int(),
+  /**
+   * The started action right now. `failed` means it did not run; null
+   * when the verb started none (Keep, a mailto unsubscribe).
+   */
+  actionStatus: z.enum(['queued', 'executing', 'done', 'failed']).nullable(),
+  skipped: z.array(ActionPreviewSkippedSchema),
+});
+export type ActionPreviewOutcome = z.infer<typeof ActionPreviewOutcomeSchema>;
+
+export const ActionPreviewViewSchema = z.object({
+  id: z.string(),
+  verb: ActionPreviewVerbSchema,
+  /**
+   * `pending` — waiting for the person. `confirmed` — they pressed the
+   * verb but the action did not start; pressing again retries.
+   * `applied` — done; `outcome` says what happened. `expired` — the 15
+   * minutes ran out first.
+   */
+  state: z.enum(['pending', 'confirmed', 'applied', 'expired']),
+  /** The connected app that asked; null when it registered without a name. */
+  appName: z.string().nullable(),
+  mailboxEmail: z.string(),
+  senderCount: z.number().int(),
+  emailCount: z.number().int(),
+  /** Up to five sender names, in the order the app listed them. */
+  senderNames: z.array(z.string()),
+  olderThanDays: z.number().int().nullable(),
+  /** Later only: when the email returns to the inbox. */
+  wakeAt: z.string().nullable(),
+  expiresAt: z.string(),
+  outcome: ActionPreviewOutcomeSchema.nullable(),
+});
+export type ActionPreviewView = z.infer<typeof ActionPreviewViewSchema>;

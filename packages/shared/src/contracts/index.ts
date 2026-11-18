@@ -427,6 +427,23 @@ export type {
 } from './account-deletion';
 
 // MCP connector — OAuth consent + Settings → Connected apps (ADR-0048).
+export { gmailComposeUrlFromMailto } from './gmail-compose-link';
+export {
+  ACTION_PREVIEW_SKIP_REASONS,
+  ACTION_PREVIEW_VERBS,
+  ActionPreviewOutcomeSchema,
+  ActionPreviewSkipReasonSchema,
+  ActionPreviewSkippedSchema,
+  ActionPreviewVerbSchema,
+  ActionPreviewViewSchema,
+} from './action-previews';
+export type {
+  ActionPreviewOutcome,
+  ActionPreviewSkipReason as ActionPreviewViewSkipReason,
+  ActionPreviewSkipped,
+  ActionPreviewVerb as ActionPreviewViewVerb,
+  ActionPreviewView,
+} from './action-previews';
 export {
   CONNECTOR_SCOPES,
   ConnectedAppSchema,

@@ -25,6 +25,7 @@ export {
   LATER_BULK_RETURN_NOTICE_THRESHOLD,
   actionHasRecovery,
   actionHelpCopy,
+  actionPreviewFacts,
   buildActionPresentation,
   buildActionReceiptResult,
   composeRecoveryFacts,

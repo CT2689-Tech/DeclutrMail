@@ -19,6 +19,22 @@ export type {
   ActionRecoveryPreviewStatus,
   NewActionRecoveryPreview,
 } from './schema/action-recovery-previews';
+export { actionOrigins } from './schema/action-origins';
+export type { ActionOrigin } from './schema/action-origins';
+export {
+  ACTION_PREVIEW_SKIP_REASONS,
+  ACTION_PREVIEW_STATES,
+  ACTION_PREVIEW_VERBS,
+  actionPreviews,
+} from './schema/action-previews';
+export type {
+  ActionPreview,
+  ActionPreviewResult,
+  ActionPreviewSkipReason,
+  ActionPreviewState,
+  ActionPreviewVerb,
+  NewActionPreview,
+} from './schema/action-previews';
 export { actionDirection, actionJobStatus, actionJobs, actionVerb } from './schema/action-jobs';
 export type { ActionJob, LabelActionSelector, NewActionJob } from './schema/action-jobs';
 // Closed enums derived from the canonical pg_enum — adding a value to
