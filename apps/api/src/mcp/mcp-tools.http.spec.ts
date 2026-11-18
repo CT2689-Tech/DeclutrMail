@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   createOAuthTestApp,
@@ -14,6 +14,19 @@ import {
   type SeededSender,
 } from './mcp-test-kit.js';
 import { MCP_TOOL_NAMES } from './mcp-tool-contract.js';
+import type { McpPrincipal } from './mcp-token.guard.js';
+import { McpToolsService } from './mcp-tools.service.js';
+
+/** The principal a tool handler would be given for this person. */
+function principalOf(person: TestPerson): McpPrincipal {
+  return {
+    userId: person.userId,
+    workspaceId: person.workspaceId,
+    grantId: '00000000-0000-4000-8000-000000000000',
+    clientId: 'test',
+    scopes: ['read', 'cleanup'],
+  };
+}
 
 /**
  * The connector's read-only tools over real HTTP: the OAuth flow, the
@@ -96,6 +109,77 @@ describe('MCP tools — transport and the read-only tools', () => {
     expect(answer.data.recent).toHaveLength(5);
     expect(answer.data.recent[0]).toEqual({ subject: 'Sale number 0', date: expect.any(String) });
     expect(answer.text).not.toContain('SNIPPET');
+  });
+
+  it('strips a field the contract does not declare before the result leaves', async () => {
+    // ADR-0048 rule 3. The SDK validates a result against the output
+    // schema but returns it unparsed, extra keys included — so the
+    // server parses it itself. Simulate a handler that returns too much.
+    const tools = harness.app.get(McpToolsService);
+    const real = await tools.run('get_sender', principalOf(ada), { sender_id: shop.id });
+    const spy = vi.spyOn(tools, 'run').mockResolvedValueOnce({
+      ...real,
+      sender: { ...real.sender, snippet: 'SNIPPET-MUST-NOT-LEAVE' },
+      gmail_message_ids: ['18c2f0aa11'],
+    } as never);
+    try {
+      const answer = await mcp.call('get_sender', { sender_id: shop.id });
+      expect(answer.isError).toBe(false);
+      expect(answer.data.sender.address).toBe('news@shop.example');
+      expect(answer.text).not.toContain('SNIPPET');
+      expect(answer.text).not.toContain('gmail_message_ids');
+      expect(JSON.stringify(answer.data)).not.toContain('18c2f0aa11');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('answers a fixed sentence, not the validation detail, when a handler returns the wrong shape', async () => {
+    const tools = harness.app.get(McpToolsService);
+    const spy = vi.spyOn(tools, 'run').mockResolvedValueOnce({ plan: 42 } as never);
+    try {
+      const answer = await mcp.call('get_usage');
+      expect(answer.error.code).toBe('INTERNAL_ERROR');
+      expect(answer.text).not.toMatch(/expected|invalid|zod/i);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('refuses get_action_status without exactly one id', async () => {
+    const neither = await mcp.call('get_action_status', {});
+    expect(neither.error.code).toBe('INVALID_REQUEST');
+    const both = await mcp.call('get_action_status', {
+      action_id: '00000000-0000-4000-8000-000000000001',
+      batch_id: '00000000-0000-4000-8000-000000000002',
+    });
+    expect(both.error.code).toBe('INVALID_REQUEST');
+  });
+
+  it('pages list_senders with the cursor it returned, and refuses one it did not', async () => {
+    const first = await mcp.call('list_senders', { limit: 1 });
+    expect(first.data.senders).toHaveLength(1);
+    expect(first.data.next_cursor).toEqual(expect.any(String));
+    const second = await mcp.call('list_senders', { limit: 1, cursor: first.data.next_cursor });
+    expect(second.data.senders.map((s: { address: string }) => s.address)).toEqual([
+      'hello@social.example',
+    ]);
+    expect(second.data.next_cursor).toBeNull();
+    const bogus = await mcp.call('list_senders', { cursor: 'not-a-cursor' });
+    expect(bogus.error.code).toBe('INVALID_REQUEST');
+  });
+
+  it('filters list_senders by Gmail tab, search and Protected', async () => {
+    const social = await mcp.call('list_senders', { gmail_tab: 'social' });
+    expect(social.data.senders.map((s: { address: string }) => s.address)).toEqual([
+      'hello@social.example',
+    ]);
+    const found = await mcp.call('list_senders', { q: 'shop' });
+    expect(found.data.senders.map((s: { address: string }) => s.address)).toEqual([
+      'news@shop.example',
+    ]);
+    const none = await mcp.call('list_senders', { protected_only: true });
+    expect(none.data.senders).toEqual([]);
   });
 
   it('get_usage reports the plan and its monthly limit', async () => {

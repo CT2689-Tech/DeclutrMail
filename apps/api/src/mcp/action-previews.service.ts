@@ -25,8 +25,6 @@ import { exceptionCode, McpToolError } from './mcp-tool-errors.js';
 
 /** How long a person has to confirm (spec §3). */
 export const PREVIEW_TTL_MS = 15 * 60 * 1000;
-/** Senders named on the confirm page before "and N more". */
-const NAMED_SENDERS = 5;
 /** Keep writes one decision per sender; this many at a time. */
 const KEEP_CONCURRENCY = 8;
 
@@ -310,16 +308,19 @@ export class ActionPreviewsService {
     });
   }
 
-  /** Up to five sender names for the confirm page, in the preview's order. */
+  /**
+   * Every sender in the preview, by name, A–Z — what the confirm page
+   * lists. All of them, and in the server's order: the ids arrived in an
+   * order the assistant chose, and a page that showed only the first few
+   * would let a long request hide one sender behind "and 195 more".
+   */
   async senderNames(
     preview: Pick<ActionPreview, 'mailboxAccountId' | 'senderIds'>,
   ): Promise<string[]> {
-    const first = preview.senderIds.slice(0, NAMED_SENDERS);
-    const facts = await this.senderFacts(preview.mailboxAccountId, first);
-    return first.flatMap((id) => {
-      const sender = facts.get(id);
-      return sender ? [sender.name] : [];
-    });
+    const facts = await this.senderFacts(preview.mailboxAccountId, preview.senderIds);
+    return [...facts.values()]
+      .map((sender) => sender.name)
+      .sort((left, right) => left.localeCompare(right, 'en', { sensitivity: 'base' }));
   }
 
   /* ───────────────────────────── internals ───────────────────────────── */

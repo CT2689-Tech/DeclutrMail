@@ -65,7 +65,11 @@ export const ActionPreviewViewSchema = z.object({
   mailboxEmail: z.string(),
   senderCount: z.number().int(),
   emailCount: z.number().int(),
-  /** Up to five sender names, in the order the app listed them. */
+  /**
+   * Every sender in the request, by name, A–Z (up to 1,000). The page
+   * shows the first few and lets the person open the whole list: this is
+   * where they see exactly what they are confirming.
+   */
   senderNames: z.array(z.string()),
   olderThanDays: z.number().int().nullable(),
   /** Later only: when the email returns to the inbox. */

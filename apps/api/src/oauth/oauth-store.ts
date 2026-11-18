@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import { and, eq, exists, gt, inArray, isNull, lt, ne, notExists, or, sql } from 'drizzle-orm';
 
 import {
   accountDeletionRequests,
@@ -243,6 +243,20 @@ export async function findAccessToken(
         eq(oauthTokens.kind, 'access'),
         isNull(oauthTokens.revokedAt),
         isNull(oauthGrants.revokedAt),
+        // A second line behind the revoke that deletion performs: an
+        // account on its way out takes no actions from an assistant,
+        // even if that revoke were ever skipped (spec §7).
+        notExists(
+          db
+            .select({ id: accountDeletionRequests.id })
+            .from(accountDeletionRequests)
+            .where(
+              and(
+                eq(accountDeletionRequests.userId, oauthGrants.userId),
+                inArray(accountDeletionRequests.status, ['pending', 'executing']),
+              ),
+            ),
+        ),
       ),
     )
     .limit(1);

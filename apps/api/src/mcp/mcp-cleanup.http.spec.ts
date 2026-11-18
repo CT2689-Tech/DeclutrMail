@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   actionJobs,
@@ -30,6 +30,7 @@ import {
   type TestPerson,
 } from '../oauth/oauth-test-harness.js';
 import { SendersPolicyService } from '../senders/senders-policy.service.js';
+import { ActionPreviewsService } from './action-previews.service.js';
 import {
   client,
   connectedClient,
@@ -417,6 +418,39 @@ describe('MCP connector — previews, confirmation and apply', () => {
     });
   });
 
+  describe('expiry is decided by the database, at the moment of confirming', () => {
+    it('never confirms or applies a preview the database says has expired, even when this server’s clock disagrees', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'delete',
+        sender_ids: [shop.id],
+      });
+      const id = preview.data.preview_id;
+      await harness.db.execute(sql`
+        UPDATE action_previews
+        SET created_at = now() - interval '20 minutes', expires_at = now() - interval '1 second'
+        WHERE id = ${id}::uuid
+      `);
+      // A server whose clock runs behind: every read says "not expired".
+      const previews = harness.app.get(ActionPreviewsService);
+      const findOwned = previews.findOwned.bind(previews);
+      const spy = vi.spyOn(previews, 'findOwned').mockImplementation(async (previewId, userId) => {
+        const detail = await findOwned(previewId, userId);
+        return detail ? { ...detail, expired: false } : detail;
+      });
+      try {
+        await expect(previews.confirm(id, s.person.userId)).rejects.toMatchObject({
+          code: 'PREVIEW_EXPIRED',
+        });
+      } finally {
+        spy.mockRestore();
+      }
+      expect((await previewRow(id))!.state).toBe('pending');
+      expect(await jobs(s.mailboxId)).toHaveLength(0);
+    });
+  });
+
   describe('the person confirms on the page', () => {
     it('shows what was asked, then applies it once however often it is pressed or retried', async () => {
       const s = await scene();
@@ -475,6 +509,32 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(rows[0]).toMatchObject({ id: applied.data.action_id, verb: 'archive' });
       expect(rows[0]!.idempotencyKey).toContain(id);
       expect(harness.queued.label.length).toBe(before + 1);
+    });
+
+    it('lists every sender in the request, A–Z, not the first few the app chose', async () => {
+      const s = await scene();
+      const names = ['Zeta', 'alpha', 'Mid', 'Beta', 'omega', 'Delta', 'Gamma'];
+      const ids: string[] = [];
+      for (const name of names) {
+        const sender = await seedSender(harness, s.mailboxId, {
+          email: `${name.toLowerCase()}@list.example`,
+          name,
+          mail: 1,
+        });
+        ids.push(sender.id);
+      }
+      const preview = await s.mcp.call('preview_cleanup', { verb: 'archive', sender_ids: ids });
+      const view = await s.page.get(`/api/action-previews/${preview.data.preview_id}`);
+      expect(view.json.data.senderCount).toBe(7);
+      expect(view.json.data.senderNames).toEqual([
+        'alpha',
+        'Beta',
+        'Delta',
+        'Gamma',
+        'Mid',
+        'omega',
+        'Zeta',
+      ]);
     });
 
     it('skips a sender that became Protected after the preview, and names it', async () => {

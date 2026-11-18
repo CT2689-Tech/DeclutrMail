@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { actionJobs, actionPreviews } from '@declutrmail/db';
+import { accountDeletionRequests, actionJobs, actionPreviews } from '@declutrmail/db';
 
 import { InMemoryTokenBucketStore } from '../common/rate-limit/in-memory-token-bucket.store.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
@@ -52,6 +52,36 @@ describe('MCP connector — scopes', () => {
     expect(
       await harness.db.select().from(actionPreviews).where(eq(actionPreviews.userId, ada.userId)),
     ).toEqual([]);
+  });
+});
+
+describe('MCP connector — account deletion in flight', () => {
+  let harness: OAuthTestApp;
+
+  beforeAll(async () => {
+    harness = await createOAuthTestApp();
+  }, 60_000);
+  afterAll(async () => {
+    await harness.close();
+  });
+
+  it('refuses every token of an account being deleted, even if its grant was never revoked', async () => {
+    const ada = await harness.person('ada@example.com');
+    const mcp = await connectedClient(harness, ada);
+    expect((await mcp.call('get_usage')).isError).toBe(false);
+
+    // The deletion flow revokes grants itself; this is the second line,
+    // so write the request directly and leave the grant alone.
+    await harness.db.insert(accountDeletionRequests).values({
+      userId: ada.userId,
+      effectiveAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      basis: 'flat-grace',
+      status: 'pending',
+    });
+
+    const answer = await mcp.call('get_usage');
+    expect(answer.http.status).toBe(401);
+    expect(answer.http.headers.get('www-authenticate')).toContain('invalid_token');
   });
 });
 
