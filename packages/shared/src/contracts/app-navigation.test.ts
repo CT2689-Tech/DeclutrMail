@@ -17,6 +17,7 @@ describe('app destinations surviving login', () => {
     '/brief?date=2026-10-10',
     '/onboarding?mailbox=mb-123&reconnect=1',
     '/connect/authorize?request=CUygbhMUbHwTzNhgVgnRZC1EjwMfy2c_9vKePrg8rq9',
+    '/confirm/0198d95f-a409-7000-8000-000000000001',
   ])('preserves %s', (path) => {
     expect(parseAppReturnTo(path)).toBe(path);
   });
@@ -41,6 +42,14 @@ describe('app destinations surviving login', () => {
     '/connect/authorize?request=has%20space%20in%20it%20123',
     '/connect/authorize?request=CUygbhMUbHwTzNhgVgnRZC1E#account',
     '/connect',
+    // The confirm page returns with exactly a preview id, nothing beside it.
+    '/confirm',
+    '/confirm/',
+    '/confirm/not-a-preview-id',
+    '/confirm/0198d95f-a409-7000-8000-000000000001/extra',
+    '/confirm/0198d95f-a409-7000-8000-000000000001?next=%2Fhome',
+    '/confirm/0198d95f-a409-7000-8000-000000000001#account',
+    '/confirm/0198d95f-a409-7000-8000-00000000000g',
   ])('rejects %s', (path) => {
     expect(parseAppReturnTo(path)).toBeUndefined();
   });

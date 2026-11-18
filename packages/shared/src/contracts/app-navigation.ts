@@ -26,6 +26,12 @@ const APP_PATHS = [
 /** The authorization server's request ids are URL-safe random strings. */
 export const CONNECT_REQUEST_ID = /^[A-Za-z0-9_-]{16,64}$/;
 
+/**
+ * A stored preview's id (ADR-0048 rule 1). The confirm page is
+ * `/confirm/<id>`: the id is the whole destination.
+ */
+export const CONFIRM_PREVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export { isUserScopedAppPath } from './account-navigation.js';
 
 /** Paddle transaction ids are `txn_` plus alphanumerics; keep a bound. */
@@ -56,6 +62,13 @@ export function parseAppReturnTo(value: unknown): string | undefined {
   }
   const rawPath = value.split(/[?#]/, 1)[0];
   if (url.origin !== 'https://declutrmail.invalid' || url.pathname !== rawPath) return undefined;
+  const [, previewId] = /^\/confirm\/([^/]+)$/.exec(url.pathname) ?? [];
+  if (previewId !== undefined) {
+    // Exactly the id: no query and no fragment rides through sign-in
+    // beside a request to change someone's email.
+    if (!CONFIRM_PREVIEW_ID.test(previewId) || url.search || url.hash) return undefined;
+    return `/confirm/${previewId}`;
+  }
   if (!APP_PATHS.includes(url.pathname) && !/^\/senders\/[a-zA-Z0-9_-]+$/.test(url.pathname))
     return undefined;
   if (

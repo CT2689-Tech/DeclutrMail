@@ -46,7 +46,7 @@ export type ErrorBoundary =
   | 'admin-security'
   | 'onboarding'
   | 'home'
-  // MCP connector consent page (`/connect/authorize`, ADR-0048).
+  // MCP connector pages (`/connect/authorize`, `/confirm/<id>`; ADR-0048).
   | 'connect';
 
 /** Closed set used both as the type union and the runtime allowlist. */

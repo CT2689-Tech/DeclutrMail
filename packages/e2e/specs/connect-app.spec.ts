@@ -1,9 +1,13 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { expect, test } from '@playwright/test';
 
-import { expect, test, type Page } from '@playwright/test';
-
+import {
+  authorizeUrl,
+  exchangeCode,
+  mcpRequest,
+  pkce,
+  signIn,
+  startApp,
+} from '../helpers/connector';
 import { dbConnect } from '../helpers/db';
 import { E2E_ENV } from '../helpers/env';
 import { BILLING_SEED } from '../helpers/seed-billing';
@@ -24,82 +28,8 @@ import { BILLING_SEED } from '../helpers/seed-billing';
 
 const API = E2E_ENV.apiUrl;
 
-interface TestApp {
-  clientId: string;
-  redirectUri: string;
-  /** The most recent callback the app received. */
-  callback: () => URL;
-  close: () => Promise<void>;
-}
-
-async function startApp(name: string): Promise<TestApp> {
-  let last: URL | null = null;
-  const server: Server = createServer((req, res) => {
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
-    // The browser also asks for /favicon.ico; only the callback counts.
-    if (url.pathname === '/callback') last = url;
-    res.setHeader('content-type', 'text/html');
-    res.end('<main><h1>App callback</h1></main>');
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  const port = (server.address() as AddressInfo).port;
-  // Registered with another port on purpose: a loopback app picks its
-  // port when the request is made (RFC 8252 §7.3).
-  const registration = await fetch(`${API}/oauth/register`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      client_name: name,
-      redirect_uris: ['http://127.0.0.1:1/callback'],
-      token_endpoint_auth_method: 'none',
-    }),
-  });
-  expect(registration.status).toBe(201);
-  const { client_id: clientId } = (await registration.json()) as { client_id: string };
-  return {
-    clientId,
-    redirectUri: `http://127.0.0.1:${port}/callback`,
-    callback: () => {
-      if (!last) throw new Error('The app received no callback.');
-      return last;
-    },
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
-  };
-}
-
-function authorizeUrl(app: TestApp, challenge: string, state: string, scope = 'read cleanup') {
-  return `${API}/oauth/authorize?${new URLSearchParams({
-    client_id: app.clientId,
-    response_type: 'code',
-    redirect_uri: app.redirectUri,
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
-    state,
-    scope,
-  })}`;
-}
-
-function pkce() {
-  const verifier = randomBytes(32).toString('base64url');
-  return { verifier, challenge: createHash('sha256').update(verifier).digest('base64url') };
-}
-
-async function signIn(page: Page) {
-  // The dev test login stands in for Google; it sets the real session cookies.
-  await page.request.get(
-    `${API}/api/auth/dev/login?email=${encodeURIComponent(E2E_ENV.loginEmail)}`,
-    {
-      maxRedirects: 0,
-    },
-  );
-}
-
-const callMcp = (token: string) =>
-  fetch(`${API}/mcp`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping' }),
-  });
+/** The smallest valid MCP call: an authenticated app is answered 200. */
+const callMcp = (token: string) => mcpRequest(token, 'tools/list');
 
 async function removeConnections() {
   const sql = dbConnect();
@@ -159,19 +89,7 @@ test('a signed-out person signs in, approves, and can disconnect the app in Sett
     const callback = app.callback();
     expect(callback.searchParams.get('state')).toBe('approve-journey');
     expect(callback.searchParams.get('iss')).toBe(API);
-    const exchange = await fetch(`${API}/oauth/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code: callback.searchParams.get('code') ?? '',
-        code_verifier: proof.verifier,
-        client_id: app.clientId,
-        redirect_uri: app.redirectUri,
-      }),
-    });
-    expect(exchange.status).toBe(200);
-    const tokens = (await exchange.json()) as { access_token: string; scope: string };
+    const tokens = await exchangeCode(app, proof.verifier);
     expect(tokens.scope).toBe('read cleanup');
     expect((await callMcp(tokens.access_token)).status).toBe(200);
 

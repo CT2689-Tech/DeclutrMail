@@ -126,10 +126,15 @@ function inventoryDisplayItem(item: {
   transmittedTo: readonly GmailDataProcessor[];
   removalTrigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 }) {
+  // `ai-assistant` is not a download: it marks what an app connected
+  // through Settings → Connected apps can read, so it gets a sentence of
+  // its own instead of appearing in the list of export formats.
+  const downloads = item.exportedIn.filter((format) => format !== 'ai-assistant');
   const exportDetail =
-    item.exportedIn.length > 0
-      ? `Included in: ${item.exportedIn.join(', ')}.`
-      : 'Not currently included in a data export.';
+    (downloads.length > 0
+      ? `Included in: ${downloads.join(', ')}.`
+      : 'Not currently included in a data export.') +
+    (item.exportedIn.includes('ai-assistant') ? ' An app you connect can read it.' : '');
   const processorDetail = item.transmittedTo
     .map((processor) => PROCESSOR_SENTENCE[processor])
     .join('');

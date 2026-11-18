@@ -17,7 +17,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
+import {
+  GMAIL_DATA_INVENTORY,
+  PRIVACY_BADGE_HEADLINE,
+  PRIVACY_STORAGE_ITEMS,
+} from '@declutrmail/shared';
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { Me } from '@/features/auth/api/use-me';
@@ -239,6 +243,31 @@ describe('PrivacyDataView', () => {
     expect(screen.getByText(WS2_COPY.liveFix.privacy.inventory.auditLabel)).toBeInTheDocument();
     expect(credentialRow).toHaveTextContent('Not currently included in a data export.');
     expect(screen.queryByText(/we don’t store them/i)).not.toBeInTheDocument();
+  });
+
+  it('says in words what a connected app can read, and never prints the internal channel name', () => {
+    const { container } = renderView();
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+    // The registry marks these with an internal id; a person reads a sentence.
+    expect(text).not.toContain('ai-assistant');
+    // Exactly the datasets the registry marks say so — no more, no fewer.
+    const marked = GMAIL_DATA_INVENTORY.filter((item) =>
+      (item.exportedIn as readonly string[]).includes('ai-assistant'),
+    );
+    expect(marked.length).toBeGreaterThan(5);
+    expect(text.split('An app you connect can read it.').length - 1).toBe(marked.length);
+    expect(text).toContain('Included in: json, csv. An app you connect can read it.');
+    // The OAuth credential is never marked, so the sentence must not appear there.
+    const credentialRow = screen
+      .getByText(WS2_COPY.liveFix.privacy.inventory.oauthLabel)
+      .closest('div');
+    expect(credentialRow).not.toHaveTextContent('An app you connect can read it.');
+    // The stored requests themselves are listed, with their real retention.
+    const requestsRow = screen
+      .getByText('Cleanup requests from a connected app, waiting for your confirmation')
+      .closest('div');
+    expect(requestsRow).toHaveTextContent('deleted within two days of expiring');
+    expect(requestsRow).toHaveTextContent('Not currently included in a data export.');
   });
 
   it('describes the actual mailbox datasets without promising a full account export', () => {

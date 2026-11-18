@@ -20,6 +20,7 @@ const expected = new Map([
   ['manual-delete-previews.spec.ts', 4],
   ['reconnect-action-feedback.spec.ts', 1],
   ['connect-app.spec.ts', 3],
+  ['confirm-request.spec.ts', 3],
 ]);
 const report = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const counts = new Map();
