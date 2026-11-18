@@ -79,6 +79,12 @@ export const actionPreviews = pgTable(
     state: text('state').$type<ActionPreviewState>().notNull().default('pending'),
     expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true, mode: 'date' }),
+    /**
+     * Set by the one request that is starting the action for a confirmed
+     * preview. A lease, not a lock: it lapses after two minutes, so a
+     * request that died holding it does not strand the preview.
+     */
+    claimedAt: timestamp('claimed_at', { withTimezone: true, mode: 'date' }),
     appliedAt: timestamp('applied_at', { withTimezone: true, mode: 'date' }),
     /** The action or batch the confirmation started, when the verb starts one. */
     actionId: uuid('action_id').references(() => actionJobs.id, { onDelete: 'set null' }),

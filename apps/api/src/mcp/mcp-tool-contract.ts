@@ -223,7 +223,11 @@ const outputs = {
   apply_cleanup: z.object({
     mailbox: mailboxOut(),
     preview_id: tag(z.string(), 'action-previews'),
-    status: tag(z.enum(['needs_confirmation', 'applied']), 'action-previews'),
+    /**
+     * `in_progress`: the person confirmed and the action is being started
+     * by another request; call again in a few seconds.
+     */
+    status: tag(z.enum(['needs_confirmation', 'in_progress', 'applied']), 'action-previews'),
     /** Set while `needs_confirmation`. */
     confirm_url: tag(z.string().nullable(), 'not-gmail-data'),
     expires_at: tag(iso(), 'action-previews'),
@@ -365,7 +369,7 @@ export const MCP_TOOLS = {
   apply_cleanup: spec('apply_cleanup', {
     title: 'Apply a confirmed cleanup',
     description:
-      'Apply a preview the person has confirmed in DeclutrMail. Until they confirm, this returns needs_confirmation and the confirm_url, and changes nothing. Calling it again returns the same result.',
+      'Apply a preview the person has confirmed in DeclutrMail. Until they confirm, this returns needs_confirmation and the confirm_url, and changes nothing. Calling it again returns the same result; in_progress means it is starting, so call again shortly.',
     scope: 'cleanup',
     budget: 'write',
     annotations: {

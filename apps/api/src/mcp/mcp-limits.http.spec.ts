@@ -103,17 +103,24 @@ describe('MCP connector — rate ceilings', () => {
     const looping = await connectedClient(harness, ada);
     const args = { verb: 'keep', sender_ids: [shop.id] };
 
-    for (let call = 0; call < 60; call += 1) {
-      expect((await looping.call('preview_cleanup', args)).isError, `call ${call}`).toBe(false);
+    // The bucket refills one a second while this runs, so the refusal is
+    // looked for rather than expected on exactly the 61st call.
+    let refused: Awaited<ReturnType<typeof looping.call>> | undefined;
+    let accepted = 0;
+    for (let call = 0; call < 80 && !refused; call += 1) {
+      const answer = await looping.call('preview_cleanup', args);
+      if (answer.isError) refused = answer;
+      else accepted += 1;
     }
-    const refused = await looping.call('preview_cleanup', args);
-    expect(refused.error.code).toBe('RATE_LIMITED');
-    expect(refused.error.retry_after_seconds).toBeGreaterThan(0);
+    expect(accepted).toBeGreaterThanOrEqual(60);
+    expect(refused?.error.code).toBe('RATE_LIMITED');
+    expect(refused?.error.retry_after_seconds).toBeGreaterThan(0);
     const rows = await harness.db
       .select({ id: actionPreviews.id })
       .from(actionPreviews)
       .where(eq(actionPreviews.userId, ada.userId));
-    expect(rows).toHaveLength(60);
+    // A refused call stores nothing.
+    expect(rows).toHaveLength(accepted);
 
     // A second app of the same person has its own ceiling.
     const other = await connectedClient(harness, ada);

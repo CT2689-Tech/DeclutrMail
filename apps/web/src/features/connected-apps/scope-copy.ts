@@ -5,10 +5,15 @@ import type { ConnectorScope } from '@declutrmail/shared/contracts';
  * (docs/spec/mcp-connector.md §4). One line each, shown on the consent
  * page and beside each connected app. The second line names the verbs:
  * the house glossary keeps "clean" out of product copy.
+ *
+ * `cleanup` says everything its tools can do, because this is where the
+ * person agrees to it: the five verbs each wait for a confirmation in
+ * DeclutrMail; protecting a sender and undoing a change do not.
  */
 export const SCOPE_LABEL: Record<ConnectorScope, string> = {
   read: 'See your senders and subject lines',
-  cleanup: 'Archive, Unsubscribe, Later or Delete, with your confirmation',
+  cleanup:
+    'Keep, Archive, Unsubscribe, Later or Delete, with your confirmation. Protect a sender or undo a change.',
 };
 
 /** Stable order: reading before changing. */

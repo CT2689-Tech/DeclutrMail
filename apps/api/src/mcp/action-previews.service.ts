@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
 import {
+  accountDeletionRequests,
   actionPreviews,
   mailboxAccounts,
   oauthClients,
@@ -25,6 +26,12 @@ import { exceptionCode, McpToolError } from './mcp-tool-errors.js';
 
 /** How long a person has to confirm (spec §3). */
 export const PREVIEW_TTL_MS = 15 * 60 * 1000;
+/**
+ * How long a request that lost the race to start a confirmed preview
+ * waits for the winner before answering "still starting".
+ */
+const CLAIM_WAIT_MS = 3_000;
+const CLAIM_POLL_MS = 150;
 /** Keep writes one decision per sender; this many at a time. */
 const KEEP_CONCURRENCY = 8;
 
@@ -174,6 +181,8 @@ export class ActionPreviewsService {
         mailboxEmail: mailboxAccounts.providerAccountId,
         mailboxStatus: mailboxAccounts.status,
         appName: oauthClients.clientName,
+        // The database's clock, the one every UPDATE below is judged by.
+        pastExpiry: sql<boolean>`${actionPreviews.expiresAt} <= now()`,
       })
       .from(actionPreviews)
       .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, actionPreviews.mailboxAccountId))
@@ -182,14 +191,32 @@ export class ActionPreviewsService {
         and(eq(oauthGrants.id, actionPreviews.grantId), isNull(oauthGrants.revokedAt)),
       )
       .innerJoin(oauthClients, eq(oauthClients.clientId, oauthGrants.clientId))
-      .where(and(eq(actionPreviews.id, previewId), eq(actionPreviews.userId, userId)))
+      .where(
+        and(
+          eq(actionPreviews.id, previewId),
+          eq(actionPreviews.userId, userId),
+          // The same second line the token lookup has: an account on its
+          // way out confirms nothing, even if its grant were never revoked.
+          notExists(
+            this.db
+              .select({ id: accountDeletionRequests.id })
+              .from(accountDeletionRequests)
+              .where(
+                and(
+                  eq(accountDeletionRequests.userId, actionPreviews.userId),
+                  inArray(accountDeletionRequests.status, ['pending', 'executing']),
+                ),
+              ),
+          ),
+        ),
+      )
       .limit(1);
     if (!row) return null;
     return {
       preview: row.preview,
       mailboxEmail: row.mailboxEmail,
       appName: row.appName,
-      expired: row.preview.state !== 'applied' && row.preview.expiresAt.getTime() <= Date.now(),
+      expired: row.preview.state !== 'applied' && row.pastExpiry === true,
       mailboxConnected: row.mailboxStatus === 'active',
     };
   }
@@ -250,7 +277,15 @@ export class ActionPreviewsService {
     return this.applyConfirmed(previewId, owner.userId);
   }
 
-  /** A confirmed preview: enqueue (idempotent) and record what happened. */
+  /**
+   * A confirmed preview: start its action and record what happened.
+   *
+   * One request at a time. Jobs are safe to enqueue twice (the key makes
+   * a replay), but Keep and an email unsubscribe write a decision with no
+   * key, so two requests running this together — a click and the
+   * assistant's own `apply_cleanup` — would each record one. The claim is
+   * a lease on the row, taken and judged by the database.
+   */
   private async applyConfirmed(previewId: string, userId: string): Promise<PreviewDetail> {
     const found = await this.findOwned(previewId, userId);
     if (!found) throw notFound();
@@ -264,18 +299,67 @@ export class ActionPreviewsService {
     // or the retention sweep; this is what makes them unusable at once.
     if (!found.mailboxConnected) throw mailboxDisconnected();
 
-    const { result, actionId } = await this.execute(preview);
-    // Guarded on `confirmed`: of two requests finishing together, one
-    // writes the outcome and the other finds it already written. Both
-    // carried the same idempotency key, so both describe one action.
-    if (actionId) await this.recordOrigin(preview, actionId);
+    const [claimed] = await this.db
+      .update(actionPreviews)
+      .set({ claimedAt: sql`now()` })
+      .where(
+        and(
+          eq(actionPreviews.id, preview.id),
+          eq(actionPreviews.state, 'confirmed'),
+          // Not the read above: this is what refuses a start after expiry.
+          gt(actionPreviews.expiresAt, sql`now()`),
+          or(
+            isNull(actionPreviews.claimedAt),
+            lt(actionPreviews.claimedAt, sql`now() - interval '2 minutes'`),
+          ),
+        ),
+      )
+      .returning({ id: actionPreviews.id });
+    if (!claimed) return this.waitForApplied(previewId, userId);
+
+    let outcome: Awaited<ReturnType<ActionPreviewsService['execute']>>;
+    try {
+      outcome = await this.execute(preview);
+      if (outcome.actionId) await this.recordOrigin(preview, outcome.actionId);
+    } catch (error) {
+      // Give the claim back, so a retry does not wait out the lease. A
+      // failure to do so only delays that retry; the lease lapses.
+      await this.db
+        .update(actionPreviews)
+        .set({ claimedAt: null })
+        .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
+        .catch(() => undefined);
+      throw error;
+    }
     await this.db
       .update(actionPreviews)
-      .set({ state: 'applied', appliedAt: sql`now()`, actionId, result })
+      .set({
+        state: 'applied',
+        appliedAt: sql`now()`,
+        actionId: outcome.actionId,
+        result: outcome.result,
+      })
       .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')));
     const applied = await this.findOwned(previewId, userId);
     if (!applied) throw notFound();
     return applied;
+  }
+
+  /**
+   * Another request holds the claim. Wait briefly for it to finish, then
+   * answer with whatever is true: `applied`, or still `confirmed` — which
+   * the tool reports as "in progress" and the page as "press to retry".
+   */
+  private async waitForApplied(previewId: string, userId: string): Promise<PreviewDetail> {
+    const deadline = Date.now() + CLAIM_WAIT_MS;
+    for (;;) {
+      const found = await this.findOwned(previewId, userId);
+      if (!found) throw notFound();
+      if (found.preview.state === 'applied') return found;
+      if (found.expired) throw expired(found.preview);
+      if (Date.now() >= deadline) return found;
+      await new Promise((resolve) => setTimeout(resolve, CLAIM_POLL_MS));
+    }
   }
 
   /**

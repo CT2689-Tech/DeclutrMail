@@ -344,8 +344,12 @@ export class McpToolsService {
     return {
       mailbox: mailboxEmail,
       preview_id: preview.id,
-      status: result ? 'applied' : 'needs_confirmation',
-      confirm_url: result ? null : confirmUrl(preview.id),
+      status: result
+        ? 'applied'
+        : preview.state === 'confirmed'
+          ? 'in_progress'
+          : 'needs_confirmation',
+      confirm_url: preview.state === 'pending' ? confirmUrl(preview.id) : null,
       expires_at: preview.expiresAt.toISOString(),
       action_id: result?.handle === 'action' ? preview.actionId : null,
       batch_id: result?.handle === 'batch' ? preview.actionId : null,

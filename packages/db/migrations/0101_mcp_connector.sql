@@ -125,6 +125,9 @@ CREATE TABLE action_previews (
   state text NOT NULL DEFAULT 'pending',
   expires_at timestamptz NOT NULL,
   confirmed_at timestamptz,
+  -- Set by the one request that is starting the action for a confirmed
+  -- preview, so two requests arriving together cannot both start it.
+  claimed_at timestamptz,
   applied_at timestamptz,
   -- The action or batch the confirmation started, when the verb starts one.
   action_id uuid REFERENCES action_jobs(id) ON DELETE SET NULL,

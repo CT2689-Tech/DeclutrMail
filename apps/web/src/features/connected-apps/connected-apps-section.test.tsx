@@ -386,10 +386,19 @@ describe('SCOPE_LABEL', () => {
   it('says reading covers senders and subject lines, and changes need confirmation', () => {
     expect(SCOPE_LABEL.read).toContain('senders');
     expect(SCOPE_LABEL.read).toContain('subject lines');
-    for (const verb of ['Archive', 'Unsubscribe', 'Later', 'Delete']) {
+    for (const verb of ['Keep', 'Archive', 'Unsubscribe', 'Later', 'Delete']) {
       expect(SCOPE_LABEL.cleanup).toContain(verb);
     }
     expect(SCOPE_LABEL.cleanup).toContain('with your confirmation');
+  });
+
+  it('names what the cleanup scope can do WITHOUT a confirmation', () => {
+    // protect_sender and undo run on the app's word; consent is where the
+    // person is told so.
+    const [confirmed, unconfirmed] = SCOPE_LABEL.cleanup.split('with your confirmation');
+    expect(unconfirmed).toContain('Protect');
+    expect(unconfirmed).toContain('undo');
+    expect(confirmed).not.toMatch(/protect|undo/i);
   });
 });
 
