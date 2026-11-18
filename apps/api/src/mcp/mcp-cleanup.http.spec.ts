@@ -189,7 +189,10 @@ describe('MCP connector — previews, confirmation and apply', () => {
       });
       // Emails are 28–32 days old; three are older than 30.
       expect(answer.data.email_count).toBe(3);
-      expect(answer.data.destination).toBe('Email in Inbox moves to Gmail Trash.');
+      // Delete is the one verb a reader expects to stop the sender; it does not.
+      expect(answer.data.destination).toBe(
+        'Email in Inbox moves to Gmail Trash. Future email is unchanged.',
+      );
       expect(answer.data.undo).toContain('Gmail Trash keeps it for up to 30 days');
     });
 

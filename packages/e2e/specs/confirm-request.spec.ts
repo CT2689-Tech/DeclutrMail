@@ -232,7 +232,7 @@ test('an assistant prepares an Archive, only the person can confirm it, and it i
   await main.getByRole('button', { name: 'Archive' }).click();
   await expect(main.getByRole('heading', { level: 1 })).toHaveText('Confirmed');
   await expect(main.getByRole('status')).toHaveText(
-    'Archive started for 1 sender. It covers 2 emails. It is running now.',
+    'Archive started for 1 sender. It covers 2 emails.',
   );
   await expect(main.getByRole('link', { name: 'Open Activity' })).toHaveAttribute(
     'href',

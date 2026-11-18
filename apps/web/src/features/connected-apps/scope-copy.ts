@@ -13,7 +13,7 @@ import type { ConnectorScope } from '@declutrmail/shared/contracts';
 export const SCOPE_LABEL: Record<ConnectorScope, string> = {
   read: 'See your senders and subject lines',
   cleanup:
-    'Keep, Archive, Unsubscribe, Later or Delete, with your confirmation. Protect a sender or undo a change.',
+    'Keep, Archive, Unsubscribe, Later or Delete, with your confirmation. Protect senders and undo changes without asking.',
 };
 
 /** Stable order: reading before changing. */

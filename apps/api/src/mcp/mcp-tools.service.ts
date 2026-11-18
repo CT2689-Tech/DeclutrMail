@@ -207,7 +207,9 @@ export class McpToolsService {
         verb: preview.verb,
         sender_count: preview.senderIds.length,
         email_count: preview.emailCount,
-        destination: facts.destination,
+        // With the lines a person would otherwise assume the opposite of
+        // (Delete does not stop future email).
+        destination: [facts.destination, ...facts.alsoTrue].join(' '),
         undo: facts.undo,
         skipped: skipped.map((skip) => ({
           sender_id: skip.senderId,

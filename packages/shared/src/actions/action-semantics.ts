@@ -370,23 +370,37 @@ export function staticActionPreviewCopy(verb: ActionVerb): string {
 
 /**
  * What a stored preview owes a person beyond its count (CLAUDE.md §2.3):
- * where the email goes, and how to undo — each once. Shared by the MCP
- * connector's tool results and DeclutrMail's confirm page, so the
- * assistant and the page describe one preview in the same words.
+ * where the email goes, and how to undo — each once — plus the "what does
+ * not change" lines the registry marks for previews (`inPreview`), which
+ * exist only where a reader would plausibly fear the opposite: Delete
+ * does not stop future email; Keep is not Protect.
+ *
+ * Shared by the MCP connector's tool results and DeclutrMail's confirm
+ * page, so the assistant and the page describe one preview in the same
+ * words.
  */
-export function actionPreviewFacts(verb: ActionVerb): { destination: string; undo: string } {
+export function actionPreviewFacts(verb: ActionVerb): {
+  destination: string;
+  undo: string;
+  alsoTrue: readonly string[];
+} {
   const semantics = ACTION_SEMANTICS[verb];
-  const destination =
-    semantics.currentMail.scope === 'none'
-      ? semantics.futureMail.summary
-      : semantics.currentMail.summary;
+  const actsOnFutureMail = semantics.currentMail.scope === 'none';
+  const destination = actsOnFutureMail
+    ? semantics.futureMail.summary
+    : semantics.currentMail.summary;
   const undo = [
     semantics.activityUndo.kind === 'none'
       ? semantics.activityUndo.summary
       : activityUndoSummary(UNIFORM_UNDO_WINDOW_DAYS, null, semantics.activityUndo.summary),
     ...(semantics.providerRecovery.kind === 'none' ? [] : [semantics.providerRecovery.summary]),
   ].join(' ');
-  return { destination, undo };
+  const alsoTrue = [
+    // Already the destination line when the verb acts on future email.
+    ...(!actsOnFutureMail && semantics.futureMail.inPreview ? [semantics.futureMail.summary] : []),
+    ...semantics.unchanged.filter((fact) => fact.inPreview).map((fact) => fact.summary),
+  ];
+  return { destination, undo, alsoTrue };
 }
 
 /**

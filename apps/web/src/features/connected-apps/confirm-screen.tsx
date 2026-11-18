@@ -26,7 +26,8 @@ import { appDisplayName } from './scope-copy';
 const { color, font, text } = tokens;
 
 /** Why the last press did not go through — each maps to one sentence pair. */
-export type ConfirmFailure = 'limit' | 'mailbox' | 'unsubscribe_off' | 'not_started' | 'unknown';
+export type ConfirmFailure =
+  'limit' | 'plan' | 'mailbox' | 'unsubscribe_off' | 'not_started' | 'unknown';
 
 export type ConfirmCardState =
   | { kind: 'loading' }
@@ -87,8 +88,9 @@ const BUTTON_TONE: Record<VerbTone, ButtonTone> = {
 };
 
 const FAILURE_COPY: Record<ConfirmFailure, string> = {
-  limit: 'You have reached this month’s limit on your plan. Upgrade to continue.',
-  mailbox: 'This Gmail account is not connected to DeclutrMail. Reconnect it in Settings.',
+  limit: 'You have reached this month’s limit on your plan.',
+  plan: 'Your plan does not include this.',
+  mailbox: 'This Gmail account is not connected to DeclutrMail.',
   unsubscribe_off: 'Unsubscribe requests cannot be sent right now. Try again later.',
   not_started: 'DeclutrMail could not start this. Try again in a minute.',
   unknown: 'That did not go through. Try again.',
@@ -96,6 +98,7 @@ const FAILURE_COPY: Record<ConfirmFailure, string> = {
 
 const FAILURE_LINK: Partial<Record<ConfirmFailure, { href: string; label: string }>> = {
   limit: { href: '/billing', label: 'See plans' },
+  plan: { href: '/billing', label: 'See plans' },
   mailbox: { href: '/settings', label: 'Open Settings' },
 };
 
@@ -146,7 +149,9 @@ export function gmailComposeHref(url: string | null): string | null {
     parsed.hostname === 'mail.google.com' &&
     parsed.port === '' &&
     parsed.username === '' &&
-    parsed.password === '';
+    parsed.password === '' &&
+    parsed.pathname === '/mail/' &&
+    parsed.searchParams.get('view') === 'cm';
   return isGmail ? parsed.href : null;
 }
 
@@ -183,8 +188,8 @@ export function ConfirmCard({ state }: { state: ConfirmCardState }) {
             {state.confirmedEarlier ? (
               <>
                 <p style={{ ...mutedStyle, marginTop: 8 }}>
-                  It was confirmed, but DeclutrMail has no record that it started. Check Activity
-                  before asking your assistant again.
+                  It was confirmed but never recorded as started. Check Activity before asking
+                  again.
                 </p>
                 <p style={{ margin: '16px 0 0' }}>
                   <Link href="/activity" style={linkStyle}>
@@ -212,6 +217,9 @@ export function ConfirmCard({ state }: { state: ConfirmCardState }) {
     </main>
   );
 }
+
+/** The part of Later's shared destination line that a known wake time replaces. */
+const LATER_PLACEHOLDER = 'until the time you pick';
 
 /** Names shown before the full list has to be opened. */
 const NAMED_SENDERS = 5;
@@ -276,6 +284,12 @@ function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'rea
   const verb = verbById(preview.verb);
   const facts = actionPreviewFacts(preview.verb);
   const failureLink = failure ? FAILURE_LINK[failure] : undefined;
+  // Later's shared line ends "until the time you pick"; here the time is
+  // already picked. If that wording ever changes, fall back to two lines.
+  const laterWhen =
+    preview.wakeAt !== null && facts.destination.includes(LATER_PLACEHOLDER)
+      ? formatWhen(preview.wakeAt, true)
+      : null;
   return (
     <>
       <h1 style={headingStyle}>
@@ -289,7 +303,7 @@ function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'rea
         // Pressed earlier, and the server has no result on record. Whether
         // any of it began is not something this page can see.
         <p role="status" style={{ ...mutedStyle, marginTop: 12 }}>
-          We could not confirm this started. Press {verb.label} to try again.
+          Confirmed earlier, with no record that it started. Press {verb.label} to try again.
         </p>
       )}
 
@@ -303,10 +317,20 @@ function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'rea
             {preview.olderThanDays !== null && `, older than ${preview.olderThanDays} days`}
           </li>
         )}
-        <li>{facts.destination}</li>
-        {preview.wakeAt !== null && (
-          <li>Returns to your inbox {formatWhen(preview.wakeAt, true)}.</li>
+        {laterWhen === null ? (
+          <>
+            <li>{facts.destination}</li>
+            {preview.wakeAt !== null && (
+              <li>Returns to your inbox {formatWhen(preview.wakeAt, true)}.</li>
+            )}
+          </>
+        ) : (
+          // The assistant picked the time, so say the time — once.
+          <li>{facts.destination.replace(LATER_PLACEHOLDER, `until ${laterWhen}`)}</li>
         )}
+        {facts.alsoTrue.map((line) => (
+          <li key={line}>{line}</li>
+        ))}
         <li>{facts.undo}</li>
       </ul>
 
@@ -325,6 +349,8 @@ function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'rea
       )}
 
       <div
+        // The button's label changes to "Confirming…"; say so to a screen reader.
+        aria-live="polite"
         style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 16, marginTop: 24 }}
       >
         <Button
@@ -383,13 +409,13 @@ function Receipt({
         : `${verb.label} ${began} for ${appliedSenders.toLocaleString('en-US')} of ${plural(preview.senderCount, 'sender', 'senders')}.`;
   return (
     <>
-      <h1 style={headingStyle}>Confirmed</h1>
+      {/* "Confirmed" would read as success when no sender was acted on. */}
+      <h1 style={headingStyle}>{appliedSenders === 0 ? 'Nothing was started' : 'Confirmed'}</h1>
       <p role="status" style={{ margin: '8px 0 0', fontSize: text.md, lineHeight: 1.6 }}>
         {summary}
         {requestedEmails > 0 && ` It covers ${plural(requestedEmails, 'email', 'emails')}.`}
+        {/* Only what the server recorded: a queued job is not "running". */}
         {outcome.actionStatus === 'done' && ' It has finished.'}
-        {(outcome.actionStatus === 'queued' || outcome.actionStatus === 'executing') &&
-          ' It is running now.'}
       </p>
 
       {skipped.length > 0 && (
@@ -418,10 +444,7 @@ function Receipt({
         </>
       )}
 
-      <p style={{ ...mutedStyle, marginTop: 20 }}>
-        Activity shows what changed. You can go back to your assistant.
-      </p>
-      <p style={{ margin: '12px 0 0' }}>
+      <p style={{ margin: '20px 0 0' }}>
         <Link href="/activity" style={linkStyle}>
           Open Activity
         </Link>
@@ -446,6 +469,7 @@ const isExpired = (error: unknown): boolean =>
 function failureOf(error: unknown): ConfirmFailure {
   const code = apiErrorCode(error);
   if (code === 'FREE_CAP_REACHED') return 'limit';
+  if (code === 'ACTION_TIER_REQUIRED') return 'plan';
   if (code === 'NO_ACTIVE_MAILBOX') return 'mailbox';
   if (code === 'UNSUB_SEND_DISABLED') return 'unsubscribe_off';
   if (status(error) === 503) return 'not_started';
@@ -479,8 +503,13 @@ export function ConfirmScreen({ previewId }: { previewId: string }) {
     // `confirmedAt` is what the server recorded when the request was read:
     // a press that was itself refused as expired was never recorded.
     state = { kind: 'expired', confirmedEarlier: preview.data.confirmedAt !== null };
-  } else if (preview.data.state === 'applied' && preview.data.outcome !== null) {
-    state = { kind: 'applied', preview: preview.data, outcome: preview.data.outcome };
+  } else if (preview.data.state === 'applied') {
+    // The server always sends what an applied request did. If it ever did
+    // not, the page must not offer the verb again.
+    state =
+      preview.data.outcome === null
+        ? { kind: 'error', onRetry: () => void preview.refetch() }
+        : { kind: 'applied', preview: preview.data, outcome: preview.data.outcome };
   } else {
     state = {
       kind: 'ready',

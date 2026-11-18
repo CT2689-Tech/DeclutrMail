@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ActionPreviewOutcome, ActionPreviewView } from '@declutrmail/shared/contracts';
 
 import { installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
@@ -182,7 +182,19 @@ describe('ConfirmCard — the request', () => {
       dateStyle: 'medium',
       timeStyle: 'short',
     }).format(new Date(wakeAt));
-    expect(items()).toContain(`Returns to your inbox ${when}.`);
+    // One line with the time the assistant picked — not the shared
+    // "until the time you pick", and not a second line saying it again.
+    expect(items()).toContain(`Moves to Gmail’s DeclutrMail/Later label until ${when}.`);
+    expect(bodyText()).not.toContain('the time you pick');
+    expect(bodyText()).not.toContain('Returns to your inbox');
+  });
+
+  it('Delete says future email is unchanged; Archive does not need to', () => {
+    renderReady(view({ verb: 'delete' }));
+    expect(items()).toContain('Future email is unchanged.');
+    cleanup();
+    renderReady(view({ verb: 'archive' }));
+    expect(bodyText()).not.toContain('Future email is unchanged.');
   });
 
   it('does not invent a name for an app that registered without one', () => {
@@ -210,7 +222,7 @@ describe('ConfirmCard — the request', () => {
   it('a request confirmed earlier that has no result says so, and the verb retries it', () => {
     renderReady(view({ state: 'confirmed' }));
     expect(screen.getByRole('status').textContent).toBe(
-      'We could not confirm this started. Press Archive to try again.',
+      'Confirmed earlier, with no record that it started. Press Archive to try again.',
     );
     expect(screen.getByRole('button', { name: 'Archive' })).toBeTruthy();
   });
@@ -232,12 +244,9 @@ describe('ConfirmCard — the request', () => {
   });
 
   it.each([
-    ['limit', 'You have reached this month’s limit on your plan. Upgrade to continue.', '/billing'],
-    [
-      'mailbox',
-      'This Gmail account is not connected to DeclutrMail. Reconnect it in Settings.',
-      '/settings',
-    ],
+    ['limit', 'You have reached this month’s limit on your plan.', '/billing'],
+    ['plan', 'Your plan does not include this.', '/billing'],
+    ['mailbox', 'This Gmail account is not connected to DeclutrMail.', '/settings'],
     ['unsubscribe_off', 'Unsubscribe requests cannot be sent right now. Try again later.', null],
     ['not_started', 'DeclutrMail could not start this. Try again in a minute.', null],
     ['unknown', 'That did not go through. Try again.', null],
@@ -247,8 +256,10 @@ describe('ConfirmCard — the request', () => {
       renderReady(PREVIEW, { failure: failure satisfies ConfirmFailure });
       const alert = screen.getByRole('alert');
       expect(alert.textContent).toContain(copy);
-      // Cause + next step: two sentences, no more.
-      expect(copy.split(/(?<=\.)\s/)).toHaveLength(2);
+      // Cause + next step, two sentences at most: either a second
+      // sentence or a link is the next step, never both.
+      const sentences = copy.split(/(?<=\.)\s/).length;
+      expect(sentences).toBe(href === null ? 2 : 1);
       expect(alert.querySelector('a')?.getAttribute('href') ?? null).toBe(href);
       expect(unavailable(screen.getByRole('button', { name: 'Archive' }))).toBe(false);
     },
@@ -367,17 +378,29 @@ describe('ConfirmCard — states with nothing to press', () => {
 });
 
 describe('ConfirmCard — the receipt', () => {
-  it('says what was started, that it is running, and where to see it', () => {
+  it('says what was started and where to see it, and does not call a queued job running', () => {
     renderReceipt(applied());
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Confirmed');
     expect(screen.getByRole('status').textContent).toBe(
-      'Archive started for 7 senders. It covers 412 emails. It is running now.',
+      'Archive started for 7 senders. It covers 412 emails.',
     );
     expect(screen.getByRole('link', { name: 'Open Activity' }).getAttribute('href')).toBe(
       '/activity',
     );
-    expect(bodyText()).toContain('You can go back to your assistant.');
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('does not title it "Confirmed" when no sender was acted on', () => {
+    renderReceipt(
+      applied({
+        appliedSenders: 0,
+        requestedEmails: 0,
+        actionStatus: null,
+        skipped: [{ senderId: 's-1', name: 'My Bank', reason: 'protected', composeUrl: null }],
+      }),
+    );
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Nothing was started');
+    expect(screen.getByRole('status').textContent).toBe('Archive was not started for any sender.');
   });
 
   it('says it has finished only when the server says so', () => {
@@ -507,19 +530,30 @@ describe('gmailComposeHref', () => {
     );
   });
 
+  // Each refused URL is a valid compose link in every other respect, so
+  // exactly one rule is what refuses it.
   it.each([
     ['null', null],
     ['an empty string', ''],
-    ['a relative path', '/mail/?view=cm'],
-    ['another host', 'https://evil.example/mail/'],
-    ['a look-alike host', 'https://mail.google.com.evil.example/'],
-    ['userinfo before the host', 'https://mail.google.com@evil.example/'],
-    ['credentials on the Gmail host', 'https://user:pass@mail.google.com/mail/'],
-    ['a username on the Gmail host', 'https://user@mail.google.com/mail/'],
-    ['a password on the Gmail host', 'https://:pass@mail.google.com/mail/'],
-    ['another Google host', 'https://accounts.google.com/'],
-    ['plain http', 'http://mail.google.com/mail/'],
-    ['another port', 'https://mail.google.com:8443/mail/'],
+    ['a relative path', '/mail/?view=cm&to=a%40b.example'],
+    ['another host', 'https://evil.example/mail/?view=cm&to=a%40b.example'],
+    ['a look-alike host', 'https://mail.google.com.evil.example/mail/?view=cm&to=a%40b.example'],
+    ['userinfo before the host', 'https://mail.google.com@evil.example/mail/?view=cm'],
+    [
+      'credentials on the Gmail host',
+      'https://user:pass@mail.google.com/mail/?view=cm&to=a%40b.example',
+    ],
+    ['a username on the Gmail host', 'https://user@mail.google.com/mail/?view=cm&to=a%40b.example'],
+    [
+      'a password on the Gmail host',
+      'https://:pass@mail.google.com/mail/?view=cm&to=a%40b.example',
+    ],
+    ['another Google host', 'https://accounts.google.com/mail/?view=cm&to=a%40b.example'],
+    ['plain http', 'http://mail.google.com/mail/?view=cm&to=a%40b.example'],
+    ['another port', 'https://mail.google.com:8443/mail/?view=cm&to=a%40b.example'],
+    ['a Gmail page that is not compose', 'https://mail.google.com/mail/?view=om&to=a%40b.example'],
+    ['a Gmail page with no view', 'https://mail.google.com/mail/#inbox'],
+    ['another Gmail path', 'https://mail.google.com/mail/u/0/?view=cm&to=a%40b.example'],
     ['javascript:', 'javascript:alert(1)'],
     ['data:', 'data:text/html,<script>alert(1)</script>'],
     ['mailto:', 'mailto:leave@club.example'],
@@ -579,6 +613,12 @@ describe('ConfirmScreen', () => {
     expect(screen.queryByText(EXPIRED)).toBeNull();
   });
 
+  it('never offers the verb again for an applied request, even one that arrives without its outcome', async () => {
+    renderScreen([read(view({ state: 'applied', outcome: null }))]);
+    expect(await screen.findByText('Could not load this request')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Archive' })).toBeNull();
+  });
+
   it('a request that expired before the page opened says expired, not unavailable', async () => {
     renderScreen([read(view({ state: 'expired' }))]);
     expect(await screen.findByText(EXPIRED)).toBeTruthy();
@@ -589,9 +629,7 @@ describe('ConfirmScreen', () => {
   it('a request that was confirmed but expired unrecorded points at Activity, not at "prepare it again" alone', async () => {
     renderScreen([read(view({ state: 'expired', confirmedAt: '2026-11-18T20:05:00.000Z' }))]);
     expect(await screen.findByText(EXPIRED)).toBeTruthy();
-    expect(
-      screen.getByText(/It was confirmed, but DeclutrMail has no record that it started/),
-    ).toBeTruthy();
+    expect(screen.getByText(/It was confirmed but never recorded as started/)).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Open Activity' }).getAttribute('href')).toBe(
       '/activity',
     );
@@ -733,6 +771,8 @@ describe('ConfirmScreen', () => {
 
   it.each([
     [402, 'FREE_CAP_REACHED', 'You have reached this month’s limit on your plan.', '/billing'],
+    // Not retryable: the answer is a plan, never "try again".
+    [402, 'ACTION_TIER_REQUIRED', 'Your plan does not include this.', '/billing'],
     [409, 'NO_ACTIVE_MAILBOX', 'This Gmail account is not connected to DeclutrMail.', '/settings'],
     [409, 'UNSUB_SEND_DISABLED', 'Unsubscribe requests cannot be sent right now.', null],
     [503, 'QUEUE_UNAVAILABLE', 'DeclutrMail could not start this.', null],
