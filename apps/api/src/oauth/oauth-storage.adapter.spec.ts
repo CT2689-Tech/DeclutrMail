@@ -166,6 +166,17 @@ describe('OAuth storage adapter', () => {
       expect(row!.metadata).not.toHaveProperty('client_secret');
       expect(await adapter('Client').find('client-2')).toMatchObject({ client_id: 'client-2' });
     });
+
+    it.each([
+      ['a null character', 'client\u0000'],
+      ['a space', 'client 2'],
+      ['an id longer than any this server issues', 'a'.repeat(65)],
+      ['an empty id', ''],
+    ])('answers "no such client" for %s without asking the database', async (_label, id) => {
+      // The id comes straight from an unauthenticated request; Postgres
+      // would refuse a null character with an error, not an empty result.
+      await expect(adapter('Client').find(id)).resolves.toBeUndefined();
+    });
   });
 
   describe('grants', () => {

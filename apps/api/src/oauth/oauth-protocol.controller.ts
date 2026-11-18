@@ -30,14 +30,17 @@ export const MCP_ROOT_ROUTES: readonly string[] = [
 
 /**
  * Per-IP abuse backstops, not user quotas. Hosted clients (Claude,
- * ChatGPT) reach these endpoints from a small set of addresses on behalf
- * of everyone using them, so the ceilings sit far above one person's
- * traffic. Registration is the tightest: it is the only unauthenticated
- * route that writes a row.
+ * ChatGPT) reach the discovery, registration and token endpoints from a
+ * small set of addresses on behalf of everyone using them, so those
+ * ceilings sit far above one person's traffic. Registration and the
+ * authorization endpoint are the tightest: each writes a row for a
+ * caller nobody has identified (a client, a parked request). The
+ * authorization endpoint is reached from a person's own browser.
  */
-const REGISTER_LIMIT = { bucket: 'default', limit: 60, windowSec: 60 } as const;
+const REGISTER_LIMIT = { bucket: 'default', limit: 20, windowSec: 60 } as const;
 const TOKEN_LIMIT = { bucket: 'default', limit: 600, windowSec: 60 } as const;
-const AUTHORIZE_LIMIT = { bucket: 'default', limit: 120, windowSec: 60 } as const;
+const AUTHORIZE_LIMIT = { bucket: 'default', limit: 30, windowSec: 60 } as const;
+const DISCOVERY_LIMIT = { bucket: 'default', limit: 120, windowSec: 60 } as const;
 
 /**
  * The OAuth protocol endpoints (spec §4), served by `oidc-provider`.
@@ -56,7 +59,7 @@ export class OAuthProtocolController {
   /** RFC 9728 — tells a client which authorization server guards `/mcp`. */
   @Get(['.well-known/oauth-protected-resource', '.well-known/oauth-protected-resource/mcp'])
   @Header('Cache-Control', 'public, max-age=300')
-  @RateLimit(AUTHORIZE_LIMIT)
+  @RateLimit(DISCOVERY_LIMIT)
   protectedResource(): OAuthProtectedResourceMetadata {
     const issuer = oauthIssuer();
     return buildOAuthProtectedResourceMetadata({
@@ -74,7 +77,7 @@ export class OAuthProtocolController {
 
   /** RFC 8414 — authorization-server metadata. */
   @Get('.well-known/oauth-authorization-server')
-  @RateLimit(AUTHORIZE_LIMIT)
+  @RateLimit(DISCOVERY_LIMIT)
   metadata(@Req() req: Request, @Res() res: Response): void {
     this.oauth.handle(req, res);
   }

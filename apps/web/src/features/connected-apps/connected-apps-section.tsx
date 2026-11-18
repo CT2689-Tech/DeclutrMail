@@ -1,12 +1,18 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, toast, tokens } from '@declutrmail/shared';
+import { Button, toast } from '@declutrmail/shared';
 import type { ConnectedApp } from '@declutrmail/shared/contracts';
 
 import { formatDate } from '@/features/account-deletion/date-format';
 import { useUserTimeZone } from '@/features/auth/api/use-me';
-import { SettingsGroup, SettingsRow, SettingsRowStatus } from '@/features/settings/settings-list';
+import {
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowStatus,
+  SettingsSaveError,
+} from '@/features/settings/settings-list';
+import { ApiError } from '@/lib/api/client';
 import {
   isConnectorUnavailable,
   useConnectedApps,
@@ -14,7 +20,7 @@ import {
 } from './api/use-connected-apps';
 import { SCOPE_LABEL, appDisplayName, orderedScopes } from './scope-copy';
 
-const { color, text } = tokens;
+const SECTION_ID = 'connected-apps';
 
 export type ConnectedAppsGroupState =
   { kind: 'error'; onRetry: () => void } | { kind: 'ready'; apps: readonly ConnectedApp[] };
@@ -25,10 +31,14 @@ export type ConnectedAppsGroupState =
  * (docs/spec/mcp-connector.md §4).
  *
  * States: error (+retry) · empty · list · disconnecting · disconnect
- * failed. There is no loading row: until the first answer arrives the
- * section may not exist at all (the connector can be switched off), so
- * it appears once, already in its real state. It owns its query, so a
- * failure here never decides whether the rest of Settings renders.
+ * unconfirmed. There is no loading row: until the first answer arrives
+ * the section may not exist at all (the connector can be switched off),
+ * so it appears once, already in its real state. It owns its query, so
+ * a failure here never decides whether the rest of Settings renders.
+ *
+ * One Disconnect runs at a time: while it is in flight every row's
+ * button is unavailable (still focusable), so a second click can never
+ * hide the first one's outcome.
  */
 export function ConnectedAppsGroup({
   state,
@@ -39,22 +49,24 @@ export function ConnectedAppsGroup({
 }: {
   state: ConnectedAppsGroupState;
   timeZone: string;
-  /** The grant whose Disconnect is in flight. */
+  /** The grant whose Disconnect is in flight; every row is locked meanwhile. */
   pendingId: string | null;
-  /** Set when the last Disconnect could not be confirmed. */
+  /** Set while the last Disconnect is unconfirmed and that app is still listed. */
   failedAppName: string | null;
   onDisconnect: (app: ConnectedApp) => void;
 }) {
   return (
     <SettingsGroup
-      id="connected-apps"
+      id={SECTION_ID}
       title="Connected apps"
       testId="settings-connected-apps"
       footer={
         failedAppName != null ? (
-          <p role="alert" style={{ margin: '8px 0 0', fontSize: text.sm, color: color.dangerText }}>
-            Could not disconnect {failedAppName}. Try again.
-          </p>
+          // An error does not prove the app is still connected: the server
+          // can revoke it before the response is lost.
+          <SettingsSaveError>
+            Could not confirm {failedAppName} was disconnected. Try again.
+          </SettingsSaveError>
         ) : undefined
       }
     >
@@ -76,6 +88,12 @@ export function ConnectedAppsGroup({
               label={name}
               detail={
                 <>
+                  {app.redirectHosts.length > 0 && (
+                    <>
+                      Returns to {app.redirectHosts.join(', ')}
+                      <br />
+                    </>
+                  )}
                   {orderedScopes(app.scopes)
                     .map((scope) => SCOPE_LABEL[scope])
                     .join(' · ')}
@@ -91,8 +109,8 @@ export function ConnectedAppsGroup({
               <Button
                 tone="danger"
                 size="sm"
-                disabled={busy}
-                ariaLabel={`Disconnect ${name}`}
+                inert={pendingId !== null}
+                ariaLabel={busy ? `Disconnecting ${name}` : `Disconnect ${name}`}
                 onClick={() => onDisconnect(app)}
               >
                 {busy ? 'Disconnecting…' : 'Disconnect'}
@@ -110,7 +128,7 @@ export function ConnectedAppsSection() {
   const apps = useConnectedApps();
   const disconnect = useDisconnectApp();
   const timeZone = useUserTimeZone();
-  const [failedAppName, setFailedAppName] = useState<string | null>(null);
+  const [failed, setFailed] = useState<{ id: string; name: string } | null>(null);
   // The shell can fill this query before this subtree hydrates. Match the
   // server's render on the first client render, then show cached data.
   const [mounted, setMounted] = useState(false);
@@ -130,13 +148,31 @@ export function ConnectedAppsSection() {
       }
       timeZone={timeZone}
       pendingId={disconnect.isPending ? (disconnect.variables ?? null) : null}
-      failedAppName={failedAppName}
+      // The list is read back after every attempt; once the app is no
+      // longer in it, there is nothing left to retry and the line goes.
+      failedAppName={
+        failed !== null && apps.data?.apps.some((app) => app.id === failed.id) ? failed.name : null
+      }
       onDisconnect={(app) => {
         const name = appDisplayName(app.appName);
-        setFailedAppName(null);
+        setFailed(null);
         disconnect.mutate(app.id, {
-          onSuccess: () => toast(`Disconnected ${name}.`, 'success'),
-          onError: () => setFailedAppName(name),
+          onSuccess: () => {
+            toast(`Disconnected ${name}.`, 'success');
+            // The row (and the button that had focus) is about to go.
+            const section = document.getElementById(SECTION_ID);
+            const active = document.activeElement;
+            if (section && (active === document.body || section.contains(active))) {
+              section.focus({ preventScroll: true });
+            }
+          },
+          // A 404 is the list being stale (or the connector switched off):
+          // nothing to retry, and the refetch shows the truth.
+          onError: (error) => {
+            if (!(error instanceof ApiError && error.status === 404)) {
+              setFailed({ id: app.id, name });
+            }
+          },
         });
       }}
     />

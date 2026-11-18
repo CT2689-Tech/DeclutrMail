@@ -2,6 +2,10 @@
 -- grants and tokens are discarded and people must connect again. No Gmail
 -- data, action history or undo state lives here.
 --
+-- ROLL THE CODE BACK FIRST. Account deletion and the daily retention worker
+-- run statements against these tables whether or not MCP_ENABLED is on, so
+-- dropping them under the code that shipped with this migration breaks both.
+--
 -- One transaction, so a failure part-way leaves the schema whole. Dropping
 -- oauth_grants removes foreign-key triggers from users and workspaces, which
 -- needs a brief exclusive lock on both: bound the wait so a long reader fails

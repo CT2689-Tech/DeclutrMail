@@ -3,20 +3,23 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Button, Card, ErrorState, Logo, tokens } from '@declutrmail/shared';
-import type { ConnectorConsent } from '@declutrmail/shared/contracts';
+import { CONNECT_REQUEST_ID, type ConnectorConsent } from '@declutrmail/shared/contracts';
 
 import { ApiError, apiErrorCode } from '@/lib/api/client';
+import { captureErrorBoundaryException } from '@/lib/error-capture';
 import { useConnectorConsent, useDecideConnectorConsent } from './api/use-connector-consent';
 import { SCOPE_LABEL, appDisplayName, orderedScopes } from './scope-copy';
 
 const { color, font, text } = tokens;
 
-/** The library's request ids are URL-safe random strings. */
-const REQUEST_ID = /^[A-Za-z0-9_-]{16,64}$/;
-
 export type ConsentCardState =
   | { kind: 'loading' }
-  /** Expired, already decided, opened in another browser, or connector off. */
+  /**
+   * This request cannot be decided here: expired, already decided,
+   * opened in another browser, connector off, or decided but with no
+   * safe way back to the app. The page cannot tell which, so it names
+   * none of them.
+   */
   | { kind: 'gone' }
   | { kind: 'error'; onRetry: () => void }
   | {
@@ -72,14 +75,16 @@ export function ConsentCard({ state }: { state: ConsentCardState }) {
           </p>
         ) : state.kind === 'gone' ? (
           <div role="alert">
-            <h1 style={{ margin: 0, fontSize: text.xl }}>This connection request has expired</h1>
+            <h1 style={{ margin: 0, fontSize: text.xl }}>
+              This connection request is no longer available
+            </h1>
             <p style={{ ...mutedStyle, marginTop: 8 }}>Go back to your app and connect again.</p>
           </div>
         ) : state.kind === 'error' ? (
           <ErrorState
             headingLevel={2}
             title="Could not load this connection request"
-            description="Check your connection and try again."
+            description="Try again in a moment."
             onRetry={state.onRetry}
           />
         ) : state.kind === 'returning' ? (
@@ -132,10 +137,10 @@ function ReadyConsent({ state }: { state: Extract<ConsentCardState, { kind: 'rea
       )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 24 }}>
-        <Button tone="primary" size="lg" disabled={busy} onClick={state.onApprove}>
+        <Button tone="primary" size="lg" inert={busy} onClick={state.onApprove}>
           {deciding === 'approve' ? 'Approving…' : 'Approve'}
         </Button>
-        <Button tone="default" size="lg" disabled={busy} onClick={state.onDeny}>
+        <Button tone="default" size="lg" inert={busy} onClick={state.onDeny}>
           {deciding === 'deny' ? 'Denying…' : 'Deny'}
         </Button>
       </div>
@@ -147,10 +152,13 @@ function ReadyConsent({ state }: { state: Extract<ConsentCardState, { kind: 'rea
 function isGone(error: unknown): boolean {
   return (
     error instanceof ApiError &&
-    (error.status === 404 ||
-      error.status === 410 ||
-      apiErrorCode(error) === 'CONNECT_REQUEST_EXPIRED')
+    (error.status === 404 || error.status === 410 || apiErrorCode(error) === 'CONNECT_REQUEST_GONE')
   );
+}
+
+/** Signed out: the API client is already sending the browser to sign-in and back. */
+function isSignedOut(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 401;
 }
 
 function decisionErrorCopy(error: unknown): string {
@@ -165,13 +173,20 @@ function decisionErrorCopy(error: unknown): string {
  * own resume URL. Anything else is refused rather than followed.
  */
 export function isApiResumeUrl(target: string, apiBase: string, pageOrigin: string): boolean {
-  const parsed = URL.parse(target);
-  const api = URL.parse(apiBase || pageOrigin);
+  let parsed: URL;
+  let api: URL;
+  try {
+    parsed = new URL(target);
+    api = new URL(apiBase || pageOrigin);
+  } catch {
+    // Not an absolute URL: not somewhere this page will send anyone.
+    return false;
+  }
+  const [, requestId] = /^\/oauth\/authorize\/([^/]+)$/.exec(parsed.pathname) ?? [];
   return (
-    parsed !== null &&
-    api !== null &&
     parsed.origin === api.origin &&
-    /^\/oauth\/authorize\/[A-Za-z0-9_-]{16,64}$/.test(parsed.pathname) &&
+    requestId !== undefined &&
+    CONNECT_REQUEST_ID.test(requestId) &&
     parsed.search === '' &&
     parsed.hash === ''
   );
@@ -180,10 +195,13 @@ export function isApiResumeUrl(target: string, apiBase: string, pageOrigin: stri
 /** The live consent page: reads `?request=`, loads it, records the decision. */
 export function ConsentScreen() {
   const raw = useSearchParams().get('request');
-  const requestId = raw !== null && REQUEST_ID.test(raw) ? raw : null;
+  const requestId = raw !== null && CONNECT_REQUEST_ID.test(raw) ? raw : null;
   const consent = useConnectorConsent(requestId);
   const decide = useDecideConnectorConsent(requestId);
   const [returning, setReturning] = useState(false);
+  // The decision was recorded but the API named a place this page will
+  // not send anyone. Nothing the person can press here fixes that.
+  const [stranded, setStranded] = useState(false);
   // Match the server render (which has no query result) on first paint.
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -194,7 +212,14 @@ export function ConsentScreen() {
         if (
           !isApiResumeUrl(redirectTo, process.env.NEXT_PUBLIC_API_URL ?? '', window.location.origin)
         ) {
-          decide.reset();
+          // A deployment fault (the API's public origin and this page's
+          // idea of it disagree), not something a retry changes. The URL
+          // itself is left out of the report: it carries the request id.
+          setStranded(true);
+          void captureErrorBoundaryException(
+            new Error('Consent decision returned a resume URL this page refuses to follow.'),
+            { boundary: 'connect' },
+          );
           return;
         }
         setReturning(true);
@@ -204,8 +229,11 @@ export function ConsentScreen() {
   };
 
   let state: ConsentCardState;
-  if (requestId === null) state = { kind: 'gone' };
+  if (requestId === null || stranded) state = { kind: 'gone' };
   else if (!mounted || consent.isPending) state = { kind: 'loading' };
+  // A signed-out visitor is mid-redirect to sign-in; an error card would
+  // flash a cause that is not true.
+  else if (consent.isError && isSignedOut(consent.error)) state = { kind: 'loading' };
   else if (consent.isError) {
     state = isGone(consent.error)
       ? { kind: 'gone' }

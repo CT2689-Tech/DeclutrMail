@@ -269,6 +269,12 @@ describe('isAuthedAppPath — which subtree a request belongs to', () => {
     expect(isAuthedAppPath('/settings-guide')).toBe(false);
     expect(isAuthedAppPath('/billingx')).toBe(false);
   });
+
+  it('claims the consent page, and leaves `/connect` itself for a public page', () => {
+    expect(isAuthedAppPath('/connect/authorize')).toBe(true);
+    expect(isAuthedAppPath('/connect')).toBe(false);
+    expect(isAuthedAppPath('/connect/anything-else')).toBe(false);
+  });
 });
 
 describe('authed document session handling', () => {

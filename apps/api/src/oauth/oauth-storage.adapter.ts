@@ -99,6 +99,9 @@ abstract class BaseStore implements Adapter {
  * confidential method: it is dropped here as well as by the registration
  * policy.
  */
+/** Client ids are issued by the library: URL-safe random strings. */
+const CLIENT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
 class ClientStore extends BaseStore {
   async upsert(id: string, payload: AdapterPayload): Promise<void> {
     const {
@@ -119,6 +122,10 @@ class ClientStore extends BaseStore {
   }
 
   async find(id: string): Promise<AdapterPayload | undefined> {
+    // The id arrives straight from an unauthenticated request. Anything
+    // that is not the shape this server issues can match no row, and
+    // some of it (a null character) Postgres would refuse outright.
+    if (!CLIENT_ID.test(id)) return undefined;
     const [row] = await this.db
       .select({ metadata: oauthClients.metadata })
       .from(oauthClients)

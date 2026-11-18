@@ -413,12 +413,14 @@ export const ERROR_CODES = {
   },
   // --- MCP connector: OAuth consent (ADR-0048 rule 4) ---
   // The authorization request is gone: it expired (15 minutes), was
-  // already decided, or belongs to another browser.
-  CONNECT_REQUEST_EXPIRED: {
+  // already decided, or belongs to another browser. The server cannot
+  // tell which, so neither the name nor the message picks one.
+  CONNECT_REQUEST_GONE: {
     status: 410,
     severityTier: 'inline_recoverable',
     retryable: false,
-    message: 'This connection request has expired. Go back to your app and connect again.',
+    message:
+      'This connection request is no longer available. Go back to your app and connect again.',
   },
   // An account on its way out cannot hand an assistant new access.
   CONNECT_DELETION_PENDING: {

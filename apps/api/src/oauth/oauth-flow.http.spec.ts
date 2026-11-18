@@ -325,7 +325,7 @@ describe('OAuth authorization server', () => {
       const victim = new Browser(harness.base, ada);
       const details = await victim.get(`${path}/details`);
       expect(details.status).toBe(410);
-      expect(details.json.error.code).toBe('CONNECT_REQUEST_EXPIRED');
+      expect(details.json.error.code).toBe('CONNECT_REQUEST_GONE');
       const approve = await victim.post(`${path}/approve`);
       expect(approve.status).toBe(410);
       expect(await harness.db.select().from(oauthGrants)).toHaveLength(0);
@@ -924,10 +924,10 @@ describe('rate limits', () => {
   });
 
   it('caps unauthenticated client registration per address', async () => {
-    // 60 a minute. The bucket refills about one token a second, so the
-    // burst is sent at once and the assertions hold however slow the run.
+    // 20 a minute. The bucket refills one token every three seconds, so
+    // the burst is sent at once and the assertions hold however slow the run.
     const statuses = await Promise.all(
-      Array.from({ length: 90 }, () =>
+      Array.from({ length: 40 }, () =>
         client(harness.base)
           .json('/oauth/register', { redirect_uris: [REDIRECT_URI] })
           .then((response) => response.status),
@@ -935,9 +935,9 @@ describe('rate limits', () => {
     );
     const registered = statuses.filter((status) => status === 201).length;
     const limited = statuses.filter((status) => status === 429).length;
-    expect(registered + limited).toBe(90);
-    expect(registered).toBeGreaterThanOrEqual(60);
-    expect(limited).toBeGreaterThanOrEqual(1);
+    expect(registered + limited).toBe(40);
+    expect(registered).toBeGreaterThanOrEqual(20);
+    expect(limited).toBeGreaterThanOrEqual(10);
     // A refused registration writes nothing.
     expect(await harness.db.select().from(oauthClients)).toHaveLength(registered);
   });

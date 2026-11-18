@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { JwtService } from '../auth/jwt.service.js';
+import type { SessionsService } from '../auth/sessions.service.js';
 import type { DrizzleDb } from '../db/db.module.js';
 import type { SecurityEventsService } from '../security-events/security-events.service.js';
 import { grantableScope, OAuthProviderService } from './oauth-provider.service.js';
 
 const db = {} as DrizzleDb;
 const securityEvents = { record: vi.fn() } as unknown as SecurityEventsService;
-const service = () => new OAuthProviderService(db, securityEvents);
+const service = () =>
+  new OAuthProviderService(db, securityEvents, {} as JwtService, {} as SessionsService);
 
 afterEach(() => {
   vi.unstubAllEnvs();

@@ -352,6 +352,39 @@ describe('AccountDeletionOrchestrator', () => {
       expect((await grantRow(grantId)).revokedAt).toBeNull();
     });
 
+    it('a request blocked by a live subscription revokes nothing', async () => {
+      // The revoke must sit inside the same guarded transaction as the
+      // request row: this rejection happens after validation, where a
+      // revoke placed in front of the guard would already have run.
+      const grantId = await connectApp({ userId, workspaceId }, 'one');
+      await db.insert(subscriptions).values({
+        workspaceId,
+        provider: 'paddle',
+        providerSubscriptionId: 'sub_paid',
+        providerPriceId: 'pri_plus',
+        tier: 'plus',
+        billingCycle: 'monthly',
+        status: 'active',
+        cancelAtPeriodEnd: true,
+      });
+      await expect(
+        orch.requestDeletion({ userId }, { confirmPhrase: 'DELETE' }),
+      ).rejects.toMatchObject({ code: 'DELETION_BILLING_BLOCKED' });
+      expect((await grantRow(grantId)).revokedAt).toBeNull();
+      expect((await tokenRows(grantId)).every((token) => token.revokedAt === null)).toBe(true);
+      expect(await codeRows(grantId)).toHaveLength(1);
+    });
+
+    it('a duplicate request is rejected whole: it revokes nothing new', async () => {
+      await orch.requestDeletion({ userId }, { confirmPhrase: 'DELETE' });
+      // A grant that somehow exists while the first request is pending.
+      const later = await connectApp({ userId, workspaceId }, 'later');
+      await expect(
+        orch.requestDeletion({ userId }, { confirmPhrase: 'DELETE' }),
+      ).rejects.toMatchObject({ code: 'DELETION_ALREADY_PENDING' });
+      expect((await grantRow(later)).revokedAt).toBeNull();
+    });
+
     it('cancelling the deletion does not reconnect them', async () => {
       const grantId = await connectApp({ userId, workspaceId }, 'one');
       await orch.requestDeletion({ userId }, { confirmPhrase: 'DELETE' });

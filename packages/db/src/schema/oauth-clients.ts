@@ -27,6 +27,12 @@ export const oauthClients = pgTable(
     registrationType: text('registration_type').notNull(),
     metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+    /**
+     * When a person last approved this client. NULL = never approved,
+     * which is the only kind of registration retention removes: an app
+     * that was approved once may come back with the client id it kept.
+     */
+    lastGrantedAt: timestamp('last_granted_at', { withTimezone: true, mode: 'date' }),
   },
   (t) => [
     /** Retention sweep: clients nobody approved, oldest first. */

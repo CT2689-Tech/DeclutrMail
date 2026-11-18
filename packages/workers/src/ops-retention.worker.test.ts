@@ -12,10 +12,15 @@ import {
 } from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { OpsRetentionWorker } from './ops-retention.worker.js';
+import {
+  OAUTH_SWEEP_MAX_PASSES,
+  OpsRetentionWorker,
+  RETENTION_BATCH_LIMIT,
+} from './ops-retention.worker.js';
 import type { WorkerContext } from './worker-context.js';
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -192,13 +197,18 @@ describe('OpsRetentionWorker', () => {
       return { workspaceId: ws!.id, userId: user!.id };
     }
 
-    async function seedClient(clientId: string, createdAt = new Date()) {
+    async function seedClient(
+      clientId: string,
+      createdAt = new Date(),
+      lastGrantedAt: Date | null = null,
+    ) {
       await db.insert(oauthClients).values({
         clientId,
         redirectUris: ['https://client.example/cb'],
         registrationType: 'dynamic',
         metadata: {},
         createdAt,
+        lastGrantedAt,
       });
     }
 
@@ -328,6 +338,59 @@ describe('OpsRetentionWorker', () => {
       const clients = await db.select({ id: oauthClients.clientId }).from(oauthClients);
       expect(clients.map((r) => r.id).sort()).toEqual(['fresh', 'in-use']);
     });
+
+    it('keeps a registration that was approved once, even with no grant left', async () => {
+      // The app disconnected long ago and its grant is past retention —
+      // but it may come back with the client id it stored, and an
+      // unknown id is a dead end in the browser flow.
+      const owner = await seedOwner();
+      await seedClient('approved-once', daysAgo(100), daysAgo(90));
+      await seedGrant(owner, 'approved-once', { createdAt: daysAgo(90), revokedAt: daysAgo(31) });
+      await seedClient('never-approved', daysAgo(100));
+
+      const result = await run();
+
+      // The stale grant and the never-approved registration: two rows.
+      expect(result.oauthRowsDeleted).toBe(2);
+      expect(await db.select().from(oauthGrants)).toHaveLength(0);
+      const clients = await db.select({ id: oauthClients.clientId }).from(oauthClients);
+      expect(clients.map((r) => r.id)).toEqual(['approved-once']);
+    });
+
+    it('drains a backlog larger than one batch in a single run', async () => {
+      // Anyone can park an authorization request, so one batch a day
+      // could fall behind what a single address may write.
+      await db.execute(sql`
+        INSERT INTO oauth_interactions (id_hash, payload, expires_at)
+        SELECT 'expired-' || n, '{}'::jsonb, now() - interval '1 hour'
+        FROM generate_series(1, ${sql.raw(String(RETENTION_BATCH_LIMIT + 200))}) AS n
+      `);
+      await db
+        .insert(oauthInteractions)
+        .values({ idHash: 'pending', payload: {}, expiresAt: new Date(Date.now() + 600_000) });
+
+      const result = await run();
+
+      expect(result.oauthRowsDeleted).toBe(RETENTION_BATCH_LIMIT + 200);
+      expect(result.moreRemaining).toBe(false);
+      const left = await db.select({ h: oauthInteractions.idHash }).from(oauthInteractions);
+      expect(left.map((r) => r.h)).toEqual(['pending']);
+    });
+
+    it('stops at its pass ceiling and says more remains', async () => {
+      const ceiling = RETENTION_BATCH_LIMIT * OAUTH_SWEEP_MAX_PASSES;
+      await db.execute(sql`
+        INSERT INTO oauth_interactions (id_hash, payload, expires_at)
+        SELECT 'expired-' || n, '{}'::jsonb, now() - interval '1 hour'
+        FROM generate_series(1, ${sql.raw(String(ceiling + 1))}) AS n
+      `);
+
+      const result = await run();
+
+      expect(result.oauthRowsDeleted).toBe(ceiling);
+      expect(result.moreRemaining).toBe(true);
+      expect(await db.select().from(oauthInteractions)).toHaveLength(1);
+    }, 60_000);
 
     it('reports the OAuth count on the ops line', async () => {
       await seedClient('abandoned', daysAgo(31));

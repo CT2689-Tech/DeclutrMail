@@ -21,7 +21,8 @@ export const AUTHED_APP_PATHS = [
   '/autopilot',
   '/billing',
   '/brief',
-  '/connect',
+  // Only the consent page: `/connect` itself is kept free for a public page.
+  '/connect/authorize',
   '/followups',
   '/home',
   '/later',

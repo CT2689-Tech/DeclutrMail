@@ -10,6 +10,9 @@ CREATE TABLE oauth_clients (
   registration_type text NOT NULL,
   metadata jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
+  -- Set when a person first approves this client, and on every approval
+  -- after. NULL = never approved: the only registrations retention removes.
+  last_granted_at timestamptz,
   CONSTRAINT oauth_clients_registration_type_check CHECK (registration_type IN ('dynamic'))
 );
 --> statement-breakpoint

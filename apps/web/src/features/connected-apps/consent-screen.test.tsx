@@ -12,10 +12,15 @@ const REQUEST = 'CUygbhMUbHwTzNhgVgnRZC1EjwMfy2c_9vKePrg8rq9';
 const BASE = `/api/oauth/interactions/${REQUEST}`;
 const RESUME = `http://localhost:3000/oauth/authorize/${REQUEST}`;
 
-const h = vi.hoisted(() => ({ search: '' }));
+const h = vi.hoisted(() => ({ search: '', capture: vi.fn() }));
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(h.search),
 }));
+vi.mock('@/lib/error-capture', () => ({ captureErrorBoundaryException: h.capture }));
+
+const GONE = 'This connection request is no longer available';
+/** In-flight controls stay focusable: unavailable, not removed from the tab order. */
+const unavailable = (button: HTMLElement) => button.getAttribute('aria-disabled') === 'true';
 
 const CONSENT: ConnectorConsent = {
   appName: 'Claude',
@@ -55,6 +60,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  h.capture.mockClear();
 });
 
 describe('ConsentCard', () => {
@@ -128,16 +134,44 @@ describe('ConsentCard', () => {
       />,
     );
     const buttons = screen.getAllByRole('button') as HTMLButtonElement[];
-    expect(buttons.map((button) => button.disabled)).toEqual([true, true]);
+    expect(buttons.map(unavailable)).toEqual([true, true]);
+    // Still focusable: a native `disabled` would throw focus to <body>.
+    expect(buttons.map((button) => button.disabled)).toEqual([false, false]);
     expect(buttons[0]!.textContent).toBe('Approving…');
   });
 
-  it('an expired request says what happened and what to do, with no buttons', () => {
-    render(<ConsentCard state={{ kind: 'gone' }} />);
-    expect(screen.getByRole('alert').textContent).toBe(
-      'This connection request has expiredGo back to your app and connect again.',
+  it('a locked button ignores a second press', () => {
+    const onApprove = vi.fn();
+    render(
+      <ConsentCard
+        state={{
+          kind: 'ready',
+          consent: CONSENT,
+          deciding: 'approve',
+          decisionError: null,
+          onApprove,
+          onDeny: () => {},
+        }}
+      />,
     );
+    fireEvent.click(screen.getAllByRole('button')[0]!);
+    expect(onApprove).not.toHaveBeenCalled();
+  });
+
+  it('a request that is gone names no cause, says what to do, and has no buttons', () => {
+    render(<ConsentCard state={{ kind: 'gone' }} />);
+    const text = screen.getByRole('alert').textContent ?? '';
+    expect(text).toContain(GONE);
+    expect(text).toContain('Go back to your app and connect again.');
+    // The page cannot tell expiry from the other reasons, so it claims none.
+    expect(text).not.toMatch(/expired/i);
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('a failed load claims no cause it cannot know', () => {
+    render(<ConsentCard state={{ kind: 'error', onRetry: () => {} }} />);
+    expect(document.body.textContent).toContain('Could not load this connection request');
+    expect(document.body.textContent).not.toMatch(/your connection/i);
   });
 });
 
@@ -152,7 +186,7 @@ describe('ConsentScreen', () => {
     ['no request id', ''],
     ['a malformed request id', 'request=../../etc'],
     ['a request id that is too short', 'request=abc'],
-  ])('%s is an expired request and reads nothing', async (_label, search) => {
+  ])('%s is a request that is gone and reads nothing', async (_label, search) => {
     h.search = search;
     let calls = 0;
     renderScreen([
@@ -165,14 +199,14 @@ describe('ConsentScreen', () => {
         },
       },
     ]);
-    expect(await screen.findByText('This connection request has expired')).toBeTruthy();
+    expect(await screen.findByText(GONE)).toBeTruthy();
     expect(calls).toBe(0);
   });
 
   it.each([
-    ['expired (410)', 410, 'CONNECT_REQUEST_EXPIRED'],
+    ['gone (410)', 410, 'CONNECT_REQUEST_GONE'],
     ['connector switched off (404)', 404, 'NOT_FOUND'],
-  ])('%s shows the expired state and is not retried', async (_label, status, code) => {
+  ])('%s shows the gone state and is not retried', async (_label, status, code) => {
     let calls = 0;
     renderScreen([
       {
@@ -184,9 +218,29 @@ describe('ConsentScreen', () => {
         },
       },
     ]);
-    expect(await screen.findByText('This connection request has expired')).toBeTruthy();
+    expect(await screen.findByText(GONE)).toBeTruthy();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(calls).toBe(1);
+  });
+
+  it('a signed-out visitor keeps the loading line while sign-in takes over', async () => {
+    let calls = 0;
+    renderScreen([
+      {
+        method: 'GET',
+        path: `${BASE}/details`,
+        respond: () => {
+          calls += 1;
+          return jsonError(401, 'UNAUTHORIZED');
+        },
+      },
+      // The client tries one refresh before giving up on the session.
+      { method: 'POST', path: '/api/auth/refresh', respond: () => jsonError(401, 'UNAUTHORIZED') },
+    ]);
+    await waitFor(() => expect(calls).toBeGreaterThan(0));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.getByRole('status').textContent).toBe('Loading connection request…');
+    expect(screen.queryByText('Could not load this connection request')).toBeNull();
   });
 
   it('a server error offers Try again and recovers', async () => {
@@ -237,7 +291,7 @@ describe('ConsentScreen', () => {
     expect((await screen.findByRole('status')).textContent).toBe('Returning to claude.ai…');
   });
 
-  it('never follows a redirect that is not the API resume URL', async () => {
+  it('never follows a redirect that is not the API resume URL, and says so', async () => {
     renderScreen([
       details(),
       {
@@ -247,25 +301,41 @@ describe('ConsentScreen', () => {
       },
     ]);
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
-    await waitFor(() =>
-      expect((screen.getByRole('button', { name: 'Approve' }) as HTMLButtonElement).disabled).toBe(
-        false,
-      ),
-    );
+    // The decision is recorded and cannot be finished here: no silent
+    // return to a card whose buttons can only fail.
+    expect(await screen.findByText(GONE)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(assign).not.toHaveBeenCalled();
+    expect(h.capture).toHaveBeenCalledExactlyOnceWith(expect.any(Error), { boundary: 'connect' });
+    // The report must not carry the URL: it names the pending request.
+    expect(String(h.capture.mock.calls[0]![0])).not.toContain('attacker.example');
   });
 
-  it('a request that expired between load and Approve becomes the expired state', async () => {
+  it('returns to the app on a browser without URL.parse', async () => {
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { parse: undefined }));
     renderScreen([
       details(),
       {
         method: 'POST',
         path: `${BASE}/approve`,
-        respond: () => jsonError(410, 'CONNECT_REQUEST_EXPIRED'),
+        respond: () => jsonOk({ data: { redirectTo: RESUME } }),
       },
     ]);
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
-    expect(await screen.findByText('This connection request has expired')).toBeTruthy();
+    await waitFor(() => expect(assign).toHaveBeenCalledExactlyOnceWith(RESUME));
+  });
+
+  it('a request that is gone between load and Approve becomes the gone state', async () => {
+    renderScreen([
+      details(),
+      {
+        method: 'POST',
+        path: `${BASE}/approve`,
+        respond: () => jsonError(410, 'CONNECT_REQUEST_GONE'),
+      },
+    ]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    expect(await screen.findByText(GONE)).toBeTruthy();
     expect(assign).not.toHaveBeenCalled();
   });
 
@@ -282,9 +352,7 @@ describe('ConsentScreen', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       'Account deletion is scheduled. Cancel it in Settings to connect an app.',
     );
-    expect((screen.getByRole('button', { name: 'Deny' }) as HTMLButtonElement).disabled).toBe(
-      false,
-    );
+    expect(unavailable(screen.getByRole('button', { name: 'Deny' }))).toBe(false);
   });
 
   it('a failed decision says to try again and leaves both choices open', async () => {

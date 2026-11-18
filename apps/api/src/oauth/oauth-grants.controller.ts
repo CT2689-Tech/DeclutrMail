@@ -45,6 +45,7 @@ export class OAuthGrantsController {
       apps: grants.map((grant) => ({
         id: grant.id,
         appName: grant.appName,
+        redirectHosts: redirectHosts(grant.redirectUris),
         scopes: grant.scopes.filter(
           (scope): scope is 'read' | 'cleanup' => scope === 'read' || scope === 'cleanup',
         ),
@@ -75,4 +76,15 @@ export class OAuthGrantsController {
     }
     return ok({ id });
   }
+}
+
+/**
+ * The hosts an app sends people back to, as registered. The app's name
+ * is whatever it called itself; these are what tell two apps with the
+ * same name apart. A loopback redirect's port changes per run, so only
+ * the hostname is shown.
+ */
+function redirectHosts(redirectUris: readonly string[]): string[] {
+  const hosts = redirectUris.filter((uri) => URL.canParse(uri)).map((uri) => new URL(uri).hostname);
+  return [...new Set(hosts)];
 }

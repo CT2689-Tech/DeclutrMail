@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   UnauthorizedException,
   createParamDecorator,
 } from '@nestjs/common';
@@ -62,6 +63,8 @@ declare global {
  */
 @Injectable()
 export class McpTokenGuard implements CanActivate {
+  private readonly logger = new Logger(McpTokenGuard.name);
+
   constructor(@Inject(DRIZZLE) private readonly db: DrizzleDb) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -112,8 +115,14 @@ export class McpTokenGuard implements CanActivate {
       clientId: verified.clientId,
       scopes: verified.scopes,
     };
-    // Presence telemetry for Settings → Connected apps. Never fails the request.
-    void touchGrantLastUsed(this.db, verified.grantId).catch(() => undefined);
+    // Presence telemetry for Settings → Connected apps. Never fails the
+    // request, but a write that keeps failing would leave an app in use
+    // showing "Not used yet", so it is logged.
+    void touchGrantLastUsed(this.db, verified.grantId).catch((error: unknown) => {
+      this.logger.warn(
+        `last_used_at write failed: ${error instanceof Error ? error.name : 'unknown error'}`,
+      );
+    });
     return true;
   }
 }

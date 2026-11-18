@@ -24,7 +24,7 @@ const APP_PATHS = [
 ];
 
 /** The authorization server's request ids are URL-safe random strings. */
-const CONNECT_REQUEST_ID = /^[A-Za-z0-9_-]{16,64}$/;
+export const CONNECT_REQUEST_ID = /^[A-Za-z0-9_-]{16,64}$/;
 
 export { isUserScopedAppPath } from './account-navigation.js';
 

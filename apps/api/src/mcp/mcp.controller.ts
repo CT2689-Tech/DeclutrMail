@@ -5,9 +5,10 @@ import {
   HttpException,
   HttpStatus,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 
 import { McpEnabledGuard } from './mcp-enabled.guard.js';
 import { McpTokenGuard } from './mcp-token.guard.js';
@@ -30,12 +31,16 @@ const METHOD_NOT_FOUND = -32601;
 export class McpController {
   @All()
   @HttpCode(200)
-  handle(@Req() req: Request): {
+  handle(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): {
     jsonrpc: '2.0';
     id: string | number | null;
     error: { code: number; message: string };
   } {
     if (req.method !== 'POST') {
+      res.setHeader('Allow', 'POST');
       throw new HttpException('Method not allowed.', HttpStatus.METHOD_NOT_ALLOWED);
     }
     const body = req.body as { id?: unknown } | undefined;

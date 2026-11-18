@@ -4,6 +4,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { type Configuration, errors, type KoaContextWithOIDC, Provider } from 'oidc-provider';
 
+import { ACCESS_COOKIE } from '../auth/jwt.guard.js';
+import { JwtService } from '../auth/jwt.service.js';
+import { SessionsService } from '../auth/sessions.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import {
   ACCESS_TOKEN_TTL_SEC,
@@ -31,6 +34,13 @@ export const OAUTH_ROUTES = {
 
 /** Where the library sends the browser when a person has to decide. */
 export const INTERACTION_PATH = '/api/oauth/interactions';
+
+/**
+ * Largest request body the OAuth endpoints read. A registration with the
+ * most redirect URIs the policy allows is under half of this; a token
+ * request is a few hundred bytes.
+ */
+const MAX_BODY_BYTES = 8 * 1024;
 
 /** Domain-separation label for the cookie-signing key derived below. */
 const COOKIE_KEY_CONTEXT = 'declutrmail:oauth-interaction-cookies:v1';
@@ -68,7 +78,9 @@ const OIDC_ONLY_METADATA = [
  *     other `resource` is refused;
  *   - sign-in and consent are OURS: the library never keeps a login of
  *     its own (see `NoSessionStore`), so each authorization goes through
- *     the consent page, which trusts only DeclutrMail's session cookie.
+ *     the consent page, which trusts only DeclutrMail's session cookie —
+ *     and the code is released only to a browser that still holds the
+ *     approver's session (see `findAccount`).
  *
  * Built once, on first use, and only when `MCP_ENABLED` is on — a
  * disabled deployment needs none of the configuration and constructs
@@ -82,6 +94,8 @@ export class OAuthProviderService implements OnModuleInit {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly securityEvents: SecurityEventsService,
+    private readonly jwt: JwtService,
+    private readonly sessions: SessionsService,
   ) {}
 
   /** Fail at boot, not on the first person's request, when enabled but misconfigured. */
@@ -99,9 +113,21 @@ export class OAuthProviderService implements OnModuleInit {
    * for exactly the routes in `OAUTH_ROUTES`.
    */
   handle(req: IncomingMessage & { rawBody?: Buffer; body?: unknown }, res: ServerResponse): void {
-    // The library builds the URLs it advertises from the request's host.
-    // Cloud Run sets the Host and X-Forwarded-Proto it forwards; it does
-    // not own X-Forwarded-Host, so that header is never trusted.
+    const refusal = malformedRequest(req);
+    if (refusal) {
+      res.statusCode = refusal.status;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(JSON.stringify({ error: 'invalid_request', error_description: refusal.reason }));
+      return;
+    }
+    // The library builds the URLs it advertises, and decides whether its
+    // cookies are Secure, from the request's host and protocol. Both are
+    // the caller's to choose, so they are replaced with the configured
+    // public origin: what this server advertises never follows a header.
+    const origin = new URL(oauthIssuer());
+    req.headers.host = origin.host;
+    req.headers['x-forwarded-proto'] = origin.protocol.slice(0, -1);
     delete req.headers['x-forwarded-host'];
     // Nest has already read the body. Give the library the bytes that
     // were sent rather than Nest's parse of them, so it applies its own
@@ -195,8 +221,20 @@ export class OAuthProviderService implements OnModuleInit {
       expiresWithSession: async () => false,
 
       // --- people ----------------------------------------------------
-      findAccount: async (_ctx, sub) => {
+      findAccount: async (ctx, sub) => {
         const user = await findAuthorizableUser(db, sub);
+        // Resume is the step that releases the code. Approve was pressed
+        // under a DeclutrMail session; the library's own cookies only
+        // prove which REQUEST is being resumed, and a cookie can be
+        // planted from a sibling host. So the code goes only to a browser
+        // that still holds the approver's session, for an account that
+        // can still be acted for. Refusing here sends `access_denied`
+        // back to the app instead of a code.
+        if (ctx.oidc?.route === 'resume') {
+          if (!user || !(await this.holdsSessionFor(ctx.req, sub))) {
+            throw new errors.AccessDenied('the approving session is not present');
+          }
+        }
         if (!user) return undefined;
         return { accountId: user.userId, claims: async () => ({ sub: user.userId }) };
       },
@@ -243,10 +281,12 @@ export class OAuthProviderService implements OnModuleInit {
     provider.use(async (ctx, next) => {
       // A repeated `scope` parameter is malformed; leave it for the
       // library to refuse rather than paper over it with a default.
+      // The library's router ignores case and a trailing slash; so does
+      // this, or those spellings would skip the scope handling.
       const { scope: requested } = ctx.query;
       if (
         ctx.method === 'GET' &&
-        ctx.path === OAUTH_ROUTES.authorization &&
+        ctx.path.replace(/\/+$/, '').toLowerCase() === OAUTH_ROUTES.authorization &&
         !Array.isArray(requested)
       ) {
         ctx.query = { ...ctx.query, scope: grantableScope(requested) };
@@ -255,6 +295,10 @@ export class OAuthProviderService implements OnModuleInit {
       if (ctx.oidc?.route === 'discovery' && isRecord(ctx.body)) {
         for (const key of OIDC_ONLY_METADATA) delete ctx.body[key];
         ctx.body.scopes_supported = [...MCP_SCOPES];
+        // The code comes back in the query string. The library's other
+        // modes are not offered: `form_post` needs an inline script this
+        // API's content security policy does not allow.
+        ctx.body.response_modes_supported = ['query'];
       }
     });
 
@@ -263,12 +307,15 @@ export class OAuthProviderService implements OnModuleInit {
     // would disconnect every app with nothing but a log line to show for it.
     provider.on('server_error', (ctx: KoaContextWithOIDC, error: Error) => {
       const route = ctx.oidc?.route ?? 'unknown';
+      // A failed query's message carries its parameters — whatever the
+      // caller sent. Report the driver's reason, which names none of them.
+      const reported = error.cause instanceof Error ? error.cause : error;
       this.logger.error(
         JSON.stringify({
           kind: 'oauth.server_error',
           route,
           error: error.name,
-          message: error.message,
+          message: reported.message,
         }),
       );
       void import('@sentry/node')
@@ -276,7 +323,7 @@ export class OAuthProviderService implements OnModuleInit {
           Sentry.withScope((scope) => {
             scope.setLevel('error');
             scope.setTag('oauth_route', route);
-            Sentry.captureException(error);
+            Sentry.captureException(reported);
           });
         })
         .catch(() => {
@@ -286,6 +333,44 @@ export class OAuthProviderService implements OnModuleInit {
 
     return provider;
   }
+
+  /** True when this browser request carries a live DeclutrMail session for `userId`. */
+  private async holdsSessionFor(req: IncomingMessage, userId: string): Promise<boolean> {
+    const cookies = (req as { cookies?: Record<string, unknown> }).cookies;
+    const token = cookies?.[ACCESS_COOKIE];
+    if (typeof token !== 'string') return false;
+    let claims;
+    try {
+      claims = await this.jwt.verify(token, 'access');
+    } catch {
+      // Expired, forged or the wrong kind of token: not a session.
+      return false;
+    }
+    return claims.sub === userId && (await this.sessions.lookupByJti(claims.jti)) !== null;
+  }
+}
+
+/**
+ * Requests refused before the library reads them. Postgres cannot store
+ * U+0000 in text or jsonb, so a value carrying one would otherwise fail
+ * at the first query and come back as a 500; and nothing these endpoints
+ * accept needs a large body.
+ */
+function malformedRequest(
+  req: IncomingMessage & { rawBody?: Buffer },
+): { status: number; reason: string } | undefined {
+  const body = Buffer.isBuffer(req.rawBody) ? req.rawBody : undefined;
+  if (body && body.length > MAX_BODY_BYTES) {
+    return { status: 413, reason: 'request body is too large' };
+  }
+  const nul = /%00|\\u0000/i;
+  if (
+    nul.test(req.url ?? '') ||
+    (body && (body.includes(0) || nul.test(body.toString('latin1'))))
+  ) {
+    return { status: 400, reason: 'null characters are not allowed' };
+  }
+  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -87,10 +87,22 @@ export const PRODUCT_EVENTS_RETENTION_MONTHS = 13;
 export const OAUTH_AUTH_CODE_RETENTION_DAYS = 1;
 export const OAUTH_TOKEN_RETENTION_DAYS = 7;
 export const OAUTH_GRANT_RETENTION_DAYS = 30;
-/** A registered client nobody ever approved (registration is unauthenticated). */
+/**
+ * A registered client nobody ever approved (registration is
+ * unauthenticated). One that WAS approved is kept: the app may come back
+ * with the client id it stored, and an unknown id cannot be recovered
+ * from inside the browser flow.
+ */
 export const OAUTH_UNUSED_CLIENT_RETENTION_DAYS = 30;
 /** Max rows removed from ONE table in ONE pass. */
 export const RETENTION_BATCH_LIMIT = 5_000;
+/**
+ * The OAuth tables take rows from unauthenticated requests (a
+ * registration, a parked authorization request), so one batch a day
+ * could fall behind what a single address may write. Each OAuth
+ * statement repeats until it runs dry, up to this many batches.
+ */
+export const OAUTH_SWEEP_MAX_PASSES = 20;
 
 export interface OpsRetentionDeps {
   db: WorkerDb;
@@ -187,6 +199,10 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
    * has expired and been removed would otherwise sit unrevoked forever.
    * It is marked revoked here; the 30-day rule then removes it like any
    * other. Deleting a grant cascades to whatever it still owns.
+   *
+   * Unlike the ledgers above, each statement here repeats until it runs
+   * dry (`OAUTH_SWEEP_MAX_PASSES`): these tables grow with requests
+   * nobody had to sign in to make.
    */
   private async sweepOAuth(): Promise<{
     deleted: number;
@@ -195,12 +211,21 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
   }> {
     const { db } = this.deps;
     const days = (n: number) => sql.raw(`interval '${n} days'`);
-    const counts: number[] = [];
-    const sweep = async (statement: ReturnType<typeof sql>) => {
-      counts.push(rowCount(await db.execute(statement)));
+    let deleted = 0;
+    let moreRemaining = false;
+    /** Run one bounded statement until it comes back short of a full batch. */
+    const drain = async (statement: ReturnType<typeof sql>): Promise<number> => {
+      let total = 0;
+      for (let pass = 0; pass < OAUTH_SWEEP_MAX_PASSES; pass += 1) {
+        const count = rowCount(await db.execute(statement));
+        total += count;
+        if (count < RETENTION_BATCH_LIMIT) return total;
+      }
+      moreRemaining = true;
+      return total;
     };
 
-    await sweep(sql`
+    deleted += await drain(sql`
       WITH doomed AS (
         SELECT i.ctid FROM oauth_interactions i
         WHERE i.expires_at < now()
@@ -209,7 +234,7 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
       DELETE FROM oauth_interactions WHERE ctid IN (SELECT ctid FROM doomed)
       RETURNING 1
     `);
-    await sweep(sql`
+    deleted += await drain(sql`
       WITH doomed AS (
         SELECT c.ctid FROM oauth_auth_codes c
         WHERE c.expires_at < now() - ${days(OAUTH_AUTH_CODE_RETENTION_DAYS)}
@@ -218,7 +243,7 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
       DELETE FROM oauth_auth_codes WHERE ctid IN (SELECT ctid FROM doomed)
       RETURNING 1
     `);
-    await sweep(sql`
+    deleted += await drain(sql`
       WITH doomed AS (
         SELECT t.ctid FROM oauth_tokens t
         WHERE t.expires_at < now() - ${days(OAUTH_TOKEN_RETENTION_DAYS)}
@@ -230,21 +255,19 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
     // Not a delete: retire grants that own nothing. Bounded and counted
     // like the deletes — it writes the field that decides whether a
     // connection is live.
-    const retired = rowCount(
-      await db.execute(sql`
-        WITH doomed AS (
-          SELECT g.ctid FROM oauth_grants g
-          WHERE g.revoked_at IS NULL
-            AND g.created_at < now() - ${days(1)}
-            AND NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = g.id)
-            AND NOT EXISTS (SELECT 1 FROM oauth_auth_codes c WHERE c.grant_id = g.id)
-          LIMIT ${RETENTION_BATCH_LIMIT}
-        )
-        UPDATE oauth_grants SET revoked_at = now() WHERE ctid IN (SELECT ctid FROM doomed)
-        RETURNING 1
-      `),
-    );
-    await sweep(sql`
+    const retired = await drain(sql`
+      WITH doomed AS (
+        SELECT g.ctid FROM oauth_grants g
+        WHERE g.revoked_at IS NULL
+          AND g.created_at < now() - ${days(1)}
+          AND NOT EXISTS (SELECT 1 FROM oauth_tokens t WHERE t.grant_id = g.id)
+          AND NOT EXISTS (SELECT 1 FROM oauth_auth_codes c WHERE c.grant_id = g.id)
+        LIMIT ${RETENTION_BATCH_LIMIT}
+      )
+      UPDATE oauth_grants SET revoked_at = now() WHERE ctid IN (SELECT ctid FROM doomed)
+      RETURNING 1
+    `);
+    deleted += await drain(sql`
       WITH doomed AS (
         SELECT g.ctid FROM oauth_grants g
         WHERE g.revoked_at < now() - ${days(OAUTH_GRANT_RETENTION_DAYS)}
@@ -253,10 +276,14 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
       DELETE FROM oauth_grants WHERE ctid IN (SELECT ctid FROM doomed)
       RETURNING 1
     `);
-    await sweep(sql`
+    // `last_granted_at IS NULL` is "never approved". "Has no grant now"
+    // would also match an app whose grant the statement above just
+    // removed, and delete a registration that app still holds.
+    deleted += await drain(sql`
       WITH doomed AS (
         SELECT c.ctid FROM oauth_clients c
-        WHERE c.created_at < now() - ${days(OAUTH_UNUSED_CLIENT_RETENTION_DAYS)}
+        WHERE c.last_granted_at IS NULL
+          AND c.created_at < now() - ${days(OAUTH_UNUSED_CLIENT_RETENTION_DAYS)}
           AND NOT EXISTS (SELECT 1 FROM oauth_grants g WHERE g.client_id = c.client_id)
         LIMIT ${RETENTION_BATCH_LIMIT}
       )
@@ -264,12 +291,7 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
       RETURNING 1
     `);
 
-    return {
-      deleted: counts.reduce((sum, n) => sum + n, 0),
-      retired,
-      moreRemaining:
-        retired >= RETENTION_BATCH_LIMIT || counts.some((n) => n >= RETENTION_BATCH_LIMIT),
-    };
+    return { deleted, retired, moreRemaining };
   }
 }
 

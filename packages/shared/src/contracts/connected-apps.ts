@@ -38,7 +38,14 @@ export type ConnectorConsentResult = z.infer<typeof ConnectorConsentResultSchema
 export const ConnectedAppSchema = z.object({
   /** Grant id — the thing Disconnect revokes. */
   id: z.string(),
+  /** The app's self-declared name; null when it registered without one. */
   appName: z.string().nullable(),
+  /**
+   * Hosts the app registered to send people back to — what tells two
+   * apps with the same name apart. Defaulted so an API that predates
+   * the field still parses.
+   */
+  redirectHosts: z.array(z.string()).default([]),
   scopes: z.array(ConnectorScopeSchema),
   connectedAt: z.string(),
   lastUsedAt: z.string().nullable(),

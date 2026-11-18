@@ -16,7 +16,13 @@ import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js
 import { mcpResourceUrl } from '../mcp/mcp-config.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { grantableScope, OAuthProviderService } from './oauth-provider.service.js';
-import { createGrant, findLiveGrant, hasDeletionInFlight, revokeGrant } from './oauth-store.js';
+import {
+  createGrant,
+  findLiveGrant,
+  hasDeletionInFlight,
+  revokeGrant,
+  revokeSupersededGrants,
+} from './oauth-store.js';
 
 /** A pending authorization request, read through the library's own cookie check. */
 interface PendingRequest {
@@ -61,10 +67,12 @@ export class OAuthConsentService {
   ): Promise<ConnectorConsent> {
     const pending = await this.load(req, res, requestId);
     const client = await this.oauth.provider.Client.find(pending.clientId);
-    if (!client) throw new AppException({ code: 'CONNECT_REQUEST_EXPIRED' });
+    if (!client) throw new AppException({ code: 'CONNECT_REQUEST_GONE' });
     const redirectUri = pending.redirectUri ?? client.redirectUris?.[0];
-    const redirectHost = redirectUri ? URL.parse(redirectUri)?.host : undefined;
-    if (!redirectHost) throw new AppException({ code: 'CONNECT_REQUEST_EXPIRED' });
+    if (!redirectUri || !URL.canParse(redirectUri)) {
+      throw new AppException({ code: 'CONNECT_REQUEST_GONE' });
+    }
+    const redirectHost = new URL(redirectUri).host;
 
     const mailboxes = await this.mailboxes.listByWorkspace(principal.workspaceId);
     return {
@@ -96,13 +104,21 @@ export class OAuthConsentService {
       }
     }
 
-    const grantId = await createGrant(this.db, {
-      workspaceId: principal.workspaceId,
-      userId: principal.userId,
-      clientId: pending.clientId,
-      scopes: pending.scopes,
-      resource: pending.resource,
-    });
+    let grantId: string;
+    try {
+      grantId = await createGrant(this.db, {
+        workspaceId: principal.workspaceId,
+        userId: principal.userId,
+        clientId: pending.clientId,
+        scopes: pending.scopes,
+        resource: pending.resource,
+      });
+    } catch (error) {
+      // The registration was removed while this request waited (an
+      // unapproved client past retention): there is no app to return to.
+      if (isForeignKeyViolation(error)) throw new AppException({ code: 'CONNECT_REQUEST_GONE' });
+      throw error;
+    }
     let redirectTo: string;
     try {
       redirectTo = await this.oauth.provider.interactionResult(
@@ -116,15 +132,24 @@ export class OAuthConsentService {
       // The request vanished between the read and the write. Do not
       // leave a grant behind that no token will ever be issued under.
       await revokeGrant(this.db, grantId);
-      throw this.asExpired(error);
+      throw this.asGone(error);
     }
+
+    // Connecting an app again replaces its earlier connection. Done only
+    // now, with the new approval recorded, so a request that vanished
+    // above never costs the person the connection they already had.
+    const replaced = await revokeSupersededGrants(this.db, {
+      grantId,
+      userId: principal.userId,
+      clientId: pending.clientId,
+    });
 
     await this.securityEvents.record({
       eventType: 'connected_app.connected',
       severity: 'info',
       userId: principal.userId,
       workspaceId: principal.workspaceId,
-      payload: { grantId, clientId: pending.clientId, scopes: pending.scopes },
+      payload: { grantId, clientId: pending.clientId, scopes: pending.scopes, replaced },
     });
     return { redirectTo };
   }
@@ -135,18 +160,33 @@ export class OAuthConsentService {
     res: ServerResponse,
     requestId: string,
   ): Promise<ConnectorConsentResult> {
-    await this.load(req, res, requestId);
+    const pending = await this.load(req, res, requestId);
+    let redirectTo: string;
     try {
-      const redirectTo = await this.oauth.provider.interactionResult(
+      redirectTo = await this.oauth.provider.interactionResult(
         req,
         res,
         { error: 'access_denied', error_description: 'The request was denied.' },
         { mergeWithLastSubmission: false },
       );
-      return { redirectTo };
     } catch (error) {
-      throw this.asExpired(error);
+      throw this.asGone(error);
     }
+    // Approve, then Deny, on the same request: the app is told
+    // `access_denied`, so the approval's grant must not stay live.
+    if (pending.approvedGrantId) {
+      const revoked = await revokeGrant(this.db, pending.approvedGrantId);
+      if (revoked) {
+        await this.securityEvents.record({
+          eventType: 'connected_app.disconnected',
+          severity: 'info',
+          userId: revoked.userId,
+          workspaceId: revoked.workspaceId,
+          payload: { grantId: revoked.grantId, reason: 'denied' },
+        });
+      }
+    }
+    return { redirectTo };
   }
 
   private async load(
@@ -158,7 +198,7 @@ export class OAuthConsentService {
     try {
       interaction = await this.oauth.provider.interactionDetails(req, res);
     } catch (error) {
-      throw this.asExpired(error);
+      throw this.asGone(error);
     }
     const params = interaction.params;
     const clientId = params.client_id;
@@ -170,7 +210,7 @@ export class OAuthConsentService {
       typeof clientId !== 'string' ||
       resource !== mcpResourceUrl()
     ) {
-      throw new AppException({ code: 'CONNECT_REQUEST_EXPIRED' });
+      throw new AppException({ code: 'CONNECT_REQUEST_GONE' });
     }
     return {
       clientId,
@@ -183,10 +223,17 @@ export class OAuthConsentService {
   }
 
   /** The library's "no such request for this browser" becomes our designed state. */
-  private asExpired(error: unknown): unknown {
+  private asGone(error: unknown): unknown {
     if (error instanceof errors.SessionNotFound) {
-      return new AppException({ code: 'CONNECT_REQUEST_EXPIRED' });
+      return new AppException({ code: 'CONNECT_REQUEST_GONE' });
     }
     return error;
   }
+}
+
+/** Postgres foreign_key_violation (23503), whichever driver raised it. */
+function isForeignKeyViolation(error: unknown): boolean {
+  const code = (value: unknown) =>
+    typeof value === 'object' && value !== null ? (value as { code?: unknown }).code : undefined;
+  return code(error) === '23503' || code((error as { cause?: unknown } | null)?.cause) === '23503';
 }

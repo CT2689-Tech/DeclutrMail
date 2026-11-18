@@ -218,7 +218,7 @@ test('Deny tells the app access_denied and connects nothing', async ({ page }) =
   }
 });
 
-test('a request this browser did not start reads as expired, at phone width too', async ({
+test('a request this browser did not start reads as no longer available, at phone width too', async ({
   page,
 }) => {
   await signIn(page);
@@ -226,7 +226,9 @@ test('a request this browser did not start reads as expired, at phone width too'
   await page.goto(`/connect/authorize?request=${'x'.repeat(43)}`);
   // Scoped to the page's own content: Next adds an alert-role route announcer.
   const main = page.getByRole('main');
-  await expect(main.getByRole('alert')).toContainText('This connection request has expired');
+  await expect(main.getByRole('alert')).toContainText(
+    'This connection request is no longer available',
+  );
   await expect(main.getByRole('button')).toHaveCount(0);
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

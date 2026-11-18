@@ -5,6 +5,7 @@
 
 export type { KmsProvider } from './kms-provider';
 export {
+  CONNECT_REQUEST_ID,
   isUserScopedAppPath,
   parseAppReturnTo,
   parseUpgradeReturnTo,

@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, eq, exists, gt, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import {
   accountDeletionRequests,
@@ -44,10 +44,59 @@ export interface NewGrant {
   resource: string;
 }
 
+/**
+ * Record a person's approval. The client is stamped in the same
+ * transaction: `last_granted_at` is what keeps an approved app's
+ * registration out of the retention sweep.
+ */
 export async function createGrant(db: DrizzleDb, grant: NewGrant): Promise<string> {
-  const [row] = await db.insert(oauthGrants).values(grant).returning({ id: oauthGrants.id });
-  if (!row) throw new Error('Failed to create oauth_grants row.');
-  return row.id;
+  return db.transaction(async (tx) => {
+    const [row] = await tx.insert(oauthGrants).values(grant).returning({ id: oauthGrants.id });
+    if (!row) throw new Error('Failed to create oauth_grants row.');
+    await tx
+      .update(oauthClients)
+      .set({ lastGrantedAt: sql`now()` })
+      .where(eq(oauthClients.clientId, grant.clientId));
+    return row.id;
+  });
+}
+
+/** Whether a registered client with this id still exists. */
+export async function clientExists(db: DrizzleDb, clientId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ clientId: oauthClients.clientId })
+    .from(oauthClients)
+    .where(eq(oauthClients.clientId, clientId))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
+ * Connecting an app again replaces its earlier connection: revoke every
+ * other live grant this person gave this client. Otherwise the old
+ * refresh token keeps working beside the new one, and Settings lists the
+ * same app twice.
+ */
+export async function revokeSupersededGrants(
+  db: DrizzleDb,
+  current: { grantId: string; userId: string; clientId: string },
+): Promise<string[]> {
+  const superseded = await db
+    .select({ id: oauthGrants.id })
+    .from(oauthGrants)
+    .where(
+      and(
+        eq(oauthGrants.userId, current.userId),
+        eq(oauthGrants.clientId, current.clientId),
+        ne(oauthGrants.id, current.grantId),
+        isNull(oauthGrants.revokedAt),
+      ),
+    );
+  const revoked: string[] = [];
+  for (const { id } of superseded) {
+    if (await revokeGrant(db, id)) revoked.push(id);
+  }
+  return revoked;
 }
 
 /** The live grant, or undefined when it is unknown or revoked. */
@@ -231,6 +280,8 @@ export async function touchGrantLastUsed(db: DrizzleDb, grantId: string): Promis
 export interface ConnectedGrant {
   id: string;
   appName: string | null;
+  /** Every redirect URI the app registered; the name alone is self-declared. */
+  redirectUris: string[];
   scopes: string[];
   createdAt: Date;
   lastUsedAt: Date | null;
@@ -249,6 +300,7 @@ export async function listConnectedGrants(
     .select({
       id: oauthGrants.id,
       appName: oauthClients.clientName,
+      redirectUris: oauthClients.redirectUris,
       scopes: oauthGrants.scopes,
       createdAt: oauthGrants.createdAt,
       lastUsedAt: oauthGrants.lastUsedAt,
