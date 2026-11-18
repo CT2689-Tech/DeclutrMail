@@ -73,7 +73,8 @@ const GATES = [
   { type: 'privacy-auditor',           tier: 'gate',     when: /^(apps\/api\/src\/(gmail|senders|sync)\/|packages\/shared\/src\/contracts\/gmail-data-inventory\.ts$|packages\/db\/src\/schema\/(mail-messages|senders)\.ts$)/ },
   { type: 'architecture-guardian',     tier: 'gate',     when: /^(apps\/api\/|packages\/(db|workers|events)\/)/ },
   { type: 'schema-migration-reviewer', tier: 'gate',     when: /^packages\/db\/(migrations\/|src\/schema\/)/ },
-  { type: 'design-system-agent',       tier: 'gate',     when: /^(apps\/web\/src\/(components|features|app)\/|packages\/shared\/)|\.stories\.tsx$/ },
+  // Marketing pages are Tier 2 (CLAUDE.md §2.0) and leave this gate (2026-11-17).
+  { type: 'design-system-agent',       tier: 'gate',     when: /^(?!apps\/web\/src\/(app\/\(marketing\)|features\/marketing)\/)(apps\/web\/src\/(components|features|app)\/|packages\/shared\/)|\.stories\.tsx$/ },
   { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$|^apps\/api\/src\/billing\/paddle\.adapter\.ts$/ },
   { type: 'typescript-reviewer',       tier: 'advisory', when: /\.tsx?$/ },
   // §7's "all TS files" (.ts and .tsx), plus scripts, shell hooks, workflows,

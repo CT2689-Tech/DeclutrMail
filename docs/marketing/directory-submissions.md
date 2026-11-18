@@ -40,15 +40,17 @@ every link, update the Status column as you go.
 
 ### 1.2 Claims you may NOT make
 
-- **Anything about a competitor.** Not in a description, not in a maker comment, not in a reply.
-  Directories with an "alternative to X" field (AlternativeTo, SaaSHub) get the product **name
-  only** in that field — no adjective, no comparison sentence. Source-backed comparisons live on
-  `/vs/*` and `/compare`; link there if someone asks.
+- **A competitor claim with no published source.** You may repeat a competitor comparison that
+  is already published, with its citation, on `/vs/*` or `/compare`, and link there. Nothing
+  beyond that: no new claims about another product, no rankings. Directories with an
+  "alternative to X" field (AlternativeTo, SaaSHub) still get the product **name only** in that
+  field.
 - **Anything that is not in the repo.** No founder backstory an agent wrote, no inbox statistics, no
   "saves N hours", no speed claims, no "most private".
-- **No user counts, no testimonials, no ratings, no "loved by", no logos.** There are none. The
-  landing page ships without testimonials for the same reason (`(marketing)/page.tsx` header
-  comment, D136) [S13].
+- **No invented social proof.** No user counts, ratings, "loved by" or logos — there are none.
+  A testimonial needs the customer's written permission and their exact words; never a
+  fabricated or paraphrased quote. The landing page ships without testimonials today
+  (`(marketing)/page.tsx` header comment) [S13].
 - **No "AI reads your inbox" framing in either direction** — do not describe DeclutrMail as AI that
   reads email, and do not describe any other tool that way to contrast with it (`llms.txt`, "Please
   do not describe DeclutrMail as") [S2].
@@ -89,35 +91,27 @@ dropped by `parseSignupAttributionRef`, so an invented `ref=betalist` records no
 
 ### 1.4 Pricing, exactly as the manifest has it
 
-All figures from `packages/shared/src/entitlements/pricing.config.ts` [S5]. The machine-readable
-copy of the same manifest is served at `https://declutrmail.com/pricing.md`.
+Re-copy prices from `https://declutrmail.com/pricing.md` on the day you submit; it is
+generated from `packages/shared/src/entitlements/pricing.config.ts` [S5]. As of 2026-11-17 the
+manifest says:
 
-| Plan         | Monthly (USD) | Annual (USD) | Monthly (INR) | Annual (INR) | Inboxes | Cleanup actions  | Activity Undo window |
-| ------------ | ------------- | ------------ | ------------- | ------------ | ------- | ---------------- | -------------------- |
-| Free         | $0            | —            | ₹0            | —            | 1       | 50 per month     | 30 days              |
-| Plus         | $9            | $90          | ₹749          | ₹7,499       | 1       | No monthly limit | 30 days              |
-| Pro          | $19           | $190         | ₹1,599        | ₹15,999      | 5       | No monthly limit | 30 days              |
-| Founding Pro | —             | $129         | —             | ₹10,999      | 5       | No monthly limit | 30 days              |
+| Plan         | Price                   | Inboxes | Cleanup allowance                                                                        |
+| ------------ | ----------------------- | ------- | ---------------------------------------------------------------------------------------- |
+| Free         | $0                      | 1       | 1,000 archived or deleted emails per signup month; Keep, Later and Unsubscribe unlimited |
+| Plus         | $59/year                | 2       | No monthly limit                                                                         |
+| Backlog Pass | $19 once, for 30 days   | —       | No monthly limit while active                                                            |
+| Pro          | Not for sale (waitlist) | 5       | —                                                                                        |
 
-- **Founding Pro:** $129/year, first 250 paying users (`maxRedemptions: 250`), grants Pro; the price
-  stays locked while the subscription stays active. Do not state how many founding spots remain —
-  no public source for a live count exists.
 - **What each tier adds:** Free is the whole manual product (Senders, Sender Detail, Activity,
   Triage, Later, every cleanup action). Plus adds no monthly limit, the Screener, Autopilot rules,
-  and Quiet hours. Pro adds the Daily Brief, Follow-ups, and 5 connected inboxes.
-- Annual is described in the manifest as "2 months free vs monthly". $90 = 10 × $9 and $190 = 10 ×
-  $19, so that phrasing is safe.
-- Team and Enterprise are not purchasable. Do not list them as plans.
-- Directories with a single "Pricing model" dropdown: choose **Freemium**. "Starting price": **$9 /
-  month** (Plus monthly). "Free plan": **Yes**. "Free trial": **No** — there is a Free plan and a
+  and Quiet hours. Pro (not purchasable) adds the Daily Brief and Follow-ups.
+- Do not advertise Pro, Founding Pro, monthly prices, Team or Enterprise as available.
+- Directories with a single "Pricing model" dropdown: choose **Freemium**. "Starting price":
+  **$59/year** (Plus). "Free plan": **Yes**. "Free trial": **No** — there is a Free plan and a
   14-day money-back on any purchase, once per customer, which is not a trial.
 
----
-
-## 2. Reusable copy blocks
-
-Every block below was length-checked against its limit. Character counts are in brackets. If you
-edit a block, recount it.
+(Replaced 2026-11-17: the previous table showed retired monthly prices, Founding Pro and a
+50-action Free limit.)
 
 ### T — Tagline (≤ 60 characters)
 
@@ -142,8 +136,8 @@ form — confirm there.
 
 - **S1** [278] —
   `DeclutrMail groups your Gmail by sender so one decision — Keep, Archive, Unsubscribe, Later, or Delete — handles many emails at once. You see the matching count and the planned Gmail changes before you confirm. Archive, Later, and Delete can be undone from Activity for 30 days.`
-- **S2** [285] —
-  `A Gmail cleanup tool for inboxes you gave up on. Review senders, preview which emails will move, then confirm. We never fetch or store full email contents. Free covers every cleanup action, 50 a month; Plus is $9/month and Pro is $19/month. A sent unsubscribe request cannot be undone.`
+- **S2** [240] —
+  `A Gmail cleanup tool for inboxes you gave up on. Review senders, preview which emails will move, then confirm. We never fetch or store full email contents. Free plan included; Plus is $59 a year. A sent unsubscribe request cannot be undone.`
 - **S3 (AI-tool directories only)** [286] —
   `DeclutrMail is Gmail cleanup by sender, with a preview before anything moves. It does not predict email categories. AI is used narrowly: short explanations for suggestions, and the Pro Daily Brief, which may use the sender, subject line, and Gmail preview snippet — never full contents.`
 
@@ -155,7 +149,7 @@ characters", fetched 2026-09-19) — use **S-PH**:
 
 ### L — Long description (≤ 900 characters)
 
-**L1** [881]
+**L1** [852]
 
 ```text
 DeclutrMail is a Gmail cleanup tool for inboxes you gave up on. It groups email by sender, so one decision — Keep, Archive, Unsubscribe, Later, or Delete — can handle many emails at once.
@@ -164,10 +158,10 @@ Before a manual Archive, Later, or Delete runs, you see how many emails match, a
 
 We never fetch or store full email contents. The Gmail details DeclutrMail does store are listed at declutrmail.com/security.
 
-Gmail stays where you read and reply. Free includes every cleanup action, 50 a month, no card. Plus ($9/month) removes the limit and adds the Screener and Autopilot rules. Pro ($19/month) adds the Daily Brief, Follow-ups, and 5 inboxes.
+Gmail stays where you read and reply. Free includes every cleanup action, up to 1,000 archived or deleted emails a month, no card. Plus ($59/year) removes the limit and adds the Screener and Autopilot rules.
 ```
 
-**L2** [897]
+**L2** [891]
 
 ```text
 DeclutrMail ranks the senders in your Gmail and lets you decide once per sender: Keep, Archive, Unsubscribe, Later, or Delete. One decision can handle many emails at once.
@@ -176,7 +170,7 @@ Nothing moves until you confirm. Each manual Archive, Later, or Delete shows the
 
 Undo Archive, Later, or Delete from Activity for 30 days. Deleted email also stays in Gmail Trash for up to 30 days. Unsubscribe is one-way.
 
-We never fetch or store full email contents. DeclutrMail requests one Gmail permission, gmail.modify, and never sends email as you. Works with Gmail and Google Workspace. Free plan; paid plans from $9/month.
+We never fetch or store full email contents. DeclutrMail requests one Gmail permission, gmail.modify, and never sends email as you. Works with Gmail and Google Workspace. Free plan; Plus is $59 a year.
 ```
 
 ### F — Five feature bullets
@@ -200,7 +194,7 @@ We never fetch or store full email contents. DeclutrMail requests one Gmail perm
 2. One Gmail permission, `gmail.modify`; DeclutrMail never sends email as you.
 3. Google approved DeclutrMail's OAuth verification on 21 April 2026 (CASA Tier 2).
 4. No ML category prediction; automation follows preset rules you explicitly enable.
-5. Free plan with every cleanup action (50 a month). 14-day money-back on any purchase, once per customer.
+5. Free plan with every cleanup action (up to 1,000 archived or deleted emails a month). 14-day money-back on any purchase, once per customer.
 
 Sources for F1: [S7][S8][S4][S5]. For F2: [S3][S10][S11][S5].
 
@@ -240,7 +234,7 @@ What I want to be straight about:
 - It is Gmail and Google Workspace only.
 - A sent unsubscribe request can't be taken back, so that one isn't undoable.
 - It asks for the gmail.modify permission, which is broader than what it uses. We never fetch or store full email contents, and the list of Gmail details it does store is published at declutrmail.com/security.
-- Free is 50 cleanup actions a month. Plus is $9/month, Pro is $19/month.
+- Free covers up to 1,000 archived or deleted emails a month. Plus is $59 a year.
 
 If you don't want to connect Gmail yet, there's a demo with made-up senders at declutrmail.com/inbox-simulator — no sign-in.
 
@@ -386,9 +380,8 @@ pages is marked as unverified.
 - [ ] **First comment** — M1, with the `[FOUNDER: …]` line written by the founder.
 - [ ] **Demo video (optional)** — a screen recording of one preview → confirm → undo loop in the
       simulator. Whether PH requires or favors video is unverified.
-- [ ] **Promo code (optional)** — Founding Pro is already a public $129/year offer for the first 250
-      paying users. Do not invent a separate PH discount unless it exists in
-      `pricing.config.ts`.
+- [ ] **Promo code (optional)** — use only a code that is live in `pricing.config.ts` (`PROMO`)
+      on launch day. Do not invent a PH discount.
 
 ### Timing
 
@@ -420,7 +413,7 @@ pages is marked as unverified.
 - Do not ask friends to create accounts to vote.
 - Do not email DeclutrMail users asking them to vote. (A plain "we launched, here's the page" note
   is a separate founder decision.)
-- Do not offer discounts, credits, or Founding Pro spots in exchange for votes, comments, or
+- Do not offer discounts, credits, or promo codes in exchange for votes, comments, or
   reviews.
 - Do not post testimonials, user counts, or "trusted by" lines. There are none.
 - Do not name or characterize competitors in the listing, the maker comment, or replies.
@@ -446,7 +439,7 @@ facts.
   `ACTION_PREVIEW_CLAIM`, `DELETE_RECOVERY_CLAIM`, `MANUAL_ACTION_SCOPE_CLAIM`,
   `RECOMMENDATION_AI_DISCLOSURE`, `BRIEF_AI_DISCLOSURE`.
 - **[S5]** `packages/shared/src/entitlements/pricing.config.ts` — `TIER_MANIFEST` (prices, inbox
-  limits, `undoWindowDays`, `cleanupActionsPerMonth`, Founding Pro promo, capabilities per tier).
+  limits, the Free meter, `PROMO`, capabilities per tier).
   Public: https://declutrmail.com/pricing and https://declutrmail.com/pricing.md
 - **[S6]** `packages/shared/src/entitlements/undo-window.ts` — `UNIFORM_UNDO_WINDOW_DAYS`.
 - **[S7]** `apps/web/src/features/marketing/comparison/comparison-data.ts` — the `DECLUTR` block

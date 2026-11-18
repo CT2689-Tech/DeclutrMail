@@ -15,8 +15,8 @@ import { TrackedCta } from './tracked-cta';
  *
  * The verification claim is one short line here; its full wording, dates
  * and scope sit in the Privacy section and on /security#verification,
- * which "Security details" opens. The privacy promise is stated once, in
- * Privacy, not on the hero (CLAUDE.md §8.5).
+ * which "Security details" opens. The privacy promise sits in Privacy today;
+ * marketing pages may also lead with it (CLAUDE.md §8.5).
  */
 export function Hero() {
   return (

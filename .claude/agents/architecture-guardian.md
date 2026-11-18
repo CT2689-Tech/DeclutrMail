@@ -1,6 +1,6 @@
 ---
 name: architecture-guardian
-description: Backend structural correctness reviewer for DeclutrMail. Verifies NestJS module structure (D201), worker policies (D203/D225), read-only services with cross-feature events (D204), orchestrator boundaries (D205), undo journal wiring (D232), observability events (D159), API response envelope (D202), and rate limiting (D156). Use on PRs touching apps/api/** or packages/{db,workers,events}/**. Reports findings; never refactors.
+description: Backend structural correctness reviewer for DeclutrMail. Verifies NestJS module shape, worker policies, undo journal wiring, observability events, the API response envelope, rate limiting, idempotency on Gmail- and billing-mutating endpoints, and the CLAUDE.md §2.6 runtime invariants. Use on PRs touching apps/api/** or packages/{db,workers,events}/**. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -64,9 +64,10 @@ For each new NestJS module (`*.module.ts`) added or modified:
 - Does it avoid registering providers it doesn't own? (Cross-feature dependencies should be `imports`, not direct `providers`.)
 - Does it expose only what's needed via `exports`?
 
-**Anti-pattern flag (BLOCKING):** A module that imports another module's
-internal repository or service directly bypasses the boundary. Cross-feature
-data access must go through the owning module's exported facade or events.
+**Anti-pattern flag (WARNING):** A module that registers another module's
+internal repository or service as its own provider. Importing the owning
+module and calling its exported service is fine; so is a direct read when it
+is simpler (2026-11-17: cross-feature access is a convention, not a gate).
 
 #### Check B — Worker policies (D203, D225)
 
@@ -94,34 +95,17 @@ For each new or modified worker class extending `BaseDeclutrWorker`:
 - Calls Sentry from multiple catch blocks (except adminPolicy)
 - Performs cross-feature writes synchronously (use events instead — Check C)
 
-#### Check C — Read-only services + cross-feature events (D204)
+#### Check C — Cross-feature writes (WARNING only since 2026-11-17)
 
-Services in DeclutrMail are **read-only by default**. Writes must go
-through the owning feature's repository OR through an outbox event —
-`OutboxPublisher.publish({ schema, ... })` (`packages/workers/src/outbox-publisher.ts`)
-with a `.strict()` Zod schema from `packages/events/src/events.ts`. There is
-no in-process event bus.
+A service may write its own feature's tables directly, and may write another
+feature's table in the same transaction when that is the simplest correct
+design (onboarding, billing and unsubscribe already do). Use the outbox
+(`OutboxPublisher.publish`, `packages/workers/src/outbox-publisher.ts`) for
+async side effects in another feature.
 
-For each service in the diff:
-
-- Does it only contain `find*`, `get*`, `list*`, `query*` methods? (read-only marker)
-- If it has a write method (`create*`, `update*`, `delete*`, `apply*`),
-  is it within the OWNING feature's module?
-- If the write affects another feature's data, is it done via an outbox
-  event rather than a direct cross-module call?
-
-**Anti-pattern (BLOCKING):** A service in feature A directly calling
-`featureB.repository.update(...)`. Must be event-based.
-
-**Allowed exception:** orchestrator classes (D205) explicitly own
-cross-feature workflows and may call multiple feature services. They
-must be named `*Orchestrator` and document their transactional boundary
-in the class comment.
-
-The orchestrators that exist today: `AuthSignupOrchestrator`
-(`apps/api/src/auth/auth-signup.orchestrator.ts`) and
-`AccountDeletionOrchestrator` (`apps/api/src/account/deletion.service.ts`).
-A new one is a stop condition (below).
+**Flag (WARNING)** a cross-feature write only when it skips a rule the owning
+feature enforces — the undo journal, Protected exclusion, an entitlement
+check. Never BLOCK on read-only/event-only purity.
 
 #### Check D — Undo journal wiring (D232, D207)
 
@@ -176,14 +160,19 @@ For each new public endpoint:
 **Flag (WARNING)** missing per-route throttle on auth, mutation, and
 expensive query endpoints.
 
-#### Check H — Idempotency on mutation endpoints (D202, D207)
+#### Check H — Idempotency on Gmail- and billing-mutating endpoints
 
-For each mutation endpoint (POST/PATCH/DELETE):
+For each endpoint that changes Gmail state or billing state (actions,
+Autopilot execution, unsubscribe, checkout and billing). A double submit
+there moves mail twice or charges twice:
 
 - Does it accept an `Idempotency-Key` header?
 - Is the key persisted under a unique constraint (for actions:
   `action_jobs.idempotency_key`, index `action_jobs_idempotency_key_uniq`)?
 - Does a repeat key return the stored result rather than re-executing?
+
+**Flag (BLOCKING)** such an endpoint without idempotency handling. Other
+mutation endpoints (settings, feedback, waitlist) are **[INFO]** at most.
 
 #### Check I — CLAUDE.md §2.6 runtime invariants
 
@@ -202,8 +191,6 @@ Each of these shipped to production at least once. Flag (BLOCKING):
   refund) stay terminal; same-second Paddle events are not a total
   order. Also recommend an independent adversarial review for any
   entitlement-affecting concurrency change.
-
-**Flag (BLOCKING)** mutation endpoints without idempotency handling.
 
 ## Output format
 
@@ -229,9 +216,9 @@ If no findings: `## Architecture Guardian — PR #<NN>: no findings.`
 
 ## Severity rubric
 
-- **[BLOCKING]** — direct violation of a D-decision (D201, D203, D204,
-  D205, D232, D202 envelope, missing idempotency on mutation, cross-feature
-  sync write)
+- **[BLOCKING]** — a worker-policy violation, undo journal gap, API envelope
+  break, missing idempotency on a Gmail- or billing-mutating endpoint, or a
+  CLAUDE.md §2.6 runtime invariant
 - **[WARNING]** — pattern that's likely wrong but might have valid context
   (missing throttle, observability gap, missing exception path)
 - **[INFO]** — observation worth surfacing (suggested extraction, test
@@ -241,10 +228,7 @@ If no findings: `## Architecture Guardian — PR #<NN>: no findings.`
 
 Stop and surface to founder immediately if the PR:
 
-- Modifies `BaseDeclutrWorker` itself
-- Adds a new worker policy beyond the 5 defined
 - Modifies the API envelope contract (D202)
-- Introduces a new orchestrator beyond those approved in D205
 - Changes the undo journal schema or TTL logic (D232)
 - Modifies CLAUDE.md §2 guardrails or this file
 

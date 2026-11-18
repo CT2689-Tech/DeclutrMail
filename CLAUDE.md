@@ -83,9 +83,10 @@ Enforced by the `privacy-auditor` agent and `verify-no-body-storage.sh`
 
 ### 2.2 Five verbs — K/A/U/L/D (D227, ADR-0019)
 
-Product UI uses exactly **Keep · Archive · Unsubscribe · Later · Delete**,
-shortcuts **K/A/U/L/D**, sourced from the verb registry
-(`packages/shared/src/actions/verb-registry.ts`).
+Product UI takes its action verbs from the verb registry
+(`packages/shared/src/actions/verb-registry.ts`): **Keep · Archive ·
+Unsubscribe · Later · Delete**, shortcuts **K/A/U/L/D**, plus registry-defined
+actions such as Unprotect. Marketing pages are outside this rule.
 
 - "Screen" is an internal enum only (`triage_decision.verdict='screen'`),
   never user-facing. "Screener" is a feature name and is fine.
@@ -135,13 +136,10 @@ Each line below is a rule because breaking it already cost an incident or
 a founder decision.
 
 - **Mailto unsubscribe is manual** (D230) — never auto-sent.
-- **Offline destructive actions are draft intents** (D233) — never
-  auto-replayed.
-- **Custom Autopilot rules are rejected** (`is_preset=false` → 404, D234).
+- **Failed destructive jobs are never auto-replayed** (D233) — a retry of a
+  mutation the user previewed earlier needs a fresh preview.
 - **Account deletion respects undo windows** (D232):
   `max(now + 7d, latest_undo_expires_at)`.
-- **Partitioning is deferred** (D235) until 25M rows, 2M per mailbox, or
-  p95 > 150 ms.
 - **Protected is the only visible safety state** (D245). Protected senders
   are excluded from bulk and automatic mail-changing actions. VIP is retired
   — never reintroduce it as a ranking or safety alias; a manual ranking
@@ -260,7 +258,7 @@ pnpm --filter @declutrmail/web dev        # web (:3000)
 
 ---
 
-## 5. Parallel work and design freeze
+## 5. Parallel work
 
 ### 5.1 Parallel sessions
 
@@ -273,13 +271,6 @@ re-validates; update only for a real conflict, dependency or failure. Keep
 **ready · queued · merged · deployed · production-verified** distinct when
 reporting. Follow the user's limits on sessions, delegation, merging and
 deploying.
-
-### 5.2 Design freeze
-
-Design tokens are immutable and Storybook is the source
-of truth for component appearance. A visual change to a frozen screen gets
-the `redesign` label from its author — a signal for the founder's queue; no
-check enforces it.
 
 ---
 
@@ -344,8 +335,8 @@ Every product command, skill or workflow is `ct-<word>`; the index is
 
 `.claude/settings.json` registers PreToolUse hooks (bypass flags, protected
 files, destructive cloud ops, branch name) and PostToolUse guards (body
-storage, microcopy, category prediction, Gmail hot path, idempotency, raw
-dates in SQL, preview-before-mutation). If a hook fires, fix the cause —
+storage, microcopy, category prediction, idempotency, raw dates in SQL,
+preview-before-mutation). If a hook fires, fix the cause —
 never bypass it.
 
 ### 7.4 CI runs the guards
@@ -375,8 +366,7 @@ log disagrees with the derived one.
   and `node --test scripts/*.test.mjs` all pass.
 - `Closes D###` for each shipped D; no unresolved `[BLOCKING]`.
 - No new TODO without a linked D or issue.
-- By PR type: a component ships its Storybook story; a migration states its
-  rollback path; an API change keeps contract tests green; a worker names its
+- By PR type: a migration states its rollback path; an API change keeps contract tests green; a worker names its
   policy and idempotency key in the PR body.
 - Local smoke passed (§8.7).
 - **Context-moving changes** (request path → background job, in-process →
@@ -424,8 +414,9 @@ decision 2026-09-19).
 
 **Copy budgets:** button or menu item ≤ 3 words · toast 1 sentence · error =
 cause + next action, ≤ 2 sentences · empty state = title + at most one
-sentence or one action · trust/privacy copy once per flow, at the decision
-point, never on heroes, banners or empty states. When truth and budget
+sentence or one action · in product flows, trust/privacy copy once per flow,
+at the decision point, never on banners or empty states. Marketing pages may
+lead with or repeat the exact privacy sentence (founder decision 2026-11-17). When truth and budget
 collide, cut the claim. Tests pin facts (digits, the verb, a short
 fragment), not whole sentences.
 
@@ -462,10 +453,11 @@ unowned ids, null prefs. On a break: find the cause, fix, re-smoke.
 
 | PR touches                           | Minimum smoke                                                                        |
 | ------------------------------------ | ------------------------------------------------------------------------------------ |
-| `apps/web/**`                        | web dev server → walk the affected flow through every state; no console errors       |
+| `apps/web/**` product UI             | web dev server → walk the affected flow through every state; no console errors       |
+| marketing / content pages            | load each changed page once; CI's Lighthouse, prerender and journey lanes cover more |
 | `apps/api/**`                        | `./scripts/dev-up.sh` → `curl` the endpoint; status, envelope, a downstream log line |
 | `packages/workers/**`                | enqueue a real job; see `worker.succeeded`                                           |
-| `packages/db/migrations/**`          | `./scripts/db-migrate.sh apply`, then revert; check the schema with `psql`           |
+| `packages/db/migrations/**`          | `./scripts/db-migrate.sh` on a scratch DB, run the `.rollback` with `psql`, re-apply |
 | `.husky/**`, `commitlint.config.cjs` | run the hook on a throwaway branch; the exit code is what it should be               |
 | `scripts/**`                         | run it; observe the side effect                                                      |
 | docs only                            | none — green CI suffices                                                             |
@@ -513,7 +505,7 @@ assumption and proceed if low-stakes, or add a
 token encryption; production migrations; billing provider webhooks or
 payment state; account deletion; privacy or retention behavior; destructive
 Gmail actions without complete preview + undo; webhook authentication;
-security headers / CORS / CSP; anything that contradicts §2; or a public
+security headers / CORS / CSP; anything that contradicts §2.1–§2.5; or a public
 claim you cannot source (e.g. "brand X does not support unsubscribe" from two
 observed messages). Nothing else is a stop condition.
 
@@ -526,7 +518,7 @@ observed messages). Nothing else is a stop condition.
 - Implement category prediction (§2.4).
 - Store bodies, attachments or non-allowlisted headers (§2.1).
 - Show "Screen" in product UI (§2.2).
-- Skip the action preview (§2.3) or auto-replay offline destructive actions.
+- Skip the action preview (§2.3) or auto-replay failed destructive jobs.
 - Use `x-goog-authenticated-user-email` for Pub/Sub auth (§2.5).
 - Commit secrets (`.env`, credentials, API keys, OAuth secrets).
 - Add features, abstractions or "while I'm here" cleanups beyond the task.
@@ -547,7 +539,7 @@ destructive action. If it can't be finished, split it out — don't stub it.
 | Where                                                 | Lifecycle                                                                    |
 | ----------------------------------------------------- | ---------------------------------------------------------------------------- |
 | `docs/log/learnings/`                                 | append-only, one file per entry, `YYYY-MM-DD-<slug>.md`                      |
-| `docs/log/mistakes/`                                  | append-only, one file per entry; add one when a gate fires or a bug ships    |
+| `docs/log/mistakes/`                                  | append-only, one file per entry; add one when a bug ships                    |
 | `docs/log/founder-followups/`                         | one file per entry; only its **Status:** line changes (Open → Done/Skipped) |
 | `LEARNINGS.md`, `MISTAKES.md`, `FOUNDER-FOLLOWUPS.md` | frozen; older entries stay there                                             |
 | `docs/adr/`                                           | rules that constrain code (template `0000-template.md`)                      |
