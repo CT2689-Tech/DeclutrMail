@@ -44,6 +44,26 @@ test('launcher cannot carry real credentials or Node/env preloads into either se
   }
 });
 
+test('CI runs the connector the way this launcher does', () => {
+  // CI sets its browser-lane environment in the workflow, not through this
+  // launcher, so the two can drift apart. The connector journeys passed
+  // here and failed their first CI run: the workflow lacked the flag, and
+  // every connector route was a 404.
+  const workflow = readFileSync(
+    new URL('../../../.github/workflows/ci.yml', import.meta.url),
+    'utf8',
+  );
+  const env = stackEnvironment(safe);
+  const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const key of ['MCP_ENABLED', 'API_URL']) {
+    assert.match(
+      workflow,
+      new RegExp(`^ +${key}: '?${escape(env[key])}'?$`, 'm'),
+      `ci.yml must set ${key} to ${env[key]} for the browser lanes`,
+    );
+  }
+});
+
 test('unsafe targets and mismatched cookie hosts fail before startup', () => {
   assert.throws(() => stackEnvironment({ ...safe, E2E_ISOLATED: undefined }));
   assert.throws(() => stackEnvironment({ ...safe, E2E_WEB_URL: 'http://localhost:3104' }));
