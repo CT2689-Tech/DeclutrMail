@@ -22,8 +22,11 @@ export interface OpsRetentionResult {
   deadLetterDeleted: number;
   /** `product_events` rows older than 13 months removed this pass. */
   productEventsDeleted: number;
-  /** OAuth rows past retention removed this pass, all five tables together. */
-  oauthRowsDeleted: number;
+  /**
+   * MCP connector rows past retention removed this pass: the five OAuth
+   * tables and `action_previews`, together.
+   */
+  connectorRowsDeleted: number;
   /** Grants that owned no token or code any more and were marked revoked. */
   oauthGrantsRetired: number;
   /** True when a table hit the batch ceiling and has more to remove. */
@@ -90,7 +93,10 @@ export const OAUTH_GRANT_RETENTION_DAYS = 30;
 /**
  * A cleanup an assistant prepared (`action_previews`). It stops being
  * confirmable when it expires, 15 minutes after it was made; the row —
- * sender ids and counts — goes a day after that, applied or not.
+ * sender ids and counts — goes once it is a day past that, applied or
+ * not. This worker runs daily, so a row is gone within TWO days of
+ * expiring; `gmail-data-inventory.ts` states that bound, and a change
+ * here must change it there.
  */
 export const ACTION_PREVIEW_RETENTION_DAYS = 1;
 /**
@@ -187,7 +193,7 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
       cronRunsDeleted,
       deadLetterDeleted,
       productEventsDeleted,
-      oauthRowsDeleted: oauth.deleted,
+      connectorRowsDeleted: oauth.deleted,
       oauthGrantsRetired: oauth.retired,
       moreRemaining:
         cronRunsDeleted >= RETENTION_BATCH_LIMIT ||

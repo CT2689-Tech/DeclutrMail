@@ -192,7 +192,7 @@ describe('MCP connector — Gmail account disconnected', () => {
     await harness.close();
   });
 
-  it('deletes that account’s previews, and only that account’s', async () => {
+  it('makes that account’s previews unusable at once, and leaves another account’s alone', async () => {
     const ada = await harness.person('ada@example.com', ['ada@example.com', 'work@example.com']);
     const personal = await mailboxIdOf(harness, 'ada@example.com');
     const work = await mailboxIdOf(harness, 'work@example.com');
@@ -216,16 +216,23 @@ describe('MCP connector — Gmail account disconnected', () => {
       mailboxAccountId: personal,
     });
 
-    const left = await harness.db.select({ id: actionPreviews.id }).from(actionPreviews);
-    expect(left.map((row) => row.id)).toEqual([other.data.preview_id]);
-    // The page and the tool agree it is gone.
+    // The assistant is told before it sends the person to the page...
+    const tool = await mcp.call('apply_cleanup', { preview_id: mine.data.preview_id });
+    expect(tool.error.code).toBe('MAILBOX_RECONNECT_REQUIRED');
+    // ...and the page refuses the press.
     const page = sessionBrowser(harness, ada);
-    expect((await page.post(`/api/action-previews/${mine.data.preview_id}/confirm`)).status).toBe(
-      404,
-    );
-    expect((await mcp.call('apply_cleanup', { preview_id: mine.data.preview_id })).error.code).toBe(
-      'PREVIEW_NOT_FOUND',
-    );
+    const pressed = await page.post(`/api/action-previews/${mine.data.preview_id}/confirm`);
+    expect(pressed.status).toBe(409);
+    expect(pressed.json.error.code).toBe('NO_ACTIVE_MAILBOX');
     expect(await harness.db.select().from(actionJobs)).toEqual([]);
+    const [row] = await harness.db
+      .select({ state: actionPreviews.state })
+      .from(actionPreviews)
+      .where(eq(actionPreviews.id, mine.data.preview_id));
+    expect(row!.state).toBe('pending');
+
+    // The other account's request is untouched and still confirmable.
+    const stillGood = await page.post(`/api/action-previews/${other.data.preview_id}/confirm`);
+    expect(stillGood.status).toBe(200);
   });
 });

@@ -46,6 +46,5 @@ import { McpToolsService } from './mcp-tools.service.js';
     McpTokenGuard,
     McpToolsService,
   ],
-  exports: [ActionPreviewsService],
 })
 export class McpModule {}

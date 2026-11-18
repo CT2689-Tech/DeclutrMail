@@ -182,6 +182,44 @@ describe('MCP tools — transport and the read-only tools', () => {
     expect(none.data.senders).toEqual([]);
   });
 
+  it('refuses to open a long-lived stream, for a 2026 client too', async () => {
+    // The SDK would serve `subscriptions/listen` as a stream that never
+    // closes (up to 1,024 of them per instance). Nothing here publishes
+    // changes, so each one is refused before it opens.
+    const modern = '2026-07-28';
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': modern,
+      'io.modelcontextprotocol/clientInfo': { name: 'probe', version: '1' },
+      'io.modelcontextprotocol/clientCapabilities': {},
+    };
+    const send = (method: string, params: Record<string, unknown>) =>
+      fetch(`${harness.base}/mcp`, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${mcp.accessToken}`,
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-protocol-version': modern,
+          'mcp-method': method,
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { ...params, _meta: meta } }),
+      });
+
+    // The same client CAN list tools, so the refusal below is not a
+    // malformed request being turned away.
+    const tools = await send('tools/list', {});
+    expect(tools.status).toBe(200);
+    const listed = (await tools.json()) as { result: { tools: unknown[] } };
+    expect(listed.result.tools).toHaveLength(10);
+
+    const listen = await send('subscriptions/listen', {
+      notifications: { toolsListChanged: true },
+    });
+    expect(listen.headers.get('content-type')).toContain('application/json');
+    const body = (await listen.json()) as { error: { message: string } };
+    expect(body.error.message).toBe('Subscription limit reached');
+  });
+
   it('get_usage reports the plan and its monthly limit', async () => {
     const answer = await mcp.call('get_usage');
     expect(answer.isError).toBe(false);

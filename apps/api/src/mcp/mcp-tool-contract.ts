@@ -150,7 +150,11 @@ const skipped = z.array(
   z.object({
     sender_id: tag(z.string(), 'sender-identity'),
     reason: tag(z.enum(MCP_SKIP_REASONS), 'action-previews'),
-    /** `mailto` only: a Gmail compose link the person sends themself. */
+    /**
+     * `mailto` only: a Gmail compose link the person sends themself. It
+     * also names the mailbox (`authuser=`), which every result already
+     * returns as `mailbox`.
+     */
     compose_url: tag(z.string().nullable(), 'unsubscribe-channels'),
   }),
 );

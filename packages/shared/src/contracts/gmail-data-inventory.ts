@@ -462,9 +462,11 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     derived: true,
     purpose:
       'Hold what a connected app asked for until you confirm it in DeclutrMail. Stores sender identifiers and counts, never a subject line.',
+    // The sweep runs once a day and removes rows that expired more than a
+    // day ago, so the bound a person can rely on is two days, not one.
     retention:
-      'Each request expires 15 minutes after it is made and is deleted within a day of expiring.',
-    removalTrigger: 'disconnect',
+      'Each request expires 15 minutes after it is made and is deleted within two days of expiring.',
+    removalTrigger: 'delete-indexed-data',
     exportedIn: ['ai-assistant'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,

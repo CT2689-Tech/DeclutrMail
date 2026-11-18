@@ -42,9 +42,9 @@ const SERVER_INSTRUCTIONS =
  *
  * One `McpServer` is built per request, with the ten tools bound to the
  * principal `McpTokenGuard` established — so no tool can run for anyone
- * but the token's own user, and no state is shared between requests or
- * Cloud Run instances. There are no sessions and no server-initiated
- * stream; `GET` and `DELETE` are refused by the controller.
+ * but the token's own user. There are no sessions: `GET` and `DELETE`
+ * are refused by the controller, and `subscriptions/listen` — the one
+ * long-lived stream the SDK would otherwise open — is refused below.
  *
  * Each tool is wrapped the same way: scope, then rate budget, then the
  * handler, then the result parsed through the tool's own output schema.
@@ -82,6 +82,13 @@ export class McpServerService implements OnModuleDestroy {
       const onerror = (error: Error): void => this.report(error);
       const mcp = createMcpHandler((ctx) => this.buildServer(principalOf(ctx.authInfo)), {
         responseMode: 'json',
+        // The SDK serves `subscriptions/listen` as a stream that stays
+        // open, on a bus shared by every caller, and it is a POST — so the
+        // controller's POST-only rule does not stop it. Nothing here ever
+        // publishes a change, and 1,024 idle streams per instance (the
+        // default) is a way to hold the API's connections. Zero refuses
+        // every one, in-band, before a stream opens.
+        maxSubscriptions: 0,
         onerror,
       });
       this.handler = { node: toNodeHandler(mcp, { onerror }), close: () => mcp.close() };
@@ -92,7 +99,8 @@ export class McpServerService implements OnModuleDestroy {
   private buildServer(principal: McpPrincipal): McpServer {
     const server = new McpServer(
       { name: 'declutrmail', title: 'DeclutrMail', version: '1.0.0' },
-      { instructions: SERVER_INSTRUCTIONS },
+      // The tool list is fixed, so there is no change to subscribe to.
+      { instructions: SERVER_INSTRUCTIONS, capabilities: { tools: { listChanged: false } } },
     );
     for (const name of MCP_TOOL_NAMES) this.register(server, name, principal);
     return server;

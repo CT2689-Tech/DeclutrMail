@@ -274,7 +274,7 @@ describe('OpsRetentionWorker', () => {
 
       const result = await run();
 
-      expect(result.oauthRowsDeleted).toBe(3);
+      expect(result.connectorRowsDeleted).toBe(3);
       const tokens = await db.select({ h: oauthTokens.tokenHash }).from(oauthTokens);
       expect(tokens.map((r) => r.h).sort()).toEqual(['expired-6d', 'live']);
       const codes = await db.select({ h: oauthAuthCodes.codeHash }).from(oauthAuthCodes);
@@ -321,7 +321,7 @@ describe('OpsRetentionWorker', () => {
 
       const result = await run();
 
-      expect(result.oauthRowsDeleted).toBe(2);
+      expect(result.connectorRowsDeleted).toBe(2);
       const kept = await db.select({ at: actionPreviews.expiresAt }).from(actionPreviews);
       expect(kept).toHaveLength(2);
       for (const row of kept) expect(row.at.getTime()).toBeGreaterThan(hoursAgo(24).getTime());
@@ -380,7 +380,7 @@ describe('OpsRetentionWorker', () => {
 
       const result = await run();
 
-      expect(result.oauthRowsDeleted).toBe(1);
+      expect(result.connectorRowsDeleted).toBe(1);
       const clients = await db.select({ id: oauthClients.clientId }).from(oauthClients);
       expect(clients.map((r) => r.id).sort()).toEqual(['fresh', 'in-use']);
     });
@@ -397,7 +397,7 @@ describe('OpsRetentionWorker', () => {
       const result = await run();
 
       // The stale grant and the never-approved registration: two rows.
-      expect(result.oauthRowsDeleted).toBe(2);
+      expect(result.connectorRowsDeleted).toBe(2);
       expect(await db.select().from(oauthGrants)).toHaveLength(0);
       const clients = await db.select({ id: oauthClients.clientId }).from(oauthClients);
       expect(clients.map((r) => r.id)).toEqual(['approved-once']);
@@ -417,7 +417,7 @@ describe('OpsRetentionWorker', () => {
 
       const result = await run();
 
-      expect(result.oauthRowsDeleted).toBe(RETENTION_BATCH_LIMIT + 200);
+      expect(result.connectorRowsDeleted).toBe(RETENTION_BATCH_LIMIT + 200);
       expect(result.moreRemaining).toBe(false);
       const left = await db.select({ h: oauthInteractions.idHash }).from(oauthInteractions);
       expect(left.map((r) => r.h)).toEqual(['pending']);
@@ -433,7 +433,7 @@ describe('OpsRetentionWorker', () => {
 
       const result = await run();
 
-      expect(result.oauthRowsDeleted).toBe(ceiling);
+      expect(result.connectorRowsDeleted).toBe(ceiling);
       expect(result.moreRemaining).toBe(true);
       expect(await db.select().from(oauthInteractions)).toHaveLength(1);
     }, 60_000);
@@ -462,7 +462,7 @@ describe('OpsRetentionWorker', () => {
           }
         })
         .find((line) => line?.kind === 'worker.succeeded');
-      expect(succeeded?.result).toHaveProperty('oauthRowsDeleted', 1);
+      expect(succeeded?.result).toHaveProperty('connectorRowsDeleted', 1);
       expect(succeeded?.result).toHaveProperty('oauthGrantsRetired', 0);
     });
   });

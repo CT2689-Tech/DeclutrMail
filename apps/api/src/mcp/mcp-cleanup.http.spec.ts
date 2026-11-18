@@ -451,6 +451,38 @@ describe('MCP connector — previews, confirmation and apply', () => {
     });
   });
 
+  describe('a confirmation whose start was never recorded', () => {
+    it('does not say "nothing happened" once it expires: it says where to look', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'archive',
+        sender_ids: [shop.id],
+      });
+      const id = preview.data.preview_id;
+      // The person pressed; the answer about the enqueue never came back.
+      await harness.db.execute(sql`
+        UPDATE action_previews
+        SET state = 'confirmed',
+            created_at = now() - interval '20 minutes',
+            confirmed_at = now() - interval '10 minutes',
+            expires_at = now() - interval '5 minutes'
+        WHERE id = ${id}::uuid
+      `);
+
+      const tool = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(tool.error.code).toBe('PREVIEW_EXPIRED');
+      expect(tool.error.message).toContain('was confirmed');
+      expect(tool.error.message).toContain('list_recent_actions');
+      const view = await s.page.get(`/api/action-previews/${id}`);
+      expect(view.json.data).toMatchObject({ state: 'expired' });
+      expect(view.json.data.confirmedAt).toEqual(expect.any(String));
+      // And nothing is started this late, by the tool or by the page.
+      expect((await s.page.post(confirmPath(id))).status).toBe(410);
+      expect(await jobs(s.mailboxId)).toHaveLength(0);
+    });
+  });
+
   describe('the person confirms on the page', () => {
     it('shows what was asked, then applies it once however often it is pressed or retried', async () => {
       const s = await scene();
@@ -477,6 +509,7 @@ describe('MCP connector — previews, confirmation and apply', () => {
         senderCount: 1,
         emailCount: 4,
         senderNames: ['The Shop'],
+        confirmedAt: null,
         outcome: null,
       });
 
@@ -708,6 +741,8 @@ describe('MCP connector — previews, confirmation and apply', () => {
       const confirm = await s.page.post(confirmPath(preview.data.preview_id));
       expect(confirm.status).toBe(409);
       expect(confirm.json.error.code).toBe('NO_ACTIVE_MAILBOX');
+      const tool = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
+      expect(tool.error.code).toBe('MAILBOX_RECONNECT_REQUIRED');
       expect(await jobs(s.mailboxId)).toHaveLength(0);
     });
   });
@@ -862,6 +897,45 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(applied.data.batch_id).toEqual(expect.any(String));
       const status = await s.mcp.call('get_action_status', { batch_id: applied.data.batch_id });
       expect(status.data).toMatchObject({ status: 'queued', requested_emails: 5 });
+    });
+  });
+
+  describe('what a confirmation stores', () => {
+    it('keeps counts, sender ids and reason codes — nothing else — for every verb', async () => {
+      const s = await scene();
+      const oneClick = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
+      const mailto = await seedSender(harness, s.mailboxId, {
+        email: 'list@club.example',
+        unsubscribe: 'mailto',
+      });
+      const wakeAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+      const requests: Array<Record<string, unknown>> = [
+        { verb: 'keep', sender_ids: [oneClick.id, mailto.id] },
+        { verb: 'unsubscribe', sender_ids: [oneClick.id, mailto.id] },
+        { verb: 'unsubscribe', sender_ids: [mailto.id] },
+        { verb: 'later', sender_ids: [mailto.id], wake_at: wakeAt },
+        { verb: 'archive', sender_ids: [oneClick.id] },
+        // Busy with the archive above: skipped, with a reason.
+        { verb: 'delete', sender_ids: [oneClick.id] },
+      ];
+      for (const request of requests) {
+        const preview = await s.mcp.call('preview_cleanup', request);
+        expect(preview.isError, JSON.stringify(request)).toBe(false);
+        const confirmed = await s.page.post(confirmPath(preview.data.preview_id));
+        expect(confirmed.status, JSON.stringify(request)).toBe(200);
+        const row = await previewRow(preview.data.preview_id);
+        expect(Object.keys(row!.result!).sort(), String(request.verb)).toEqual([
+          'appliedSenders',
+          'handle',
+          'requestedEmails',
+          'skipped',
+        ]);
+        for (const skip of row!.result!.skipped) {
+          expect(Object.keys(skip).sort()).toEqual(['reason', 'senderId']);
+        }
+        // No name, address, subject or link — only ids and codes.
+        expect(JSON.stringify(row!.result)).not.toMatch(/example|mailto:|https?:|Subject/);
+      }
     });
   });
 

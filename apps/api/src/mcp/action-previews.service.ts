@@ -46,8 +46,10 @@ export interface PreviewDetail {
   mailboxEmail: string;
   /** The connected app's name; null when it registered without one. */
   appName: string | null;
-  /** True once the 15 minutes are up and nothing was confirmed. */
+  /** True once the 15 minutes are up and the request was not applied. */
   expired: boolean;
+  /** False once the preview's Gmail account is disconnected. */
+  mailboxConnected: boolean;
 }
 
 /** One skipped sender, with what a person needs to act on it. */
@@ -170,6 +172,7 @@ export class ActionPreviewsService {
       .select({
         preview: actionPreviews,
         mailboxEmail: mailboxAccounts.providerAccountId,
+        mailboxStatus: mailboxAccounts.status,
         appName: oauthClients.clientName,
       })
       .from(actionPreviews)
@@ -183,8 +186,11 @@ export class ActionPreviewsService {
       .limit(1);
     if (!row) return null;
     return {
-      ...row,
+      preview: row.preview,
+      mailboxEmail: row.mailboxEmail,
+      appName: row.appName,
       expired: row.preview.state !== 'applied' && row.preview.expiresAt.getTime() <= Date.now(),
+      mailboxConnected: row.mailboxStatus === 'active',
     };
   }
 
@@ -196,7 +202,10 @@ export class ActionPreviewsService {
     const found = await this.findOwned(previewId, userId);
     if (!found) throw notFound();
     if (found.preview.state === 'applied') return found;
-    if (found.expired) throw expired();
+    if (found.expired) throw expired(found.preview);
+    // Before the press is recorded: a refused press leaves no confirmation
+    // behind for a later reconnect to pick up.
+    if (!found.mailboxConnected) throw mailboxDisconnected();
     if (found.preview.state === 'pending') {
       // The expiry is re-checked in the UPDATE itself: the read above is
       // not what authorizes the transition.
@@ -233,10 +242,11 @@ export class ActionPreviewsService {
     ) {
       throw notFound();
     }
-    if (found.preview.state === 'applied' || found.preview.state === 'pending') {
-      if (found.expired) throw expired();
-      return found;
-    }
+    if (found.preview.state === 'applied') return found;
+    if (found.expired) throw expired(found.preview);
+    // Said now, not after the person has gone to the page and pressed.
+    if (!found.mailboxConnected) throw mailboxDisconnected();
+    if (found.preview.state === 'pending') return found;
     return this.applyConfirmed(previewId, owner.userId);
   }
 
@@ -247,10 +257,13 @@ export class ActionPreviewsService {
     const { preview } = found;
     if (preview.state === 'applied') return found;
     // Lost the race for the last second of the window, or never confirmed.
-    if (preview.state !== 'confirmed') throw expired();
-    if (found.expired) throw expired();
+    if (preview.state !== 'confirmed') throw expired(preview);
+    if (found.expired) throw expired(preview);
+    // A cleanup prepared for a Gmail account must not outlive its
+    // connection (spec §7). The rows themselves go with the data purge
+    // or the retention sweep; this is what makes them unusable at once.
+    if (!found.mailboxConnected) throw mailboxDisconnected();
 
-    await this.assertMailboxConnected(preview.mailboxAccountId);
     const { result, actionId } = await this.execute(preview);
     // Guarded on `confirmed`: of two requests finishing together, one
     // writes the outcome and the other finds it already written. Both
@@ -529,9 +542,11 @@ export class ActionPreviewsService {
   }
 
   /**
-   * ADR-0008 §3 exception: actions → senders, the read the action
-   * services make themselves. Identity, Protected state and unsubscribe
-   * capability for a set of sender ids in one mailbox.
+   * A read-only cross-feature read (connector → senders, sender
+   * policies): identity, Protected state and unsubscribe capability for a
+   * set of sender ids in one mailbox — the same lookup the action
+   * services make before an enqueue. Not yet a row in ADR-0008 §3's
+   * table; listed for the founder in the PR.
    */
   private async senderFacts(
     mailboxAccountId: string,
@@ -579,20 +594,6 @@ export class ActionPreviewsService {
     );
   }
 
-  private async assertMailboxConnected(mailboxAccountId: string): Promise<void> {
-    const [mailbox] = await this.db
-      .select({ status: mailboxAccounts.status })
-      .from(mailboxAccounts)
-      .where(eq(mailboxAccounts.id, mailboxAccountId))
-      .limit(1);
-    if (mailbox?.status !== 'active') {
-      throw new McpToolError(
-        'MAILBOX_RECONNECT_REQUIRED',
-        'This Gmail account is no longer connected to DeclutrMail. Reconnect it in Settings.',
-      );
-    }
-  }
-
   /**
    * Say which app started these jobs, so Activity can (spec §7). After
    * the enqueue, never inside it: the action pipeline is untouched. One
@@ -607,7 +608,7 @@ export class ActionPreviewsService {
       FROM action_jobs j
       JOIN oauth_grants g ON g.id = ${preview.grantId}::uuid
       WHERE j.mailbox_account_id = ${preview.mailboxAccountId}::uuid
-        AND coalesce(j.composite_id, j.id) = ${actionId}::uuid
+        AND (j.id = ${actionId}::uuid OR j.composite_id = ${actionId}::uuid)
       ON CONFLICT (action_job_id) DO NOTHING
     `);
   }
@@ -673,9 +674,27 @@ function notFound(): McpToolError {
   return new McpToolError('PREVIEW_NOT_FOUND', 'No preview with that id. Create a new one.');
 }
 
-function expired(): McpToolError {
+/**
+ * The window closed. A preview the person DID confirm can reach here if
+ * its action never got recorded (a failure between the press and the
+ * enqueue's answer); whether anything ran is then not known from this
+ * row, so the message says where to look instead of "nothing happened".
+ */
+function expired(preview: Pick<ActionPreview, 'state'>): McpToolError {
+  return preview.state === 'confirmed'
+    ? new McpToolError(
+        'PREVIEW_EXPIRED',
+        'This preview was confirmed, but DeclutrMail could not confirm it started before it expired. Check list_recent_actions before creating a new one.',
+      )
+    : new McpToolError(
+        'PREVIEW_EXPIRED',
+        'This preview expired before it was confirmed. Create a new one.',
+      );
+}
+
+function mailboxDisconnected(): McpToolError {
   return new McpToolError(
-    'PREVIEW_EXPIRED',
-    'This preview expired before it was confirmed. Create a new one.',
+    'MAILBOX_RECONNECT_REQUIRED',
+    'This Gmail account is no longer connected to DeclutrMail. Reconnect it in Settings.',
   );
 }

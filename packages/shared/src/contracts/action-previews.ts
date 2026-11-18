@@ -75,6 +75,12 @@ export const ActionPreviewViewSchema = z.object({
   /** Later only: when the email returns to the inbox. */
   wakeAt: z.string().nullable(),
   expiresAt: z.string(),
+  /**
+   * When the person pressed the verb; null until they do. An `expired`
+   * request with this set was confirmed but never recorded as started,
+   * so the page must not say that nothing happened.
+   */
+  confirmedAt: z.string().nullable(),
   outcome: ActionPreviewOutcomeSchema.nullable(),
 });
 export type ActionPreviewView = z.infer<typeof ActionPreviewViewSchema>;

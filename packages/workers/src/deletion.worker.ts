@@ -5,6 +5,7 @@ import type { Queue } from 'bullmq';
 import {
   accountDeletionRequests,
   actionJobs,
+  actionPreviews,
   actionRecoveryPreviews,
   activityLog,
   automationRules,
@@ -180,6 +181,7 @@ interface DueMailboxRequest {
  */
 export const MAILBOX_PURGE_DIRECT_CHILD_TABLES = [
   'action_jobs',
+  'action_previews',
   'action_recovery_previews',
   'activity_log',
   'automation_rules',
@@ -574,6 +576,11 @@ export class AccountDeletionPurgeWorker extends BaseDeclutrWorker<
         await tx
           .delete(activityLog)
           .where(eq(activityLog.mailboxAccountId, request.mailboxAccountId));
+        // Cleanups a connected assistant prepared (MCP connector). Usually
+        // already expired; a purge must not leave their sender ids behind.
+        await tx
+          .delete(actionPreviews)
+          .where(eq(actionPreviews.mailboxAccountId, request.mailboxAccountId));
         await tx
           .delete(actionRecoveryPreviews)
           .where(eq(actionRecoveryPreviews.mailboxAccountId, request.mailboxAccountId));

@@ -81,6 +81,7 @@ export class ActionPreviewsController {
       olderThanDays: preview.olderThanDays,
       wakeAt: preview.wakeAt ? preview.wakeAt.toISOString() : null,
       expiresAt: preview.expiresAt.toISOString(),
+      confirmedAt: preview.confirmedAt ? preview.confirmedAt.toISOString() : null,
       outcome: result
         ? {
             appliedSenders: result.appliedSenders,

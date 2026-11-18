@@ -51,12 +51,7 @@ describe('D245 Gmail data inventory contract', () => {
   });
 
   it('generates complete, non-overlapping disconnect, purge, and retained scopes', () => {
-    expect(GMAIL_DISCONNECT_DATA_INVENTORY.map((item) => item.id)).toEqual([
-      'oauth-credential',
-      // A cleanup an assistant prepared for this mailbox goes with its
-      // connection (`MailboxAccountsService.disconnect`).
-      'action-previews',
-    ]);
+    expect(GMAIL_DISCONNECT_DATA_INVENTORY.map((item) => item.id)).toEqual(['oauth-credential']);
     expect(GMAIL_INDEXED_DATA_DELETION_INVENTORY).not.toHaveLength(0);
     expect(GMAIL_INDEXED_DATA_DELETION_RETAINED_INVENTORY.map((item) => item.id)).toEqual([
       'gmail-account-identity',

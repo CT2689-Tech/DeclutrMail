@@ -2,6 +2,7 @@ import type { PGlite } from '@electric-sql/pglite';
 import {
   accountDeletionRequests,
   actionJobs,
+  actionPreviews,
   actionRecoveryPreviews,
   activityLog,
   automationRules,
@@ -11,6 +12,8 @@ import {
   followupTracker,
   inboxReportCache,
   mailboxAccounts,
+  oauthClients,
+  oauthGrants,
   mailboxDataDeletionRequests,
   mailboxLabels,
   mailMessages,
@@ -432,6 +435,33 @@ async function seedMailboxGraph(
     mailboxAccountId: mailboxId,
     rootActionId: action!.id,
     currentActionId: action!.id,
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  // A cleanup a connected assistant prepared for this mailbox.
+  await db.insert(oauthClients).values({
+    clientId: `client-${tag}`,
+    redirectUris: ['https://client.example/cb'],
+    registrationType: 'dynamic',
+    metadata: {},
+  });
+  const [grant] = await db
+    .insert(oauthGrants)
+    .values({
+      workspaceId,
+      userId,
+      clientId: `client-${tag}`,
+      scopes: ['read', 'cleanup'],
+      resource: 'https://api.declutrmail.com/mcp',
+    })
+    .returning({ id: oauthGrants.id });
+  await db.insert(actionPreviews).values({
+    workspaceId,
+    mailboxAccountId: mailboxId,
+    userId,
+    grantId: grant!.id,
+    verb: 'archive',
+    senderIds: ['00000000-0000-4000-8000-000000000001'],
+    emailCount: 1,
     expiresAt: new Date(Date.now() + 60_000),
   });
   await db.insert(briefRuns).values({
