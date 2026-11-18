@@ -24,6 +24,20 @@ test('push path patterns match the workflow and manual dispatch is unfiltered', 
   assert.match(workflow, /if: needs\.await-ci\.outputs\.deploy == 'true'/);
 });
 
+test('worker traffic is routed to the new revision before the billing notice check', () => {
+  const deployAt = workflow.indexOf('gcloud run deploy declutrmail-worker');
+  const routeAt = workflow.indexOf('gcloud run services update-traffic declutrmail-worker');
+  const smokeAt = workflow.indexOf('- name: Smoke worker revision');
+  const verifyAt = workflow.indexOf('- name: Verify billing notice worker before API producers');
+  assert.ok(deployAt > 0 && deployAt < routeAt && routeAt < smokeAt && smokeAt < verifyAt);
+  const route = workflow.slice(routeAt, smokeAt);
+  assert.match(route, /--to-latest --quiet/);
+  assert.doesNotMatch(route, /--to-revisions/);
+  const smoke = workflow.slice(smokeAt, verifyAt);
+  assert.match(smoke, /latestCreatedRevisionName/);
+  assert.match(smoke, /test "\$SERVING" = "\$REVISION"/);
+});
+
 test('a narrow paths allowlist is rejected', () => {
   const source = [
     'name: x',
