@@ -28,7 +28,7 @@ export const AUTO_ARCHIVE_LOW_ENGAGEMENT: AutopilotRuleDto = {
   enabled: true,
   mode: 'observe',
   modeChangedAt: WEEK_AGO,
-  // This preset is review-only, so it never offers day-7 promotion.
+  // A rule this fixture shows mid-review, before its 7-day window opens.
   observeWindowEndsAt: null,
   observeWindowElapsed: false,
   observePromptDismissedAt: null,

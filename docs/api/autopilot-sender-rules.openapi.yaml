@@ -20,9 +20,11 @@ info:
 
 
     Rules are account-scoped, explicit sender lists: at most 50 non-retired rules per mailbox and
-    100 senders per rule. New rules are enabled in observe mode. Only observe and paused are
-    exposed; every cleanup requires its own preview and explicit approval. No Active promotion or
-    unattended custom-rule execution is provided.
+    100 senders per rule. New rules are enabled in observe mode, where every cleanup requires its
+    own preview and explicit approval. An Archive rule may be switched to active (a lifecycle-only
+    change requiring the autopilot-active capability); the Autopilot workers then archive matching
+    inbox email on their own, skipping Protected senders and mail a previous undo of the rule
+    restored. Delete rules can never be active.
 
 
     Reads and previews use the stored metadata mirror, without Gmail or LLM calls. Protected
@@ -156,9 +158,12 @@ paths:
         - Reviewed sender rules
       summary: Edit or pause/resume a sender rule
       description: >-
-        Accepts either the complete editable definition plus current version and optional mode, or
-        exactly {version, mode}. Other partial-definition shapes, enabled, unknown fields and Active
-        mode are rejected. Sender hashes must remain known to the active mailbox.
+        Accepts either the complete editable definition plus current version and optional mode
+        (observe or paused), or exactly {version, mode}. Only the {version, mode} shape may set
+        active, only for Archive, and only with the autopilot-active capability (402 otherwise);
+        turning a rule active starts its first sweep. Editing the senders, action, reach or email
+        age of an active rule returns it to observe. Other partial-definition shapes, enabled and
+        unknown fields are rejected. Sender hashes must remain known to the active mailbox.
 
 
         This is optimistic compare-and-swap, not Idempotency-Key replay: a successful write
@@ -380,6 +385,44 @@ paths:
         - MAILBOX_NOT_OWNED
         - NO_ACTIVE_MAILBOX
         - AUTOPILOT_RULE_CHANGED
+  /api/autopilot/sender-rules/{id}/automatic-preview:
+    parameters:
+      - $ref: '#/components/parameters/RuleId'
+      - $ref: '#/components/parameters/ActiveMailbox'
+    get:
+      operationId: previewAutomaticAutopilotSenderRule
+      tags:
+        - Reviewed sender rules
+      summary: Count what running the rule automatically would archive now
+      description: >-
+        Read-only. Counts inbox email the Autopilot workers would archive for this rule now:
+        its unprotected senders, within its email age, excluding mail a previous undo of this
+        rule restored (an automatic run never moves that again). Protected senders with such
+        mail are counted separately. Returns the rule version the count was read at.
+      x-required-capability: autopilot
+      x-rate-limit-bucket: triage-load
+      responses:
+        '200':
+          description: Fresh counts for the turn-on preview.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AutomaticPreviewEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '402':
+          $ref: '#/components/responses/CapabilityOrCapacityRequired'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+      x-conflict-codes: *a2
   /api/autopilot/sender-rules/{id}/execute:
     parameters:
       - $ref: '#/components/parameters/RuleId'
@@ -572,6 +615,13 @@ components:
       enum:
         - observe
         - paused
+    LifecycleMode:
+      type: string
+      description: active is accepted only for Archive rules.
+      enum:
+        - observe
+        - active
+        - paused
     Version:
       type: integer
       minimum: 1
@@ -640,7 +690,7 @@ components:
         version:
           $ref: '#/components/schemas/Version'
         mode:
-          $ref: '#/components/schemas/Mode'
+          $ref: '#/components/schemas/LifecycleMode'
     PatchRule:
       oneOf:
         - $ref: '#/components/schemas/UpdateRule'
@@ -738,7 +788,7 @@ components:
         enabled:
           type: boolean
         mode:
-          $ref: '#/components/schemas/Mode'
+          $ref: '#/components/schemas/LifecycleMode'
         action:
           $ref: '#/components/schemas/Action'
         reach:
@@ -953,6 +1003,41 @@ components:
         data:
           $ref: '#/components/schemas/SenderRulePreview'
       description: The ok(data) envelope. These operations omit meta; search continuation is data.nextCursor.
+    AutomaticPreview:
+      type: object
+      additionalProperties: false
+      required:
+        - ruleId
+        - version
+        - messageCount
+        - senderCount
+        - protectedSenderCount
+        - checkedAt
+      properties:
+        ruleId:
+          $ref: '#/components/schemas/Uuid'
+        version:
+          $ref: '#/components/schemas/Version'
+        messageCount:
+          type: integer
+          minimum: 0
+        senderCount:
+          type: integer
+          minimum: 0
+        protectedSenderCount:
+          type: integer
+          minimum: 0
+        checkedAt:
+          type: string
+          format: date-time
+    AutomaticPreviewEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - data
+      properties:
+        data:
+          $ref: '#/components/schemas/AutomaticPreview'
     RetireEnvelope:
       type: object
       additionalProperties: false
