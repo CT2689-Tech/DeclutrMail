@@ -362,11 +362,16 @@ jobs:
           # warm at ~2x the request-only cost (~$30-50/mo). The API
           # service also keeps CPU allocated to preserve database connections.
           #
-          # Launch sizing (C1, D193): 2 vCPU + 2Gi, min 1, max 1.
-          # The 2026-08-21 bill recorded this always-on service at
-          # 1 vCPU / 1Gi as $50.51/mo with zero requests. Doubling CPU
-          # and memory is a linear estimate of about +$50/mo, not a new
-          # invoice. # revisit Nov 10
+          # Launch sizing (C1, D193): 1 vCPU + 1Gi, min 1, max 1.
+          # It ran at 2 vCPU + 2Gi from 2026-10-11 to 2026-11-18. The
+          # Nov 10 revisit found that size unused: the October 2026
+          # invoice billed this service $87.04 (CPU $78.65 + memory
+          # $8.39), while Cloud Run metrics for the 30 days to
+          # 2026-11-18 show memory p99 under 30% of 2Gi (about 0.6Gi)
+          # and CPU p99 under 50% of 2 vCPU with the median near idle.
+          # The 2026-08-21 bill recorded 1 vCPU / 1Gi as $50.51/mo.
+          # Go back to 2 vCPU + 2Gi if the worker memory-limit alert
+          # fires or initial-sync queue wait pages. # revisit Nov 10
           # max-instances stays 1: see the orphan-guard pin below.
           #
           # `--max-instances=1` is ALSO a correctness dependency now, not
@@ -411,8 +416,8 @@ jobs:
             --service-account="$RUNTIME_SA" \
             --min-instances=1 \
             --max-instances=1 \
-            --memory=2Gi \
-            --cpu=2 \
+            --memory=1Gi \
+            --cpu=1 \
             --cpu-boost \
             --no-cpu-throttling \
             --port=8080 \

@@ -472,8 +472,8 @@ gcloud run deploy declutrmail-worker \
   --service-account=$RUNTIME_SA \
   --min-instances=1 \
   --max-instances=1 \
-  --memory=2Gi \
-  --cpu=2 \
+  --memory=1Gi \
+  --cpu=1 \
   --cpu-boost \
   --no-cpu-throttling \
   --port=8080 \

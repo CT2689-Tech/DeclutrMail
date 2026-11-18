@@ -56,7 +56,7 @@ test('workflow gates deployment on the decision and keeps active deployments ser
   assert.match(source, /--event push --branch main/);
 });
 
-test('launch worker is 2 vCPU / 2 GiB with restored drain delays and unchanged neighbors', () => {
+test('worker is right-sized to 1 vCPU / 1 GiB with restored drain delays and unchanged neighbors', () => {
   const source = readFileSync(
     new URL('../.github/workflows/deploy-cloud-run.yml', import.meta.url),
     'utf8',
@@ -74,7 +74,7 @@ test('launch worker is 2 vCPU / 2 GiB with restored drain delays and unchanged n
   assert.match(notes, /user-facing 10s\/60s and cron 60s\/300s/);
   assert.match(
     worker,
-    /--min-instances=1 \\\n\s+--max-instances=1 \\\n\s+--memory=2Gi \\\n\s+--cpu=2 \\/,
+    /--min-instances=1 \\\n\s+--max-instances=1 \\\n\s+--memory=1Gi \\\n\s+--cpu=1 \\/,
   );
   assert.match(worker, /WORKER_DRAIN_DELAY_SEC=10\|/);
   assert.match(worker, /WORKER_STALLED_INTERVAL_MS=60000\|/);
@@ -84,8 +84,8 @@ test('launch worker is 2 vCPU / 2 GiB with restored drain delays and unchanged n
     worker,
     /BILLING_APP_NOTICES_ENABLED=\$BILLING_APP_NOTICES_ENABLED\|BILLING_APP_NOTICES_START_AT=\$BILLING_APP_NOTICES_START_AT/,
   );
-  assert.doesNotMatch(worker, /--memory=1Gi/);
-  assert.doesNotMatch(worker, /--cpu=1 \\/);
+  assert.doesNotMatch(worker, /--memory=2Gi/);
+  assert.doesNotMatch(worker, /--cpu=2 \\/);
   assert.doesNotMatch(worker, /WORKER_DRAIN_DELAY_SEC=60\|/);
   assert.doesNotMatch(worker, /WORKER_STALLED_INTERVAL_MS=300000\|/);
   assert.doesNotMatch(worker, /WORKER_CRON_DRAIN_DELAY_SEC=300\|/);
