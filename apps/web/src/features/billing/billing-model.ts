@@ -27,7 +27,6 @@ import {
   currencyForProvider,
   formatMoney,
   formatUsd,
-  type Currency,
 } from '@/features/marketing/pricing/pricing-model';
 import { apiErrorCode } from '@/lib/api/client';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
@@ -40,14 +39,8 @@ export { BillingPayloadError } from './billing-payload-error';
 export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
 export type StripTierId = (typeof STRIP_TIER_IDS)[number];
 
-function priceLabel(tier: TierId, cycle: BillingCycle, currency: Currency): string | null {
-  const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
-  if (!point) return null;
-  return `${formatMoney(point, currency)}${cycle === 'annual' ? '/yr' : '/mo'}`;
-}
-
 /**
- * "$19/mo" — the price of a plan someone MIGHT buy, on the rail they
+ * "$59/yr" — the price of a plan someone MIGHT buy, on the rail they
  * would be routed to.
  *
  * CLAMPED to what that rail can actually charge: preferring Razorpay
@@ -59,21 +52,16 @@ function priceLabel(tier: TierId, cycle: BillingCycle, currency: Currency): stri
  * For a subscription that ALREADY EXISTS use `chargedPlanPrice` — these
  * answer different questions and must not be merged back together.
  *
- * Launch pricing sells Plus annual at the 2026-10 price; the manifest's
- * annual point is the legacy $90 only existing subscribers keep.
+ * Launch pricing sells only Plus annual at the 2026-10 price, so every
+ * other plan and cycle has no quote.
  */
 export function quotedPlanPrice(
   tier: TierId,
   cycle: BillingCycle,
   provider: BillingProviderId = 'paddle',
-  pricingV2 = false,
 ): string | null {
-  if (pricingV2 && tier === 'plus' && cycle === 'annual') {
-    return `${formatMoney(PLUS_ANNUAL_2026_10, currencyForPricePoint(PLUS_ANNUAL_2026_10, provider))}/yr`;
-  }
-  const point = TIER_MANIFEST[tier].prices[cycle === 'annual' ? 'annual' : 'monthly'];
-  if (!point) return null;
-  return priceLabel(tier, cycle, currencyForPricePoint(point, provider));
+  if (tier !== 'plus' || cycle !== 'annual') return null;
+  return `${formatMoney(PLUS_ANNUAL_2026_10, currencyForPricePoint(PLUS_ANNUAL_2026_10, provider))}/yr`;
 }
 
 /**
@@ -99,11 +87,9 @@ export function launchPlusQuote(
  * paying ₹15,999/yr a "$190/yr" headline — the original defect, wearing
  * the fix as a disguise.
  *
- * `founding` selects the PROMO price point (D126). A Founding Pro
- * member is billed $129/yr, not the standard $190/yr, for as long as
- * the subscription stays active — reading the standard point off the
- * tier states a charge that never happens, and contradicts the founding
- * banner sitting on the same screen.
+ * Retired prices (the old monthly ladder, Founding Pro) are no longer in
+ * the manifest. A legacy subscription is priced from the API's resolved
+ * `chargedUsdCents`; without it there is no price to state, so `null`.
  */
 function isLaunchPlusAnnualPrice(providerPriceId: string): boolean {
   if (providerPriceId === SANDBOX_PRICE_IDS.plus_annual) return true;
@@ -115,37 +101,24 @@ export function chargedPlanPrice(
   tier: TierId,
   cycle: BillingCycle,
   provider: BillingProviderId,
-  founding = false,
   providerPriceId?: string,
   chargedUsdCents?: number,
   chargedCurrency?: 'USD' | 'INR',
 ): string | null {
-  if (chargedCurrency === 'INR' && tier === 'plus' && cycle === 'annual' && !founding) {
+  if (chargedCurrency === 'INR' && tier === 'plus' && cycle === 'annual') {
     return `${plusAmount('inr')}/yr`;
   }
   const currency = currencyForProvider(provider);
-  const promo = TIER_MANIFEST[tier].promo;
-  // The promo is an annual-only price point; a founding member on any
-  // other cycle is billed the standard line.
-  if (founding && promo && cycle === 'annual') {
-    return `${formatMoney(promo.annual, currency)}/yr`;
-  }
-  // Catalog resolution wins over the current list price. A Plus annual
-  // subscriber on the 2026-10 price pays $59, not the legacy $90 the
-  // manifest still lists for that tier and cycle.
+  // Catalog resolution wins: it carries the price this subscription was
+  // actually sold at, including a retired one.
   if (currency === 'USD' && typeof chargedUsdCents === 'number') {
     return `${formatUsd(chargedUsdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
   }
   if (providerPriceId && isLaunchPlusAnnualPrice(providerPriceId)) {
     return currency === 'INR' ? priceLine(PLUS_ANNUAL_2026_10, 'inr') : `${plusAmount('usd')}/yr`;
   }
-  return priceLabel(tier, cycle, currency);
+  return null;
 }
-
-export {
-  annualMonthsFree,
-  sharedAnnualMonthsFree,
-} from '@/features/marketing/pricing/pricing-model';
 
 /**
  * D120 — is this paid→paid change a deferred (period-end) downgrade?
@@ -220,11 +193,6 @@ export function formatProviderAmount(amount: string, currencyCode: string): stri
 }
 
 /** Approved refund line. The window is `POLICY.refundWindowDays`. */
-export function moneyBackNote(_pricingV2: boolean): string {
-  return refundLine();
-}
-
-/** Same line as `moneyBackNote`, for callers that do not know the flag. */
 export const MONEY_BACK_NOTE = refundLine();
 
 // ── D119/A6 — the single derived billing story ───────────────────────
@@ -488,7 +456,6 @@ export function currentPlanPriceLabel(
         sub.tier,
         sub.cycle,
         sub.provider,
-        sub.foundingMember,
         sub.providerPriceId,
         sub.chargedUsdCents,
         sub.chargedCurrency,
@@ -540,12 +507,6 @@ export function freeManualPassGrant(grant: BillingSubscription['complimentary'])
   );
 }
 
-/**
- * Connected Gmail accounts a tier offers. Launch pricing raised Plus to
- * two accounts, while the manifest still lists the legacy one — reading
- * `TIER_MANIFEST[tier].inboxLimit` directly told every Plus subscriber
- * their plan covered a single account.
- */
 /** The live grant is a Backlog Pass and it is the plan on the card. */
 export function passCoversPlan(view: BillingPlanView): boolean {
   const grant = view.complimentary;

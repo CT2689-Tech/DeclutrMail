@@ -3,7 +3,6 @@ import { join } from 'node:path';
 
 import {
   actionJobs,
-  activityLog,
   entitlementGrants,
   mailboxAccounts,
   mailMessages,
@@ -17,7 +16,7 @@ import {
 import { freshTestPglite } from '@declutrmail/db/testing';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   METER,
@@ -34,17 +33,16 @@ import { ActionsService } from '../../actions/actions.service.js';
 import { AppException } from '../app-exception.js';
 import { coerceUsedCount, EntitlementsService } from './entitlements.service.js';
 
-/** The Free monthly quota, from the pricing config (A3). */
-const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
+/** Free's monthly email allowance, from the pricing config. */
+const FREE_LIMIT = METER.free.limit;
 
 /**
  * EntitlementsService integration tests (D19/D77/D81) — real service
- * against in-process PGlite. Pins the COUNTING RULE (one cleanup unit
- * per sender per enqueue; composites = 1; bulk of N = N; intents +
- * reverses + failures exempt; undo never refunds), the 402 gates, and
- * the inbox limit — including the end-to-end leg through
- * `ActionsService` (the 6th cleanup action 402s; a replayed key does
- * not).
+ * against in-process PGlite. Pins Free's emails-cleared meter (the sum
+ * of forward `quota_units`, minus same-period undo refunds), the 402
+ * gates, and the inbox limit — including the end-to-end leg through
+ * `ActionsService` (the over-allowance archive 402s; a replayed key
+ * does not).
  */
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -228,7 +226,7 @@ describe('coerceUsedCount — the ::int cast is not load-bearing (QA-triage-2026
   });
 });
 
-describe('EntitlementsService — counting rule (D19/D77)', () => {
+describe('EntitlementsService — meter gates (D19/D77)', () => {
   let db: Db;
   let workspaceId: string;
   let mailboxId: string;
@@ -242,173 +240,6 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
     svc = new EntitlementsService(db as never);
   });
 
-  it('a composite (primary + secondary, one sender) is ONE unit', async () => {
-    const sender = await seedSender(db, mailboxId);
-    const primaryId = await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'archive-k1',
-      senderId: sender.id,
-      senderKey: sender.key,
-    });
-    await seedJob(db, mailboxId, {
-      verb: 'delete',
-      key: 'delete-k1-sec',
-      senderId: sender.id,
-      senderKey: sender.key,
-      compositeId: primaryId,
-    });
-    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
-  });
-
-  it('a bulk of 3 senders is THREE units (anchor + linked rows)', async () => {
-    const [s1, s2, s3] = [
-      await seedSender(db, mailboxId),
-      await seedSender(db, mailboxId),
-      await seedSender(db, mailboxId),
-    ];
-    const anchor = await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'archive-bulk-1',
-      senderId: s1.id,
-      senderKey: s1.key,
-    });
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'archive-bulk-2',
-      senderId: s2.id,
-      senderKey: s2.key,
-      compositeId: anchor,
-    });
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'archive-bulk-3',
-      senderId: s3.id,
-      senderKey: s3.key,
-      compositeId: anchor,
-    });
-    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(3);
-  });
-
-  it('two separate clicks on the SAME sender are TWO units', async () => {
-    const sender = await seedSender(db, mailboxId);
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'archive-click1',
-      senderId: sender.id,
-      senderKey: sender.key,
-    });
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'archive-click2',
-      senderId: sender.id,
-      senderKey: sender.key,
-    });
-    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(2);
-  });
-
-  it('counts unsubscribe intent rows but excludes execution, reverse, and failed rows; undo never refunds', async () => {
-    const sender = await seedSender(db, mailboxId);
-    // Intent dedup row — one user cleanup decision, even though the
-    // durable intent itself moves zero messages.
-    await seedJob(db, mailboxId, {
-      verb: 'unsubscribe',
-      key: 'unsub:click1',
-      senderId: sender.id,
-      senderKey: sender.key,
-      affectedCount: 0,
-    });
-    // One-click execution bookkeeping for that SAME intent must not
-    // consume a second unit.
-    await seedJob(db, mailboxId, {
-      verb: 'unsubscribe',
-      key: 'unsubexec-click1',
-      senderId: sender.id,
-      senderKey: sender.key,
-      status: 'queued',
-      affectedCount: 0,
-    });
-    // A counted forward archive…
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'archive-x1',
-      senderId: sender.id,
-      senderKey: sender.key,
-    });
-    // …whose undo (reverse row) does NOT refund it.
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'revert-token-1',
-      direction: 'reverse',
-    });
-    // A failed forward enqueue never consumed the quota.
-    await seedJob(db, mailboxId, {
-      verb: 'delete',
-      key: 'delete-failed-1',
-      senderId: sender.id,
-      senderKey: sender.key,
-      status: 'failed',
-    });
-    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(2);
-  });
-
-  it('a recovery attempt shares the failed original lineage and consumes ONE unit', async () => {
-    const sender = await seedSender(db, mailboxId);
-    const failedId = await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'archive-failed-for-recovery',
-      senderId: sender.id,
-      senderKey: sender.key,
-      status: 'failed',
-    });
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'recovery-click-1',
-      senderId: sender.id,
-      senderKey: sender.key,
-      rootActionId: failedId,
-      retryOfActionId: failedId,
-      recoveryAttempt: 1,
-      status: 'queued',
-      affectedCount: 0,
-    });
-
-    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
-  });
-
-  it('a no-op cleanup (done, 0 messages moved) consumes NO unit; in-flight still counts', async () => {
-    const s1 = await seedSender(db, mailboxId);
-    const s2 = await seedSender(db, mailboxId);
-    const s3 = await seedSender(db, mailboxId);
-    // Effective action — moved 1 message → counts.
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'eff-1',
-      senderId: s1.id,
-      senderKey: s1.key,
-      affectedCount: 1,
-    });
-    // No-op — done but moved nothing → must NOT count (the bug fix).
-    await seedJob(db, mailboxId, {
-      verb: 'delete',
-      key: 'noop-1',
-      senderId: s2.id,
-      senderKey: s2.key,
-      status: 'done',
-      affectedCount: 0,
-    });
-    // In-flight — queued with the 0 default → still counts (intent about
-    // to move mail), so the no-op exclusion can't be bypassed mid-flight.
-    await seedJob(db, mailboxId, {
-      verb: 'later',
-      key: 'queued-1',
-      senderId: s3.id,
-      senderKey: s3.key,
-      status: 'queued',
-      affectedCount: 0,
-    });
-    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(2);
-  });
-
   it('cleanupSummary: free reports the config limit + remaining + resetsAt; pro is unlimited (no scan)', async () => {
     const sender = await seedSender(db, mailboxId);
     await seedJob(db, mailboxId, {
@@ -416,6 +247,7 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
       key: 'archive-s1',
       senderId: sender.id,
       senderKey: sender.key,
+      quotaUnits: 1,
     });
     expect(await svc.cleanupSummary(workspaceId)).toEqual({
       tier: 'free',
@@ -437,15 +269,15 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
 
   it('assertCleanupCapacity: 402 FREE_CAP_REACHED with details at the cap; passes under it', async () => {
     const sender = await seedSender(db, mailboxId);
-    for (let i = 0; i < FREE_LIMIT - 1; i++) {
-      await seedJob(db, mailboxId, {
-        verb: 'archive',
-        key: `archive-fill-${i}`,
-        senderId: sender.id,
-        senderKey: sender.key,
-      });
-    }
-    // limit-1 used, 1 left — one more unit fits…
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'archive-fill',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: FREE_LIMIT - 1,
+      affectedCount: FREE_LIMIT - 1,
+    });
+    // limit-1 used, 1 left — one more email fits…
     await expect(svc.assertCleanupCapacity(mailboxId, 1)).resolves.toBeUndefined();
     // …but a bulk needing 2 does not (the mid-selection 402).
     const err = await svc.assertCleanupCapacity(mailboxId, 2).catch((e: unknown) => e);
@@ -458,6 +290,8 @@ describe('EntitlementsService — counting rule (D19/D77)', () => {
       used: FREE_LIMIT - 1,
       requiredUnits: 2,
       resetsAt: expect.any(String),
+      requested: 2,
+      suggestedPreset: null,
     });
   });
 
@@ -631,141 +465,116 @@ describe('EntitlementsService — inbox limit (D19/D81)', () => {
     expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
   });
 
-  it('plus: a second inbox is allowed and the third names the Pro waitlist when PRICING_V2 is on', async () => {
-    process.env.PRICING_V2 = 'true';
-    try {
-      const { workspaceId, userId } = await seedWorkspace(db, 'plus');
-      await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
-      await db.insert(mailboxAccounts).values({
-        workspaceId,
-        userId,
-        provider: 'gmail',
-        providerAccountId: 'second@x',
-      });
-      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(AppException);
-      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
-      expect((err as AppException).message).toBe(inboxLimitReachedMessage('plus'));
-      expect((err as AppException).details).toEqual({ limit: 2, connected: 2, tier: 'plus' });
-    } finally {
-      delete process.env.PRICING_V2;
-    }
+  it('plus: a second inbox is allowed and the third names the Pro waitlist', async () => {
+    const { workspaceId, userId } = await seedWorkspace(db, 'plus');
+    await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
+    await db.insert(mailboxAccounts).values({
+      workspaceId,
+      userId,
+      provider: 'gmail',
+      providerAccountId: 'second@x',
+    });
+    const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppException);
+    expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+    expect((err as AppException).message).toBe(inboxLimitReachedMessage('plus'));
+    expect((err as AppException).details).toEqual({ limit: 2, connected: 2, tier: 'plus' });
   });
 
-  it('Pass-only: 402 INBOX_LIMIT_REACHED on a second connect when PRICING_V2 is on', async () => {
-    process.env.PRICING_V2 = 'true';
-    try {
-      const { workspaceId } = await seedWorkspace(db, 'plus');
-      await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-only-second');
-      expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
-      expect(await svc.inboxEntitlementForWorkspace(workspaceId)).toEqual({
-        limit: 1,
-        reason: 'pass',
-      });
-      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(AppException);
-      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
-      expect((err as AppException).getStatus()).toBe(402);
-      expect((err as AppException).message).toBe(passSecondAccountMessage());
-      expect((err as AppException).details).toEqual({
-        limit: 1,
-        connected: 1,
-        tier: 'plus',
-        reason: 'pass',
-      });
-      await expect(
-        db.select({ id: mailboxAccounts.id }).from(mailboxAccounts),
-      ).resolves.toHaveLength(1);
-    } finally {
-      delete process.env.PRICING_V2;
-    }
+  it('Pass-only: 402 INBOX_LIMIT_REACHED on a second connect', async () => {
+    const { workspaceId } = await seedWorkspace(db, 'plus');
+    await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-only-second');
+    expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
+    expect(await svc.inboxEntitlementForWorkspace(workspaceId)).toEqual({
+      limit: 1,
+      reason: 'pass',
+    });
+    const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppException);
+    expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+    expect((err as AppException).getStatus()).toBe(402);
+    expect((err as AppException).message).toBe(passSecondAccountMessage());
+    expect((err as AppException).details).toEqual({
+      limit: 1,
+      connected: 1,
+      tier: 'plus',
+      reason: 'pass',
+    });
+    await expect(db.select({ id: mailboxAccounts.id }).from(mailboxAccounts)).resolves.toHaveLength(
+      1,
+    );
   });
 
   it('Pass-only: an existing two-account workspace keeps both and only blocks a third', async () => {
-    process.env.PRICING_V2 = 'true';
-    try {
-      const { workspaceId, userId, mailboxId } = await seedWorkspace(db, 'plus');
-      await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-only-keep');
-      const [second] = await db
-        .insert(mailboxAccounts)
-        .values({
-          workspaceId,
-          userId,
-          provider: 'gmail',
-          providerAccountId: 'pass-second@x',
-        })
-        .returning({ id: mailboxAccounts.id });
-      expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
-      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(AppException);
-      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
-      expect((err as AppException).details).toEqual({
-        limit: 1,
-        connected: 2,
-        tier: 'plus',
-        reason: 'pass',
-      });
-      const remaining = await db
-        .select({ id: mailboxAccounts.id, status: mailboxAccounts.status })
-        .from(mailboxAccounts)
-        .where(eq(mailboxAccounts.workspaceId, workspaceId));
-      expect(remaining).toEqual(
-        expect.arrayContaining([
-          { id: mailboxId, status: 'active' },
-          { id: second!.id, status: 'active' },
-        ]),
-      );
-      expect(remaining).toHaveLength(2);
-    } finally {
-      delete process.env.PRICING_V2;
-    }
+    const { workspaceId, userId, mailboxId } = await seedWorkspace(db, 'plus');
+    await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-only-keep');
+    const [second] = await db
+      .insert(mailboxAccounts)
+      .values({
+        workspaceId,
+        userId,
+        provider: 'gmail',
+        providerAccountId: 'pass-second@x',
+      })
+      .returning({ id: mailboxAccounts.id });
+    expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
+    const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppException);
+    expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+    expect((err as AppException).details).toEqual({
+      limit: 1,
+      connected: 2,
+      tier: 'plus',
+      reason: 'pass',
+    });
+    const remaining = await db
+      .select({ id: mailboxAccounts.id, status: mailboxAccounts.status })
+      .from(mailboxAccounts)
+      .where(eq(mailboxAccounts.workspaceId, workspaceId));
+    expect(remaining).toEqual(
+      expect.arrayContaining([
+        { id: mailboxId, status: 'active' },
+        { id: second!.id, status: 'active' },
+      ]),
+    );
+    expect(remaining).toHaveLength(2);
   });
 
   it('expired Pass with stale workspaces.tier plus uses the Free inbox ceiling', async () => {
-    process.env.PRICING_V2 = 'true';
-    try {
-      const { workspaceId } = await seedWorkspace(db, 'plus');
-      await db.insert(entitlementGrants).values({
-        email: 'o-plus@declutrmail.ai',
-        tier: 'plus',
-        reason: 'Backlog Pass',
-        grantedBy: 'paddle',
-        source: 'pass',
-        provider: 'paddle',
-        providerTransactionId: 'txn-pass-expired-ceiling',
-        expiresAt: new Date(Date.now() - 60_000),
-      });
-      expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
-      expect(await svc.inboxEntitlementForWorkspace(workspaceId)).toEqual({ limit: 1 });
-      const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(AppException);
-      expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
-      expect((err as AppException).message).toBe(inboxLimitReachedMessage('free'));
-      expect((err as AppException).details).toEqual({ limit: 1, connected: 1, tier: 'plus' });
-    } finally {
-      delete process.env.PRICING_V2;
-    }
+    const { workspaceId } = await seedWorkspace(db, 'plus');
+    await db.insert(entitlementGrants).values({
+      email: 'o-plus@declutrmail.ai',
+      tier: 'plus',
+      reason: 'Backlog Pass',
+      grantedBy: 'paddle',
+      source: 'pass',
+      provider: 'paddle',
+      providerTransactionId: 'txn-pass-expired-ceiling',
+      expiresAt: new Date(Date.now() - 60_000),
+    });
+    expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(1);
+    expect(await svc.inboxEntitlementForWorkspace(workspaceId)).toEqual({ limit: 1 });
+    const err = await svc.assertCanConnectMailbox(workspaceId).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppException);
+    expect((err as AppException).code).toBe('INBOX_LIMIT_REACHED');
+    expect((err as AppException).message).toBe(inboxLimitReachedMessage('free'));
+    expect((err as AppException).details).toEqual({ limit: 1, connected: 1, tier: 'plus' });
   });
 
   it('Pass plus a granting paid Plus subscription keeps the Plus inbox floor', async () => {
-    process.env.PRICING_V2 = 'true';
-    try {
-      const { workspaceId } = await seedWorkspace(db, 'plus');
-      await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-plus-paid');
-      await db.insert(subscriptions).values({
-        workspaceId,
-        provider: 'paddle',
-        providerSubscriptionId: 'sub-pass-plus-paid',
-        tier: 'plus',
-        status: 'active',
-        providerPriceId: 'pri_plus',
-        billingCycle: 'annual',
-      });
-      expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(2);
-      await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
-    } finally {
-      delete process.env.PRICING_V2;
-    }
+    const { workspaceId } = await seedWorkspace(db, 'plus');
+    await seedPassGrant(db, 'o-plus@declutrmail.ai', 'txn-pass-plus-paid');
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'paddle',
+      providerSubscriptionId: 'sub-pass-plus-paid',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: 'pri_plus',
+      billingCycle: 'annual',
+    });
+    expect(await svc.inboxLimitForWorkspace(workspaceId)).toBe(2);
+    await expect(svc.assertCanConnectMailbox(workspaceId)).resolves.toBeUndefined();
   });
 
   it('locks the workspace tier and checks capacity on the caller transaction', async () => {
@@ -801,22 +610,30 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
     return new ActionsService(db as never, fakeQueue() as never);
   }
 
-  it('the over-quota cleanup action 402s with the FREE_CAP_REACHED envelope; replay of a spent key does not', async () => {
+  it('the over-allowance archive 402s with the FREE_CAP_REACHED envelope; replay of a spent key does not', async () => {
     const svc = service();
-    // Fresh single-sender composites — exactly the monthly quota.
-    for (let i = 0; i < FREE_LIMIT; i++) {
-      const sender = await seedSender(db, mailboxId);
-      await seedInboxMessage(db, mailboxId, sender.key, `m-${i}`);
-      await svc.enqueueComposite({
-        mailboxAccountId: mailboxId,
-        selector: { type: 'sender', senderId: sender.id },
-        primary: { type: 'archive', olderThanDays: null },
-        idempotencyKey: `click-${i}`,
-        override: false,
-      });
-    }
-    // The first over-quota fresh enqueue is denied…
+    const filler = await seedSender(db, mailboxId);
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'archive-fill',
+      senderId: filler.id,
+      senderKey: filler.key,
+      quotaUnits: FREE_LIMIT - 1,
+      affectedCount: FREE_LIMIT - 1,
+    });
+    // One email left — a one-email archive fits and spends it.
+    const last = await seedSender(db, mailboxId);
+    await seedInboxMessage(db, mailboxId, last.key, 'm-last');
+    const spent = await svc.enqueueComposite({
+      mailboxAccountId: mailboxId,
+      selector: { type: 'sender', senderId: last.id },
+      primary: { type: 'archive', olderThanDays: null },
+      idempotencyKey: 'click-last',
+      override: false,
+    });
+    // The first over-allowance fresh enqueue is denied…
     const overQuota = await seedSender(db, mailboxId);
+    await seedInboxMessage(db, mailboxId, overQuota.key, 'm-over');
     const err = await svc
       .enqueueComposite({
         mailboxAccountId: mailboxId,
@@ -833,57 +650,52 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
       remaining: 0,
       limit: FREE_LIMIT,
       used: FREE_LIMIT,
+      requested: 1,
     });
 
-    // …but a network-retried click of action #4 replays, never 402s.
-    const replayedSender = await db
-      .select()
-      .from(actionJobs)
-      .where(eq(actionJobs.idempotencyKey, 'archive-click-3'))
-      .limit(1);
-    expect(replayedSender).toHaveLength(1);
+    // …but a network-retried click of the spending archive replays, never 402s.
     const replay = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
-      selector: replayedSender[0]!.selector as { type: 'sender'; senderId: string },
+      selector: { type: 'sender', senderId: last.id },
       primary: { type: 'archive', olderThanDays: null },
-      idempotencyKey: 'click-3',
+      idempotencyKey: 'click-last',
       override: false,
     });
-    expect(replay.actionId).toBe(replayedSender[0]!.id);
+    expect(replay.actionId).toBe(spent.actionId);
   });
 
   it('keep-intent stays exempt at the cap (policy write, never gated)', async () => {
     const svc = service();
     const sender = await seedSender(db, mailboxId);
-    for (let i = 0; i < FREE_LIMIT; i++) {
-      await seedJob(db, mailboxId, {
-        verb: 'archive',
-        key: `archive-fill-${i}`,
-        senderId: sender.id,
-        senderKey: sender.key,
-      });
-    }
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'archive-fill',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: FREE_LIMIT,
+      affectedCount: FREE_LIMIT,
+    });
     const keep = await svc.recordKeepIntent({ mailboxAccountId: mailboxId, senderId: sender.id });
     expect(keep.activityLogId).toBeTruthy();
   });
 
-  it('A3: Free bulk is metered — a bulk that fits consumes N units; one that does not fit 402s atomically', async () => {
+  it('A3: Free bulk is metered — a bulk that fits spends its emails; one that does not fit 402s atomically', async () => {
     const svc = service();
     const filler = await seedSender(db, mailboxId);
-    for (let i = 0; i < FREE_LIMIT - 3; i++) {
-      await seedJob(db, mailboxId, {
-        verb: 'archive',
-        key: `archive-fill-${i}`,
-        senderId: filler.id,
-        senderKey: filler.key,
-      });
-    }
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'archive-fill',
+      senderId: filler.id,
+      senderKey: filler.key,
+      quotaUnits: FREE_LIMIT - 3,
+      affectedCount: FREE_LIMIT - 3,
+    });
     const s1 = await seedSender(db, mailboxId);
     const s2 = await seedSender(db, mailboxId);
     await seedInboxMessage(db, mailboxId, s1.key, 'b1');
     await seedInboxMessage(db, mailboxId, s2.key, 'b2');
 
-    // 3 units left — a bulk of 2 fits and consumes exactly 2.
+    // 3 emails left — a bulk clearing 2 fits and spends exactly 2.
     const ok = await svc.enqueueBulkComposite({
       mailboxAccountId: mailboxId,
       senderIds: [s1.id, s2.id],
@@ -894,10 +706,12 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
     const summary = await new EntitlementsService(db as never).cleanupSummary(workspaceId);
     expect(summary).toMatchObject({ used: FREE_LIMIT - 1, remaining: 1 });
 
-    // 1 unit left — a bulk of 2 must NOT fit, and must write NOTHING
-    // (the capacity check and the inserts share one transaction).
+    // 1 email left — a bulk clearing 2 must NOT fit, and must write
+    // NOTHING (the capacity check and the inserts share one transaction).
     const s3 = await seedSender(db, mailboxId);
     const s4 = await seedSender(db, mailboxId);
+    await seedInboxMessage(db, mailboxId, s3.key, 'b3');
+    await seedInboxMessage(db, mailboxId, s4.key, 'b4');
     const before = await db.select({ id: actionJobs.id }).from(actionJobs);
     await expect(
       svc.enqueueBulkComposite({
@@ -914,78 +728,34 @@ describe('ActionsService free-cap enforcement (end-to-end, D19/D77)', () => {
     expect(after.length).toBe(before.length); // nothing was written
   });
 
-  it('a fresh unsubscribe consumes one Free unit; replay at the cap succeeds; a new intent 402s', async () => {
+  it('unsubscribe draws nothing from a spent allowance; a replay projects the same decision', async () => {
     const svc = service();
     const sender = await seedSender(db, mailboxId);
-    for (let i = 0; i < FREE_LIMIT - 1; i++) {
-      await seedJob(db, mailboxId, {
-        verb: 'archive',
-        key: `archive-fill-unsub-${i}`,
-        senderId: sender.id,
-        senderKey: sender.key,
-      });
-    }
+    await seedJob(db, mailboxId, {
+      verb: 'archive',
+      key: 'archive-fill-unsub',
+      senderId: sender.id,
+      senderKey: sender.key,
+      quotaUnits: FREE_LIMIT,
+      affectedCount: FREE_LIMIT,
+    });
 
     const first = await svc.recordUnsubscribeIntent({
       mailboxAccountId: mailboxId,
       senderId: sender.id,
-      idempotencyKey: 'free-unsub-fifth',
+      idempotencyKey: 'free-unsub-at-cap',
     });
     expect(await new EntitlementsService(db as never).cleanupSummary(workspaceId)).toMatchObject({
       used: FREE_LIMIT,
       remaining: 0,
     });
 
-    // Same Idempotency-Key is a projection of the existing decision,
-    // not a sixth cleanup-cap check.
     const replay = await svc.recordUnsubscribeIntent({
       mailboxAccountId: mailboxId,
       senderId: sender.id,
-      idempotencyKey: 'free-unsub-fifth',
-      // Even a replay that now advertises a backlog action must project
-      // the cached decision without a new two-unit capacity check.
-      includesBacklogAction: true,
+      idempotencyKey: 'free-unsub-at-cap',
     });
     expect(replay.activityLogId).toBe(first.activityLogId);
-
-    const beforeJobs = await db.select().from(actionJobs);
-    const beforeActivity = await db.select().from(activityLog);
-    await expect(
-      svc.recordUnsubscribeIntent({
-        mailboxAccountId: mailboxId,
-        senderId: sender.id,
-        idempotencyKey: 'free-unsub-sixth',
-      }),
-    ).rejects.toMatchObject({ code: 'FREE_CAP_REACHED' });
-    expect(await db.select().from(actionJobs)).toHaveLength(beforeJobs.length);
-    expect(await db.select().from(activityLog)).toHaveLength(beforeActivity.length);
-  });
-
-  it('unsubscribe with a backlog action preflights two units and writes nothing when only one remains', async () => {
-    const svc = service();
-    const sender = await seedSender(db, mailboxId);
-    for (let i = 0; i < FREE_LIMIT - 1; i++) {
-      await seedJob(db, mailboxId, {
-        verb: 'archive',
-        key: `archive-fill-backlog-${i}`,
-        senderId: sender.id,
-        senderKey: sender.key,
-      });
-    }
-
-    await expect(
-      svc.recordUnsubscribeIntent({
-        mailboxAccountId: mailboxId,
-        senderId: sender.id,
-        idempotencyKey: 'free-unsub-plus-backlog',
-        includesBacklogAction: true,
-      }),
-    ).rejects.toMatchObject({
-      code: 'FREE_CAP_REACHED',
-      details: { remaining: 1, requiredUnits: 2 },
-    });
-    expect(await db.select().from(actionJobs)).toHaveLength(FREE_LIMIT - 1);
-    expect(await db.select().from(activityLog)).toHaveLength(0);
   });
 });
 
@@ -1056,102 +826,16 @@ describe('migration 0074 — purge of unentitled Brief / Follow-ups rows', () =>
   });
 });
 
-describe('METER_V2 off keeps the cleanup-action count', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('ignores quota_units and counts one done archive as one action', async () => {
-    vi.stubEnv('METER_V2', 'false');
-    const db = await freshDb();
-    const { workspaceId, mailboxId } = await seedWorkspace(db, 'free');
-    const sender = await seedSender(db, mailboxId);
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'meter-off',
-      senderId: sender.id,
-      senderKey: sender.key,
-      quotaUnits: 999,
-      affectedCount: 999,
-    });
-    const svc = new EntitlementsService(db as never);
-    expect(await svc.cleanupUnitsUsed(workspaceId)).toBe(1);
-  });
-
-  it('does not return a meter 402 envelope or a meter summary', async () => {
-    vi.stubEnv('METER_V2', 'false');
-    const db = await freshDb();
-    const { workspaceId, mailboxId } = await seedWorkspace(db, 'free');
-    const sender = await seedSender(db, mailboxId);
-    await seedJob(db, mailboxId, {
-      verb: 'archive',
-      key: 'meter-off-envelope',
-      senderId: sender.id,
-      senderKey: sender.key,
-      quotaUnits: 999,
-      affectedCount: 999,
-    });
-    const svc = new EntitlementsService(db as never);
-    const summary = await svc.cleanupSummary(workspaceId);
-    expect(summary).toEqual({
-      tier: 'free',
-      limit: FREE_LIMIT,
-      used: 1,
-      remaining: FREE_LIMIT - 1,
-      resetsAt: expect.any(Date),
-    });
-    expect(summary).not.toHaveProperty('metered');
-    expect(summary).not.toHaveProperty('requested');
-    expect(summary).not.toHaveProperty('suggestedPreset');
-
-    // One more cleanup action still fits the action cap, so the email
-    // stamp does not produce a 402.
-    await expect(svc.assertCleanupCapacity(mailboxId, 1)).resolves.toBeUndefined();
-
-    const [ws] = await db
-      .select({ createdAt: workspaces.createdAt })
-      .from(workspaces)
-      .where(eq(workspaces.id, workspaceId));
-    const err = await svc
-      .assertCleanupCapacityForWorkspace(
-        { workspaceId, tier: 'free', createdAt: ws!.createdAt },
-        FREE_LIMIT,
-        db,
-        { 30: 80, 90: 400, 180: 1_200, 365: 2_708 },
-      )
-      .catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(AppException);
-    const hit = err as AppException;
-    expect(hit.code).toBe('FREE_CAP_REACHED');
-    expect(hit.details).not.toHaveProperty('requested');
-    expect(hit.details).not.toHaveProperty('suggestedPreset');
-    expect(hit.details).toEqual({
-      remaining: FREE_LIMIT - 1,
-      limit: FREE_LIMIT,
-      used: 1,
-      requiredUnits: FREE_LIMIT,
-      resetsAt: expect.any(String),
-    });
-    expect(hit.message).toMatch(/free emails/);
-    expect(hit.message).not.toMatch(/cleanup actions/);
-  });
-});
-
-describe('METER_V2 emails-cleared meter', () => {
+describe('Free emails-cleared meter', () => {
   let db: Db;
   let workspaceId: string;
   let mailboxId: string;
   let svc: EntitlementsService;
 
   beforeEach(async () => {
-    vi.stubEnv('METER_V2', 'true');
     db = await freshDb();
     ({ workspaceId, mailboxId } = await seedWorkspace(db, 'free'));
     svc = new EntitlementsService(db as never);
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
   });
 
   async function issueUndo(actionKind: 'archive' | 'later' = 'archive'): Promise<string> {

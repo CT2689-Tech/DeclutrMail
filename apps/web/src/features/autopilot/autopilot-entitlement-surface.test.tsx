@@ -7,7 +7,6 @@ import { createTestQueryClient } from '@/test/query-wrapper';
 
 import { AUTO_ARCHIVE_LOW_ENGAGEMENT } from './fixtures';
 
-let mockPricingV2 = false;
 vi.mock('@/features/auth/auth-provider', () => ({
   useAuth: () => ({
     me: {
@@ -23,7 +22,6 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
       tier: 'free',
-      pricingV2: mockPricingV2,
       cleanupRemaining: 5,
     },
   }),
@@ -33,7 +31,6 @@ import { AutopilotEntitlementSurface } from './autopilot-entitlement-surface';
 
 describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
   beforeEach(() => {
-    mockPricingV2 = false;
     installFetchStub([]);
   });
   afterEach(() => resetFetchStub());
@@ -57,9 +54,7 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     const retry = await screen.findByRole('button', { name: 'Try again' });
     fireEvent.click(retry);
 
-    expect(
-      await screen.findByText('Review low-engagement senders for Archive'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Archive low-engagement senders')).toBeInTheDocument();
     expect(reads).toBe(2);
   });
 
@@ -118,9 +113,7 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     expect(screen.getByTestId('autopilot-observe-preview')).toBeInTheDocument();
     expect(screen.getByText(/previews are read-only/i)).toBeInTheDocument();
     await waitFor(() => expect(rulesReads).toBe(1));
-    expect(
-      await screen.findByText('Review low-engagement senders for Archive'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Archive low-engagement senders')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Preview current matches' }));
     await waitFor(() => expect(previewReads).toBe(1));
@@ -133,18 +126,17 @@ describe('AutopilotEntitlementSurface — safe pre-upgrade value', () => {
     expect(screen.getByText(/Previews are read-only/i)).toBeInTheDocument();
 
     // D251 — the CTA names the cheapest plan that unlocks THIS screen
-    // (autopilot → Plus at $9), not Pro. Derived from the manifest.
-    expect(screen.getByRole('link', { name: /upgrade to plus · \$9\/mo/i })).toHaveAttribute(
+    // (autopilot → Plus at the launch annual price), not Pro.
+    expect(screen.getByRole('link', { name: /upgrade to plus · \$59 a year/i })).toHaveAttribute(
       'href',
-      '/billing?plan=plus&cycle=monthly',
+      '/billing?plan=plus&cycle=annual',
     );
     expect(
       screen.queryByRole('button', { name: /pause every autopilot rule/i }),
     ).not.toBeInTheDocument();
   });
 
-  it('quotes Plus annual under launch pricing', async () => {
-    mockPricingV2 = true;
+  it('quotes Plus annual and never a monthly price', async () => {
     installFetchStub([
       {
         method: 'GET',

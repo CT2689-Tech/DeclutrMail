@@ -13,8 +13,6 @@
  *     `trialing` per D121 (no-trial mechanic, CODEX PATCH on D117).
  *   - Purchasable tiers are `plus` | `pro` only (D19: free needs no
  *     checkout; team/enterprise have no purchase path at launch).
- *   - `foundingPro` is a PROMO price point hosted by `pro`, never a
- *     sixth tier (D126) — see `entitlements/types.ts`.
  *
  * Privacy (D7/D228): billing payloads carry provider ids, tier names,
  * cycle enums, and timestamps only. Never email content.
@@ -49,11 +47,6 @@ export type PurchasableTier = z.infer<typeof PurchasableTierSchema>;
  * `country` is accepted and ignored. It does not choose the provider
  * or the checkout currency. India pricing uses the server-signed
  * checkout-geo header, never this field.
- *
- * `promo: 'foundingPro'` requires `tierId: 'pro'` + `cycle: 'annual'`
- * (the promo is an annual-only Pro price point, D126) — enforced by
- * the `superRefine` below so a malformed combination fails validation
- * instead of silently checking out at the wrong price.
  */
 export const CheckoutRequestSchema = z
   .object({
@@ -61,7 +54,6 @@ export const CheckoutRequestSchema = z
     attemptId: z.uuid().optional(),
     cycle: BillingCycleSchema,
     provider: BillingProviderIdSchema,
-    promo: z.literal('foundingPro').optional(),
     /** Backlog Pass. Requires Plus annual on Paddle. Not a subscription tier. */
     offer: z.literal('pass_onetime').optional(),
     /** Ignored. Present so an older client that still sends it does not fail validation. */
@@ -71,17 +63,7 @@ export const CheckoutRequestSchema = z
       .optional(),
   })
   .superRefine((val, ctx) => {
-    if (val.promo === 'foundingPro' && (val.tierId !== 'pro' || val.cycle !== 'annual')) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'foundingPro is an annual-only Pro promo (D126).',
-        path: ['promo'],
-      });
-    }
-    if (
-      val.offer === 'pass_onetime' &&
-      (val.tierId !== 'plus' || val.cycle !== 'annual' || val.promo)
-    ) {
+    if (val.offer === 'pass_onetime' && (val.tierId !== 'plus' || val.cycle !== 'annual')) {
       ctx.addIssue({
         code: 'custom',
         message: 'pass_onetime is a Plus annual one-time offer.',
@@ -579,19 +561,6 @@ export const PlanChangePreviewSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('none') }),
 ]);
 export type PlanChangePreview = z.infer<typeof PlanChangePreviewSchema>;
-
-/**
- * QA-billing-20260901-09/-05 — the founding-slot count backing the
- * "Claim Founding Pro" checkbox and card price. Previously advisory-only
- * server-side (`BillingService.foundingRemaining`, checked at checkout
- * time): the FE had no route to read it before then, so a sold-out promo
- * stayed offered on the plan card and the checkbox, discovered only at
- * confirm (`FOUNDING_PRO_SOLD_OUT`).
- */
-export const FoundingAvailabilitySchema = z.object({
-  remaining: z.number().int().nonnegative(),
-});
-export type FoundingAvailability = z.infer<typeof FoundingAvailabilitySchema>;
 
 /**
  * Emails-cleared meter position. `resetAt` is an ISO UTC timestamp.

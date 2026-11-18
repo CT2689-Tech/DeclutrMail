@@ -8,7 +8,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { PRIVACY_BADGE_HEADLINE, PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { actionHelpCopy, VERB_REGISTRY } from '@declutrmail/shared/actions';
 import { METER, MIN_UNDO_WINDOW_DAYS, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
@@ -21,7 +21,7 @@ import { Hero } from '@/features/marketing/landing/hero';
 // No edge geo outside Vercel — the header is genuinely absent locally,
 // in CI, and on any self-hosted deployment, so the empty set IS the
 // common production case and the one the assertions below describe
-// (Paddle/USD). `pricing-region.test.tsx` covers the India rail.
+// (Paddle/USD).
 vi.mock('next/headers', () => ({ headers: () => Promise.resolve(new Headers()) }));
 
 async function renderLanding() {
@@ -32,11 +32,11 @@ async function renderLanding() {
       respond: () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401 }),
     },
   ]);
-  // `LandingPage` is an async server component (it reads the edge geo
-  // header for the pricing teaser's rail — see its docblock), so it is
-  // invoked and awaited the way Next invokes it, then handed to RTL as
-  // a plain element tree.
-  return render(await LandingPage());
+  // The pricing teaser is a lazily loaded island; wait for it so every
+  // assertion sees the whole page.
+  const view = render(<LandingPage />);
+  await screen.findByTestId('pricing-teaser-story');
+  return view;
 }
 
 describe('landing page — D134', () => {
@@ -95,7 +95,7 @@ describe('landing page — D134', () => {
       'Keep your inbox. Get a better way to decide.',
       'A clearer inbox is only the beginning.',
       'Know what we see. Keep the final say.',
-      'Start free. Pay when it earns it.',
+      'Free to start. Pay once to clear the rest.',
       'Start with one sender.',
     ]);
     // The in-page section index and the values strip are gone; the
@@ -156,38 +156,9 @@ describe('landing page — D134', () => {
     expect(foot?.textContent).toContain('14-day money-back on any purchase, once per customer.');
   });
 
-  it('renders the launch teaser when the public pricing API says v2', async () => {
-    vi.stubEnv('NEXT_PUBLIC_API_URL', 'https://api.example.test');
-    vi.stubEnv('PRICING_V2', '');
-    vi.stubEnv('BILLING_PASS_ENABLED', '');
-    // The server read is the first call. A later client refetch that
-    // fails must keep that paint, which is what a blocked browser sees.
-    let pricingReads = 0;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/auth/me',
-        respond: () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401 }),
-      },
-      {
-        method: 'GET',
-        path: '/api/pricing/public',
-        respond: () => {
-          pricingReads += 1;
-          if (pricingReads > 1) return new Response('missing', { status: 404 });
-          return new Response(
-            JSON.stringify({ data: { pricingV2: true, passEnabled: true, meterV2: true } }),
-            { status: 200, headers: { 'content-type': 'application/json' } },
-          );
-        },
-      },
-    ]);
-    const { container } = render(await LandingPage());
-    const plans = await waitFor(() => {
-      const section = container.querySelector('#plans');
-      expect(section).not.toBeNull();
-      return section;
-    });
+  it('renders the launch teaser: Free, the Backlog Pass and Plus at launch prices', async () => {
+    const { container } = await renderLanding();
+    const plans = container.querySelector('#plans');
     const text = plans?.textContent ?? '';
     expect(text).toContain('$59');
     expect(text).not.toMatch(/\$9\s*\/\s*month/);

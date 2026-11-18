@@ -11,7 +11,6 @@ import {
 } from '@/features/marketing/comparison/comparison-data';
 import { ComparisonDetailScreen } from '@/features/marketing/comparison/comparison-screen';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 interface ComparisonPageProps {
   readonly params: Promise<{ competitor: string }>;
@@ -40,12 +39,5 @@ export default async function ComparisonPage({ params }: ComparisonPageProps) {
   const comparison = comparisonBySlug(competitor);
   if (!comparison) notFound();
 
-  const flags = await loadPricingFlags();
-  return (
-    <ComparisonDetailScreen
-      comparison={comparison}
-      pricingV2={flags.pricingV2}
-      passEnabled={flags.passEnabled}
-    />
-  );
+  return <ComparisonDetailScreen comparison={comparison} />;
 }

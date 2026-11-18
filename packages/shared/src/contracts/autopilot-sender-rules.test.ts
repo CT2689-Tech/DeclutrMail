@@ -32,15 +32,20 @@ describe('explicit sender-rule contracts', () => {
     ])
       expect(AutopilotSenderRuleCreateSchema.safeParse(invalid).success).toBe(false);
   });
-  it('requires a positive version and never permits unattended Active', () => {
+  it('requires a positive version and permits Active only as a lifecycle-only change', () => {
     expect(AutopilotSenderRulePatchSchema.safeParse({ version: 1, mode: 'paused' }).success).toBe(
+      true,
+    );
+    expect(AutopilotSenderRulePatchSchema.safeParse({ version: 1, mode: 'active' }).success).toBe(
       true,
     );
     expect(AutopilotSenderRulePatchSchema.safeParse({ ...rule, version: 1 }).success).toBe(true);
     for (const invalid of [
       { ...rule },
       { version: 0, mode: 'observe' },
-      { version: 1, mode: 'active' },
+      // Turning a rule Active cannot ride along with a definition edit:
+      // the user turns on exactly the rule they reviewed.
+      { ...rule, version: 1, mode: 'active' },
     ]) {
       expect(AutopilotSenderRulePatchSchema.safeParse(invalid).success).toBe(false);
     }

@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { fillWs3, WS3_COPY, ws3Tokens } from '@declutrmail/shared/copy/launch';
+import { fillWs3, WS3_COPY } from '@declutrmail/shared/copy/launch';
+import { refundLine } from '@declutrmail/shared/entitlements';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { track } = vi.hoisted(() => ({ track: vi.fn(async () => undefined) }));
@@ -86,14 +87,21 @@ describe('ComparisonIndexScreen', () => {
 });
 
 describe('comparison refund line', () => {
-  it('shows no money-back sentence on /vs and /compare while refundDays is blank', () => {
-    expect(ws3Tokens().refundDays).toBe('');
+  it('links the policy money-back line once on /compare and every /vs page', () => {
+    const line = refundLine();
     const index = render(<ComparisonIndexScreen />);
-    expect(index.container.textContent ?? '').not.toMatch(/-day money-back/);
+    expect(within(index.container).getByRole('link', { name: line })).toHaveAttribute(
+      'href',
+      '/refunds',
+    );
+    expect((index.container.textContent ?? '').split(line)).toHaveLength(2);
     index.unmount();
     for (const comparison of COMPARISONS) {
       const view = render(<ComparisonDetailScreen comparison={comparison} />);
-      expect(view.container.textContent ?? '', comparison.slug).not.toMatch(/-day money-back/);
+      expect(within(view.container).getByRole('link', { name: line })).toHaveAttribute(
+        'href',
+        '/refunds',
+      );
       view.unmount();
     }
   });
@@ -135,31 +143,16 @@ describe('ComparisonDetailScreen', () => {
     },
   );
 
-  it.each([
-    [false, false],
-    [true, false],
-    [true, true],
-  ] as const)(
-    'omits the UPI pay line when pricingV2 is %s and the pass is %s',
-    (pricingV2, passEnabled) => {
-      const index = render(
-        <ComparisonIndexScreen pricingV2={pricingV2} passEnabled={passEnabled} />,
-      );
-      expect(index.container.textContent).not.toMatch(/You can pay with UPI/);
-      index.unmount();
-      for (const comparison of COMPARISONS) {
-        const view = render(
-          <ComparisonDetailScreen
-            comparison={comparison}
-            pricingV2={pricingV2}
-            passEnabled={passEnabled}
-          />,
-        );
-        expect(view.container.textContent, comparison.slug).not.toMatch(/You can pay with UPI/);
-        view.unmount();
-      }
-    },
-  );
+  it('omits the UPI pay line on the index and every comparison', () => {
+    const index = render(<ComparisonIndexScreen />);
+    expect(index.container.textContent).not.toMatch(/You can pay with UPI/);
+    index.unmount();
+    for (const comparison of COMPARISONS) {
+      const view = render(<ComparisonDetailScreen comparison={comparison} />);
+      expect(view.container.textContent, comparison.slug).not.toMatch(/You can pay with UPI/);
+      view.unmount();
+    }
+  });
 
   // unroll-me is currently the sole oldest entry, so its own verifiedIso
   // equals COMPARISONS_VERIFIED_FLOOR_ISO — the floor-vs-page-own

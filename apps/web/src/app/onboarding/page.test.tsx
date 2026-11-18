@@ -104,9 +104,8 @@ const onboardingState = (over: Record<string, unknown> = {}): FetchStubHandler =
         presets: [
           {
             key: 'auto_archive_low_engagement',
-            name: 'Review low-engagement senders for Archive',
-            description:
-              'Collects Archive suggestions from low-engagement senders for your approval; no mail moves on its own.',
+            name: 'Archive low-engagement senders',
+            description: 'Archives inbox mail from senders the engine is confident you ignore.',
             verb: 'archive',
           },
         ],
@@ -350,7 +349,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
       expect(
         await screen.findByText('Choose what DeclutrMail should suggest.'),
       ).toBeInTheDocument();
-      expect(screen.getByText('Review low-engagement senders for Archive')).toBeInTheDocument();
+      expect(screen.getByText('Archive low-engagement senders')).toBeInTheDocument();
     },
   );
 
@@ -359,7 +358,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     renderPage();
 
     expect(await screen.findByText('Choose what DeclutrMail should suggest.')).toBeInTheDocument();
-    expect(screen.getByText('Review low-engagement senders for Archive')).toBeInTheDocument();
+    expect(screen.getByText('Archive low-engagement senders')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Choose a goal to continue' })).toBeDisabled();
     expect(screen.getByRole('radio', { name: /Reduce newsletters/i })).toBeInTheDocument();
   });
@@ -578,7 +577,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
 
   it('preserves a validated pricing choice through first-run onboarding', async () => {
     searchParams = new URLSearchParams({
-      returnTo: '/billing?cycle=annual&promo=foundingPro&plan=pro',
+      returnTo: '/billing?cycle=annual&plan=pro',
     });
     installFetchStub([
       meAuthed('ready'),
@@ -587,9 +586,7 @@ describe('onboarding page — authed resume (D106 derivation)', () => {
     ]);
     renderPage();
 
-    await waitFor(() =>
-      expect(replace).toHaveBeenCalledWith('/billing?plan=pro&cycle=annual&promo=foundingPro'),
-    );
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/billing?plan=pro&cycle=annual'));
   });
 
   it('drops an untrusted onboarding destination', async () => {
@@ -679,7 +676,7 @@ describe('onboarding page — secondary connect entry (D116, unchanged)', () => 
   });
 
   it('returns a reconnected Billing mailbox through review completion with its exact intent', async () => {
-    const destination = '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief';
+    const destination = '/billing?plan=pro&cycle=annual&from=%2Fbrief';
     searchParams = new URLSearchParams({ mailbox: 'mb2', reconnect: '1', returnTo: destination });
     installFetchStub([secondaryMe(), syncStatus(true)]);
     renderPage();

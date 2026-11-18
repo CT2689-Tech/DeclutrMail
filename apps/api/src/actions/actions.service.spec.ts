@@ -21,7 +21,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { METER } from '@declutrmail/shared/entitlements';
 
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { UndoController } from '../undo/undo.controller.js';
@@ -29,8 +29,8 @@ import { UndoService } from '../undo/undo.service.js';
 import { ActionsService, IN_FLIGHT_GROUPS_MAX, reverseQueueJobId } from './actions.service.js';
 import { compositeActionRequestSchema } from './actions.types.js';
 
-/** The Free monthly quota, from the pricing config (A3). */
-const FREE_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth!;
+/** Free's monthly email allowance, from the pricing config. */
+const FREE_LIMIT = METER.free.limit;
 
 /**
  * ActionsService integration tests (D226).
@@ -119,25 +119,25 @@ async function seedMessage(
   });
 }
 
+/** Spend `emails` of the Free meter with one done forward archive row. */
 async function seedCountedCleanupJobs(
   db: Db,
   mailboxAccountId: string,
   senderId: string,
-  count: number,
+  emails: number,
   keyPrefix: string,
 ): Promise<void> {
-  for (let i = 0; i < count; i += 1) {
-    await db.insert(actionJobs).values({
-      mailboxAccountId,
-      verb: 'archive',
-      direction: 'forward',
-      selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
-      requestedCount: 1,
-      affectedCount: 1,
-      status: 'done',
-      idempotencyKey: `${keyPrefix}-${i}`,
-    });
-  }
+  await db.insert(actionJobs).values({
+    mailboxAccountId,
+    verb: 'archive',
+    direction: 'forward',
+    selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+    requestedCount: emails,
+    affectedCount: emails,
+    quotaUnits: emails,
+    status: 'done',
+    idempotencyKey: `${keyPrefix}-0`,
+  });
 }
 
 /** Helper: a Date N days before `now`. */
@@ -370,18 +370,7 @@ describe('ActionsService', () => {
 
   it('replays an archive at the Free cap and rejects only a fresh over-quota key', async () => {
     await seedMessage(db, mailboxId, 'm-cap', ['INBOX']);
-    for (let i = 0; i < FREE_LIMIT - 1; i += 1) {
-      await db.insert(actionJobs).values({
-        mailboxAccountId: mailboxId,
-        verb: 'archive',
-        direction: 'forward',
-        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
-        requestedCount: 1,
-        affectedCount: 1,
-        status: 'done',
-        idempotencyKey: `archive-cap-fill-${i}`,
-      });
-    }
+    await seedCountedCleanupJobs(db, mailboxId, senderId, FREE_LIMIT - 1, 'archive-cap-fill');
 
     const fifth = await svc.enqueueComposite({
       mailboxAccountId: mailboxId,
@@ -418,20 +407,9 @@ describe('ActionsService', () => {
     expect(queue.count).toBe(1);
   });
 
-  it('admits only one concurrent archive when one Free unit remains', async () => {
+  it('admits only one concurrent archive when one Free email remains', async () => {
     await seedMessage(db, mailboxId, 'm-cap-race', ['INBOX']);
-    for (let i = 0; i < FREE_LIMIT - 1; i += 1) {
-      await db.insert(actionJobs).values({
-        mailboxAccountId: mailboxId,
-        verb: 'archive',
-        direction: 'forward',
-        selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
-        requestedCount: 1,
-        affectedCount: 1,
-        status: 'done',
-        idempotencyKey: `archive-race-fill-${i}`,
-      });
-    }
+    await seedCountedCleanupJobs(db, mailboxId, senderId, FREE_LIMIT - 1, 'archive-race-fill');
 
     // PGlite exercises the application ordering but cannot prove PostgreSQL
     // lock contention across physical connections. The SQL-shape test pins
@@ -978,7 +956,7 @@ describe('ActionsService', () => {
       expect(secondary!.compositeId).toBe(primary!.id); // secondary points up
     });
 
-    it('admits only one concurrent composite when one Free unit remains', async () => {
+    it('admits only one concurrent composite when one Free email remains', async () => {
       await seedCountedCleanupJobs(db, mailboxId, senderId, FREE_LIMIT - 1, 'composite-race-fill');
       await seedMessage(db, mailboxId, 'm-composite-race', ['INBOX']);
 
@@ -1681,9 +1659,11 @@ describe('ActionsService', () => {
       expect(await db.select().from(actionJobs)).toHaveLength(0);
     });
 
-    it('a Free bulk enqueues (A3) and consumes one unit per actionable sender', async () => {
+    it('a Free bulk enqueues (A3) and spends one meter email per archived message', async () => {
       await db.update(workspaces).set({ tier: 'free' });
       const sender2Id = await seedSecondSender(db, mailboxId);
+      await seedMessage(db, mailboxId, 'free-bulk-s1', ['INBOX']);
+      await seedMessage(db, mailboxId, 'free-bulk-s2', ['INBOX'], daysAgo(5), SENDER_KEY_2);
 
       const res = await svc.enqueueBulkComposite({
         mailboxAccountId: mailboxId,
@@ -2933,58 +2913,7 @@ describe('ActionsService', () => {
       expect(jobs[0]!.resolvedMessageIds).toEqual([first.activityLogId]);
     });
 
-    it('admits only one concurrent unsubscribe when one Free unit remains', async () => {
-      await seedCountedCleanupJobs(
-        db,
-        mailboxId,
-        senderId,
-        FREE_LIMIT - 1,
-        'unsubscribe-race-fill',
-      );
-
-      // PGlite protects application ordering but not cross-connection lock
-      // behavior; EntitlementsService separately pins the FOR UPDATE SQL.
-      const results = await Promise.allSettled(
-        ['unsubscribe-race-a', 'unsubscribe-race-b'].map((idempotencyKey) =>
-          svc.recordUnsubscribeIntent({
-            mailboxAccountId: mailboxId,
-            senderId,
-            idempotencyKey,
-          }),
-        ),
-      );
-
-      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-      expect(results.find((result) => result.status === 'rejected')).toMatchObject({
-        status: 'rejected',
-        reason: { code: 'FREE_CAP_REACHED' },
-      });
-      expect(
-        await db
-          .select({ id: actionJobs.id })
-          .from(actionJobs)
-          .where(
-            inArray(actionJobs.idempotencyKey, [
-              'unsub:unsubscribe-race-a',
-              'unsub:unsubscribe-race-b',
-            ]),
-          ),
-      ).toHaveLength(1);
-      expect(
-        await db
-          .select({ id: activityLog.id })
-          .from(activityLog)
-          .where(eq(activityLog.action, 'unsubscribe')),
-      ).toHaveLength(1);
-      expect(
-        await db
-          .select({ id: outboxEvents.id })
-          .from(outboxEvents)
-          .where(eq(outboxEvents.topic, 'actions.unsubscribe_intent_recorded')),
-      ).toHaveLength(1);
-    });
-
-    it('concurrent same-key unsubscribes replay one Free unit and one audit row', async () => {
+    it('concurrent same-key unsubscribes replay one intent and one audit row', async () => {
       await seedCountedCleanupJobs(db, mailboxId, senderId, 4, 'unsubscribe-replay-fill');
       const request = {
         mailboxAccountId: mailboxId,
@@ -3051,7 +2980,7 @@ describe('ActionsService', () => {
       ).rejects.toMatchObject({ response: { code: 'SENDER_NOT_FOUND' } });
     });
 
-    it('records a no-channel preference without consuming a Free cleanup unit', async () => {
+    it('records a no-channel preference without consuming Free meter emails', async () => {
       await seedCountedCleanupJobs(db, mailboxId, senderId, FREE_LIMIT, 'unsubscribe-none-fill');
       await db
         .update(senders)
@@ -3424,9 +3353,6 @@ describe('ActionsService', () => {
           mailboxAccountId: mailboxId,
           senderId: secondSenderId,
           idempotencyKey: 'same-mailbox-other-sender-key',
-          // Replays ignore this hint, but a different sender is not a
-          // replay and must conflict before the two-unit preflight.
-          includesBacklogAction: true,
         })
         .catch((error: unknown) => error);
 

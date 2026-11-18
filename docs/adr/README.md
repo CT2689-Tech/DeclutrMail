@@ -67,6 +67,8 @@ files of each duplicated pair and use the next free number for new ADRs.
 | [0046](./0046-sandbox-revocable-checkout-preparation.md) | (see file) | Prepare provider-revocable checkout in sandbox |
 | [0047](./0047-durable-checkout-attempts.md) | (see file) | Retain exact checkout identity through recovery |
 
+| [0048](./0048-mcp-connector-is-a-second-client.md) | Accepted | MCP connector is a second client of the action pipeline | ADR-0020, ADR-0028 |
+
 ## Authoring an ADR
 
 1. Copy `0000-template.md` to `NNNN-kebab-title.md` using the next free

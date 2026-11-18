@@ -24,6 +24,7 @@ import {
   MIN_UNDO_WINDOW_DAYS,
   minimumTierForCapability,
   storyValues,
+  tierIsPurchasable,
   TIER_MANIFEST,
   UNIFORM_UNDO_WINDOW_DAYS,
 } from '@declutrmail/shared/entitlements';
@@ -34,10 +35,7 @@ import { alternativesFor, comparisonBySlug } from '@/features/marketing/comparis
 import { alt as defaultCardAlt, size as defaultCardSize } from '../opengraph-image';
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
-import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
-
-/** Flag-off metadata. `generateMetadata` returns this unless PRICING_V2 is on. */
-const pricing = pricingPageMetadata(false);
+import { metadata as pricing } from './pricing/page';
 import { metadata as privacy } from './privacy/page';
 import { metadata as terms } from './terms/page';
 import { metadata as refunds } from './refunds/page';
@@ -111,36 +109,34 @@ const PAGES: ReadonlyArray<{
  * manifest, tier names, privacy and verification wording — never the
  * sentence around them.
  */
-describe('pricing metadata follows the launch flag', () => {
-  it('quotes the manifest prices, allowance and undo window, and names the pass only when it is on', () => {
-    expect(pricingPageMetadata(false).description).toBe(pricing.description);
-    const passOff = pricingPageMetadata(true, false);
-    const passOn = pricingPageMetadata(true, true);
+describe('pricing metadata', () => {
+  it('quotes the manifest prices, allowance, Pass and undo window', () => {
     const story = storyValues('usd');
     // "on every plan" is only true while every tier grants the same window.
     expect(UNIFORM_UNDO_WINDOW_DAYS).not.toBeNull();
-    for (const meta of [passOff, passOn]) {
-      const description = String(meta.description);
-      for (const fact of [
-        `${story.freeName} is ${launchPriceDisplay('usd').free.amount}`,
-        `${story.allowance} emails`,
-        `${story.plusName} is ${story.plusPrice} a year`,
-        `${UNIFORM_UNDO_WINDOW_DAYS}-day Undo on every plan`,
-      ]) {
-        expect(description).toContain(fact);
-      }
-      expect(meta.openGraph).toMatchObject({ description });
-      expect(meta.twitter).toMatchObject({ description });
+    const description = String(pricing.description);
+    for (const fact of [
+      `${story.freeName} is ${launchPriceDisplay('usd').free.amount}`,
+      `${story.allowance} emails`,
+      `${story.plusName} is ${story.plusPrice} a year`,
+      `${story.passName} is ${story.passPrice} once`,
+      `${UNIFORM_UNDO_WINDOW_DAYS}-day Undo on every plan`,
+    ]) {
+      expect(description).toContain(fact);
     }
-    expect(passOn.description).toContain(`${story.passName} is ${story.passPrice} once`);
-    expect(passOff.description).not.toContain(String(story.passName));
-    expect(pricingPageMetadata(true, true).alternates?.canonical).toBe('/pricing');
+    expect(pricing.openGraph).toMatchObject({ description });
+    expect(pricing.twitter).toMatchObject({ description });
+    expect(pricing.alternates?.canonical).toBe('/pricing');
   });
 
   it('attributes each feature it names to the tier that first unlocks it', () => {
     const description = String(pricing.description);
-    for (const id of ['free', 'plus', 'pro'] as const) {
-      expect(description).toContain(TIER_MANIFEST[id].name);
+    // Free and Plus are on sale and named; Pro is named only while it can be
+    // bought (founder decision 1C keeps it waitlist-only).
+    expect(description).toContain(TIER_MANIFEST.free.name);
+    expect(description).toContain(TIER_MANIFEST.plus.name);
+    if (!tierIsPurchasable('pro')) {
+      expect(description).not.toMatch(new RegExp(`\\b${TIER_MANIFEST.pro.name}\\b`));
     }
     const sentences = description.split(/(?<=\.)\s+/);
     for (const [label, capability] of [

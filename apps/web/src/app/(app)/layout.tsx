@@ -64,7 +64,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const [requestHeaders, flags] = await Promise.all([headers(), loadPricingFlags()]);
   const nonce = requestHeaders.get('x-nonce') ?? undefined;
   const country = trustedVisitorCountry(requestHeaders);
-  const regionProvider = defaultProviderForCountry(country, flags.pricingV2);
+  const regionProvider = defaultProviderForCountry(country);
   const visitorLocale = visitorPricingLocale({
     country,
     indiaCheckoutOpen: flags.indiaCheckoutOpen,

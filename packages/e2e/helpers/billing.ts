@@ -51,10 +51,10 @@ export const BILLING_E2E_ENV = {
   webhookSecret: process.env.E2E_PADDLE_WEBHOOK_SECRET ?? '',
   /**
    * Paddle price id the api's BILLING_CATALOG_JSON maps to
-   * `pro_monthly` — the webhook resolves the tier through the catalog,
+   * `plus_annual` — the webhook resolves the tier through the catalog,
    * so the two MUST match or the event is (correctly) ignored.
    */
-  proMonthlyPriceId: process.env.E2E_PADDLE_PRICE_ID ?? 'pri_e2e_pro_monthly',
+  plusAnnualPriceId: process.env.E2E_PADDLE_PRICE_ID ?? 'pri_e2e_plus_annual',
 } as const;
 
 /** `Paddle-Signature` header for `rawBody`, valid at `nowMs`. */

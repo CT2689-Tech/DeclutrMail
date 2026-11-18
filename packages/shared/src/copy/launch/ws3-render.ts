@@ -5,18 +5,13 @@
 
 import { GMAIL_DATA_PROCESSORS } from '../../contracts/gmail-data-inventory';
 import {
-  isBillingPassEnabled,
-  isPricingV2,
   METER,
   OFFERS,
   passAmount,
   planName,
   plusAmount,
   POLICY,
-  priceLine,
   refundLine,
-  renderPricingMarkdown,
-  TIER_MANIFEST,
 } from '../../entitlements';
 import { hasLegalEntity, LEGAL_ENTITY_ADDRESS, LEGAL_ENTITY_NAME } from '../legal-entity';
 import {
@@ -28,10 +23,6 @@ import {
 import { BRIEF_NAME, CONNECTION_TERM } from '../screen-decisions';
 import { AI_CONSENT_GATE_LIVE, HERO_KICKER, LAUNCH_STAGE, SECURITY_CONTACT } from './ws3-decisions';
 import { WS3_COPY } from './ws3';
-
-export function passListed(): boolean {
-  return process.env.BILLING_PASS_ENABLED === 'true';
-}
 
 export function securityContactEmail(): string {
   if (SECURITY_CONTACT === 'security') return 'security@declutrmail.com';
@@ -47,11 +38,6 @@ function allowanceToken(): string {
   return METER.free.limit.toLocaleString('en-US');
 }
 
-function plusPriceToken(): string {
-  const annual = TIER_MANIFEST.plus.prices.annual;
-  return annual ? priceLine(annual, 'usd') : '';
-}
-
 /** Tokens whose values come from formatters or constants, never from a typed price. */
 export function ws3Tokens(extra?: Record<string, string>): Record<string, string> {
   return {
@@ -63,11 +49,10 @@ export function ws3Tokens(extra?: Record<string, string>): Record<string, string
     plusName: planName('plus'),
     proName: planName('pro'),
     passName: planName('pass'),
-    plusPrice: plusPriceToken(),
-    // No pass price point or duration is exported yet. Leave blank rather than invent one.
-    passPrice: '',
-    passDays: '',
-    refundDays: isPricingV2() ? String(POLICY.refundWindowDays) : '',
+    plusPrice: plusAmount('usd'),
+    passPrice: passAmount('usd'),
+    passDays: String(OFFERS.backlogPass.durationDays),
+    refundDays: String(POLICY.refundWindowDays),
     BRIEF_NAME,
     CONNECTION_TERM,
     anthropicRetention: GMAIL_DATA_PROCESSORS.Anthropic.retention,
@@ -115,66 +100,20 @@ export function fillComplete(template: string, extra?: Record<string, string>): 
     .trim();
 }
 
-/** Plan names and the Plus price are still empty until the WS1 catalog flips. */
-function pricingCatalogReady(): boolean {
-  const tokens = ws3Tokens();
-  return tokens.freeName !== '' && tokens.plusName !== '' && tokens.plusPrice !== '';
-}
-
-/**
- * Launch amounts already live on the 2026-10 price points. Callers that
- * resolved `loadPricingFlags()` pass those booleans so a web process
- * whose own env is off still fills the existing v2 sentences.
- */
-function launchTokenOverrides(
-  pricingV2: boolean,
-  passEnabled: boolean,
-): Record<string, string> | undefined {
-  if (!pricingV2) return undefined;
-  return {
-    plusPrice: plusAmount('usd'),
-    allowance: METER.free.limit.toLocaleString('en-US'),
-    refundDays: String(POLICY.refundWindowDays),
-    ...(passEnabled
-      ? {
-          passPrice: passAmount('usd'),
-          passDays: String(OFFERS.backlogPass.durationDays),
-        }
-      : {}),
-  };
-}
-
 /** Days the public `/refunds` page states. Matches `POLICY.refundWindowDays`. */
 export const REFUNDS_PAGE_WINDOW_DAYS = POLICY.refundWindowDays;
 
-/**
- * Money-back line under a comparison CTA, linked to `/refunds`.
- * With `PRICING_V2` on this is `refundLine()`. Flags-off stays empty
- * while `ws3Tokens().refundDays` is blank, so a price sentence is not
- * published with an empty window.
- */
-export function refundSentence(pricingV2 = isPricingV2()): string {
-  if (pricingV2) return refundLine();
-  if (ws3Tokens().refundDays === '') return '';
-  const publishedDays: number = REFUNDS_PAGE_WINDOW_DAYS;
-  const policyDays: number = POLICY.refundWindowDays;
-  if (publishedDays !== policyDays) return '';
+/** Money-back line under a comparison CTA, linked to `/refunds`. */
+export function refundSentence(): string {
   return refundLine();
 }
 
-export function declutrPriceSummary(passEnabled = passListed(), pricingV2 = isPricingV2()): string {
-  if (!pricingCatalogReady()) return '';
-  const template = passEnabled
-    ? WS3_COPY['ws3.vs.declutr.price.summary']
-    : WS3_COPY['ws3.vs.declutr.price.summary'].replace(/ or a one-time \{passName\}/, '');
-  return fillComplete(template, launchTokenOverrides(pricingV2, passEnabled));
+export function declutrPriceSummary(): string {
+  return fillComplete(WS3_COPY['ws3.vs.declutr.price.summary']);
 }
 
-export function declutrPriceDetail(passEnabled = passListed(), pricingV2 = isPricingV2()): string {
-  if (!pricingCatalogReady()) return '';
-  const extra = launchTokenOverrides(pricingV2, passEnabled);
-  if (!passEnabled) return fillComplete(WS3_COPY['ws3.vs.faq.price.a.passOff'], extra);
-  return fillComplete(WS3_COPY['ws3.vs.declutr.price.detail'], extra);
+export function declutrPriceDetail(): string {
+  return fillComplete(WS3_COPY['ws3.vs.declutr.price.detail']);
 }
 
 const PRE_GATE_EXPLANATIONS = WS3_COPY['ws3.privacy.ai.explanations.preGate'];
@@ -217,10 +156,8 @@ export function privacyFaqAnswer(): string {
   return cut.endsWith('.') ? cut : `${cut}.`;
 }
 
-export function priceFaqAnswer(passEnabled = passListed(), pricingV2 = isPricingV2()): string {
-  if (!pricingCatalogReady()) return '';
-  const key = passEnabled ? 'ws3.vs.faq.price.a' : 'ws3.vs.faq.price.a.passOff';
-  return fillComplete(WS3_COPY[key], launchTokenOverrides(pricingV2, passEnabled));
+export function priceFaqAnswer(): string {
+  return fillComplete(WS3_COPY['ws3.vs.faq.price.a']);
 }
 
 export function llmsAutopilotLine(): string {
@@ -228,15 +165,8 @@ export function llmsAutopilotLine(): string {
   return fillComplete(WS3_COPY['ws3.llms.fix.autopilot']);
 }
 
-export function llmsPricingLine(passEnabled = passListed(), pricingV2 = isPricingV2()): string {
-  if (!pricingCatalogReady()) return '';
-  const template = passEnabled
-    ? WS3_COPY['ws3.llms.fix.pricingLink']
-    : WS3_COPY['ws3.llms.fix.pricingLink'].replace(' and the one-time {passName}', '');
-  return fillComplete(
-    template,
-    pricingV2 ? { refundDays: String(POLICY.refundWindowDays) } : undefined,
-  );
+export function llmsPricingLine(): string {
+  return fillComplete(WS3_COPY['ws3.llms.fix.pricingLink']);
 }
 
 export function llmsBetaLine(): string {
@@ -256,17 +186,10 @@ export function llmsStorageAiLine(): string {
   return filled.includes('{') ? '' : filled;
 }
 
-export function llmsKeyFacts(
-  passEnabled = isBillingPassEnabled(),
-  pricingV2 = isPricingV2(),
-): readonly string[] {
+export function llmsKeyFacts(): readonly string[] {
   const facts = WS3_COPY['ws3.llms.keyFacts'];
   return facts.flatMap((fact, index) => {
     if (index === 3 && !AI_CONSENT_GATE_LIVE) return [LLMS_AI_BEFORE_GATE];
-    // The deck points at the generated pricing section. Omit the pointer
-    // while that section is empty so the file does not describe a heading
-    // that is not there.
-    if (index === 5 && renderPricingMarkdown(passEnabled, pricingV2).trim() === '') return [];
     if (index === 6) {
       return [fillWs3(fact, { factsCheckedDate: 'October 11, 2026' })];
     }

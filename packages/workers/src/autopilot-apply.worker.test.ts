@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import {
+  activityLog,
   automationRules,
   mailMessages,
   mailboxAccounts,
@@ -40,7 +41,8 @@ import type { WorkerContext } from './worker-context.js';
  *   - Free/Plus workspaces do not evaluate enabled rules or write matches.
  *   - last_run_at / last_run_actions / last_run_senders updated per rule.
  *   - Idempotency-key shape (`${mailbox}:${triggeredAtMs}`).
- *   - Custom rules (is_preset=false) are skipped at runtime per D197.
+ *   - Custom sender rules write unattended matches only as Active Archive
+ *     rules, honouring their email age and Protect.
  */
 
 const NOW = new Date('2026-05-25T08:00:00Z');
@@ -304,7 +306,7 @@ describe('AutopilotApplyWorker', () => {
     const [rule] = await db.select().from(automationRules).where(eq(automationRules.id, id));
     expect(rule).toMatchObject({ version: 2, lastRunActions: 777, lastRunSenders: 777 });
   });
-  it('keeps a legacy Active low-engagement Archive rule in review mode', async () => {
+  it('runs an Active low-engagement Archive rule unattended (founder decision 3A)', async () => {
     const db = await freshDb();
     const mbId = await seedMailbox(db);
     await seedAutopilotPresets(db as never, mbId);
@@ -313,7 +315,7 @@ describe('AutopilotApplyWorker', () => {
       mode: 'active',
     });
     const senderKey = await seedSender(db, mbId, {
-      email: 'financial-alert@example.com',
+      email: 'promo@example.com',
       decision: { verdict: 'archive', confidence: 0.92 },
       totalMessages: 10,
     });
@@ -329,14 +331,18 @@ describe('AutopilotApplyWorker', () => {
       FAKE_CTX,
     );
 
-    expect(result.observeMatches).toBe(1);
-    expect(result.activeMatches).toBe(0);
-    expect(enqueue).not.toHaveBeenCalled();
+    expect(result.activeMatches).toBe(1);
+    expect(result.observeMatches).toBe(0);
+    expect(enqueue).toHaveBeenCalledWith(mbId);
     const [match] = await db
       .select()
       .from(ruleMatchLog)
       .where(and(eq(ruleMatchLog.ruleId, ruleId), eq(ruleMatchLog.senderKey, senderKey)));
-    expect(match).toMatchObject({ modeAtMatch: 'observe', resolution: 'pending' });
+    expect(match).toMatchObject({
+      modeAtMatch: 'active',
+      resolution: 'approved',
+      intentApplied: false,
+    });
   });
 
   it('keeps a legacy Active new-sender rule in review mode', async () => {
@@ -958,37 +964,239 @@ describe('AutopilotApplyWorker', () => {
     expect(key).toBe('mbx-1:1700000000000');
   });
 
-  it('skips custom rules (is_preset=false) at runtime per D197', async () => {
-    const db = await freshDb();
-    const mbId = await seedMailbox(db);
-    await db.insert(automationRules).values({
-      mailboxAccountId: mbId,
-      isPreset: false,
-      presetKey: null,
-      name: 'Custom rule',
-      enabled: true,
-      mode: 'observe',
-      scope: 'account',
-      conditions: {},
-      actionKind: 'archive',
-      actionPayload: {},
+  describe('custom sender rules', () => {
+    async function seedSenderRule(
+      db: Awaited<ReturnType<typeof freshDb>>,
+      mailboxAccountId: string,
+      rule: {
+        senderKeys: string[];
+        olderThanDays?: 30 | 90 | 180 | null;
+        mode?: 'observe' | 'active' | 'paused';
+        actionKind?: 'archive' | 'delete';
+      },
+    ): Promise<string> {
+      const [row] = await db
+        .insert(automationRules)
+        .values({
+          mailboxAccountId,
+          isPreset: false,
+          presetKey: null,
+          name: 'Newsletters',
+          enabled: true,
+          mode: rule.mode ?? 'active',
+          scope: 'account',
+          conditions: {
+            kind: 'sender_list',
+            senderKeys: rule.senderKeys,
+            olderThanDays: rule.olderThanDays ?? null,
+          },
+          actionKind: rule.actionKind ?? 'archive',
+          actionPayload: { reach: 'inbox_only' },
+        })
+        .returning({ id: automationRules.id });
+      return row!.id;
+    }
+    async function inboxMessage(
+      db: Awaited<ReturnType<typeof freshDb>>,
+      mailboxAccountId: string,
+      senderKey: string,
+      id: string,
+      daysOld: number,
+      labelIds: string[] = ['INBOX'],
+    ) {
+      await db.insert(mailMessages).values({
+        mailboxAccountId,
+        providerMessageId: id,
+        providerThreadId: `t-${id}`,
+        senderKey,
+        subject: '',
+        snippet: '',
+        // The email-age predicate (`senderInboxActionWhere`) reads the
+        // database clock, shared with the action worker, not the job's `now`.
+        internalDate: new Date(Date.now() - daysOld * 24 * 60 * 60 * 1000),
+        labelIds,
+        isUnread: true,
+      });
+    }
+
+    it('writes an unattended match for each named sender with inbox mail, never a Protected one', async () => {
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      const withMail = await seedSender(db, mbId, { email: 'news@example.com', totalMessages: 2 });
+      const protectedKey = await seedSender(db, mbId, {
+        email: 'bank@example.com',
+        isProtected: true,
+        totalMessages: 2,
+      });
+      const archivedOnly = await seedSender(db, mbId, { email: 'old@example.com' });
+      await inboxMessage(db, mbId, archivedOnly, 'archived-1', 3, []);
+      const unnamed = await seedSender(db, mbId, { email: 'other@example.com', totalMessages: 4 });
+      const ruleId = await seedSenderRule(db, mbId, {
+        senderKeys: [withMail, protectedKey, archivedOnly],
+      });
+
+      const enqueue = vi.fn();
+      const worker = new AutopilotApplyWorker({
+        db: db as never,
+        now: () => NOW,
+        onActiveMatchesPending: enqueue,
+      });
+      const result = await worker.processJob(
+        { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+
+      expect(result.rulesEvaluated).toBe(1);
+      expect(result.activeMatches).toBe(1);
+      expect(result.activeSkippedNotActionable).toBe(1);
+      expect(enqueue).toHaveBeenCalledWith(mbId);
+      const matches = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.ruleId, ruleId));
+      expect(matches).toEqual([
+        expect.objectContaining({
+          senderKey: withMail,
+          modeAtMatch: 'active',
+          resolution: 'approved',
+          intentApplied: false,
+        }),
+      ]);
+      expect(matches.map((m) => m.senderKey)).not.toContain(protectedKey);
+      expect(matches.map((m) => m.senderKey)).not.toContain(unnamed);
     });
 
-    await seedSender(db, mbId, {
-      email: 'archive@example.com',
-      decision: { verdict: 'archive', confidence: 0.99 },
-      totalMessages: 10,
+    it("counts only inbox mail older than the rule's email age", async () => {
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      const recentOnly = await seedSender(db, mbId, { email: 'recent@example.com' });
+      await inboxMessage(db, mbId, recentOnly, 'recent-1', 5);
+      const hasOld = await seedSender(db, mbId, { email: 'aged@example.com' });
+      await inboxMessage(db, mbId, hasOld, 'aged-1', 45);
+      const ruleId = await seedSenderRule(db, mbId, {
+        senderKeys: [recentOnly, hasOld],
+        olderThanDays: 30,
+      });
+
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      const result = await worker.processJob(
+        { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+
+      expect(result.activeMatches).toBe(1);
+      expect(result.activeSkippedNotActionable).toBe(1);
+      const matches = await db.select().from(ruleMatchLog).where(eq(ruleMatchLog.ruleId, ruleId));
+      expect(matches.map((m) => m.senderKey)).toEqual([hasOld]);
     });
 
-    const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
-    const result = await worker.processJob(
-      { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
-      FAKE_CTX,
-    );
-    // The custom rule passes the loadEnabledRules filter (is_preset=true
-    // in the WHERE), so rulesEvaluated is 0.
-    expect(result.rulesEvaluated).toBe(0);
-    expect(result.matchesWritten).toBe(0);
+    it('leaves mail an undo of this rule restored, and acts again only on later mail', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      const key = await seedSender(db, mbId, { email: 'news@example.com' });
+      await inboxMessage(db, mbId, key, 'restored-1', 20);
+      const ruleId = await seedSenderRule(db, mbId, { senderKeys: [key] });
+      await db.insert(activityLog).values({
+        mailboxAccountId: mbId,
+        senderKey: key,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+      });
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      const sweep = () =>
+        worker.processJob({ mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() }, FAKE_CTX);
+
+      const restoredOnly = await sweep();
+      expect(restoredOnly.activeMatches).toBe(0);
+      expect(restoredOnly.activeSkippedNotActionable).toBe(1);
+
+      await inboxMessage(db, mbId, key, 'arrived-later', 2);
+      expect((await sweep()).activeMatches).toBe(1);
+    });
+
+    it('applies the same restored-mail rule to an Active preset', async () => {
+      const day = 24 * 60 * 60 * 1000;
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      await seedAutopilotPresets(db as never, mbId);
+      const ruleId = await enablePreset(db, mbId, 'auto_archive_low_engagement', {
+        enabled: true,
+        mode: 'active',
+      });
+      const key = await seedSender(db, mbId, {
+        email: 'promo@example.com',
+        decision: { verdict: 'archive', confidence: 0.9 },
+      });
+      await inboxMessage(db, mbId, key, 'restored-1', 20);
+      await db.insert(activityLog).values({
+        mailboxAccountId: mbId,
+        senderKey: key,
+        source: 'autopilot',
+        action: 'archive',
+        affectedCount: 1,
+        ruleId,
+        occurredAt: new Date(Date.now() - 10 * day),
+        revertedAt: new Date(Date.now() - 9 * day),
+      });
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      const result = await worker.processJob(
+        { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+      expect(result.activeMatches).toBe(0);
+      expect(result.activeSkippedNotActionable).toBe(1);
+    });
+
+    it.each([
+      ['an approval-first (Observe) rule', { mode: 'observe' as const }],
+      ['a paused rule', { mode: 'paused' as const }],
+      ['an Active Delete row', { mode: 'active' as const, actionKind: 'delete' as const }],
+    ])('writes nothing for %s', async (_label, shape) => {
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      const key = await seedSender(db, mbId, { email: 'news@example.com', totalMessages: 3 });
+      await seedSenderRule(db, mbId, { senderKeys: [key], ...shape });
+
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      const result = await worker.processJob(
+        { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+      expect(result.matchesWritten).toBe(0);
+      expect(await db.select().from(ruleMatchLog)).toHaveLength(0);
+    });
+
+    it('skips a custom row that is not a valid sender list', async () => {
+      const db = await freshDb();
+      const mbId = await seedMailbox(db);
+      await db.insert(automationRules).values({
+        mailboxAccountId: mbId,
+        isPreset: false,
+        presetKey: null,
+        name: 'Custom rule',
+        enabled: true,
+        mode: 'active',
+        scope: 'account',
+        conditions: {},
+        actionKind: 'archive',
+        actionPayload: {},
+      });
+      await seedSender(db, mbId, {
+        email: 'archive@example.com',
+        decision: { verdict: 'archive', confidence: 0.99 },
+        totalMessages: 10,
+      });
+
+      const worker = new AutopilotApplyWorker({ db: db as never, now: () => NOW });
+      const result = await worker.processJob(
+        { mailboxAccountId: mbId, triggeredAtMs: NOW.getTime() },
+        FAKE_CTX,
+      );
+      expect(result.matchesWritten).toBe(0);
+      expect(result.rulesSkippedMalformed).toBe(1);
+    });
   });
 
   // ─── Resilience patches (review feedback) ───────────────────────────

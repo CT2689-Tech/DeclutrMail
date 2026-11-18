@@ -284,8 +284,8 @@ export function buildPreviewFacts({
           : `${verb} ${emails(liveCount)}`
         : verb,
     disclosures,
-    // The unsubscribe request is free (`skipCleanupCharge`). A mail move
-    // still spends one cleanup action while the email meter is off.
+    // The unsubscribe request draws nothing from the meter. A mail move
+    // counts as one unit until the meter summary supplies email counts.
     unitsNeeded: verb === 'Unsubscribe' ? (unsubMode === 'unsub_only' ? 0 : 1) : 1,
   };
   if (verb !== 'Unsubscribe') return facts;

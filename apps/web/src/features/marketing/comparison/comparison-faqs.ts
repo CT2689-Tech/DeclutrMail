@@ -1,13 +1,11 @@
 import {
   fillComplete,
   fillWs3,
-  passListed,
   priceFaqAnswer,
   privacyFaqAnswer,
   VS_FAQ_Q2_STYLE,
   WS3_COPY,
 } from '@declutrmail/shared/copy/launch';
-import { isPricingV2 } from '@declutrmail/shared/entitlements';
 
 import type { ComparisonDefinition, ComparisonSlug } from './comparison-data';
 
@@ -38,12 +36,8 @@ const FAQ_ANSWER: Record<Exclude<ComparisonSlug, 'inboxpurge'>, string> = {
   mailmop: WS3_COPY['ws3.vs.mailmop.faqAnswer'],
 };
 
-function useCaseAnswer(slug: ComparisonSlug, passEnabled: boolean): string {
-  if (slug === 'inboxpurge') {
-    return passEnabled
-      ? WS3_COPY['ws3.vs.inboxpurge.faqAnswer']
-      : WS3_COPY['ws3.vs.inboxpurge.faqAnswer.passOff'];
-  }
+function useCaseAnswer(slug: ComparisonSlug): string {
+  if (slug === 'inboxpurge') return WS3_COPY['ws3.vs.inboxpurge.faqAnswer'];
   return FAQ_ANSWER[slug];
 }
 
@@ -67,8 +61,6 @@ export function deckVerdict(slug: ComparisonSlug): string {
 
 export function comparisonFaqs(
   comparison: ComparisonDefinition,
-  passEnabled = passListed(),
-  pricingV2 = isPricingV2(),
 ): readonly { q: string; a: string }[] {
   const competitor = comparison.name;
   const useCase = USE_CASE[comparison.slug];
@@ -78,21 +70,17 @@ export function comparisonFaqs(
       ? 'Does DeclutrMail read my emails?'
       : WS3_COPY['ws3.vs.faq.privacy.q'];
   return [
-    { q: question, a: fillComplete(useCaseAnswer(comparison.slug, passEnabled)) },
+    { q: question, a: fillComplete(useCaseAnswer(comparison.slug)) },
     { q: privacyQuestion, a: privacyFaqAnswer() },
-    { q: WS3_COPY['ws3.vs.faq.price.q'], a: priceFaqAnswer(passEnabled, pricingV2) },
+    { q: WS3_COPY['ws3.vs.faq.price.q'], a: priceFaqAnswer() },
   ].filter((faq) => faq.a !== '');
 }
 
-export function comparisonFaqJsonLd(
-  comparison: ComparisonDefinition,
-  passEnabled = passListed(),
-  pricingV2 = isPricingV2(),
-) {
+export function comparisonFaqJsonLd(comparison: ComparisonDefinition) {
   return {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: comparisonFaqs(comparison, passEnabled, pricingV2).map((faq) => ({
+    mainEntity: comparisonFaqs(comparison).map((faq) => ({
       '@type': 'Question',
       name: faq.q,
       acceptedAnswer: { '@type': 'Answer', text: faq.a },

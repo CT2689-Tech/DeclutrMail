@@ -6,64 +6,29 @@ import {
   PLUS_ANNUAL_2026_10,
   PROMO_DISCOUNT_IDS,
   SANDBOX_PRICE_IDS,
-  TIER_MANIFEST,
   checkoutDiscountId,
 } from '@declutrmail/shared/entitlements';
 
-import { BillingCatalog, buildCatalog, passPriceFromEnv } from '../billing-catalog.js';
+import {
+  BillingCatalog,
+  FOUNDING_MAX_REDEMPTIONS,
+  buildCatalog,
+  passPriceFromEnv,
+} from '../billing-catalog.js';
 
 /**
- * BillingCatalog (D117) — manifest-derived price points + the
- * BILLING_CATALOG_JSON sandbox overlay + fail-closed resolution.
+ * BillingCatalog (D117) — the 2026-10 Plus annual price point, legacy
+ * price ids for existing subscribers, the BILLING_CATALOG_JSON sandbox
+ * overlay, and fail-closed resolution.
  */
 
 describe('buildCatalog', () => {
-  it('derives all five D117 plan codes from the manifest with its USD amounts', () => {
-    const entries = buildCatalog({} as NodeJS.ProcessEnv);
-    expect(entries.map((e) => e.planCode).sort()).toEqual([
-      'plus_annual',
-      'plus_monthly',
-      'pro_annual',
-      'pro_annual_founding',
-      'pro_monthly',
-    ]);
-    const founding = entries.find((e) => e.planCode === 'pro_annual_founding')!;
-    expect(founding).toMatchObject({
-      tierId: 'pro',
-      cycle: 'annual',
-      founding: true,
-      usdCents: TIER_MANIFEST.pro.promo!.annual.usdCents,
-    });
-  });
-
-  it('overlays BILLING_CATALOG_JSON ids over manifest nulls (sandbox use)', () => {
-    const entries = buildCatalog({
-      BILLING_CATALOG_JSON: JSON.stringify({
-        paddle: { plus_monthly: 'pri_sbx_1' },
-        razorpay: { pro_annual_founding: 'plan_sbx_9' },
-      }),
-    } as NodeJS.ProcessEnv);
-    const catalog = new BillingCatalog(entries);
-    expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBe('pri_sbx_1');
-    expect(catalog.resolvePriceId('razorpay', 'pro', 'annual', true)).toBe('plan_sbx_9');
-    // Untouched points keep the manifest value (null until F3 patches it).
-    expect(catalog.resolvePriceId('paddle', 'pro', 'annual')).toBe(
-      TIER_MANIFEST.pro.prices.annual!.paddlePriceId,
-    );
-  });
-
   it('throws loudly on malformed override JSON (never silently strands the catalog)', () => {
     expect(() => buildCatalog({ BILLING_CATALOG_JSON: '{nope' } as NodeJS.ProcessEnv)).toThrow();
   });
 
-  it('keeps the flag-off catalog identical to an env without PRICING_V2', () => {
-    expect(buildCatalog({ PRICING_V2: 'false' } as NodeJS.ProcessEnv)).toEqual(
-      buildCatalog({} as NodeJS.ProcessEnv),
-    );
-  });
-
-  it('PRICING_V2 lists Plus annual only and still resolves every legacy price id', () => {
-    const entries = buildCatalog({ PRICING_V2: 'true' } as NodeJS.ProcessEnv);
+  it('lists Plus annual only and still resolves every legacy price id', () => {
+    const entries = buildCatalog({} as NodeJS.ProcessEnv);
     expect(entries.map((entry) => entry.planCode)).toEqual(['plus_annual']);
     expect(entries.find((entry) => entry.planCode === 'plus_annual')).toMatchObject({
       usdCents: PLUS_ANNUAL_2026_10.usdCents,
@@ -99,23 +64,24 @@ describe('buildCatalog', () => {
     expect(catalog.resolveByPriceId('paddle', 'pri_unknown')).toBeNull();
   });
 
-  it('PRICING_V2 does not let a monthly catalog overlay become a new checkout', () => {
+  it('does not let a retired catalog overlay become a new checkout', () => {
     const catalog = new BillingCatalog(
       buildCatalog({
-        PRICING_V2: 'true',
         BILLING_CATALOG_JSON: JSON.stringify({
-          paddle: { plus_monthly: 'pri_should_not_sell' },
+          paddle: { plus_monthly: 'pri_should_not_sell', pro_annual_founding: 'pri_no_founding' },
           razorpay: { plus_monthly: 'plan_should_not_sell' },
         }),
       } as NodeJS.ProcessEnv),
     );
     expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBeNull();
     expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBeNull();
+    expect(catalog.resolvePriceId('paddle', 'pro', 'annual', true)).toBeNull();
     expect(catalog.resolveByPriceId('paddle', 'pri_should_not_sell')).toBeNull();
+    expect(catalog.resolveByPriceId('paddle', 'pri_no_founding')).toBeNull();
   });
 
   it('keeps sandbox price ids on the sandbox env and the live ids on production', () => {
-    const sandboxEnv = { PRICING_V2: 'true', PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv;
+    const sandboxEnv = { PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv;
     const catalog = new BillingCatalog(buildCatalog(sandboxEnv), 0, passPriceFromEnv(sandboxEnv));
     expect(catalog.resolvePriceId('paddle', 'plus', 'annual')).toBe(SANDBOX_PRICE_IDS.plus_annual);
     expect(catalog.passPaddlePriceId).toBe(SANDBOX_PRICE_IDS.pass_onetime);
@@ -135,23 +101,17 @@ describe('buildCatalog', () => {
     );
     expect(checkoutDiscountId(sandboxEnv, 'pri_legacy', activePromoTime)).toBeNull();
 
-    const liveEnv = { PRICING_V2: 'true', PADDLE_ENV: 'production' } as NodeJS.ProcessEnv;
+    const liveEnv = { PADDLE_ENV: 'production' } as NodeJS.ProcessEnv;
     const live = new BillingCatalog(buildCatalog(liveEnv), 0, passPriceFromEnv(liveEnv));
     expect(live.resolvePriceId('paddle', 'plus', 'annual')).toBe(PLUS_ANNUAL_2026_10.paddlePriceId);
     expect(live.passPaddlePriceId).toBe(OFFERS.backlogPass.price.paddlePriceId);
     expect(checkoutDiscountId(liveEnv)).toBeNull();
     expect(checkoutDiscountId(liveEnv, PLUS_ANNUAL_2026_10.paddlePriceId)).toBeNull();
     expect(checkoutDiscountId({} as NodeJS.ProcessEnv)).toBeNull();
-
-    const flagsOff = buildCatalog({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv);
-    expect(flagsOff.find((entry) => entry.planCode === 'plus_annual')?.paddlePriceId).toBe(
-      TIER_MANIFEST.plus.prices.annual!.paddlePriceId,
-    );
   });
 
   it('lets BILLING_CATALOG_JSON replace the sandbox price ids', () => {
     const env = {
-      PRICING_V2: 'true',
       PADDLE_ENV: 'sandbox',
       BILLING_CATALOG_JSON: JSON.stringify({
         paddle: { plus_annual: 'pri_override_annual', pass_onetime: 'pri_override_pass' },
@@ -164,28 +124,23 @@ describe('buildCatalog', () => {
 });
 
 describe('BillingCatalog resolution', () => {
-  const catalog = new BillingCatalog(
-    buildCatalog({
-      BILLING_CATALOG_JSON: JSON.stringify({
-        paddle: { plus_monthly: 'pri_a', pro_annual_founding: 'pri_f' },
-      }),
-    } as NodeJS.ProcessEnv),
-    250,
-  );
-
-  it('resolves forward and reverse, distinguishing founding from regular pro annual', () => {
-    expect(catalog.resolvePriceId('paddle', 'plus', 'monthly')).toBe('pri_a');
-    expect(catalog.resolveByPriceId('paddle', 'pri_f')).toMatchObject({
+  it('resolves forward and reverse, keeping a legacy founding price readable', () => {
+    const catalog = new BillingCatalog(
+      buildCatalog({
+        BILLING_CATALOG_JSON: JSON.stringify({ paddle: { plus_annual: 'pri_a' } }),
+      } as NodeJS.ProcessEnv),
+    );
+    expect(catalog.resolvePriceId('paddle', 'plus', 'annual')).toBe('pri_a');
+    expect(catalog.resolveByPriceId('paddle', 'pri_a')).toMatchObject({
+      planCode: 'plus_annual',
+      founding: false,
+    });
+    expect(catalog.resolveByPriceId('paddle', 'pri_01ky15ay4bj9t68bv158hwwfqw')).toMatchObject({
       planCode: 'pro_annual_founding',
+      tierId: 'pro',
       founding: true,
     });
     expect(catalog.resolveByPriceId('paddle', 'pri_unknown')).toBeNull();
-  });
-
-  it('resolves Razorpay from the live manifest now that India is provisioned', () => {
-    expect(catalog.resolvePriceId('razorpay', 'plus', 'monthly')).toBe(
-      TIER_MANIFEST.plus.prices.monthly!.razorpayPlanId,
-    );
   });
 
   it('fails closed: an unprovisioned price point resolves to null on BOTH rails', () => {
@@ -209,8 +164,9 @@ describe('BillingCatalog resolution', () => {
     expect(bare.resolvePriceId('paddle', 'plus', 'monthly')).toBeNull();
   });
 
-  it('carries the D126 founding cap', () => {
-    expect(new BillingCatalog().foundingMaxRedemptions).toBe(250);
+  it('carries the D126 founding cap for legacy founding subscriptions', () => {
+    expect(FOUNDING_MAX_REDEMPTIONS).toBe(250);
+    expect(new BillingCatalog().foundingMaxRedemptions).toBe(FOUNDING_MAX_REDEMPTIONS);
   });
 
   it('resolves the India Plus price to the 2026-10 Plus annual entry', () => {
@@ -218,7 +174,7 @@ describe('BillingCatalog resolution', () => {
     vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_india_pass');
     try {
       const catalog = new BillingCatalog(
-        buildCatalog({ PRICING_V2: 'true', PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv),
+        buildCatalog({ PADDLE_ENV: 'sandbox' } as NodeJS.ProcessEnv),
       );
       expect(catalog.resolveByPriceId('paddle', 'pri_india_plus')).toMatchObject({
         planCode: 'plus_annual',

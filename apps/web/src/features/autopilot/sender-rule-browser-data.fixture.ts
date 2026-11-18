@@ -93,11 +93,22 @@ export async function retireSenderRule(rule: SenderRule) {
   rules = rules.filter((r) => r.id !== rule.id);
   return { ...rule, enabled: false, mode: 'paused' as const };
 }
-export async function setSenderRuleMode(rule: SenderRule, mode: 'observe' | 'paused') {
+export async function setSenderRuleMode(rule: SenderRule, mode: SenderRule['mode']) {
   await delay();
   const updated = { ...rule, mode, version: rule.version + 1 };
   rules = rules.map((r) => (r.id === rule.id ? updated : r));
   return updated;
+}
+export async function fetchSenderRuleAutomaticPreview(rule: SenderRule, signal: AbortSignal) {
+  await delay(signal);
+  return {
+    ruleId: rule.id,
+    version: rule.version,
+    messageCount: rule.matchingMessageCount,
+    senderCount: rule.matchingSenderCount,
+    protectedSenderCount: rule.protectedSenderCount,
+    checkedAt: new Date().toISOString(),
+  };
 }
 export async function previewSenderRule(
   rule: SenderRule,

@@ -85,9 +85,7 @@ test('Free Brief shows Coming with Pro and does not open checkout', async ({ pag
   await expect(
     gate.getByRole('link', { name: WS2_COPY.pro.secondary, exact: true }),
   ).toHaveAttribute('href', '/later');
-  await expect(page.getByRole('link', { name: 'Upgrade to Pro $19/mo', exact: true })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole('link', { name: /^Upgrade to Pro/ })).toHaveCount(0);
 });
 
 test('failed first scan exposes account controls while mailbox routes stay gated, then finish opens backlog', async ({
