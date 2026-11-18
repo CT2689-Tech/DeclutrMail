@@ -51,10 +51,12 @@ import { CANONICAL_SHORTCUTS, type CanonicalVerb } from '@declutrmail/shared/con
 
 import {
   actionJobs,
+  actionOrigins,
   activityLog,
   automationRules,
   AUTOPILOT_CLAIM_KEY_PREFIXES,
   mailMessages,
+  oauthClients,
   productFeedback,
   ruleMatchLog,
   senders,
@@ -633,6 +635,8 @@ export class ActivityReadService {
         actionJobId: activityLog.actionJobId,
         ruleId: activityLog.ruleId,
         ruleName: automationRules.name,
+        originActionJobId: actionOrigins.actionJobId,
+        connectedAppName: oauthClients.clientName,
         senderDisplayName: senders.displayName,
         senderEmail: senders.email,
         undoExpiresAt: undoJournal.expiresAt,
@@ -668,6 +672,10 @@ export class ActivityReadService {
           eq(automationRules.mailboxAccountId, activityLog.mailboxAccountId),
         ),
       )
+      // ADR-0008 §3 exception: which connected app started the job
+      // (read-only; `action_origins` has one row per job at most).
+      .leftJoin(actionOrigins, eq(actionOrigins.actionJobId, activityLog.actionJobId))
+      .leftJoin(oauthClients, eq(oauthClients.clientId, actionOrigins.clientId))
       .where(and(...whereParts))
       .orderBy(desc(feedTime(activityLog.occurredAt)), desc(activityLog.id))
       .limit(limit + 1);
@@ -699,6 +707,7 @@ export class ActivityReadService {
         affectedCount: row.affectedCount,
         sender,
         rule: row.ruleId && row.ruleName !== null ? { id: row.ruleId, name: row.ruleName } : null,
+        ...(row.originActionJobId ? { connectedApp: { name: row.connectedAppName } } : {}),
         feedbackRating:
           row.feedbackRating === 'expected' || row.feedbackRating === 'surprising'
             ? row.feedbackRating

@@ -1,6 +1,8 @@
 import {
+  actionPreviews,
   cronRuns,
   deadLetterJobs,
+  mailboxAccounts,
   oauthAuthCodes,
   oauthClients,
   oauthGrants,
@@ -279,6 +281,50 @@ describe('OpsRetentionWorker', () => {
       expect(codes.map((r) => r.h)).toEqual(['expired-23h']);
       const requests = await db.select({ h: oauthInteractions.idHash }).from(oauthInteractions);
       expect(requests.map((r) => r.h)).toEqual(['pending']);
+    });
+
+    it('removes a stored preview a day after it expired, applied or not', async () => {
+      const owner = await seedOwner();
+      await seedClient('c1');
+      const grantId = await seedGrant(owner, 'c1');
+      const [mailbox] = await db
+        .insert(mailboxAccounts)
+        .values({ ...owner, provider: 'gmail', providerAccountId: 'ada@example.com' })
+        .returning();
+      const preview = (expiresAt: Date, applied = false) => ({
+        ...owner,
+        mailboxAccountId: mailbox!.id,
+        grantId,
+        verb: 'archive' as const,
+        senderIds: ['00000000-0000-4000-8000-000000000001'],
+        emailCount: 3,
+        // `expires_at > created_at` is a table rule.
+        createdAt: new Date(expiresAt.getTime() - 15 * 60_000),
+        expiresAt,
+        ...(applied
+          ? {
+              state: 'applied' as const,
+              confirmedAt: expiresAt,
+              appliedAt: expiresAt,
+              result: { handle: null, appliedSenders: 0, requestedEmails: 0, skipped: [] },
+            }
+          : {}),
+      });
+      await db
+        .insert(actionPreviews)
+        .values([
+          preview(hoursAgo(25)),
+          preview(hoursAgo(25), true),
+          preview(hoursAgo(23)),
+          preview(new Date(Date.now() + 600_000)),
+        ]);
+
+      const result = await run();
+
+      expect(result.oauthRowsDeleted).toBe(2);
+      const kept = await db.select({ at: actionPreviews.expiresAt }).from(actionPreviews);
+      expect(kept).toHaveLength(2);
+      for (const row of kept) expect(row.at.getTime()).toBeGreaterThan(hoursAgo(24).getTime());
     });
 
     it('removes a grant 30 days after it was revoked, with what it still owns', async () => {

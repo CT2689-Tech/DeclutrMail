@@ -2006,11 +2006,16 @@ function ActivityRow({
   // plain "by Autopilot". Triage/Screener keep the "via <source>" form;
   // Manual reads as "by you" instead of the raw enum voice "via Manual"
   // (QA-archive-20260828-06). Sentence case — it is a line of its own.
+  // A connected app prepared it and the person confirmed it in
+  // DeclutrMail, so both are named. The app's name is its own claim:
+  // rendered as text, and "a connected app" when it gave none.
   const sourceAttribution =
     row.source === 'autopilot'
       ? `By Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
       : row.source === 'manual'
-        ? 'By you'
+        ? row.connectedApp
+          ? `By you, via ${row.connectedApp.name?.trim() || 'a connected app'}`
+          : 'By you'
         : `Via ${SOURCE_LABEL[row.source]}`;
 
   const showFeedback =

@@ -88,6 +88,12 @@ export const OAUTH_AUTH_CODE_RETENTION_DAYS = 1;
 export const OAUTH_TOKEN_RETENTION_DAYS = 7;
 export const OAUTH_GRANT_RETENTION_DAYS = 30;
 /**
+ * A cleanup an assistant prepared (`action_previews`). It stops being
+ * confirmable when it expires, 15 minutes after it was made; the row —
+ * sender ids and counts — goes a day after that, applied or not.
+ */
+export const ACTION_PREVIEW_RETENTION_DAYS = 1;
+/**
  * A registered client nobody ever approved (registration is
  * unauthenticated). One that WAS approved is kept: the app may come back
  * with the client id it stored, and an unknown id cannot be recovered
@@ -250,6 +256,17 @@ export class OpsRetentionWorker extends BaseDeclutrWorker<OpsRetentionJobData, O
         LIMIT ${RETENTION_BATCH_LIMIT}
       )
       DELETE FROM oauth_tokens WHERE ctid IN (SELECT ctid FROM doomed)
+      RETURNING 1
+    `);
+    // Before the grants: a preview goes on its own clock, not when the
+    // grant it belongs to is finally removed.
+    deleted += await drain(sql`
+      WITH doomed AS (
+        SELECT p.ctid FROM action_previews p
+        WHERE p.expires_at < now() - ${days(ACTION_PREVIEW_RETENTION_DAYS)}
+        LIMIT ${RETENTION_BATCH_LIMIT}
+      )
+      DELETE FROM action_previews WHERE ctid IN (SELECT ctid FROM doomed)
       RETURNING 1
     `);
     // Not a delete: retire grants that own nothing. Bounded and counted

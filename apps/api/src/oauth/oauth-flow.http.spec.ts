@@ -985,6 +985,8 @@ describe('MCP_ENABLED off', () => {
     ['GET', '/mcp'],
     ['GET', '/api/oauth/grants'],
     ['DELETE', '/api/oauth/grants/00000000-0000-4000-8000-000000000000'],
+    ['GET', '/api/action-previews/00000000-0000-4000-8000-000000000000'],
+    ['POST', '/api/action-previews/00000000-0000-4000-8000-000000000000/confirm'],
   ])('%s %s is 404', async (method, path) => {
     const signedIn = await new Browser(harness.base, ada).request(path, { method });
     expect(signedIn.status).toBe(404);

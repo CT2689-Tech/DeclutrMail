@@ -22,12 +22,14 @@ import {
   type WorkerContext,
 } from '@declutrmail/workers';
 
+import { ActivityReadService } from '../activity/activity.read-service.js';
 import {
   Browser,
   createOAuthTestApp,
   type OAuthTestApp,
   type TestPerson,
 } from '../oauth/oauth-test-harness.js';
+import { SendersPolicyService } from '../senders/senders-policy.service.js';
 import {
   client,
   connectedClient,
@@ -852,6 +854,28 @@ describe('MCP connector — previews, confirmation and apply', () => {
           senders: ['The Shop'],
         }),
       ]);
+
+      // Activity names the app the change was prepared in — and only on
+      // the rows that app started.
+      await new SendersPolicyService(harness.db).setPolicy({
+        mailboxAccountId: s.mailboxId,
+        senderId: shop.id,
+        patch: { policyType: 'keep' },
+      });
+      const activity = await new ActivityReadService(harness.db).listActivity({
+        mailboxAccountId: s.mailboxId,
+        window: 'all',
+        source: null,
+        nowMs: Date.now(),
+        cursor: null,
+        limit: 20,
+      });
+      const archived = activity.rows.filter((row) => row.action === 'archive');
+      expect(archived).toHaveLength(1);
+      expect(archived[0]!.connectedApp).toEqual({ name: 'Test Assistant' });
+      const others = activity.rows.filter((row) => row.action !== 'archive');
+      expect(others.length).toBeGreaterThan(0);
+      for (const row of others) expect(row.connectedApp).toBeUndefined();
 
       const undone = await s.mcp.call('undo', { undo_token: undoToken });
       expect(undone.data).toMatchObject({

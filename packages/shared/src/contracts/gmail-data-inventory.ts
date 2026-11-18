@@ -24,8 +24,13 @@ export const GMAIL_DATA_RETENTION = {
 } as const;
 
 export type GmailDataCategory = 'connection' | 'message' | 'derived';
+/**
+ * Where a dataset can leave DeclutrMail at the person's request: the
+ * download formats, and `ai-assistant` — the MCP connector, through which
+ * an assistant the person connected reads it (ADR-0048 rule 3).
+ */
 export type GmailDataExportFormat =
-  'json' | 'csv' | 'senders-csv' | 'decisions-csv' | 'activity-support-bundle';
+  'json' | 'csv' | 'senders-csv' | 'decisions-csv' | 'activity-support-bundle' | 'ai-assistant';
 export type GmailDataProcessor = 'DeclutrMail' | 'Anthropic' | 'Brandfetch' | 'Resend';
 export type GmailDataRemovalTrigger =
   'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
@@ -101,7 +106,10 @@ export interface GmailDataInventoryItem {
   retention: string;
   /** User action that removes this dataset from DeclutrMail. */
   removalTrigger: GmailDataRemovalTrigger;
-  /** Download formats that currently contain at least part of this dataset. */
+  /**
+   * Download formats that currently contain at least part of this dataset,
+   * plus `ai-assistant` when a connector tool returns part of it.
+   */
   exportedIn: readonly GmailDataExportFormat[];
   /** External processors that receive this dataset in production paths. */
   transmittedTo: readonly GmailDataProcessor[];
@@ -140,7 +148,14 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     purpose: 'Group email by sender and show who sent it.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv', 'activity-support-bundle'],
+    exportedIn: [
+      'json',
+      'csv',
+      'senders-csv',
+      'decisions-csv',
+      'activity-support-bundle',
+      'ai-assistant',
+    ],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: true,
   },
@@ -154,7 +169,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     purpose: 'Identify messages in previews, Brief, and sender details.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'csv'],
+    exportedIn: ['json', 'csv', 'ai-assistant'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: true,
   },
@@ -182,7 +197,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     purpose: 'Sort email, apply time ranges, and calculate sender activity.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'csv'],
+    exportedIn: ['json', 'csv', 'ai-assistant'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
   },
@@ -196,7 +211,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     purpose: 'Determine inbox state and apply or reverse label changes.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'csv'],
+    exportedIn: ['json', 'csv', 'ai-assistant'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
   },
@@ -272,7 +287,7 @@ export const GMAIL_MESSAGE_DATA_INVENTORY = [
     purpose: 'Offer a supported one-click request or open a prefilled Gmail draft.',
     retention: GMAIL_DATA_RETENTION.mailboxIndex,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: [],
+    exportedIn: ['ai-assistant'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: true,
   },
@@ -304,7 +319,14 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     purpose: WS6_COPY['ws6.inventory.accountIdentity.purpose'],
     retention: GMAIL_DATA_RETENTION.mailboxIdentity,
     removalTrigger: 'delete-account',
-    exportedIn: ['json', 'csv', 'senders-csv', 'decisions-csv', 'activity-support-bundle'],
+    exportedIn: [
+      'json',
+      'csv',
+      'senders-csv',
+      'decisions-csv',
+      'activity-support-bundle',
+      'ai-assistant',
+    ],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
@@ -341,7 +363,7 @@ export const GMAIL_CONNECTION_DATA_INVENTORY = [
     purpose: WS6_COPY['ws6.inventory.syncState.purpose'],
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: [],
+    exportedIn: ['ai-assistant'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
@@ -358,7 +380,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     purpose: 'Summarize who sends email and show observed activity facts.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'senders-csv'],
+    exportedIn: ['json', 'senders-csv', 'ai-assistant'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: false,
   },
@@ -413,7 +435,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     purpose: 'Remember user decisions and explain or apply explicitly enabled rules.',
     retention: GMAIL_DATA_RETENTION.derivedMailboxData,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'senders-csv', 'decisions-csv'],
+    exportedIn: ['json', 'senders-csv', 'decisions-csv', 'ai-assistant'],
     transmittedTo: ['DeclutrMail', 'Anthropic'],
     showInMessageStorageList: false,
   },
@@ -422,12 +444,28 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     category: 'derived',
     label: 'Cleanup history, results, and available Undo data',
     fetchedFrom: ['message-identifiers', 'sender-identity', 'choices-rules-and-suggestions'],
-    storageRefs: ['action_jobs.*', 'activity_log.*', 'undo_journal.*'],
+    storageRefs: ['action_jobs.*', 'action_origins.*', 'activity_log.*', 'undo_journal.*'],
     derived: true,
     purpose: 'Run approved changes, show what happened, and reverse eligible actions.',
     retention: `${GMAIL_DATA_RETENTION.derivedMailboxData} Undo payloads use the shorter Undo-journal retention rule.`,
     removalTrigger: 'delete-indexed-data',
-    exportedIn: ['json', 'decisions-csv', 'activity-support-bundle'],
+    exportedIn: ['json', 'decisions-csv', 'activity-support-bundle', 'ai-assistant'],
+    transmittedTo: ['DeclutrMail'],
+    showInMessageStorageList: false,
+  },
+  {
+    id: 'action-previews',
+    category: 'derived',
+    label: 'Cleanup requests from a connected app, waiting for your confirmation',
+    fetchedFrom: ['sender-identity', 'sender-profile-and-stats'],
+    storageRefs: ['action_previews.*'],
+    derived: true,
+    purpose:
+      'Hold what a connected app asked for until you confirm it in DeclutrMail. Stores sender identifiers and counts, never a subject line.',
+    retention:
+      'Each request expires 15 minutes after it is made and is deleted within a day of expiring.',
+    removalTrigger: 'disconnect',
+    exportedIn: ['ai-assistant'],
     transmittedTo: ['DeclutrMail'],
     showInMessageStorageList: false,
   },
