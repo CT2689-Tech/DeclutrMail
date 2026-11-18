@@ -56,7 +56,7 @@ import {
   WS2_COPY,
   WS5_COPY,
 } from '@declutrmail/shared/copy/launch';
-import { fillStory, meterPreviewText, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillStory, METER, meterPreviewText } from '@declutrmail/shared/entitlements';
 import { MeterPreviewLine } from '@/features/billing/meter-preview-line';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
@@ -636,22 +636,11 @@ export function ConfirmActionModal({
       )
     : null;
 
-  // A3 quota-aware preview. One unit = one sender acted upon; every
-  // modal verb counts (Keep never opens this modal). Bulk needs one
-  // unit per ACTIONABLE (non-protected) sender — the same set the
-  // server will charge.
-  //
-  // A backlog verb is a SECOND unit per sender. `recordUnsubIntent`
-  // preflights `includesBacklogAction ? 2 : 1` and consumes one for the
-  // intent row; the paired Archive/Delete then enqueues as its own
-  // action and consumes the other (actions.service.ts). This constant
-  // was hardcoded `1`, so an Unsubscribe + Archive preview promised a
-  // Free user with one action left that it fit — and the 402 landed
-  // AFTER the unsubscribe request had already gone out, which cannot be
-  // undone (founder screenshot 2026-08-27).
-  //
-  // A no-channel Unsubscribe consumes nothing (`method !== 'none'`
-  // guards the assert), so it must not claim a unit either.
+  // Quota-aware preview. The emails-cleared meter (`cleanupSummary`)
+  // counts the emails Archive and Delete move. Until that summary loads,
+  // the preview falls back to `me`'s remaining count with one unit per
+  // ACTIONABLE (non-protected) sender, plus one for a paired backlog
+  // verb, so it never promises a fit it has not checked.
   const emailMeter = cleanupSummary.data?.metered === true ? cleanupSummary.data : null;
   const meterCounts =
     isArchiveVerb ||
@@ -760,7 +749,7 @@ export function ConfirmActionModal({
       onCancel();
       return;
     }
-    const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+    const limit = METER.free.limit;
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
       details: {
@@ -1578,11 +1567,7 @@ export function ConfirmActionModal({
               // gate the server's 402 uses.
               {
                 label: emailMeter
-                  ? fillStory(
-                      auth?.me.passEnabled === true
-                        ? WS1_COPY['cap.pass.button']
-                        : WS1_COPY['cap.plus.button'],
-                    )
+                  ? fillStory(WS1_COPY['cap.pass.button'])
                   : fillStory(WS1_COPY['cap.plus.link']),
                 onClick: reportQuotaShort,
               }

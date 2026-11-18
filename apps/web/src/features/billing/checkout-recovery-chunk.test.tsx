@@ -76,18 +76,18 @@ it.each([true, false])(
     ]);
     render(
       <QueryWrapper client={createTestQueryClient()}>
-        <BillingScreen initialIntent={{ plan: 'pro', cycle: 'monthly' }} />
+        <BillingScreen />
       </QueryWrapper>,
     );
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const plus = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(plus).getByRole('button', { name: 'Get Plus' }));
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Checkout started');
     expect(readPendingCheckout('chunk-fixture')).not.toBeNull();
     expect(
       await screen.findByRole('link', { name: 'Contact billing support' }),
     ).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Continue to checkout' })).not.toBeInTheDocument();
+    expect(within(plus).getByRole('button', { name: 'Get Plus' })).toBeDisabled();
     clearPendingCheckout('chunk-fixture');
   },
 );

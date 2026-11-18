@@ -8,8 +8,6 @@
 import type { Metadata } from 'next';
 
 import { WS3_COPY } from '@declutrmail/shared/copy/launch';
-import { BILLING_NAME } from '@declutrmail/shared/copy/screen-decisions';
-import { isPricingV2 } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import { TermsPlansV2 } from '@/features/marketing/pricing/terms-v2';
 import { ACTION_SAFETY_SUMMARY } from '@declutrmail/shared';
@@ -17,7 +15,6 @@ import { LegalPageLayout, LegalSection } from '@/features/marketing/legal-layout
 import { PageViewTracker } from '@/features/marketing/page-view-tracker';
 import { PAGE_LAST_UPDATED } from '@/features/marketing/page-dates';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 const LAST_UPDATED = PAGE_LAST_UPDATED['/terms'];
 
@@ -36,7 +33,7 @@ const TOC = [
   { id: 'contact', label: 'Contact' },
 ] as const;
 
-function TermsOfServicePage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean } = {}) {
+export default function TermsOfServicePage() {
   return (
     <LegalPageLayout title="Terms of Service" lastUpdated={LAST_UPDATED} toc={TOC}>
       <PageViewTracker page="terms" />
@@ -84,42 +81,7 @@ function TermsOfServicePage({ pricingV2 = isPricingV2() }: { pricingV2?: boolean
         </p>
       </LegalSection>
 
-      {pricingV2 ? (
-        <TermsPlansV2 />
-      ) : (
-        <LegalSection id="plans-billing" title="4. Plans and billing">
-          <p>
-            DeclutrMail offers a Free plan and paid subscriptions (Plus and Pro), billed monthly or
-            annually. Current pricing and what each plan includes are shown at purchase time.
-            Subscriptions renew automatically until canceled; you can cancel at any time and keep
-            access until the end of the period you paid for.
-          </p>
-          <p>
-            Paddle is our merchant of record and reseller, so you buy your plan from Paddle. Paddle
-            handles payment, tax and invoices, and Paddle&rsquo;s buyer terms apply to the purchase.
-            This is the same everywhere, including India.
-          </p>
-          <p>
-            If you already pay in rupees through Razorpay, your plan carries on and you can still
-            manage it in {BILLING_NAME}. You can cancel there; to change, pause or restart it, email
-            support@declutrmail.com. For these plans, DeclutrMail is the seller.
-          </p>
-          <p>
-            Refunds are described in our <a href="/refunds">Refund Policy</a>. To ask for a refund,
-            contact Paddle or email support@declutrmail.com. A subscription marked past due keeps
-            subscription access for up to 14 days after its billing period ends. If the provider
-            supplies no period end, the window starts when the past-due event is processed. Access
-            can end sooner if the provider cancels or halts the subscription. When subscription
-            access ends, your plan is Free unless a separate complimentary grant still applies; your
-            data is not deleted.
-          </p>
-          <p>
-            Paddle offers a 30-day pause: your paid access ends right away and billing restarts
-            automatically after 30 days. Gmail accounts you already connected keep working after a
-            downgrade. You can&rsquo;t connect more while you&rsquo;re over your plan&rsquo;s limit.
-          </p>
-        </LegalSection>
-      )}
+      <TermsPlansV2 />
 
       <LegalSection id="acceptable-use" title="5. Acceptable use">
         <p>You agree not to:</p>
@@ -219,8 +181,3 @@ export const metadata: Metadata = marketingPageMetadata({
     'The terms that govern your use of DeclutrMail: service description, Gmail account requirement, plans and billing, acceptable use, and liability.',
   path: '/terms',
 });
-
-export default async function TermsOfServiceRoute() {
-  const flags = await loadPricingFlags();
-  return <TermsOfServicePage pricingV2={flags.pricingV2} />;
-}

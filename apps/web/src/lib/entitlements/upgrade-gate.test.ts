@@ -8,7 +8,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { METER } from '@declutrmail/shared/entitlements';
 
 import { ApiError } from '@/lib/api/client';
 
@@ -117,7 +117,7 @@ describe('upgradeGateHitFrom', () => {
   it('falls back to config-derived defaults when details are malformed (A3)', () => {
     const hit = upgradeGateHitFrom(freeCap402({ remaining: 'lots' }));
     // Never a literal: the fallback quota comes from the pricing config.
-    const limit = TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0;
+    const limit = METER.free.limit;
     expect(hit).toEqual({
       reason: 'free_cap',
       details: { remaining: 0, limit, used: limit, requiredUnits: 1, resetsAt: null },

@@ -155,16 +155,6 @@
     "count": 1
   },
   {
-    "file": "apps/web/src/features/marketing/landing/pricing-teaser-view.tsx",
-    "match": "30-day money",
-    "count": 1
-  },
-  {
-    "file": "apps/web/src/features/marketing/landing/pricing-teaser-view.tsx",
-    "match": "cleanup action",
-    "count": 2
-  },
-  {
     "file": "apps/web/src/features/marketing/learn/blog-content.ts",
     "match": "cleanup action",
     "count": 2
@@ -196,16 +186,6 @@
   },
   {
     "file": "apps/web/src/features/marketing/pricing/pricing-model.ts",
-    "match": "cleanup action",
-    "count": 2
-  },
-  {
-    "file": "apps/web/src/features/marketing/pricing/pricing-screen.test.tsx",
-    "match": "30-day money",
-    "count": 1
-  },
-  {
-    "file": "apps/web/src/features/marketing/pricing/pricing-screen.tsx",
     "match": "cleanup action",
     "count": 2
   },

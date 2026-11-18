@@ -38,9 +38,9 @@ export function PlanCoverage({
   /** Free hand-granted Pass: `pricing.pass.features.granted`, which has no buy-again line. */
   freeManualPass?: boolean;
 }) {
-  // The server's ceiling: it already knows launch pricing and a Pass's
-  // one-account limit, which the manifest's legacy value does not.
-  const { connectedInboxes, inboxLimit, pricingV2 } = useTier();
+  // The server's ceiling: it already knows a Pass's one-account limit,
+  // which the manifest does not.
+  const { connectedInboxes, inboxLimit } = useTier();
   const plan = TIER_MANIFEST[tier];
   const connected = connectedInboxes ?? 0;
   const included = tools.filter(([capability]) => plan.capabilities.includes(capability));
@@ -63,13 +63,13 @@ export function PlanCoverage({
       <SettingsRow
         label="Cleanup"
         detail={
-          pricingV2 && pass
+          pass
             ? fillStoryList(
                 freeManualPass
                   ? WS1_COPY['pricing.pass.features.granted']
                   : WS1_COPY['pricing.pass.features'],
               ).map((line) => <div key={line}>{line}</div>)
-            : plan.cleanupActionsPerMonth === null
+            : tier !== 'free'
               ? `${WS2_COPY.liveFix.billing.limit.unlimited.replace(/\.$/, '')} on emails cleared.`
               : fillStory(WS2_COPY.liveFix.billing.limit.free)
         }
@@ -98,19 +98,11 @@ export function PlanCoverage({
   );
 }
 
-export function PlanConsequences({
-  fromTier,
-  toTier,
-  pricingV2 = false,
-}: {
-  fromTier: TierId;
-  toTier: TierId;
-  pricingV2?: boolean;
-}) {
+export function PlanConsequences({ fromTier, toTier }: { fromTier: TierId; toTier: TierId }) {
   const from = TIER_MANIFEST[fromTier];
   const to = TIER_MANIFEST[toTier];
-  const fromLimit = inboxLimitFor(fromTier, pricingV2);
-  const toLimit = inboxLimitFor(toTier, pricingV2);
+  const fromLimit = inboxLimitFor(fromTier);
+  const toLimit = inboxLimitFor(toTier);
   const lost = from.capabilities.filter((cap) => !to.capabilities.includes(cap));
   const gained = to.capabilities.filter((cap) => !from.capabilities.includes(cap));
   const labelsFor = (capabilities: typeof lost) =>
@@ -123,7 +115,7 @@ export function PlanConsequences({
       {lost.length ? <p>No longer included after the change: {labelsFor(lost)}.</p> : null}
       <p>
         {to.name} includes {toLimit} connected Gmail {toLimit === 1 ? 'account' : 'accounts'}
-        {to.cleanupActionsPerMonth === null
+        {toTier !== 'free'
           ? `, with ${WS2_COPY.liveFix.billing.limit.unlimited.replace(/\.$/, '').toLowerCase()} on emails cleared.`
           : `. ${fillStory(WS2_COPY.liveFix.billing.limit.free)}`}
       </p>

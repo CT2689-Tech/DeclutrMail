@@ -1,10 +1,18 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { ACTION_REGISTRY, listActionDescriptors } from '../actions/manifest-entries';
-import { ACTION_TIERS, SELECTOR_TYPES } from '../contracts/verb-constants';
-import { COUNTS_AS_CLEANUP, SELECTOR_CAPS, SELECTOR_TIERS, TIER_MANIFEST } from './pricing.config';
+import { listActionDescriptors } from '../actions/manifest-entries';
+import { ACTION_TIERS, SELECTOR_TYPES, type ActionVerb } from '../contracts/verb-constants';
+import { quotaUnitsForEnqueue } from './copy';
 import {
-  cleanupActionsPerMonthFor,
+  INBOXES,
+  METER,
+  OFFERS,
+  PLUS_ANNUAL_2026_10,
+  SELECTOR_CAPS,
+  SELECTOR_TIERS,
+  TIER_MANIFEST,
+} from './pricing.config';
+import {
   hasCapability,
   inboxLimitFor,
   minimumTierForCapability,
@@ -35,24 +43,11 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
           id,
           {
             name: t.name,
-            monthlyUsdCents: t.prices.monthly?.usdCents ?? null,
-            annualUsdCents: t.prices.annual?.usdCents ?? null,
-            monthlyInrPaise: t.prices.monthly?.inrPaise ?? null,
-            annualInrPaise: t.prices.annual?.inrPaise ?? null,
             inboxLimit: t.inboxLimit,
             undoWindowDays: t.undoWindowDays,
-            cleanupActionsPerMonth: t.cleanupActionsPerMonth,
             capabilities: [...t.capabilities].sort(),
             purchasable: t.purchasable,
-            nonPurchasableRow: t.nonPurchasableRow ?? null,
-            promo: t.promo
-              ? {
-                  id: t.promo.id,
-                  annualUsdCents: t.promo.annual.usdCents,
-                  annualInrPaise: t.promo.annual.inrPaise,
-                  maxRedemptions: t.promo.maxRedemptions,
-                }
-              : null,
+            selfServeCheckout: tierIsPurchasable(id),
           },
         ];
       }),
@@ -74,100 +69,99 @@ describe('Pricing config — the pinned snapshot (change tripwire)', () => {
     // boundary; `observe`/`active` is a user choice now.
     const plusSet = [...freeSet, 'autopilot', 'autopilot-active', 'quiet', 'screener'].sort();
     const proSet = [...plusSet, 'brief', 'followups'].sort();
+    const pricePoint = (point: typeof PLUS_ANNUAL_2026_10) => ({
+      usdCents: point.usdCents,
+      inrPaise: point.inr?.paise ?? point.inrPaise,
+      paddlePriceId: point.paddlePriceId,
+      version: point.version,
+    });
 
     expect({
       tiers,
+      inboxes: INBOXES,
+      plusAnnual: pricePoint(PLUS_ANNUAL_2026_10),
+      backlogPass: {
+        price: pricePoint(OFFERS.backlogPass.price),
+        grantsTier: OFFERS.backlogPass.grantsTier,
+        durationDays: OFFERS.backlogPass.durationDays,
+      },
+      meter: { free: METER.free, countsVerbs: METER.countsVerbs },
       selectorTiers: SELECTOR_TIERS,
       selectorCaps: SELECTOR_CAPS,
-      countsAsCleanup: COUNTS_AS_CLEANUP,
     }).toEqual({
       tiers: {
         free: {
           name: 'Free',
-          monthlyUsdCents: 0,
-          annualUsdCents: null,
-          monthlyInrPaise: 0,
-          annualInrPaise: null,
           inboxLimit: 1,
           undoWindowDays: 30,
-          cleanupActionsPerMonth: 50,
           capabilities: freeSet,
           purchasable: true,
-          nonPurchasableRow: null,
-          promo: null,
+          selfServeCheckout: true,
         },
         plus: {
           name: 'Plus',
-          monthlyUsdCents: 900,
-          annualUsdCents: 9000,
-          monthlyInrPaise: 74_900,
-          annualInrPaise: 749_900,
-          inboxLimit: 1,
+          inboxLimit: 2,
           undoWindowDays: 30,
-          cleanupActionsPerMonth: null,
           capabilities: plusSet,
           purchasable: true,
-          nonPurchasableRow: null,
-          promo: null,
+          selfServeCheckout: true,
         },
+        // Founder decision "1C": Pro is waitlist only.
         pro: {
           name: 'Pro',
-          monthlyUsdCents: 1900,
-          annualUsdCents: 19000,
-          monthlyInrPaise: 159_900,
-          annualInrPaise: 1_599_900,
           inboxLimit: 5,
           undoWindowDays: 30,
-          cleanupActionsPerMonth: null,
           capabilities: proSet,
           purchasable: true,
-          nonPurchasableRow: null,
-          promo: {
-            id: 'foundingPro',
-            annualUsdCents: 12900,
-            annualInrPaise: 1_099_900,
-            maxRedemptions: 250,
-          },
+          selfServeCheckout: false,
         },
         team: {
           name: 'Team',
-          monthlyUsdCents: null,
-          annualUsdCents: null,
-          monthlyInrPaise: null,
-          annualInrPaise: null,
           inboxLimit: 5,
           undoWindowDays: 30,
-          cleanupActionsPerMonth: null,
           capabilities: proSet,
           purchasable: false,
-          nonPurchasableRow: { kind: 'waitlist', label: 'Join the waitlist' },
-          promo: null,
+          selfServeCheckout: false,
         },
         enterprise: {
           name: 'Enterprise',
-          monthlyUsdCents: null,
-          annualUsdCents: null,
-          monthlyInrPaise: null,
-          annualInrPaise: null,
           inboxLimit: 5,
           undoWindowDays: 30,
-          cleanupActionsPerMonth: null,
           capabilities: proSet,
           purchasable: false,
-          nonPurchasableRow: { kind: 'contact', label: 'Contact sales' },
-          promo: null,
+          selfServeCheckout: false,
+        },
+      },
+      inboxes: { free: 1, plus: 2, pro: 5 },
+      plusAnnual: {
+        usdCents: 5900,
+        inrPaise: 199_900,
+        paddlePriceId: 'pri_01m4qk99878y7jynh1h00jfhy8',
+        version: '2026-10',
+      },
+      backlogPass: {
+        price: {
+          usdCents: 1900,
+          inrPaise: 79_900,
+          paddlePriceId: 'pri_01m4qkayqz3t54gdh9jq5b8ypq',
+          version: '2026-10',
+        },
+        grantsTier: 'plus',
+        durationDays: 30,
+      },
+      meter: {
+        free: { limit: 1000, period: 'signup_month' },
+        countsVerbs: {
+          archive: true,
+          delete: true,
+          later: false,
+          unsubscribe: false,
+          keep: false,
+          unarchive: false,
         },
       },
       selectorTiers: { sender: 'free', 'multi-sender': 'free', 'sender-filter': 'pro' },
       selectorCaps: { 'multi-sender': 1000 },
-      countsAsCleanup: {
-        keep: false,
-        archive: true,
-        later: true,
-        unsubscribe: true,
-        delete: true,
-        unarchive: false,
-      },
     });
   });
 });
@@ -181,28 +175,7 @@ describe('Pricing config — invariants (hold under any tuning)', () => {
     }
   });
 
-  // 2. Annual = 10× monthly on any tier that offers both intervals
-  //    (the "2 months free" D19 framing).
-  it('gives dual-interval tiers an annual price of exactly 10x monthly', () => {
-    for (const id of TIER_IDS) {
-      const { monthly, annual } = TIER_MANIFEST[id].prices;
-      if (monthly !== null && annual !== null && monthly.usdCents > 0) {
-        expect(annual.usdCents, id).toBe(monthly.usdCents * 10);
-      }
-    }
-  });
-
-  // 3. A promo undercuts both its host's annual and 12 months of monthly.
-  it('keeps any promo cheaper than its host tier', () => {
-    for (const id of TIER_IDS) {
-      const t = TIER_MANIFEST[id];
-      if (!t.promo) continue;
-      expect(t.promo.annual.usdCents, id).toBeLessThan(t.prices.annual!.usdCents);
-      expect(t.promo.annual.usdCents, id).toBeLessThan(t.prices.monthly!.usdCents * 12);
-    }
-  });
-
-  // 4. Capability sets are cumulative up the ladder — a higher tier
+  // 2. Capability sets are cumulative up the ladder — a higher tier
   //    never loses a surface a lower tier has.
   it('keeps capability sets cumulative in rank order', () => {
     const ranked = [...TIER_IDS].sort((a, b) => TIER_RANK[a] - TIER_RANK[b]);
@@ -218,7 +191,7 @@ describe('Pricing config — invariants (hold under any tuning)', () => {
     expect([...TIER_MANIFEST[top].capabilities].sort()).toEqual([...CAPABILITIES].sort());
   });
 
-  // 5. inboxLimit and undoWindowDays are monotonic non-decreasing by
+  // 3. inboxLimit and undoWindowDays are monotonic non-decreasing by
   //    rank (audit bug 4 — Pro 3 must never exceed Team/Enterprise).
   it('keeps inboxLimit and undoWindowDays monotonic non-decreasing by rank', () => {
     const ranked = [...TIER_IDS].sort((a, b) => TIER_RANK[a] - TIER_RANK[b]);
@@ -235,52 +208,26 @@ describe('Pricing config — invariants (hold under any tuning)', () => {
     }
   });
 
-  // 6. The monthly quota is monotonic too: no higher tier has a SMALLER
-  //    quota (null = unlimited ranks above any number).
-  it('never gives a higher tier a smaller cleanup quota', () => {
-    const ranked = [...TIER_IDS].sort((a, b) => TIER_RANK[a] - TIER_RANK[b]);
-    for (let i = 1; i < ranked.length; i += 1) {
-      const lower = cleanupActionsPerMonthFor(ranked[i - 1]!);
-      const higher = cleanupActionsPerMonthFor(ranked[i]!);
-      if (higher !== null) {
-        expect(lower, `${ranked[i]} quota >= ${ranked[i - 1]}`).not.toBeNull();
-        expect(higher).toBeGreaterThanOrEqual(lower!);
-      }
-    }
-  });
-
-  // 7. Purchasability shape: a non-purchasable tier carries its row
-  //    treatment; a purchasable one never does.
-  it('pairs nonPurchasableRow with purchasable=false exactly', () => {
+  // 4. Only Free is metered: every higher tier stamps no meter units.
+  it('meters Free alone', () => {
     for (const id of TIER_IDS) {
-      const t = TIER_MANIFEST[id];
-      expect(t.nonPurchasableRow !== undefined, id).toBe(!t.purchasable);
+      const units = quotaUnitsForEnqueue({ tier: id, verb: 'archive', requestedCount: 3 });
+      expect(units, id).toBe(id === 'free' ? 3 : 0);
     }
   });
 
-  // 8. Price-point hygiene: integer amounts; catalog ids null or
-  //    non-empty; a $0 point never gets a checkout SKU.
-  it('keeps every price point well-formed', () => {
-    const points = TIER_IDS.flatMap((id) => {
-      const { monthly, annual } = TIER_MANIFEST[id].prices;
-      return [monthly, annual, TIER_MANIFEST[id].promo?.annual ?? null];
-    }).filter((p) => p !== null);
-    for (const point of points) {
+  // 5. Price-point hygiene: integer amounts; catalog ids non-empty.
+  it('keeps every launch price point well-formed', () => {
+    for (const point of [PLUS_ANNUAL_2026_10, OFFERS.backlogPass.price]) {
       expect(Number.isInteger(point.usdCents)).toBe(true);
-      expect(point.usdCents).toBeGreaterThanOrEqual(0);
+      expect(point.usdCents).toBeGreaterThan(0);
       expect(Number.isInteger(point.inrPaise)).toBe(true);
-      expect(point.inrPaise).toBeGreaterThanOrEqual(0);
-      for (const catalogId of [point.paddlePriceId, point.razorpayPlanId]) {
-        expect(catalogId === null || catalogId.length > 0).toBe(true);
-      }
-      if (point.usdCents === 0) {
-        expect(point.paddlePriceId).toBeNull();
-        expect(point.razorpayPlanId).toBeNull();
-      }
+      expect(point.inrPaise).toBeGreaterThan(0);
+      expect(point.paddlePriceId?.length).toBeGreaterThan(0);
     }
   });
 
-  // 9. Quiet governs Autopilot, so no tier may grant `autopilot`
+  // 6. Quiet governs Autopilot, so no tier may grant `autopilot`
   //    without `quiet`.
   //
   //    This is not style — it is the guarantee that removes a whole
@@ -344,8 +291,8 @@ describe('Entitlement resolvers (D19)', () => {
 
 /**
  * The seam with the Action Registry (actions/manifest-entries.ts). The
- * registry declares selector SUPPORT; the pricing config resolves tier,
- * cap and cleanup counting. These tests pin that composition.
+ * registry declares selector SUPPORT; the pricing config resolves tier
+ * and cap. These tests pin that composition.
  */
 describe('Action Registry seam', () => {
   // The entitlement ladder's first three rungs ARE the action tiers, in
@@ -356,17 +303,14 @@ describe('Action Registry seam', () => {
   });
 
   // Registry-derived capabilities mirror the config EXACTLY — a verb ×
-  // selector that is supported carries the config's tier, cap and
-  // counting flag; an unsupported one is null.
+  // selector that is supported carries the config's tier and cap; an
+  // unsupported one is null.
   it('derives every registry capability from the pricing config', () => {
     for (const d of listActionDescriptors()) {
       for (const selector of SELECTOR_TYPES) {
         const cap = d.capabilities[selector];
         if (cap === null) continue;
         expect(cap.tier, `${d.verb}/${selector} tier`).toBe(SELECTOR_TIERS[selector]);
-        expect(cap.countsAsCleanup, `${d.verb}/${selector} counting`).toBe(
-          COUNTS_AS_CLEANUP[d.verb],
-        );
         expect(cap.cap, `${d.verb}/${selector} cap`).toBe(SELECTOR_CAPS[selector]);
       }
     }
@@ -389,25 +333,18 @@ describe('Action Registry seam', () => {
     }
   });
 
-  // D19/A3 coherence: a verb that draws down the quota must be
-  // REACHABLE on free, and free's quota must be finite while the next
-  // rung is unlimited — a metered verb needs a counter to draw down and
-  // an upgrade that lifts it.
-  it('keeps every single-sender cleanup verb reachable on free', () => {
-    for (const d of listActionDescriptors()) {
-      const cap = d.capabilities.sender;
-      if (cap.countsAsCleanup) {
-        expect(satisfiesActionTier('free', cap.tier), d.verb).toBe(true);
-      }
-    }
-    expect(cleanupActionsPerMonthFor('free')).not.toBeNull();
-    expect(cleanupActionsPerMonthFor('plus')).toBeNull();
-    // Spot-check the flag flows from the config (no duplication — the
-    // registry never re-declares per-verb costs).
-    expect(ACTION_REGISTRY.archive.capabilities.sender.countsAsCleanup).toBe(
-      COUNTS_AS_CLEANUP.archive,
+  // Meter coherence: a verb that draws down Free's meter must be
+  // REACHABLE on free, and the meter must be finite — a metered verb
+  // needs a counter to draw down and an upgrade that lifts it.
+  it('keeps every metered single-sender verb reachable on free', () => {
+    const metered = listActionDescriptors().filter(
+      (d) => METER.countsVerbs[d.verb as ActionVerb] === true,
     );
-    expect(ACTION_REGISTRY.keep.capabilities.sender.countsAsCleanup).toBe(COUNTS_AS_CLEANUP.keep);
+    expect(metered.map((d) => d.verb).sort()).toEqual(['archive', 'delete']);
+    for (const d of metered) {
+      expect(satisfiesActionTier('free', d.capabilities.sender.tier), d.verb).toBe(true);
+    }
+    expect(Number.isInteger(METER.free.limit) && METER.free.limit > 0).toBe(true);
   });
 });
 
@@ -480,22 +417,11 @@ describe('type-level exhaustiveness', () => {
   });
 });
 
-describe('PRICING_V2 inbox limits', () => {
-  const previous = process.env.PRICING_V2;
-
-  afterEach(() => {
-    if (previous === undefined) delete process.env.PRICING_V2;
-    else process.env.PRICING_V2 = previous;
-  });
-
-  it('keeps manifest limits while the flag is off and uses INBOXES while it is on', () => {
-    delete process.env.PRICING_V2;
-    expect(inboxLimitFor('plus')).toBe(TIER_MANIFEST.plus.inboxLimit);
-    expect(tierIsPurchasable('pro')).toBe(TIER_MANIFEST.pro.purchasable);
-    process.env.PRICING_V2 = 'true';
-    expect(inboxLimitFor('free')).toBe(1);
-    expect(inboxLimitFor('plus')).toBe(2);
-    expect(inboxLimitFor('pro')).toBe(5);
+describe('inbox limits and self-serve checkout', () => {
+  it('reads INBOXES through the manifest and keeps Pro off checkout', () => {
+    expect(inboxLimitFor('free')).toBe(INBOXES.free);
+    expect(inboxLimitFor('plus')).toBe(INBOXES.plus);
+    expect(inboxLimitFor('pro')).toBe(INBOXES.pro);
     expect(tierIsPurchasable('pro')).toBe(false);
     expect(tierIsPurchasable('plus')).toBe(true);
   });

@@ -1,19 +1,6 @@
 import type postgres from 'postgres';
 
-import { TIER_MANIFEST } from '@declutrmail/shared/entitlements';
-
-/**
- * The Free monthly cleanup allowance, from the manifest — NEVER a
- * literal. The old hardcoded `5` silently defused this spec when #401
- * moved the cap to 50/month (flow audit 2026-07-28). A null manifest
- * value would mean Free became unmetered — this spec's premise dies
- * with it, so fail loudly at import time.
- */
-const freeLimit = TIER_MANIFEST.free.cleanupActionsPerMonth;
-if (freeLimit === null) {
-  throw new Error('Free tier is unmetered — the billing paywall spec premise no longer holds.');
-}
-export const FREE_CLEANUP_LIMIT: number = freeLimit;
+import { METER } from '@declutrmail/shared/entitlements';
 
 /**
  * Gmail-free billing seed (D183 groundwork for a CI-viable e2e lane).
@@ -32,10 +19,10 @@ export const FREE_CLEANUP_LIMIT: number = freeLimit;
  *     path ever calls Gmail),
  *   - two senders with INBOX messages (one is the archive target whose
  *     enqueue must 402, one sits pending in the Screener queue),
- *   - a cleanup-quota ledger with the ENTIRE monthly Free allowance
- *     used (`FREE_CLEANUP_LIMIT` terminally-done forward archive
- *     `action_jobs` rows, derived from TIER_MANIFEST), so the very
- *     next cleanup enqueue 402s `FREE_CAP_REACHED`.
+ *   - a meter-ledger row (one terminally-done forward archive
+ *     `action_jobs` row holding 0 `quota_units`). A spec that needs a
+ *     spent allowance calls `exhaustFreeMeter`, so the very next
+ *     metered enqueue 402s `FREE_CAP_REACHED`.
  *
  * BASELINE vs VOLATILE. The baseline rows persist between runs by
  * design (a fixture, like cloud-seed.sql). Everything the spec's flow
@@ -188,28 +175,23 @@ export async function applyBillingSeed(sql: postgres.Sql): Promise<void> {
     WHERE mailbox_account_id = ${s.mailboxId} AND sender_key = ${s.screenerSenderKey}
   `;
 
-  // Cleanup-quota ledger — spend the ENTIRE monthly Free allowance
-  // (derived from TIER_MANIFEST, never a literal — the 5-lifetime
-  // hardcode silently defused this spec when #401 moved the cap to
-  // 50/month): terminally-done forward archive rows, each its own
-  // (group, sender) unit per EntitlementsService.cleanupUnitsUsed.
-  // The next fresh cleanup enqueue must 402 FREE_CAP_REACHED.
-  for (let i = 1; i <= FREE_CLEANUP_LIMIT; i += 1) {
-    const selector = JSON.stringify({
-      type: 'sender',
-      senderId: `e2eb1111-0000-4000-8000-0000${String(i).padStart(7, '0')}c`,
-      senderKey: `e2e-billing-quota-sender-${i}`,
-    });
-    await sql`
-      INSERT INTO action_jobs (mailbox_account_id, verb, direction, selector,
-                               requested_count, affected_count, status, idempotency_key)
-      VALUES (${s.mailboxId}, 'archive', 'forward', ${selector}::jsonb,
-              1, 1, 'done', ${s.quotaKeyPrefix + String(i)})
-      ON CONFLICT (idempotency_key) DO NOTHING
-    `;
-  }
-  // Trim strays so the ledger is EXACTLY 5 (nothing else ever enqueues
-  // on this mailbox — the paywall rejects before insert).
+  // Meter ledger — one terminally-done forward archive row holding no
+  // units at baseline. `exhaustFreeMeter` stamps it with the whole
+  // allowance for the specs that need a spent meter.
+  const selector = JSON.stringify({
+    type: 'sender',
+    senderId: 'e2eb1111-0000-4000-8000-00000000001c',
+    senderKey: 'e2e-billing-quota-sender-1',
+  });
+  await sql`
+    INSERT INTO action_jobs (mailbox_account_id, verb, direction, selector,
+                             requested_count, affected_count, quota_units, status, idempotency_key)
+    VALUES (${s.mailboxId}, 'archive', 'forward', ${selector}::jsonb,
+            1, 1, 0, 'done', ${s.quotaKeyPrefix + '1'})
+    ON CONFLICT (idempotency_key) DO UPDATE SET quota_units = EXCLUDED.quota_units
+  `;
+  // Trim strays so the ledger is EXACTLY the seeded row (nothing else
+  // ever enqueues on this mailbox — the paywall rejects before insert).
   await sql`
     DELETE FROM action_jobs
     WHERE mailbox_account_id = ${s.mailboxId}
@@ -217,4 +199,19 @@ export async function applyBillingSeed(sql: postgres.Sql): Promise<void> {
   `;
 
   await resetBillingVolatileState(sql);
+}
+
+/**
+ * Spend the ENTIRE monthly Free allowance (from `METER`, never a
+ * literal): the seeded ledger row holds it all, per
+ * EntitlementsService.cleanupUnitsUsed. `applyBillingSeed` resets it.
+ */
+export async function exhaustFreeMeter(sql: postgres.Sql): Promise<void> {
+  const s = BILLING_SEED;
+  await sql`
+    UPDATE action_jobs
+    SET quota_units = ${METER.free.limit}
+    WHERE mailbox_account_id = ${s.mailboxId}
+      AND idempotency_key = ${s.quotaKeyPrefix + '1'}
+  `;
 }

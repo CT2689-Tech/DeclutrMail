@@ -1,31 +1,19 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { alias } from 'drizzle-orm/pg-core';
-import { and, count, eq, gte, inArray, ne, sql } from 'drizzle-orm';
+import { and, count, eq, gte, sql } from 'drizzle-orm';
 
-import {
-  actionJobs,
-  actionVerb,
-  mailboxAccounts,
-  workspaces,
-  type ActionVerb as PersistedActionVerb,
-} from '@declutrmail/db';
+import { actionJobs, mailboxAccounts, workspaces } from '@declutrmail/db';
 import { ACTION_REGISTRY, type ActionVerb, type SelectorType } from '@declutrmail/shared/actions';
 import {
-  TIER_IDS,
   TIER_MANIFEST,
-  cleanupActionsPerMonthFor,
   hasCapability,
-  inboxLimitFor,
   METER,
   inboxLimitReachedMessage,
-  isMeterV2,
-  isPricingV2,
   passSecondAccountMessage,
   quotaExceededMessage,
   suggestedWindowPreset,
   minimumTierForCapability,
   satisfiesActionTier,
-  tierIsPurchasable,
   type Capability,
   type TierId,
 } from '@declutrmail/shared/entitlements';
@@ -63,26 +51,10 @@ export interface InboxWorkspace {
   tier: TierId;
 }
 
-/**
- * Verbs that draw down the monthly cleanup quota (D19/A3). Derived from
- * the Action Registry, whose `countsAsCleanup` values resolve from the
- * pricing config's `COUNTS_AS_CLEANUP` — so adding a counting verb is a
- * config edit, never an edit here. Today this resolves to
- * `archive | later | delete | unsubscribe`. The DB enum is a narrower
- * append-only subset of the registry, so the final filter keeps only
- * verbs that can actually appear in `action_jobs`.
- */
-/** Monthly email allowance while `METER_V2` is on. Flag off keeps the action cap. */
+/** Monthly email allowance: `METER` on Free, unlimited (`null`) on paid tiers. */
 function meterLimitFor(tier: TierId): number | null {
-  if (!isMeterV2()) return cleanupActionsPerMonthFor(tier);
   return tier === 'free' ? METER.free.limit : null;
 }
-
-const PERSISTED_ACTION_VERBS = new Set<string>(actionVerb.enumValues);
-const CLEANUP_VERBS = Object.values(ACTION_REGISTRY)
-  .filter((descriptor) => descriptor.capabilities.sender.countsAsCleanup)
-  .map((descriptor) => descriptor.verb)
-  .filter((verb): verb is PersistedActionVerb => PERSISTED_ACTION_VERBS.has(verb));
 
 /**
  * Coerce `cleanupUnitsUsed`'s raw row value to a real number.
@@ -99,12 +71,12 @@ export function coerceUsedCount(raw: number | string | null | undefined): number
   return Number(raw ?? 0);
 }
 
-/** One workspace's cleanup-quota position (A3: Free = 50/month). */
+/** One workspace's meter position (Free = `METER.free.limit` emails a period). */
 export interface CleanupSummary {
   tier: TierId;
-  /** Config monthly quota — `null` = unlimited (every paid tier). */
+  /** Config allowance — `null` = unlimited (every paid tier). */
   limit: number | null;
-  /** Cleanup units consumed THIS period (0 when unlimited — not computed). */
+  /** Emails held THIS period (0 when unlimited — not computed). */
   used: number;
   /** `limit - used`, floored at 0; `null` when unlimited. */
   remaining: number | null;
@@ -121,15 +93,14 @@ export interface CleanupSummary {
  * Reads `workspaces.tier` + the `@declutrmail/shared/entitlements`
  * manifest resolvers and enforces the launch entitlements:
  *
- *   1. FREE CLEANUP CAP — 50 cleanup actions per month on the signup
- *      anniversary (A3; supersedes the 5-lifetime cap). See
- *      `cleanupUnitsUsed` for the counting rule and `cleanupPeriodFor`
- *      for the period.
+ *   1. FREE METER — `METER.free.limit` emails cleared per signup-month
+ *      period. See `cleanupUnitsUsed` for the counting rule and
+ *      `cleanupPeriodFor` for the period.
  *   2. ACTION SELECTOR TIER — single-sender and explicit bulk are Free,
  *      all-matching starts at Pro (A3), sourced from the pricing config
  *      through the Action Registry.
  *   3. INBOX LIMIT — connected-Gmail-account ceiling per tier (D19/A3;
- *      `PRICING_V2` Plus is 2). A Pass-only workspace (live
+ *      `INBOXES`). A Pass-only workspace (live
  *      `source='pass'` grant, no granting paid Plus/Pro) stays at 1.
  *      See `assertCanConnectMailbox`.
  *
@@ -180,103 +151,21 @@ export class EntitlementsService {
   }
 
   /**
-   * Cleanup units consumed by a workspace (D19/A3 Free cap) — scoped to
-   * the current anniversary period when `periodStart` is given, lifetime
-   * otherwise.
+   * Emails held against Free's meter, scoped to the current signup-month
+   * period when `periodStart` is given, lifetime otherwise.
    *
    * COUNTING RULE (the single place it is defined — cite, don't copy):
-   *
-   *   One cleanup unit per SENDER per enqueue whose verb's manifest
-   *   entry has `countsAsCleanup: true` (`CLEANUP_VERBS` above).
-   *
-   *   - A composite (primary + secondary on one sender, one click) is
-   *     ONE unit — the secondary row shares the primary's group via
-   *     `composite_id`.
-   *   - A bulk of N senders is N units — every row shares the anchor's
-   *     group but each sender is its own `(group, sender)` pair.
-   *   - Keep is EXEMPT — it produces no `action_jobs` row. A fresh
-   *     unsubscribe intent IS one cleanup unit: only its durable dedup
-   *     row (`verb='unsubscribe'`, key `unsub:*`) counts. The optional
-   *     one-click execution row (`unsubexec-*`) is bookkeeping for the
-   *     same decision and never consumes a second unit. An optional
-   *     "also act on past emails" composite is a separate cleanup click.
-   *   - UNDO DOES NOT REFUND — reverse rows (`direction='reverse'`)
-   *     are excluded, and the forward row persists after an undo, so
-   *     the derived count never decrements.
-   *   - A `failed` forward row is excluded: an action that never
-   *     mutated anything must not consume the taste quota.
-   *   - Recovery attempts share the original action's lineage group,
-   *     so recovering one failed click never charges the same user
-   *     intent twice.
-   *   - A terminally-`done` label-action row that moved ZERO messages
-   *     (`affected_count = 0` — e.g. a 365d-delete on a sender with no
-   *     aged INBOX mail) is likewise excluded: a no-op consumed no
-   *     cleanup. Unsubscribe intent rows are the exception: the durable
-   *     decision itself is the cleanup even though it moves no mail.
-   *     In-flight rows (`queued`/`executing`, whose
-   *     `affected_count` is still its 0 default) keep counting — they
-   *     represent intent that is about to move mail.
-   *
-   * While `METER_V2` is on, usage is the sum of forward `quota_units`
-   * in the period minus restored emails on done reverse rows whose
-   * forward row shares `undo_token` and was created in that same period,
-   * floored at 0. The action-count rule below stays in force while the
-   * flag is off.
-   *
-   * Derivation while the flag is off is from existing `action_jobs` data:
-   * group id = `COALESCE(composite_id, root_action_id, id)`,
-   * sender unit = the selector's `senderId`; rows with a messages
-   * selector fall back to their GROUP id, so a composite's primary +
-   * secondary stay ONE unit there too (one click = one unit — reachable
-   * on Free since A3 opened the messages selector). The scan walks the
-   * workspace's mailboxes via `action_jobs_account_status_created_idx`
-   * (leading column `mailbox_account_id`).
+   * the sum of forward `quota_units` (stamped at enqueue by
+   * `quotaUnitsForEnqueue`; only `METER.countsVerbs` verbs on Free stamp
+   * any) minus same-period undo restorations. A reverse row refunds only
+   * when its forward row was charged in the period being counted. Free
+   * actions such as Later, or actions performed on an unlimited tier,
+   * cannot refund other usage. A refund never exceeds the forward stamp,
+   * even if more emails moved. Floored at 0.
    */
   async cleanupUnitsUsed(
     workspaceId: string,
     executor: EntitlementsExecutor = this.db,
-    periodStart?: Date,
-  ): Promise<number> {
-    if (isMeterV2()) return this.meteredEmailsUsed(workspaceId, executor, periodStart);
-    const [row] = await executor
-      .select({
-        used: sql<number>`count(DISTINCT (COALESCE(${actionJobs.compositeId}, ${actionJobs.rootActionId}, ${actionJobs.id}), COALESCE(${actionJobs.selector}->>'senderId', COALESCE(${actionJobs.compositeId}, ${actionJobs.rootActionId}, ${actionJobs.id})::text)))::int`,
-      })
-      .from(actionJobs)
-      .innerJoin(mailboxAccounts, eq(mailboxAccounts.id, actionJobs.mailboxAccountId))
-      .where(
-        and(
-          eq(mailboxAccounts.workspaceId, workspaceId),
-          eq(actionJobs.direction, 'forward'),
-          inArray(actionJobs.verb, CLEANUP_VERBS),
-          // A3 — only units consumed in the current anniversary period
-          // count. The enqueue instant (`created_at`) IS the consuming
-          // instant; the range predicate rides
-          // `action_jobs_account_status_created_idx`.
-          ...(periodStart ? [gte(actionJobs.createdAt, periodStart)] : []),
-          // Only the durable intent-dedup row represents the user's
-          // unsubscribe cleanup decision. The one-click execution row
-          // (`unsubexec-*`) belongs to that same unit.
-          sql`(${actionJobs.verb} <> 'unsubscribe' OR ${actionJobs.idempotencyKey} LIKE 'unsub:%')`,
-          ne(actionJobs.status, 'failed'),
-          // A no-op label action consumes no unit. An unsubscribe intent
-          // is a completed cleanup decision despite affected_count=0.
-          sql`(${actionJobs.verb} = 'unsubscribe' OR not (${actionJobs.status} = 'done' and ${actionJobs.affectedCount} = 0))`,
-        ),
-      );
-    return coerceUsedCount(row?.used);
-  }
-
-  /**
-   * Emails held against the Free meter. Forward stamps minus same-period
-   * undo restorations. A reverse row refunds only when its forward row
-   * was charged in the period being counted. Free actions such as Later,
-   * or actions performed on an unlimited tier, cannot refund other usage.
-   * A refund never exceeds the forward stamp, even if more emails moved.
-   */
-  private async meteredEmailsUsed(
-    workspaceId: string,
-    executor: EntitlementsExecutor,
     periodStart?: Date,
   ): Promise<number> {
     const chargedPeriod = periodStart ? [gte(actionJobs.createdAt, periodStart)] : [];
@@ -336,7 +225,7 @@ export class EntitlementsService {
     executor: EntitlementsExecutor = this.db,
   ): Promise<CleanupWorkspace | null> {
     const workspace = await this.workspaceForMailbox(mailboxAccountId, executor);
-    if (!workspace || cleanupActionsPerMonthFor(workspace.tier) === null) {
+    if (!workspace || meterLimitFor(workspace.tier) === null) {
       return workspace;
     }
 
@@ -415,9 +304,8 @@ export class EntitlementsService {
     // No workspace row ⇒ the mailbox is orphaned; ownership guards
     // upstream will reject the request — nothing to gate here.
     if (!workspace) return;
-    // Unsubscribe, Keep, Later, Undo, preview and scan draw nothing
-    // while the emails-cleared meter is on.
-    if (isMeterV2() && unitsNeeded <= 0) return;
+    // Unsubscribe, Keep, Later, Undo, preview and scan draw nothing.
+    if (unitsNeeded <= 0) return;
     const limit = meterLimitFor(workspace.tier);
     if (limit === null) return; // unlimited tier
     const period = cleanupPeriodFor(workspace.createdAt, new Date());
@@ -446,14 +334,8 @@ export class EntitlementsService {
           used,
           requiredUnits: unitsNeeded,
           resetsAt,
-          ...(isMeterV2()
-            ? {
-                requested: unitsNeeded,
-                suggestedPreset: presetCounts
-                  ? suggestedWindowPreset(remaining, presetCounts)
-                  : null,
-              }
-            : {}),
+          requested: unitsNeeded,
+          suggestedPreset: presetCounts ? suggestedWindowPreset(remaining, presetCounts) : null,
         },
       });
     }
@@ -598,24 +480,11 @@ export class EntitlementsService {
       );
     const connected = Number(row?.connected ?? 0);
     if (connected >= limit) {
-      // Derive the upgrade target from the config: the first tier whose
-      // inbox limit exceeds the current one (none ⇒ no upgrade pitch).
-      const upgradeTier = TIER_IDS.find((id) => inboxLimitFor(id) > limit && tierIsPurchasable(id));
-      const upgrade = isPricingV2()
-        ? ''
-        : upgradeTier
-          ? ` Upgrade to ${TIER_MANIFEST[upgradeTier].name} to connect up to ${inboxLimitFor(upgradeTier)} Gmail accounts.`
-          : '';
       const copyTier: TierId = limit === 1 ? 'free' : tier;
       throw new AppException({
         code: 'INBOX_LIMIT_REACHED',
-        message: isPricingV2()
-          ? reason === 'pass'
-            ? passSecondAccountMessage()
-            : inboxLimitReachedMessage(copyTier)
-          : limit === 1
-            ? `Your plan includes 1 connected inbox.${upgrade}`
-            : `Your plan includes ${limit} connected Gmail accounts and all are in use.${upgrade}`,
+        message:
+          reason === 'pass' ? passSecondAccountMessage() : inboxLimitReachedMessage(copyTier),
         details: { limit, connected, tier, ...(reason ? { reason } : {}) },
       });
     }

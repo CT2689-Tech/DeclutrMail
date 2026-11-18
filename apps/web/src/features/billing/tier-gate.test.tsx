@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 
 let mockTier = 'free';
-let mockPricingV2 = false;
 vi.mock('next/navigation', () => ({
   usePathname: () => '/senders',
   useSearchParams: () => new URLSearchParams('sender=sender-1&q=news'),
@@ -28,7 +27,6 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
       tier: mockTier,
-      pricingV2: mockPricingV2,
       cleanupRemaining: null,
     },
   }),
@@ -40,7 +38,6 @@ const RETURN_TO = 'from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews';
 
 beforeEach(() => {
   mockTier = 'free';
-  mockPricingV2 = false;
 });
 
 function renderGate(capability: 'brief' | 'triage' | 'screener' = 'brief') {
@@ -61,17 +58,17 @@ function renderGate(capability: 'brief' | 'triage' | 'screener' = 'brief') {
 }
 
 describe('TierGate', () => {
-  it('free tier: placeholder + manifest-price upgrade CTA; children never mount', () => {
+  it('free tier on a Pro feature: placeholder + unpriced Pro CTA; children never mount', () => {
     mockTier = 'free';
     const { childMounted } = renderGate();
 
     expect(screen.getByTestId('tier-gate-placeholder')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Your Morning Brief' })).toBeInTheDocument();
     expect(screen.getByText('A daily summary.')).toBeInTheDocument();
-    // D19 manifest price + D121 note, no hardcoded dollars in the gate.
-    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
+    // Pro is waitlist only, so the gate names the plan without a price.
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+      `/billing?plan=pro&cycle=annual&${RETURN_TO}`,
     );
     expect(
       screen.getAllByText(/14-day money-back on any purchase, once per customer/),
@@ -85,24 +82,11 @@ describe('TierGate', () => {
     expect(childMounted()).toBe(false);
   });
 
-  it('PRICING_V2 shows the deck refund line once', () => {
+  it('names the CHEAPEST granting plan: Plus annual, and no monthly checkout link', () => {
     mockTier = 'free';
-    mockPricingV2 = true;
-    renderGate();
-    expect(
-      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
-    ).toHaveLength(1);
-    expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
-      'href',
-      `/billing?plan=pro&cycle=annual&${RETURN_TO}`,
-    );
-  });
-
-  it('PRICING_V2 offers Plus annual and no monthly checkout link', () => {
-    mockTier = 'free';
-    mockPricingV2 = true;
     renderGate('screener');
+    // D251 — Screener is granted by Plus, so the gate routes to Plus at the
+    // launch annual price, never Pro and never a monthly price.
     expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59 a year$/ })).toHaveAttribute(
       'href',
       `/billing?plan=plus&cycle=annual&${RETURN_TO}`,
@@ -126,19 +110,6 @@ describe('TierGate', () => {
     const { childMounted } = renderGate('screener');
     expect(screen.queryByTestId('tier-gate-placeholder')).not.toBeInTheDocument();
     expect(childMounted()).toBe(true);
-  });
-
-  it('names the CHEAPEST granting plan and its manifest price, not always Pro', () => {
-    mockTier = 'free';
-    renderGate('screener');
-
-    // D251 — Screener is granted by Plus, so the gate must route to Plus at
-    // $9. Before D251 this said Pro/$19. The price and plan are derived from
-    // the manifest, so this assertion moves with the ladder by construction.
-    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
-      'href',
-      '/billing?plan=plus&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
-    );
   });
 
   it('pro tier: children render, no placeholder', () => {

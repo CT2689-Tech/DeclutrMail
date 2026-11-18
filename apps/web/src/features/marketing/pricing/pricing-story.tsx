@@ -20,18 +20,15 @@ import { PricingTrustSlot } from '@/features/marketing/trust/pricing-trust-slot'
 import { track } from '@/lib/posthog';
 
 import { navigateToCheckout, navigateToFreeApp } from './cta';
-import { CheckGlyph } from './tier-card';
 
 const COLLAPSE_AFTER = 4;
 
 export function PricingStory({
-  passEnabled,
   locale,
   now,
   rupeePurchasesOpen = false,
   inrPaused = false,
 }: {
-  passEnabled: boolean;
   locale: 'usd' | 'inr';
   now: string;
   /** India Paddle prices are configured and this server can sign checkout geo. */
@@ -41,9 +38,9 @@ export function PricingStory({
 }) {
   const router = useRouter();
   const push = (path: string) => router.push(path);
-  const banner = promoBanner(new Date(now), passEnabled);
+  const banner = promoBanner(new Date(now));
   const prices = launchPriceDisplay(locale);
-  const h1 = fillStory(WS1_COPY[passEnabled ? 'pricing.h1.passOn' : 'pricing.h1.passOff'], locale);
+  const h1 = fillStory(WS1_COPY['pricing.h1.passOn'], locale);
   const cards = [
     {
       id: 'free' as const,
@@ -57,22 +54,18 @@ export function PricingStory({
       expand: null,
       paid: false,
     },
-    ...(passEnabled
-      ? [
-          {
-            id: 'pass' as const,
-            name: fillStory(WS1_COPY['pricing.pass.name'], locale),
-            tagline: fillStory(WS1_COPY['pricing.pass.tagline'], locale),
-            price: passAmount(locale),
-            suffix: fillStory(WS1_COPY['pricing.pass.priceSuffix'], locale),
-            renewal: fillStory(WS1_COPY['pricing.pass.renewal'], locale),
-            features: fillStoryList(WS1_COPY['pricing.pass.features'], locale),
-            cta: fillStory(WS1_COPY['pricing.pass.cta'], locale),
-            expand: null,
-            paid: true,
-          },
-        ]
-      : []),
+    {
+      id: 'pass' as const,
+      name: fillStory(WS1_COPY['pricing.pass.name'], locale),
+      tagline: fillStory(WS1_COPY['pricing.pass.tagline'], locale),
+      price: passAmount(locale),
+      suffix: fillStory(WS1_COPY['pricing.pass.priceSuffix'], locale),
+      renewal: fillStory(WS1_COPY['pricing.pass.renewal'], locale),
+      features: fillStoryList(WS1_COPY['pricing.pass.features'], locale),
+      cta: fillStory(WS1_COPY['pricing.pass.cta'], locale),
+      expand: null,
+      paid: true,
+    },
     {
       id: 'plus' as const,
       name: fillStory(WS1_COPY['pricing.plus.name'], locale),
@@ -145,27 +138,18 @@ export function PricingStory({
       <p>{fillStory(WS1_COPY['pricing.taxes'], locale)}</p>
       <section>
         <h2>{fillStory(WS1_COPY['pricing.faq.charged.q'], locale)}</h2>
-        <p>
-          {fillStory(
-            WS1_COPY[passEnabled ? 'pricing.faq.charged.a' : 'pricing.faq.charged.a.passOff'],
-            locale,
-          )}
-        </p>
+        <p>{fillStory(WS1_COPY['pricing.faq.charged.a'], locale)}</p>
         <h2>{fillStory(WS1_COPY['pricing.faq.refunds.q'], locale)}</h2>
         <p>
           {fillStory(WS1_COPY['pricing.faq.refunds.a'], locale)}{' '}
           <Link href="/refunds">{fillStory(WS1_COPY['cancel.refundLink'], locale)}</Link>
         </p>
-        {passEnabled ? (
-          <>
-            <h2>{fillStory(WS1_COPY['pricing.faq.passEnds.q'], locale)}</h2>
-            <p>{fillStory(WS1_COPY['pricing.faq.passEnds.a'], locale)}</p>
-          </>
-        ) : null}
+        <h2>{fillStory(WS1_COPY['pricing.faq.passEnds.q'], locale)}</h2>
+        <p>{fillStory(WS1_COPY['pricing.faq.passEnds.a'], locale)}</p>
         <h2>{fillStory(WS1_COPY['pricing.faq.taxes.q'], locale)}</h2>
         <p>{fillStory(WS1_COPY['pricing.faq.taxes.a'], locale)}</p>
         <h2>{fillStory(WS1_COPY['pricing.faq.india.q'], locale)}</h2>
-        <p>{indiaFaqAnswer(passEnabled, 'inr', inrPaused || !rupeePurchasesOpen)}</p>
+        <p>{indiaFaqAnswer('inr', inrPaused || !rupeePurchasesOpen)}</p>
       </section>
       <section data-testid="price-promise">
         <h2>{fillStory(WS1_COPY['pricing.promise.title'], locale)}</h2>
@@ -250,5 +234,20 @@ function StoryCard({
         </p>
       ) : null}
     </article>
+  );
+}
+
+function CheckGlyph({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d="M3.5 8.5l3 3 6-7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }

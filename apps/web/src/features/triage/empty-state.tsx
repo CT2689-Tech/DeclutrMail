@@ -2,20 +2,19 @@
 
 import type { ReactNode } from 'react';
 import { Button, EmptyState, tokens } from '@declutrmail/shared';
-import { meterChipLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { meterChipLine, METER } from '@declutrmail/shared/entitlements';
 import type { TriageSessionStats } from './data';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { useCleanupSummary } from '@/features/billing/use-cleanup-summary';
 import { meterChipSentence } from '@/features/home/home-deck-copy';
 
 const { color, font, radius, text } = tokens;
-const FREE_CLEANUP_LIMIT = TIER_MANIFEST.free.cleanupActionsPerMonth;
 
-/** Non-metered fallback. The deck chip's reset clause is omitted without a real date. */
-function freeEmailsFallback(remaining: number, limit: number | null): string {
+/** Fallback without a meter summary. The deck chip's reset clause is omitted without a real date. */
+function freeEmailsFallback(remaining: number): string {
   const line = meterChipLine({
     remaining,
-    limit: limit ?? 0,
+    limit: METER.free.limit,
     resetAt: '2000-01-01T00:00:00.000Z',
   }).text;
   const mark = ' \u00b7 ';
@@ -254,7 +253,7 @@ export function TriageEmptyState({
           }}
         >
           <span style={{ fontSize: text.sm, color: color.fgSoft }}>
-            {meterLine?.text ?? freeEmailsFallback(stats.freeRemaining ?? 0, FREE_CLEANUP_LIMIT)}
+            {meterLine?.text ?? freeEmailsFallback(stats.freeRemaining ?? 0)}
           </span>
           <Button tone="primary" size="md" onClick={onOpenUpgrade ?? (() => {})}>
             See Plus

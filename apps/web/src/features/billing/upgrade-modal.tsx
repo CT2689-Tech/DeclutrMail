@@ -20,12 +20,7 @@ import {
 import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
-import {
-  formatBillingMonthDay,
-  launchPlusQuote,
-  moneyBackNote,
-  quotedPlanPrice,
-} from './billing-model';
+import { formatBillingMonthDay, launchPlusQuote, MONEY_BACK_NOTE } from './billing-model';
 import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
 
 const { color, radius, shadow, space, text } = tokens;
@@ -56,7 +51,7 @@ export function UpgradeModal() {
   const hit = useUpgradeGateStore((s) => s.hit);
   const dismiss = useUpgradeGateStore((s) => s.dismiss);
   const applyWindowPreset = useUpgradeGateStore((s) => s.applyWindowPreset);
-  const { tier, pricingV2, passEnabled } = useTier();
+  const { tier } = useTier();
   const from = useUpgradeReturnTo();
 
   useEffect(() => {
@@ -100,35 +95,28 @@ export function UpgradeModal() {
 
   // ONE checkout path (D117): the CTA deep-links the nudged plan into
   // /billing's confirm step via the same validated intent the pricing
-  // page uses. Launch pricing sells Plus annual. Flags off still quotes
-  // the monthly price the link buys.
+  // page uses. Launch pricing sells Plus annual.
   const isPassSecondAccount = hit.reason === 'pass_second_account';
   const targetPlan: 'plus' | 'pro' =
     hit.reason === 'free_cap' || isPassSecondAccount ? 'plus' : (requiredTier ?? 'pro');
-  const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
   const upgradeHref = billingIntentPath({
     plan: targetPlan,
-    cycle: checkoutCycle,
+    cycle: 'annual',
     ...(from ? { from } : {}),
   });
   const freeCap = hit.reason === 'free_cap' ? hit.details : null;
   const meteredCap = freeCap !== null && typeof freeCap.requested === 'number';
   // The emails-cleared popup already uses deck buttons. This is the
-  // other free-cap confirm, whose old label was not a deck string.
+  // other free-cap confirm, whose old label was not a deck string. Its
+  // link buys Plus, so it names Plus (not the Pass, which it does not buy).
   const limitConfirmLabel =
-    pricingV2 && freeCap !== null && !meteredCap
-      ? fillStory(
-          passEnabled ? WS1_COPY['cap.pass.button'] : WS1_COPY['cap.plus.button'],
-          visitorLocale,
-        )
-      : null;
+    freeCap !== null && !meteredCap ? fillStory(WS1_COPY['cap.plus.button'], visitorLocale) : null;
   const upgradeLabel = limitConfirmLabel ?? `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
+  // Pro is waitlist only, so only Plus carries a quote.
   const targetQuote =
-    limitConfirmLabel !== null
-      ? null
-      : pricingV2 && targetPlan === 'plus'
-        ? launchPlusQuote(regionProvider, visitorLocale)
-        : quotedPlanPrice(targetPlan, 'monthly', regionProvider);
+    limitConfirmLabel === null && targetPlan === 'plus'
+      ? launchPlusQuote(regionProvider, visitorLocale)
+      : null;
 
   return (
     <DialogFrame
@@ -221,7 +209,7 @@ export function UpgradeModal() {
           <>Disconnect an account from the account menu to connect a different one.</>
         )}
       </p>
-      {hit.reason === 'free_cap' && (pricingV2 || meteredCap) ? (
+      {hit.reason === 'free_cap' ? (
         <p
           style={{
             fontSize: text.md,
@@ -271,41 +259,37 @@ export function UpgradeModal() {
           </>
         ) : nudge && hit.reason === 'free_cap' && typeof hit.details.requested === 'number' ? (
           <>
-            {pricingV2 && passEnabled ? (
-              <Link
-                href={billingIntentPath({
-                  plan: 'plus',
-                  cycle: 'annual',
-                  offer: 'pass_onetime',
-                  ...(from ? { from } : {}),
-                })}
-                onClick={() => {
-                  void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'pass' });
-                  void track('pass_selected', { source: 'upgrade_modal' });
-                  dismiss();
-                }}
-                data-dm-button=""
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  minHeight: 50,
-                  padding: '10px 20px',
-                  background: color.primary,
-                  color: color.fgInverse,
-                  borderRadius: radius.pill,
-                  textDecoration: 'none',
-                  fontWeight: 600,
-                }}
-              >
-                {fillStory(WS1_COPY['cap.pass.button'], visitorLocale)}
-              </Link>
-            ) : null}
-            {pricingV2 && passEnabled ? (
-              <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                {fillStory(WS1_COPY['cap.pass.sublabel'], visitorLocale)}
-              </span>
-            ) : null}
+            <Link
+              href={billingIntentPath({
+                plan: 'plus',
+                cycle: 'annual',
+                offer: 'pass_onetime',
+                ...(from ? { from } : {}),
+              })}
+              onClick={() => {
+                void track('upgrade_cta_clicked', { source: 'upgrade_modal', plan: 'pass' });
+                void track('pass_selected', { source: 'upgrade_modal' });
+                dismiss();
+              }}
+              data-dm-button=""
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: 50,
+                padding: '10px 20px',
+                background: color.primary,
+                color: color.fgInverse,
+                borderRadius: radius.pill,
+                textDecoration: 'none',
+                fontWeight: 600,
+              }}
+            >
+              {fillStory(WS1_COPY['cap.pass.button'], visitorLocale)}
+            </Link>
+            <span style={{ fontSize: text.sm, color: color.fgMuted }}>
+              {fillStory(WS1_COPY['cap.pass.sublabel'], visitorLocale)}
+            </span>
             {typeof hit.details.suggestedPreset === 'number' ? (
               <>
                 <Button
@@ -393,10 +377,7 @@ export function UpgradeModal() {
             </Link>
             {limitConfirmLabel !== null ? (
               <span style={{ fontSize: text.sm, color: color.fgMuted }}>
-                {fillStory(
-                  passEnabled ? WS1_COPY['cap.pass.sublabel'] : WS1_COPY['cap.plus.sublabel'],
-                  visitorLocale,
-                )}
+                {fillStory(WS1_COPY['cap.plus.sublabel'], visitorLocale)}
               </span>
             ) : null}
           </>
@@ -406,7 +387,7 @@ export function UpgradeModal() {
       {/* The money-back note and the plan comparison — once, quiet. */}
       {nudge && !isPassSecondAccount ? (
         <p style={{ margin: `${space[3]}px 0 0`, fontSize: text.sm, color: color.fgMuted }}>
-          {moneyBackNote(pricingV2)} ·{' '}
+          {MONEY_BACK_NOTE} ·{' '}
           <Link
             href={`/billing${from ? `?${new URLSearchParams({ from })}` : ''}`}
             onClick={dismiss}

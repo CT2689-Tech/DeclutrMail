@@ -46,10 +46,9 @@ export const unsubscribeIntentRequestSchema = z
   .object({
     senderId: z.string().uuid(),
     /**
-     * True when this same confirmation will enqueue a separate Archive /
-     * Delete backlog action. Optional for backwards-compatible clients;
-     * parsed output is always boolean so the controller cannot forget the
-     * one-vs-two-unit Free quota preflight.
+     * Accepted and ignored. Clients still send it, and the schema is
+     * strict. Unsubscribe draws nothing from the Free meter; a separate
+     * Archive / Delete backlog action is metered on its own enqueue.
      */
     includesBacklogAction: z.boolean().default(false),
     /**

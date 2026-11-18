@@ -14,10 +14,6 @@ export const billingKeys = {
    * the payment-processing and refund-settling states run.
    */
   invoices: () => [...billingKeys.all, 'invoices'] as const,
-  /** QA-billing-20260901-09 — Founding Pro slot availability, its own
-   *  key: it's read-only workspace-agnostic data, not part of the
-   *  subscription payload and must not ride its poll. */
-  foundingRemaining: () => [...billingKeys.all, 'founding-remaining'] as const,
   /** One checkout attempt by id, asked once per hold. `absenceIsFinal`
    *  is in the key because a 404 means something new once it flips. */
   checkoutAttempt: (workspaceId: string, attemptId: string, absenceIsFinal: boolean) =>

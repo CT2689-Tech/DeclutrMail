@@ -44,7 +44,7 @@ export function stackEnvironment(input) {
     BILLING_ENABLED: 'true',
     PADDLE_ENV: 'sandbox',
     PADDLE_WEBHOOK_SECRET: 'e2e_local_paddle_webhook_secret',
-    BILLING_CATALOG_JSON: '{"paddle":{"pro_monthly":"pri_e2e_pro_monthly"}}',
+    BILLING_CATALOG_JSON: '{"paddle":{"plus_annual":"pri_e2e_plus_annual"}}',
     // Opt-in only for the browser suite, which intercepts the dummy-key traffic.
     NEXT_PUBLIC_POSTHOG_KEY: input.E2E_POSTHOG === '1' ? 'phc_e2e_dummy' : '',
   };

@@ -5,8 +5,7 @@
 
 import type { ActionTier } from '../contracts/verb-constants';
 import { ACTION_TIER_RANK } from '../contracts/verb-constants';
-import { isPricingV2 } from './copy';
-import { INBOXES, TIER_MANIFEST } from './pricing.config';
+import { TIER_MANIFEST } from './pricing.config';
 import { TIER_IDS, type Capability, type TierDefinition, type TierId } from './types';
 
 /** The full manifest entry for a tier. */
@@ -28,16 +27,14 @@ export function minimumTierForCapability(capability: Capability): TierId {
   return tier;
 }
 
-/** Connected-Gmail-account limit. `PRICING_V2` uses `INBOXES` (Plus is 2). */
-/** `pricingV2` defaults to this process's flag; the browser has none, so it passes `me`'s. */
-export function inboxLimitFor(id: TierId, pricingV2: boolean = isPricingV2()): number {
-  if (pricingV2 && (id === 'free' || id === 'plus' || id === 'pro')) return INBOXES[id];
+/** Connected-Gmail-account limit. */
+export function inboxLimitFor(id: TierId): number {
   return TIER_MANIFEST[id].inboxLimit;
 }
 
-/** Self-serve checkout. Pro is waitlist-only while `PRICING_V2` is on. */
+/** Self-serve checkout. Pro is waitlist-only (founder decision "1C"). */
 export function tierIsPurchasable(id: TierId): boolean {
-  if (isPricingV2() && id === 'pro') return false;
+  if (id === 'pro') return false;
   return TIER_MANIFEST[id].purchasable;
 }
 
@@ -66,16 +63,6 @@ export const MIN_UNDO_WINDOW_DAYS = Math.min(
 export const MAX_UNDO_WINDOW_DAYS = Math.max(
   ...TIER_IDS.map((id) => TIER_MANIFEST[id].undoWindowDays),
 );
-
-/**
- * Monthly cleanup-action quota — Free = 50/month on the signup
- * anniversary, everything else `null` (unlimited). Drawn down by verbs
- * whose `COUNTS_AS_CLEANUP` entry is true (pricing.config.ts). The
- * period itself is computed server-side (`cleanupPeriodFor`).
- */
-export function cleanupActionsPerMonthFor(id: TierId): number | null {
-  return TIER_MANIFEST[id].cleanupActionsPerMonth;
-}
 
 /**
  * THE seam with the Action Registry: does a workspace tier meet a verb

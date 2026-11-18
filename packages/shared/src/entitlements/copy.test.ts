@@ -7,8 +7,6 @@ import {
   buildOffersJsonLd,
   fillStory,
   indiaFaqAnswer,
-  isBillingPassEnabled,
-  isPricingV2,
   passSecondAccountCta,
   passSecondAccountMessage,
   passSecondAccountTitle,
@@ -37,38 +35,16 @@ import {
 import { WS1_COPY } from '../copy/launch';
 import { POLICY } from './pricing.config';
 
-describe('isPricingV2', () => {
-  const previous = process.env.PRICING_V2;
-
-  function restore(): void {
-    if (previous === undefined) delete process.env.PRICING_V2;
-    else process.env.PRICING_V2 = previous;
-  }
-
-  it('is on only when the server env is the string true', () => {
-    delete process.env.PRICING_V2;
-    expect(isPricingV2()).toBe(false);
-    process.env.PRICING_V2 = 'false';
-    expect(isPricingV2()).toBe(false);
-    process.env.PRICING_V2 = 'true';
-    expect(isPricingV2()).toBe(true);
-    restore();
-  });
-
-  it('does not read a public Next flag', () => {
+describe('pricing copy source', () => {
+  it('reads no env flag', () => {
     const source = readFileSync(new URL('./copy.ts', import.meta.url), 'utf8');
     expect(source).not.toContain('NEXT_PUBLIC_');
+    expect(source).not.toMatch(/PRICING_V2|METER_V2|BILLING_PASS_ENABLED/);
   });
 });
 
 describe('emails-cleared meter helpers', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('stamps free archive and delete emails only while the meter is on', () => {
-    expect(quotaUnitsForEnqueue({ tier: 'free', verb: 'archive', requestedCount: 12 })).toBe(0);
-    vi.stubEnv('METER_V2', 'true');
+  it('stamps Free archive and delete emails only', () => {
     expect(quotaUnitsForEnqueue({ tier: 'free', verb: 'archive', requestedCount: 12 })).toBe(12);
     expect(quotaUnitsForEnqueue({ tier: 'free', verb: 'delete', requestedCount: 3 })).toBe(3);
     expect(quotaUnitsForEnqueue({ tier: 'plus', verb: 'delete', requestedCount: 12 })).toBe(0);
@@ -178,9 +154,19 @@ describe('pricing story builders', () => {
     vi.unstubAllEnvs();
   });
 
-  it('lists the Free offer while paid offers stay unlisted', () => {
-    vi.stubEnv('PRICING_V2', '');
-    expect(buildOffersJsonLd({ plus: true, pass: true })).toEqual([
+  it('snapshots listed JSON-LD and markdown', () => {
+    // Real price ids are listed (founder decision 2026-11-17); INR only while
+    // rupee checkout is open (ADR-0045). The Pass is always purchasable now.
+    const currencies = () =>
+      buildOffersJsonLd().map((offer) => (offer as { priceCurrency: string }).priceCurrency);
+    vi.stubEnv('PADDLE_ENV', 'production');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', '');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', '');
+    expect(currencies()).toEqual(['USD', 'USD', 'USD']);
+    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_live_india_plus');
+    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_live_india_pass');
+    expect(buildOffersJsonLd()).toEqual(buildOffersJsonLd({ plus: true, pass: true }));
+    expect(buildOffersJsonLd().slice(0, 1)).toEqual([
       {
         '@type': 'Offer',
         name: 'Free',
@@ -189,35 +175,6 @@ describe('pricing story builders', () => {
         url: 'https://declutrmail.com/pricing',
       },
     ]);
-    expect(renderPricingMarkdown(true)).toBe('');
-  });
-
-  it('snapshots listed JSON-LD and markdown while the flag is on', () => {
-    vi.stubEnv('PRICING_V2', 'true');
-    // Real price ids are listed (founder decision 2026-11-17); the Pass only
-    // while it can be bought, and INR only while rupee checkout is open
-    // (ADR-0045).
-    const currencies = () =>
-      buildOffersJsonLd().map((offer) => (offer as { priceCurrency: string }).priceCurrency);
-    vi.stubEnv('BILLING_PASS_ENABLED', 'false');
-    vi.stubEnv('PADDLE_ENV', 'production');
-    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', '');
-    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', '');
-    expect(currencies()).toEqual(['USD', 'USD']);
-    vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_live_india_plus');
-    vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_live_india_pass');
-    expect(currencies()).toEqual(['USD', 'USD', 'INR']);
-    const live = buildOffersJsonLd();
-    expect(live[0]).toEqual({
-      '@type': 'Offer',
-      name: 'Free',
-      price: '0',
-      priceCurrency: 'USD',
-      url: 'https://declutrmail.com/pricing',
-    });
-    expect(live[1]).toMatchObject({ name: 'Plus', price: 59 });
-    vi.stubEnv('BILLING_PASS_ENABLED', 'true');
-    expect(buildOffersJsonLd()).toEqual(buildOffersJsonLd({ plus: true, pass: true }));
     const listed = buildOffersJsonLd({ plus: true, pass: true });
     expect(listed).toHaveLength(4);
     expect(listed[1]).toMatchObject({
@@ -232,7 +189,7 @@ describe('pricing story builders', () => {
       priceCurrency: 'USD',
     });
     expect(JSON.stringify(listed)).not.toContain('Pro');
-    const markdown = renderPricingMarkdown(true);
+    const markdown = renderPricingMarkdown();
     expect(markdown).toContain('1,000 emails cleared a month');
     expect(markdown).toContain('Backlog Pass');
     expect(WS1_COPY['pricing.pass.features']).toEqual([
@@ -263,46 +220,29 @@ describe('pricing story builders', () => {
     expect(passBlock).not.toContain('{freeName}');
     expect(markdown).not.toContain('No monthly limit while it lasts');
     expect(markdown).not.toContain('Autopilot and Autopilot');
-    expect(renderPricingMarkdown(false)).not.toContain('## Backlog Pass');
-  });
-
-  it('renders launch markdown from an explicit flag when the env is off', () => {
-    vi.stubEnv('PRICING_V2', '');
-    vi.stubEnv('BILLING_PASS_ENABLED', '');
-    const markdown = renderPricingMarkdown(true, true);
-    expect(markdown).toContain('## Backlog Pass');
     expect(markdown).toContain('$59 a year');
     expect(markdown).toContain('$19 once');
     expect(markdown).not.toContain('$9/mo');
-    expect(renderPricingMarkdown(true, false)).toBe('');
   });
 
-  it('derives the India pass-off answer and the dunning window', () => {
-    expect(indiaFaqAnswer(false)).not.toContain('Backlog Pass');
-    expect(indiaFaqAnswer(true)).toContain('Backlog Pass');
-    for (const passEnabled of [false, true]) {
-      for (const locale of ['usd', 'inr'] as const) {
-        expect(indiaFaqAnswer(passEnabled, locale)).not.toContain('You can pay with UPI');
-      }
+  it('derives the India answer and the dunning window', () => {
+    expect(indiaFaqAnswer()).toContain('Backlog Pass');
+    for (const locale of ['usd', 'inr'] as const) {
+      expect(indiaFaqAnswer(locale)).not.toContain('You can pay with UPI');
     }
     expect(termsPastDue()).toContain(`${POLICY.dunningDays} days`);
   });
 
   it('uses the paused India answer only while new INR purchases are paused', () => {
-    const paused = indiaFaqAnswer(true, 'inr', true);
-    const open = indiaFaqAnswer(true, 'inr', false);
+    const paused = indiaFaqAnswer('inr', true);
+    const open = indiaFaqAnswer('inr', false);
     expect(paused).toBe(fillStory(WS1_COPY['pricing.faq.india.a.paused'], 'inr'));
     expect(open).toBe(fillStory(WS1_COPY['pricing.faq.india.a'], 'inr'));
     expect(paused).toContain('Buying in rupees is paused for now');
     expect(paused).not.toContain('You can pay with UPI');
     expect(open).not.toContain('You can pay with UPI');
     expect(open).not.toContain('paused for now');
-    expect(indiaFaqAnswer(false, 'inr', true)).not.toContain('Backlog Pass');
-    expect(indiaFaqAnswer(false, 'inr', true)).toContain('Buying in rupees is paused for now');
-    expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('Backlog Pass');
-    expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('paused for now');
-    expect(indiaFaqAnswer(false, 'inr', false)).not.toContain('You can pay with UPI');
-    expect(indiaFaqAnswer(true)).toBe(indiaFaqAnswer(true, 'inr', !indiaPaddlePricesConfigured()));
+    expect(indiaFaqAnswer()).toBe(indiaFaqAnswer('inr', !indiaPaddlePricesConfigured()));
     expect(INR_CHECKOUT_PAUSED_MESSAGE).toBe(WS1_COPY['pricing.inrPaused.checkout']);
   });
 
@@ -317,12 +257,5 @@ describe('pricing story builders', () => {
     );
     expect(passSecondAccountCta()).toBe(`Get ${planName('plus')}`);
     expect(WS1_COPY['cap.pass.secondAccount.dismiss']).toBe('Not now');
-  });
-
-  it('reads BILLING_PASS_ENABLED only as the string true', () => {
-    vi.stubEnv('BILLING_PASS_ENABLED', 'false');
-    expect(isBillingPassEnabled()).toBe(false);
-    vi.stubEnv('BILLING_PASS_ENABLED', 'true');
-    expect(isBillingPassEnabled()).toBe(true);
   });
 });

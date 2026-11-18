@@ -54,7 +54,6 @@ export function CancelModal({
   onPause,
   isPausing,
   pauseError,
-  pricingV2 = false,
 }: {
   open: boolean;
   /** The record this cancel targets — backing or non-backing (A6). */
@@ -77,8 +76,6 @@ export function CancelModal({
   onPause: () => void;
   isPausing: boolean;
   pauseError: string | null;
-  /** Launch flag. Off keeps the pre-launch founding cancel sentence. */
-  pricingV2?: boolean;
   /** Accepted for callers; the sheet is a bottom sheet on phones by
    *  itself now (`PreviewSheet` is CSS-responsive). */
   variant?: 'modal' | 'sheet';
@@ -146,11 +143,7 @@ export function CancelModal({
           {sub.foundingMember ? (
             <>
               {' '}
-              <span>
-                {pricingV2
-                  ? WS1_COPY['cancel.founding']
-                  : 'You\u2019re a Founding Pro member — this locked price doesn\u2019t come back once canceled and the 250 slots fill up.'}
-              </span>
+              <span>{WS1_COPY['cancel.founding']}</span>
             </>
           ) : null}
         </>
@@ -172,9 +165,7 @@ export function CancelModal({
       cancelLabel={backsEntitlement ? 'Keep current plan' : 'Never mind'}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: space[4], textAlign: 'left' }}>
-        {backsEntitlement ? (
-          <PlanConsequences fromTier={entitlementTier} toTier="free" pricingV2={pricingV2} />
-        ) : null}
+        {backsEntitlement ? <PlanConsequences fromTier={entitlementTier} toTier="free" /> : null}
         {/* D118's retention offer. Offered only where it can actually
             work: Paddle (Razorpay has no pause primitive we drive —
             `PAUSE_UNSUPPORTED`), on an active row that is not already on

@@ -5,7 +5,7 @@ import { expectScreenMounted } from '../helpers/screen-ready';
 import { ApiClient, requireLiveStack } from '../helpers/api';
 import { dbConnect } from '../helpers/db';
 import { applyJourneySeed } from '../helpers/seed-journeys';
-import { BILLING_SEED } from '../helpers/seed-billing';
+import { BILLING_SEED, exhaustFreeMeter } from '../helpers/seed-billing';
 
 /**
  * Signed-in Unsubscribe + backlog through the real screens.
@@ -203,7 +203,7 @@ test('inline Triage Unsubscribe + Delete previews archived scope and cancels wit
 test('Triage and Senders confirm unsubscribe with archive and delete', async ({ page }) => {
   test.setTimeout(180_000);
   const senderName = BILLING_SEED.archiveSenderName;
-  const me = await api.get<{ meterV2?: boolean; cleanupRemaining?: number | null }>('/api/auth/me');
+  const me = await api.get<{ cleanupRemaining?: number | null }>('/api/auth/me');
 
   await page.goto('/triage');
   await expectScreenMounted(page);
@@ -230,15 +230,10 @@ test('Triage and Senders confirm unsubscribe with archive and delete', async ({ 
   await expect(triageSheet).toBeVisible();
   await expect(triageSheet).toContainText('Whether their email stops is up to the sender.');
   await expect(triageSheet).toContainText(/Future emails:/);
-  // The free sentence is for a metered workspace. Pro stays unmetered
-  // even when METER_V2 is on, so the flag alone does not put it on screen.
-  if (me.meterV2 === true && typeof me.cleanupRemaining === 'number') {
+  // The free sentence is for a metered workspace. Pro stays unmetered,
+  // so it never shows there.
+  if (typeof me.cleanupRemaining === 'number') {
     await expect(triageSheet).toContainText('Unsubscribing is free and doesn’t count.');
-  } else if (me.meterV2 !== true && typeof me.cleanupRemaining === 'number') {
-    await expect(triageSheet).toContainText(
-      `This clears 1 email. You have ${me.cleanupRemaining} free this month.`,
-    );
-    await expect(triageSheet).not.toContainText('Uses 2 ');
   } else {
     await expect(triageSheet).not.toContainText('Unsubscribing is free and doesn’t count.');
     await expect(triageSheet).not.toContainText('cleanup action');
@@ -454,21 +449,7 @@ test('a spent monthly allowance refuses the mail move before any unsubscribe', a
         AND created_at >= ${testStart.toISOString()}
         AND idempotency_key NOT LIKE ${BILLING_SEED.quotaKeyPrefix + '%'}
     `;
-    const allowance = await api.get<{
-      meterV2?: boolean;
-      cleanupLimit?: number | null;
-    }>('/api/auth/me');
-    // Flags-off spends cleanup actions in the billing seed. The email
-    // meter sums quota_units, which those rows leave at 0, so a Free
-    // archive still fits until one row holds the whole allowance.
-    if (allowance.meterV2 === true && typeof allowance.cleanupLimit === 'number') {
-      await sql`
-        UPDATE action_jobs
-        SET quota_units = ${allowance.cleanupLimit}
-        WHERE mailbox_account_id = ${mailboxId}
-          AND idempotency_key = ${BILLING_SEED.quotaKeyPrefix + '1'}
-      `;
-    }
+    await exhaustFreeMeter(sql);
     await page.goto('/senders');
     await expectScreenMounted(page);
     const card = page.getByTestId(`sender-row-${BILLING_SEED.archiveSenderId}`);

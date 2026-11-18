@@ -25,10 +25,7 @@ import { comparisonBySlug } from '@/features/marketing/comparison/comparison-dat
 import { alt as defaultCardAlt, size as defaultCardSize } from '../opengraph-image';
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
-import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
-
-/** Flag-off metadata. `generateMetadata` returns this unless PRICING_V2 is on. */
-const pricing = pricingPageMetadata(false);
+import { metadata as pricing } from './pricing/page';
 import { metadata as privacy } from './privacy/page';
 import { metadata as terms } from './terms/page';
 import { metadata as refunds } from './refunds/page';
@@ -118,23 +115,15 @@ describe('the blog index title — D250 §3.6 row 21', () => {
   });
 });
 
-const PRICING_META_PASS_OFF =
-  'Free is $0 with 1,000 emails cleared a month and unlimited unsubscribes. Plus is $59 a year. 30-day Undo on every plan.';
-const PRICING_META_PASS_ON =
+const PRICING_META =
   'Free is $0 with 1,000 emails cleared a month and unlimited unsubscribes. The Backlog Pass is $19 once. Plus is $59 a year. 30-day Undo on every plan.';
 
-describe('pricing metadata follows the launch flag', () => {
-  it('keeps today’s description while the flag is off and the deck meta description while it is on', () => {
-    expect(pricingPageMetadata(false).description).toBe(pricing.description);
-    const passOff = pricingPageMetadata(true, false);
-    const passOn = pricingPageMetadata(true, true);
-    expect(passOff.description).toBe(PRICING_META_PASS_OFF);
-    expect(passOn.description).toBe(PRICING_META_PASS_ON);
-    expect(passOff.description).not.toContain('Backlog Pass');
-    expect(passOn.openGraph).toMatchObject({ description: PRICING_META_PASS_ON });
-    expect(passOff.openGraph).toMatchObject({ description: PRICING_META_PASS_OFF });
-    expect(passOn.twitter).toMatchObject({ description: PRICING_META_PASS_ON });
-    expect(pricingPageMetadata(true, true).alternates?.canonical).toBe('/pricing');
+describe('pricing metadata', () => {
+  it('uses the deck meta description, Pass included', () => {
+    expect(pricing.description).toBe(PRICING_META);
+    expect(pricing.openGraph).toMatchObject({ description: PRICING_META });
+    expect(pricing.twitter).toMatchObject({ description: PRICING_META });
+    expect(pricing.alternates?.canonical).toBe('/pricing');
   });
 });
 
@@ -352,9 +341,7 @@ describe('marketing metadata guards', () => {
       'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
     );
     expect(titleText(pricing)).toBe('Pricing: free email cleanup and paid plans — DeclutrMail');
-    expect(pricing.description).toBe(
-      'Free includes manual sender cleanup. Plus adds Screener, Autopilot and Quiet hours with no monthly limit. Pro adds the Daily Brief, Follow-ups and more inboxes.',
-    );
+    expect(pricing.description).toBe(PRICING_META);
     expect(titleText(security)).toBe('Security — DeclutrMail');
     expect(security.description).toBe(
       'DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and has Google OAuth verification approved April 21, 2026.',

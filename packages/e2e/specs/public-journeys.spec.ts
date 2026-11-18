@@ -51,12 +51,6 @@ test('signed-out Backlog Pass choice survives permissions to the OAuth boundary'
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/pricing?ref=simulator');
   await consent(page);
-  if (process.env.PRICING_V2 !== 'true' || process.env.BILLING_PASS_ENABLED !== 'true') {
-    await expect(page.getByRole('button', { name: 'Get Backlog Pass', exact: true })).toHaveCount(
-      0,
-    );
-    return;
-  }
   await page.getByRole('button', { name: 'Get Backlog Pass', exact: true }).click();
   await expect(page).toHaveURL(/\/sign-in\?returnTo=/);
   const destination = '/billing?plan=plus&cycle=annual&offer=pass_onetime';
@@ -75,23 +69,12 @@ test('guide visitor evaluates privacy and pricing, tries cleanup and undo, then 
   await consent(page);
   await follow(page, '/methodology');
   await follow(page, '/pricing');
-  if (process.env.PRICING_V2 === 'true') {
-    const heading =
-      process.env.BILLING_PASS_ENABLED === 'true'
-        ? 'Free to start. Pay once to clear the rest.'
-        : 'Free to start. Upgrade when you want more.';
-    await expect(page.getByRole('heading', { level: 1 })).toHaveText(heading);
-    // The feature expander is hidden at the desktop viewport this lane uses.
-    await page.getByRole('link', { name: 'Join the Pro waitlist', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Pro is coming', exact: true })).toBeVisible();
-  } else {
-    const monthly = page.getByRole('button', { name: 'Monthly', exact: true });
-    await monthly.click();
-    await expect(monthly).toHaveAttribute('aria-pressed', 'true');
-    const annual = page.getByRole('button', { name: 'Annual — 2 months free', exact: true });
-    await annual.click();
-    await expect(annual).toHaveAttribute('aria-pressed', 'true');
-  }
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(
+    'Free to start. Pay once to clear the rest.',
+  );
+  // The feature expander is hidden at the desktop viewport this lane uses.
+  await page.getByRole('link', { name: 'Join the Pro waitlist', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Pro is coming', exact: true })).toBeVisible();
   await follow(page, '/inbox-simulator?workspace=senders');
   // The demo is the product's Senders screen over a sample mailbox.
   await page.getByRole('button', { name: /^Select \d+ shown$/ }).click();

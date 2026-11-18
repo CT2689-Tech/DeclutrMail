@@ -5,7 +5,6 @@ import '@/features/marketing/comparison/comparison.css';
 
 import { ComparisonIndexScreen } from '@/features/marketing/comparison/comparison-screen';
 import { marketingPageMetadata } from '@/features/marketing/page-metadata';
-import { loadPricingFlags } from '@/features/marketing/pricing/load-pricing-flags';
 
 export const metadata: Metadata = marketingPageMetadata({
   // No "best". The page's whole argument is that it does not rank, and a
@@ -18,7 +17,6 @@ export const metadata: Metadata = marketingPageMetadata({
   path: '/compare',
 });
 
-export default async function ComparePage() {
-  const flags = await loadPricingFlags();
-  return <ComparisonIndexScreen pricingV2={flags.pricingV2} passEnabled={flags.passEnabled} />;
+export default function ComparePage() {
+  return <ComparisonIndexScreen />;
 }
