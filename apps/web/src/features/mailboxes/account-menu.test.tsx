@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { OVERLAY_Z } from '@declutrmail/shared';
+import { plusConnectCta } from '@declutrmail/shared/entitlements';
 
 import type { Me, MeMailbox } from '@/features/auth/api/use-me';
 import type { TierEntitlements } from '@/features/auth/api/use-tier';
@@ -139,8 +140,6 @@ describe('AccountMenu Gmail reconnect health', () => {
       cleanupResetsAt: null,
       inboxLimit: 2,
       inboxLimitOwner: 'Pro',
-      pricingV2: false,
-      passEnabled: false,
       connectedInboxes: 2,
       atInboxLimit: true,
     };
@@ -384,9 +383,9 @@ describe('AccountMenu Gmail reconnect health', () => {
     expect(screen.getByTestId('inbox-limit-gate')).toHaveTextContent(
       /Pro includes 2 Gmail accounts\./,
     );
-    expect(screen.getByRole('link', { name: 'Upgrade to connect another →' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: plusConnectCta() })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
     expect(startMailboxConnectSpy).not.toHaveBeenCalled();
     expect(startMailboxReactivationSpy).not.toHaveBeenCalled();
@@ -401,7 +400,6 @@ describe('AccountMenu Gmail reconnect health', () => {
       inboxLimitReason: 'pass',
       connectedInboxes: 1,
       atInboxLimit: true,
-      pricingV2: true,
     };
     const { user } = await renderOpenMenu();
     await user.click(screen.getByRole('button', { name: 'Add Gmail account' }));

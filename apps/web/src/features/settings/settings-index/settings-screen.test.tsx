@@ -1447,7 +1447,6 @@ describe('SettingsScreen', () => {
       tier: 'plus',
       inboxLimit: 1,
       inboxLimitReason: 'pass',
-      pricingV2: true,
     };
     setSettingsLocation('source=oauth&connect_start_result=pass_second_account');
     renderScreen();
@@ -1468,7 +1467,6 @@ describe('SettingsScreen', () => {
       tier: 'plus',
       inboxLimit: 1,
       inboxLimitReason: 'pass',
-      pricingV2: true,
     };
     renderScreen();
 
@@ -1542,7 +1540,6 @@ describe('SettingsScreen', () => {
       ...makeMe([mailbox(MAILBOX_A, 'active@example.com')]),
       tier: 'plus',
       inboxLimit: 1,
-      pricingV2: true,
     };
     renderScreen();
     await waitFor(() =>
@@ -1562,7 +1559,6 @@ describe('SettingsScreen', () => {
       tier: 'plus',
       inboxLimit: 1,
       inboxLimitReason: 'pass',
-      pricingV2: true,
     };
     renderScreen();
     const reconnect = await screen.findByRole('button', { name: 'Reconnect old@example.com' });

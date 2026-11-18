@@ -12,7 +12,6 @@ import {
   OFFERS,
   PLUS_ANNUAL_2026_10,
   SANDBOX_PRICE_IDS,
-  TIER_MANIFEST,
   SANDBOX_INDIA_PRICE_IDS,
   indiaPaddlePriceId,
   ph30PriceIds,
@@ -91,19 +90,6 @@ function manifestPrices(): ManifestPriceCheck[] {
       ...(usdOnly ? { usdOnly: true } : {}),
     });
   };
-  for (const tier of [TIER_MANIFEST.plus, TIER_MANIFEST.pro]) {
-    for (const point of [tier.prices.monthly, tier.prices.annual]) {
-      if (!point) continue;
-      push(
-        point.paddlePriceId,
-        point.usdCents,
-        point.inr?.paise ?? point.inrPaise,
-        point.inr?.taxInclusive ?? false,
-      );
-    }
-  }
-  const founding = TIER_MANIFEST.pro.promo?.annual;
-  if (founding) push(founding.paddlePriceId, founding.usdCents, null, false);
   const sandbox = process.env.PADDLE_ENV === 'sandbox';
   push(
     sandbox ? SANDBOX_PRICE_IDS.plus_annual : PLUS_ANNUAL_2026_10.paddlePriceId,

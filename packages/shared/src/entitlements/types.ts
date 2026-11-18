@@ -10,18 +10,17 @@
 //
 //   - The registry declares only WHICH SELECTORS a verb supports; the
 //     pricing config (`pricing.config.ts` — SELECTOR_TIERS,
-//     SELECTOR_CAPS, COUNTS_AS_CLEANUP) resolves what a verb × selector
-//     COSTS. `ActionCapability` values are derived from the config at
+//     SELECTOR_CAPS) resolves what a verb × selector COSTS.
+//     `ActionCapability` values are derived from the config at
 //     registry construction.
 //   - This layer declares WHAT A TIER GRANTS: feature surfaces
-//     (`Capability`), inbox limit, undo window, and the monthly
-//     cleanup quota the config's `COUNTS_AS_CLEANUP` flags draw down.
+//     (`Capability`), inbox limit and undo window. Free's monthly
+//     allowance is `METER` in the pricing config.
 //
 // Composition (the later enforcement unit wires this; no guards here):
 // an action is permitted iff `satisfiesActionTier(workspace.tier,
-// actionCapability.tier)` AND, when `countsAsCleanup` and
-// `cleanupActionsPerMonthFor(tier)` is non-null, the workspace's
-// current-period counter is below that quota.
+// actionCapability.tier)` AND, on Free, the verb's `METER.countsVerbs`
+// units fit the workspace's current-period allowance.
 
 import type { ActionTier } from '../contracts/verb-constants';
 
@@ -45,9 +44,9 @@ export const TIER_RANK: Readonly<Record<TierId, number>> = {
  *
  *   - `senders` / `sender-detail` / `activity` — the Free read surfaces.
  *   - `cleanup-actions` — the K/A/U/L/D mutation pipeline. Present on
- *     every tier; the FREE quota (50/month, A3) lives on
- *     `cleanupActionsPerMonth`, not on capability presence. Per-verb /
- *     per-selector minimum tiers resolve from the pricing config.
+ *     every tier; Free's allowance lives on `METER`, not on capability
+ *     presence. Per-verb / per-selector minimum tiers resolve from the
+ *     pricing config.
  *   - `triage` — the core ritual (D29/D33); Free per A3.
  *   - `snoozed` — the Later apparatus; Free per A3 (follows the verb).
  *   - `autopilot` — D251. Rules may MATCH and the user approves
@@ -113,44 +112,6 @@ export interface PricePoint {
   readonly inr?: { readonly paise: number; readonly taxInclusive: true };
 }
 
-/** Per-interval prices. `null` = the interval is not offered for the tier. */
-export interface TierPrices {
-  readonly monthly: PricePoint | null;
-  readonly annual: PricePoint | null;
-}
-
-/** Launch promo ids. */
-export const PROMO_IDS = ['foundingPro'] as const;
-export type PromoId = (typeof PROMO_IDS)[number];
-
-/**
- * A launch promo price variant (D19 launch offer). A promo grants its
- * HOST tier's capabilities — it is a price point, never a sixth tier
- * (Founding Pro members are `pro` workspaces with
- * `founding_member = true`, which locks the price while the
- * subscription stays active).
- */
-export interface PromoDefinition {
-  readonly id: PromoId;
-  /** Display name ("Founding Pro"). */
-  readonly name: string;
-  /** Annual-only price point — promos have no monthly interval. */
-  readonly annual: PricePoint;
-  /** First-N paying users, counted across both providers (250). */
-  readonly maxRedemptions: number;
-}
-
-/**
- * Pricing-page row treatment for a non-purchasable tier (D19): `team`
- * renders a waitlist row, `enterprise` a contact-sales row. Present
- * exactly when `purchasable` is false.
- */
-export interface NonPurchasableRow {
-  readonly kind: 'waitlist' | 'contact';
-  /** Row copy ("Join the waitlist" / "Contact sales"). */
-  readonly label: string;
-}
-
 /**
  * ONE manifest entry per tier — the D19 ladder, machine-readable. All
  * pricing/limit knobs live HERE (manifest.ts) so a re-price is a
@@ -160,30 +121,16 @@ export interface TierDefinition<T extends TierId = TierId> {
   readonly id: T;
   /** Display name ("Free" / "Plus" / "Pro" / "Team" / "Enterprise"). */
   readonly name: string;
-  readonly prices: TierPrices;
-  /** Connected-Gmail-account limit (D19: Free 1 / Plus 1 / Pro 2). */
+  /** Connected-Gmail-account limit (`INBOXES` for the self-serve tiers). */
   readonly inboxLimit: number;
-  /** Undo retention window (D19: 7d; Pro+ 30d). Interacts with D232. */
+  /** Undo retention window. Interacts with D232. */
   readonly undoWindowDays: number;
-  /**
-   * Monthly cleanup-action quota drawn down by verbs whose
-   * `COUNTS_AS_CLEANUP` entry is true (A3). The period is anchored on
-   * the workspace's signup anniversary (`workspaces.created_at`) and
-   * computed server-side. `null` = unlimited (every paid tier);
-   * Free = 50/month.
-   */
-  readonly cleanupActionsPerMonth: number | null;
   readonly capabilities: readonly Capability[];
   /**
-   * Self-serve attainable at launch: signup (free) or checkout
-   * (plus/pro). `false` = team/enterprise — visible on the pricing page
-   * but with no purchase path (see `nonPurchasableRow`).
+   * `false` = team/enterprise, which have no purchase path. Pro is also
+   * withheld from checkout — read `tierIsPurchasable`, not this field.
    */
   readonly purchasable: boolean;
-  /** Required exactly when `purchasable` is false. */
-  readonly nonPurchasableRow?: NonPurchasableRow;
-  /** Launch promo price variant hosted by this tier (pro: Founding Pro). */
-  readonly promo?: PromoDefinition;
 }
 
 /** The manifest type — one definition per tier, enforced at compile time. */

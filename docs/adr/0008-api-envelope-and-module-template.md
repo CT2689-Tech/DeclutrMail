@@ -1,6 +1,6 @@
 # ADR-0008: API response envelope, NestJS module template, read-service pattern
 
-- **Status:** Accepted
+- **Status:** Accepted; §2–§3 amended 2026-11-17
 - **Date:** 2026-05-23
 - **Deciders:** founder, Claude (agent)
 - **Related D-decisions:** D201 (Standard NestJS modules + Adapter pattern), D202 (API response envelope + cursor pagination), D204 (Read-only services per feature + events for cross-feature writes)
@@ -77,6 +77,12 @@ cursor can at worst skip rows in the caller's own mailbox.
 shape). Controllers treat `null` as 400, not 500.
 
 ### 2. D201 module template
+
+> **Amended 2026-11-17.** §2's read-service rule and §3's event-projection rule are
+> conventions, not gates. A feature may read another feature's tables, and may write
+> them in the same transaction, when that is the simplest correct design. The outbox
+> is for async side effects. The exception register in §3 is history; new cross-feature
+> reads need no registration.
 
 Every feature module follows the same skeleton — established by
 `UndoModule`/`UndoController`/`UndoService` (PR #33):

@@ -1,7 +1,7 @@
 'use client';
 
 import { tokens } from '@declutrmail/shared';
-import { INBOXES, METER, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { inboxLimitFor, METER, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
 import { CAPABILITY_LABELS } from '@/features/marketing/pricing/pricing-model';
 
 const { color } = tokens;
@@ -19,18 +19,16 @@ export interface BillingComparisonRow {
 }
 
 /**
- * Included-features rows. Inbox counts follow `PRICING_V2` (`INBOXES`)
- * or the manifest. Emails cleared come from `METER`: Free is the
- * configured limit, and paid plans have no monthly limit. Capability
- * rows collapse when two capabilities share a label.
+ * Included-features rows. Inbox counts come from the manifest. Emails
+ * cleared come from `METER`: Free is the configured limit, and paid
+ * plans have no monthly limit. Capability rows collapse when two
+ * capabilities share a label.
  */
-export function billingComparisonRows(pricingV2: boolean): readonly BillingComparisonRow[] {
+export function billingComparisonRows(): readonly BillingComparisonRow[] {
   const rows: BillingComparisonRow[] = [
     {
       label: 'Gmail accounts',
-      values: COMPARISON_TIERS.map((id) =>
-        formatQuota(pricingV2 ? INBOXES[id] : TIER_MANIFEST[id].inboxLimit),
-      ),
+      values: COMPARISON_TIERS.map((id) => formatQuota(inboxLimitFor(id))),
     },
     {
       label: 'Emails cleared a month',
@@ -54,8 +52,8 @@ export function billingComparisonRows(pricingV2: boolean): readonly BillingCompa
   return rows;
 }
 
-export function BillingComparison({ pricingV2 = false }: { pricingV2?: boolean }) {
-  const allRows = billingComparisonRows(pricingV2);
+export function BillingComparison() {
+  const allRows = billingComparisonRows();
   const shared = allRows.filter((row) => row.values.every((value) => value === 'Included'));
   const rows = allRows.filter((row) => !shared.includes(row));
   return (

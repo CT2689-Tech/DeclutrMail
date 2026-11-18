@@ -49,7 +49,7 @@ export interface Me {
   activeMailboxId: string | null;
   /** Workspace billing tier (D19) used by frontend entitlement gates. */
   tier: Tier;
-  /** Cleanup actions left this period; `null` means unlimited. */
+  /** Emails left on Free's meter this period; `null` means unlimited. */
   cleanupRemaining: number | null;
   /** Server-computed next reset instant; the browser never derives it. */
   cleanupResetsAt?: string | null;
@@ -57,19 +57,13 @@ export interface Me {
   inboxLimit?: number;
   /** Present when a live Backlog Pass is what set the one-account ceiling. */
   inboxLimitReason?: 'pass';
-  /** Server `PRICING_V2`. Absent means the flag is off. */
-  pricingV2?: boolean;
   /**
-   * Emails-cleared allowance while `METER_V2` is on. Absent on an older
-   * API. `null` means the tier is not metered.
+   * Emails-cleared allowance. Absent on an older API. `null` means the
+   * tier is not metered.
    */
   cleanupLimit?: number | null;
-  /** Emails held against the current period. Absent until the meter is on. */
+  /** Emails held against the current period. Absent on an older API. */
   cleanupUsed?: number;
-  /** Server `METER_V2`. Absent means the flag is off. */
-  meterV2?: boolean;
-  /** Server `BILLING_PASS_ENABLED`. Absent means the Pass stays hidden. */
-  passEnabled?: boolean;
   /**
    * First-touch tracked `ref` vs skippable self-report. Optional during a
    * rolling API/web deploy — absent means do not show the prompt.

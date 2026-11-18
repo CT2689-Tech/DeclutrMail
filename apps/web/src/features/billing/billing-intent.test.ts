@@ -4,10 +4,10 @@ import { billingIntentPath } from './billing-intent';
 import { parseBillingIntentParams, parseBillingIntentPath } from './parse-billing-intent';
 
 describe('billing intent', () => {
-  it('round-trips canonical paid plan, cycle, and promo intent', () => {
-    const intent = { plan: 'pro', cycle: 'annual', promo: 'foundingPro' } as const;
+  it('round-trips canonical paid plan and cycle intent', () => {
+    const intent = { plan: 'pro', cycle: 'annual' } as const;
     const path = billingIntentPath(intent);
-    expect(path).toBe('/billing?plan=pro&cycle=annual&promo=foundingPro');
+    expect(path).toBe('/billing?plan=pro&cycle=annual');
     expect(parseBillingIntentPath(path)).toEqual(intent);
   });
 
@@ -17,6 +17,8 @@ describe('billing intent', () => {
     '/billing?plan=enterprise&cycle=annual',
     '/billing?plan=plus&cycle=weekly',
     '/billing?plan=plus&cycle=annual&promo=foundingPro',
+    // Founding Pro is retired; its old pricing link is not an intent.
+    '/billing?plan=pro&cycle=annual&promo=foundingPro',
     '/billing?plan=pro&cycle=annual&next=https://evil.example',
     '/billing?plan=pro&plan=plus&cycle=annual',
   ])('rejects an untrusted or impossible intent: %s', (path) => {

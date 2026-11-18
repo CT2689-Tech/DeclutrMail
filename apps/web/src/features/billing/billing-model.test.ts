@@ -13,8 +13,6 @@ import type { BillingSubscription } from '@declutrmail/shared/contracts';
 import { ApiError } from '@/lib/api/client';
 
 import {
-  annualMonthsFree,
-  sharedAnnualMonthsFree,
   backingStatusNote,
   BillingPayloadError,
   complimentaryNote,
@@ -293,10 +291,20 @@ describe('deriveBillingViewState — non-backing reasons', () => {
 
 describe('currentPlanPriceLabel', () => {
   it('renders the backing record’s charged price (its own provider/cycle)', () => {
-    const view = deriveBillingViewState(snapshot({ data: body('pro', SUB) }));
+    const view = deriveBillingViewState(
+      snapshot({ data: body('pro', { ...SUB, chargedUsdCents: 1900 }) }),
+    );
     expect(view.kind).toBe('plan');
     if (view.kind !== 'plan') return;
     expect(currentPlanPriceLabel(view)).toBe('$19/mo');
+  });
+
+  it('states no price for a legacy record the catalog did not resolve', () => {
+    // Retired prices left the manifest; a record without a resolved
+    // charge has nothing true to show.
+    const view = deriveBillingViewState(snapshot({ data: body('pro', SUB) }));
+    if (view.kind !== 'plan') throw new Error('expected plan');
+    expect(currentPlanPriceLabel(view)).toBe('');
   });
 
   it('shows the 2026-10 Plus annual price a $59 subscriber pays', () => {
@@ -351,8 +359,8 @@ describe('currentPlanPriceLabel', () => {
     expect(currentPlanPriceLabel(view)).toBe('$90/yr');
   });
 
-  it('renders the founding promo price for a founding annual backing sub', () => {
-    const sub = { ...SUB, cycle: 'annual' as const, foundingMember: true };
+  it('renders a founding annual backing sub at its charged price', () => {
+    const sub = { ...SUB, cycle: 'annual' as const, foundingMember: true, chargedUsdCents: 12900 };
     const view = deriveBillingViewState(snapshot({ data: body('pro', sub, true) }));
     if (view.kind !== 'plan') throw new Error('expected plan');
     expect(currentPlanPriceLabel(view)).toBe('$129/yr');
@@ -464,7 +472,11 @@ describe('complimentary comps', () => {
   it('a BACKING record still owns the headline — a paid plan is not complimentary', () => {
     // Comped Plus, paying for Pro. The price is a fact about the Pro
     // subscription; only the note may mention the comp.
-    const view = comped('pro', { tier: 'plus', expiresAt: null }, SUB);
+    const view = comped(
+      'pro',
+      { tier: 'plus', expiresAt: null },
+      { ...SUB, chargedUsdCents: 1900 },
+    );
     expect(currentPlanPriceLabel(view)).toBe('$19/mo');
     expect(complimentaryNote(view)).toContain('Plus is included at no cost');
   });
@@ -593,14 +605,6 @@ describe('nonBackingBlocksNewCheckout — mirrors the server SUBSCRIPTION_EXISTS
   it('a canceled row frees the slot; no record blocks nothing', () => {
     expect(nonBackingBlocksNewCheckout(record('canceled'))).toBe(false);
     expect(nonBackingBlocksNewCheckout(null)).toBe(false);
-  });
-});
-
-describe('annual savings reflect the displayed currency', () => {
-  it('only advertises exact whole-month savings on both paid plans', () => {
-    expect(sharedAnnualMonthsFree('paddle')).toBe(2);
-    expect(annualMonthsFree('plus', 'razorpay')).toBeNull();
-    expect(sharedAnnualMonthsFree('razorpay')).toBeNull();
   });
 });
 

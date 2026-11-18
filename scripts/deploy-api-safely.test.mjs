@@ -271,6 +271,12 @@ test('workflow gates worker boot through HTTP, preserves production OAuth identi
     workflow.indexOf('- name: Deploy declutrmail-api'),
     workflow.indexOf('- name: Verify billing notice API producers'),
   );
+  // The code no longer reads these three flags (retired 2026-11-17), but the
+  // deploy keeps setting them for at least one release. The documented
+  // rollback (`gcloud run services update --image=<older sha>`) keeps the
+  // current env, and pre-retirement code with the flags absent would make
+  // Pro purchasable and restore the old 50-action Free cap. Drop them only
+  // once no rollback target predates 890b8f6c.
   for (const block of [worker, api]) {
     assert.match(block, /PRICING_V2=true/);
     assert.match(block, /METER_V2=true/);

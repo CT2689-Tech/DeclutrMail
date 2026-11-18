@@ -3,7 +3,6 @@ import type { BillingCycle } from '@declutrmail/shared/contracts';
 export type BillingIntent = {
   plan: 'plus' | 'pro';
   cycle: BillingCycle;
-  promo?: 'foundingPro';
   offer?: 'pass_onetime';
   from?: string;
 };
@@ -11,7 +10,6 @@ export type BillingIntent = {
 /** Canonical, local-only path carried through auth and onboarding. */
 export function billingIntentPath(intent: BillingIntent): string {
   const query = new URLSearchParams({ plan: intent.plan, cycle: intent.cycle });
-  if (intent.promo) query.set('promo', intent.promo);
   if (intent.offer) query.set('offer', intent.offer);
   // Always a local Billing URL; the entry parser validates this encoded
   // context before it can become a navigation destination.

@@ -340,13 +340,13 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
     await controller.start(
       signedOutRequest(),
       res as unknown as Response,
-      '/billing?cycle=annual&promo=foundingPro&plan=pro',
+      '/billing?cycle=annual&plan=pro&from=%2Fbrief',
     );
 
     const state = decodeSignedState(jwt, res.cookie.mock.calls[0]?.[1] as string);
     expect(state).toMatchObject({
       mode: 'login',
-      returnTo: '/billing?plan=pro&cycle=annual&promo=foundingPro',
+      returnTo: '/billing?plan=pro&cycle=annual&from=%2Fbrief',
     });
     expect(state.nonce).toEqual(expect.any(String));
     expect((state.expiresAt as number) - (state.issuedAt as number)).toBe(10 * 60 * 1000);
@@ -364,7 +364,6 @@ describe('GoogleOAuthController.start — validated post-login billing intent', 
   it.each([
     'https://evil.example/billing?plan=pro&cycle=annual',
     '//evil.example/billing?plan=pro&cycle=annual',
-    '/billing?plan=plus&cycle=annual&promo=foundingPro',
     '/billing?plan=pro&plan=plus&cycle=annual',
   ])('drops an unsafe or impossible returnTo: %s', async (returnTo) => {
     const oauth = { getConsentUrl: vi.fn(() => 'https://accounts.google.test/consent') };
@@ -523,7 +522,7 @@ describe('GoogleOAuthController.connectMailboxStart — targeted mailbox recover
   });
 
   it.each([
-    '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief',
+    '/billing?plan=pro&cycle=annual&from=%2Fbrief',
     'https://evil.test/billing',
     '/settings',
   ])('binds only validated Billing return intent: %s', async (destination) => {
@@ -741,7 +740,7 @@ describe('GoogleOAuthController.callback — connect-mode routes to the sync gat
   }
 
   it('carries signed Billing recovery through the owned mailbox scan gate', async () => {
-    const destination = '/billing?plan=pro&cycle=annual&promo=foundingPro&from=%2Fbrief';
+    const destination = '/billing?plan=pro&cycle=annual&from=%2Fbrief';
     await controller.callback(
       reqWithState(undefined, undefined, destination),
       res as unknown as Response,
@@ -2100,33 +2099,33 @@ describe('GoogleOAuthController.callback — D181 security-event emits', () => {
     );
   });
 
-  it.each([
-    '/billing?plan=pro&cycle=annual&promo=foundingPro',
-    '/billing?plan=plus&cycle=annual&offer=pass_onetime',
-  ])('finishes onboarding before returning a new signup to billing: %s', async (returnTo) => {
-    orchestrator.connect.mockResolvedValueOnce({
-      tokens: { accessToken: 'a', refreshToken: 'r', jti: 'j', refreshTokenHash: 'h' },
-      csrfToken: 'csrf',
-      user: { id: 'u-99', workspaceId: 'w-99', email: 'new@example.com' },
-      mailbox: { id: 'mailbox-99' },
-      isNewSignup: true,
-    });
+  it.each(['/billing?plan=pro&cycle=annual', '/billing?plan=plus&cycle=annual&offer=pass_onetime'])(
+    'finishes onboarding before returning a new signup to billing: %s',
+    async (returnTo) => {
+      orchestrator.connect.mockResolvedValueOnce({
+        tokens: { accessToken: 'a', refreshToken: 'r', jti: 'j', refreshTokenHash: 'h' },
+        csrfToken: 'csrf',
+        user: { id: 'u-99', workspaceId: 'w-99', email: 'new@example.com' },
+        mailbox: { id: 'mailbox-99' },
+        isNewSignup: true,
+      });
 
-    await controller.callback(
-      req({
-        cookies: loginCookie(NONCE, returnTo),
-      }),
-      res as unknown as Response,
-      'code',
-      NONCE,
-    );
+      await controller.callback(
+        req({
+          cookies: loginCookie(NONCE, returnTo),
+        }),
+        res as unknown as Response,
+        'code',
+        NONCE,
+      );
 
-    const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
-    expect(res.redirect).toHaveBeenCalledWith(
-      302,
-      `${webBase}/onboarding?${new URLSearchParams({ returnTo })}`,
-    );
-  });
+      const webBase = process.env.WEB_URL ?? 'http://localhost:3000';
+      expect(res.redirect).toHaveBeenCalledWith(
+        302,
+        `${webBase}/onboarding?${new URLSearchParams({ returnTo })}`,
+      );
+    },
+  );
 
   it('ignores a forged callback returnTo instead of leaving the site', async () => {
     await controller.callback(

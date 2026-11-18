@@ -1,14 +1,14 @@
 /**
- * With PRICING_V2 on, current refund copy uses POLICY.refundWindowDays.
- * Undo, Trash, and pause windows are a different 30 days and stay.
+ * Current refund copy uses POLICY.refundWindowDays. Undo, Trash, and
+ * pause windows are a different 30 days and stay.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { priceFaqAnswer, refundSentence } from '@declutrmail/shared/copy/launch';
 import { POLICY, refundLine } from '@declutrmail/shared/entitlements';
 
-import { moneyBackNote } from '@/features/billing/billing-model';
+import { MONEY_BACK_NOTE } from '@/features/billing/billing-model';
 import { renderLlmsTxt } from '@/features/marketing/llms/llms-document';
 import { FaqPage } from '@/features/marketing/learn/index-pages';
 import { installFetchStub } from '@/test/fetch-stub';
@@ -30,27 +30,19 @@ function assertLaunchWindow(text: string): void {
   expect(text).toContain(`${POLICY.refundWindowDays}-day`);
 }
 
-describe('refund window with PRICING_V2 on', () => {
-  beforeEach(() => {
-    vi.stubEnv('PRICING_V2', 'true');
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
+describe('refund window', () => {
   it('keeps 14 days on every current refund surface', async () => {
     const days = POLICY.refundWindowDays;
     expect(refundLine()).toBe(`${days}-day money-back on any purchase, once per customer.`);
-    expect(moneyBackNote(true)).toBe(refundLine());
+    expect(MONEY_BACK_NOTE).toBe(refundLine());
     expect(refundSentence()).toBe(refundLine());
     assertLaunchWindow(priceFaqAnswer());
-    assertLaunchWindow(await renderLlmsTxt());
+    assertLaunchWindow(renderLlmsTxt());
 
-    const markdown = await (await pricingMarkdown()).text();
+    const markdown = await pricingMarkdown().text();
     assertLaunchWindow(markdown);
 
-    const help = render(await HelpPage());
+    const help = render(<HelpPage />);
     const helpText = help.container.textContent ?? '';
     expect(helpText).not.toMatch(legacyRefundPattern());
     expect(helpText).toContain(`within ${days} days`);
@@ -62,7 +54,7 @@ describe('refund window with PRICING_V2 on', () => {
     expect(faqText).toContain(`within ${days} days`);
     faq.unmount();
 
-    const refunds = render(await RefundPolicyPage());
+    const refunds = render(<RefundPolicyPage />);
     assertLaunchWindow(refunds.container.textContent ?? '');
     expect(refunds.container.textContent).toContain(`within ${days} days`);
     refunds.unmount();
@@ -73,13 +65,8 @@ describe('refund window with PRICING_V2 on', () => {
         path: '/api/auth/me',
         respond: () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401 }),
       },
-      {
-        method: 'GET',
-        path: '/api/pricing/public',
-        respond: () => new Response('missing', { status: 404 }),
-      },
     ]);
-    const landing = render(await LandingPage());
+    const landing = render(<LandingPage />);
     expect(await screen.findByTestId('pricing-teaser-story')).toBeInTheDocument();
     await waitFor(() => {
       expect(landing.container.textContent).toContain(refundLine());

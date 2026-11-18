@@ -99,15 +99,15 @@ export const Closed: Story<typeof UpgradeModalHost> = {
   render: (_args: ComponentProps<typeof UpgradeModalHost>) => frame('free', null),
 };
 
-/** Free workspace spent all 50 monthly cleanup actions (A3). */
+/** Free workspace spent its 1,000 emails for the signup month. */
 export const FreeCapSpent: Story<typeof UpgradeModalHost> = {
   render: (_args: ComponentProps<typeof UpgradeModalHost>) =>
     frame('free', {
       reason: 'free_cap',
       details: {
         remaining: 0,
-        limit: 50,
-        used: 50,
+        limit: 1000,
+        used: 1000,
         requiredUnits: 1,
         resetsAt: '2026-09-01T00:00:00.000Z',
       },
@@ -121,8 +121,8 @@ export const FreeCapPartial: Story<typeof UpgradeModalHost> = {
       reason: 'free_cap',
       details: {
         remaining: 2,
-        limit: 50,
-        used: 48,
+        limit: 1000,
+        used: 998,
         requiredUnits: 4,
         resetsAt: '2026-09-01T00:00:00.000Z',
       },

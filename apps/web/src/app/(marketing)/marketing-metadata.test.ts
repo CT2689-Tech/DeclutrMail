@@ -16,19 +16,26 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { Metadata } from 'next';
 
+import { CASA_VERIFICATION_APPROVED_ON, formatVerificationDate } from '@declutrmail/shared';
 import { ACTION_SEMANTICS } from '@declutrmail/shared/actions';
 import { WS3_COPY } from '@declutrmail/shared/copy/launch';
+import {
+  launchPriceDisplay,
+  MIN_UNDO_WINDOW_DAYS,
+  minimumTierForCapability,
+  storyValues,
+  tierIsPurchasable,
+  TIER_MANIFEST,
+  UNIFORM_UNDO_WINDOW_DAYS,
+} from '@declutrmail/shared/entitlements';
 
 import { MARKETING_PATHS } from '@/app/sitemap';
-import { comparisonBySlug } from '@/features/marketing/comparison/comparison-data';
+import { alternativesFor, comparisonBySlug } from '@/features/marketing/comparison/comparison-data';
 
 import { alt as defaultCardAlt, size as defaultCardSize } from '../opengraph-image';
 import { metadata as landing } from './page';
 import { metadata as beta } from './beta/page';
-import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
-
-/** Flag-off metadata. `generateMetadata` returns this unless PRICING_V2 is on. */
-const pricing = pricingPageMetadata(false);
+import { metadata as pricing } from './pricing/page';
 import { metadata as privacy } from './privacy/page';
 import { metadata as terms } from './terms/page';
 import { metadata as refunds } from './refunds/page';
@@ -97,44 +104,52 @@ const PAGES: ReadonlyArray<{
 ];
 
 /**
- * D250 §3.6 row 21 prescribes this exact title. Nothing asserted it, so the
- * string was changed twice while shipping D250 before the gap was noticed.
- *
- * This pins the VALUE the spec chose — not a length policy. An earlier
- * attempt asserted a 60-character budget across every route and was
- * reverted: no D-decision or ADR establishes one, and inventing repo-wide
- * copy rules is not an agent's call (CLAUDE.md §11). The title's length is
- * a live question recorded in FOUNDER-FOLLOWUPS; if a budget is ever
- * ratified, this assertion changes with the string it guards.
+ * Titles and descriptions are copy (CLAUDE.md §2.0, Tier 2): these tests pin
+ * the facts inside them — prices, allowances and undo days from the pricing
+ * manifest, tier names, privacy and verification wording — never the
+ * sentence around them.
  */
-describe('the blog index title — D250 §3.6 row 21', () => {
-  it('carries the string the spec prescribed, exactly', () => {
-    // Equality, not `toContain`: a substring check passes on any superstring,
-    // so an appended suffix would drift from the prescribed value unnoticed —
-    // which is the failure this assertion exists to catch.
-    expect(blog.title).toEqual({
-      absolute: 'DeclutrMail articles — essays on email cleanup',
-    });
+describe('pricing metadata', () => {
+  it('quotes the manifest prices, allowance, Pass and undo window', () => {
+    const story = storyValues('usd');
+    // "on every plan" is only true while every tier grants the same window.
+    expect(UNIFORM_UNDO_WINDOW_DAYS).not.toBeNull();
+    const description = String(pricing.description);
+    for (const fact of [
+      `${story.freeName} is ${launchPriceDisplay('usd').free.amount}`,
+      `${story.allowance} emails`,
+      `${story.plusName} is ${story.plusPrice} a year`,
+      `${story.passName} is ${story.passPrice} once`,
+      `${UNIFORM_UNDO_WINDOW_DAYS}-day Undo on every plan`,
+    ]) {
+      expect(description).toContain(fact);
+    }
+    expect(pricing.openGraph).toMatchObject({ description });
+    expect(pricing.twitter).toMatchObject({ description });
+    expect(pricing.alternates?.canonical).toBe('/pricing');
   });
-});
 
-const PRICING_META_PASS_OFF =
-  'Free is $0 with 1,000 emails cleared a month and unlimited unsubscribes. Plus is $59 a year. 30-day Undo on every plan.';
-const PRICING_META_PASS_ON =
-  'Free is $0 with 1,000 emails cleared a month and unlimited unsubscribes. The Backlog Pass is $19 once. Plus is $59 a year. 30-day Undo on every plan.';
-
-describe('pricing metadata follows the launch flag', () => {
-  it('keeps today’s description while the flag is off and the deck meta description while it is on', () => {
-    expect(pricingPageMetadata(false).description).toBe(pricing.description);
-    const passOff = pricingPageMetadata(true, false);
-    const passOn = pricingPageMetadata(true, true);
-    expect(passOff.description).toBe(PRICING_META_PASS_OFF);
-    expect(passOn.description).toBe(PRICING_META_PASS_ON);
-    expect(passOff.description).not.toContain('Backlog Pass');
-    expect(passOn.openGraph).toMatchObject({ description: PRICING_META_PASS_ON });
-    expect(passOff.openGraph).toMatchObject({ description: PRICING_META_PASS_OFF });
-    expect(passOn.twitter).toMatchObject({ description: PRICING_META_PASS_ON });
-    expect(pricingPageMetadata(true, true).alternates?.canonical).toBe('/pricing');
+  it('attributes each feature it names to the tier that first unlocks it', () => {
+    const description = String(pricing.description);
+    // Free and Plus are on sale and named; Pro is named only while it can be
+    // bought (founder decision 1C keeps it waitlist-only).
+    expect(description).toContain(TIER_MANIFEST.free.name);
+    expect(description).toContain(TIER_MANIFEST.plus.name);
+    if (!tierIsPurchasable('pro')) {
+      expect(description).not.toMatch(new RegExp(`\\b${TIER_MANIFEST.pro.name}\\b`));
+    }
+    const sentences = description.split(/(?<=\.)\s+/);
+    for (const [label, capability] of [
+      ['Screener', 'screener'],
+      ['Autopilot', 'autopilot'],
+      ['Quiet hours', 'quiet'],
+      ['Daily Brief', 'brief'],
+      ['Follow-ups', 'followups'],
+    ] as const) {
+      const sentence = sentences.find((candidate) => candidate.includes(label));
+      if (sentence === undefined) continue; // Not named, so nothing to attribute.
+      expect(sentence, label).toContain(TIER_MANIFEST[minimumTierForCapability(capability)].name);
+    }
   });
 });
 
@@ -275,6 +290,23 @@ describe('marketing metadata guards', () => {
     }
   });
 
+  it('gives every sitemap path a branded title and a title and description no other page reuses', async () => {
+    const titles = new Map<string, string>();
+    const descriptions = new Map<string, string>();
+    for (const path of MARKETING_PATHS) {
+      const metadata = await metadataForPath(path);
+      const title = titleText(metadata);
+      const description = metadata.description ?? '';
+      expect(title, path).toContain('DeclutrMail');
+      expect(description.trim(), path).not.toBe('');
+      expect(titles.get(title), `${path} reuses the title of`).toBeUndefined();
+      expect(descriptions.get(description), `${path} reuses the description of`).toBeUndefined();
+      titles.set(title, path);
+      descriptions.set(description, path);
+    }
+    expect(titles.size).toBe(MARKETING_PATHS.length);
+  });
+
   it('keeps /sign-in followable but out of the index', () => {
     expect(signIn.robots).toEqual({ index: false, follow: true });
     expect(signIn.alternates?.canonical).toBe('/sign-in');
@@ -285,37 +317,26 @@ describe('marketing metadata guards', () => {
     expect(beta.robots).toEqual({ index: false, follow: true });
   });
 
-  it('uses the approved title and description for the twelve change rows', async () => {
+  it('keeps the facts the comparison and alternatives descriptions state', async () => {
     const unroll = await metadataForPath('/vs/unroll-me');
-    expect(titleText(unroll)).toBe('Unroll.Me vs DeclutrMail — Gmail cleanup and privacy');
-    expect(unroll.description).toBe(
-      'A source-backed comparison: Unroll.Me is free and uses email data for market research; DeclutrMail never fetches or stores full email contents.',
-    );
-
-    const gmail = await metadataForPath('/vs/gmail');
-    expect(titleText(gmail)).toBe('DeclutrMail vs Gmail cleanup tools — compared, October 2026');
-    expect(gmail.description).toBe(
-      'A source-backed comparison of DeclutrMail and Gmail’s cleanup tools (Manage subscriptions, bulk search, unsubscribe): preview, recovery and control by sender.',
-    );
+    expect(titleText(unroll)).toContain('Unroll.Me');
+    expect(unroll.description).toContain('never fetches or stores full email contents');
+    expect(unroll.description).toContain('market research');
 
     const muse = await metadataForPath('/vs/meta-muse');
-    expect(titleText(muse)).toBe('DeclutrMail vs Meta Muse — compared, October 2026');
-    expect(muse.description).toBe(
-      'Source-backed: DeclutrMail, a narrow Gmail cleanup tool that never fetches full message contents, vs Meta Muse, a general AI agent that can read and send mail.',
-    );
+    expect(titleText(muse)).toContain('Meta Muse');
+    expect(muse.description).toContain('never fetches full message contents');
+    expect(muse.description).toContain('can read and send mail');
 
-    for (const [path, name] of [
-      ['/alternatives/unroll-me', 'Unroll.Me'],
-      ['/alternatives/clean-email', 'Clean Email'],
-      ['/alternatives/sanebox', 'SaneBox'],
-      ['/alternatives/leave-me-alone', 'Leave Me Alone'],
-      ['/alternatives/trimbox', 'Trimbox'],
-    ] as const) {
+    const alternatives = MARKETING_PATHS.filter((path) => path.startsWith('/alternatives/'));
+    expect(alternatives.length).toBeGreaterThan(0);
+    for (const path of alternatives) {
+      const subject = alternativesFor(path.slice('/alternatives/'.length))?.subject.name;
       const metadata = await metadataForPath(path);
-      expect(titleText(metadata)).toBe(`${name} alternatives for Gmail — DeclutrMail`);
-      expect(metadata.description).toBe(
-        `Source-backed alternatives to ${name}: what each tool is for, when to stay with ${name}, and where DeclutrMail fits. No rankings, no affiliates.`,
-      );
+      expect(subject, path).toBeTruthy();
+      expect(titleText(metadata), path).toContain(subject!);
+      // A live public statement; the badge under the page title says it too.
+      expect(metadata.description, path).toContain('No rankings, no affiliates.');
     }
 
     // Facts, not the sentence: made-up data, the verbs it previews, no access.
@@ -323,89 +344,60 @@ describe('marketing metadata guards', () => {
     expect(inboxSimulator.description).toContain('Archive, Later or Delete');
     expect(inboxSimulator.description).toContain('No signup or Gmail access needed');
     expect((inboxSimulator.description ?? '').length).toBeLessThanOrEqual(160);
-    expect(howToHub.description).toBe(
-      'Step-by-step Gmail guides: delete all emails from one sender, free up storage when Gmail is full, auto archive future email, stop promotional email, and more.',
-    );
-    expect(cookies.description).toBe(
-      'Change your cookie preferences at any time. Essential cookies for sign-in and billing are always on; optional PostHog analytics runs only with your consent.',
-    );
-    expect(privacy.description).toBe(
-      'What DeclutrMail stores from Gmail, what it never fetches, processors, retention, deletion and your rights. We do not sell Gmail data or use it for advertising.',
+    expect(cookies.description).toContain('PostHog analytics runs only with your consent');
+    expect(privacy.description).toContain('We do not sell Gmail data or use it for advertising.');
+  });
+
+  it('keeps the privacy and business-model facts on the visible comparison descriptions', () => {
+    expect(comparisonBySlug('unroll-me')?.description).toContain('market-research business model');
+    expect(comparisonBySlug('meta-muse')?.description).toContain(
+      'never fetches full message contents',
     );
   });
 
-  it('leaves visible comparison descriptions unchanged when only the meta description moves', () => {
-    expect(comparisonBySlug('unroll-me')?.description).toBe(
-      'A source-backed comparison of DeclutrMail and Unroll.Me on Gmail cleanup, blocking, digests, email-data access, the market-research business model and cost.',
+  it('keeps the facts the page descriptions state', () => {
+    expect(landing.description).toContain(
+      `${MIN_UNDO_WINDOW_DAYS}-day undo on Archive, Later, and Delete`,
     );
-    expect(comparisonBySlug('gmail')?.description).toBe(
-      'A source-backed comparison of DeclutrMail and Gmail’s own cleanup tools — Manage subscriptions, bulk search actions, and unsubscribe — for preview, recovery, and control by sender.',
+    expect(security.description).toContain('never fetches or stores full email contents');
+    expect(security.description).toContain('encrypts Google access tokens');
+    // Google approved a verification; it did not certify or audit anything.
+    expect(security.description).toContain(
+      `verification approved ${formatVerificationDate(CASA_VERIFICATION_APPROVED_ON)}`,
     );
-    expect(comparisonBySlug('meta-muse')?.description).toBe(
-      'A source-backed comparison of DeclutrMail and Meta Muse for Gmail: a narrow cleanup tool that never fetches full message contents versus a general AI agent that can read and send mail.',
-    );
-  });
-
-  it('keeps the approved page titles and descriptions', () => {
-    expect(titleText(landing)).toBe('Gmail cleanup tool with preview and undo | DeclutrMail');
-    expect(landing.description).toBe(
-      'Clear Gmail clutter by sender. Preview which emails will move before you confirm. Start free, with 30-day undo on Archive, Later, and Delete.',
-    );
-    expect(titleText(pricing)).toBe('Pricing: free email cleanup and paid plans — DeclutrMail');
-    expect(pricing.description).toBe(
-      'Free includes manual sender cleanup. Plus adds Screener, Autopilot and Quiet hours with no monthly limit. Pro adds the Daily Brief, Follow-ups and more inboxes.',
-    );
-    expect(titleText(security)).toBe('Security — DeclutrMail');
-    expect(security.description).toBe(
-      'DeclutrMail never fetches or stores full email contents, encrypts Google access tokens, and has Google OAuth verification approved April 21, 2026.',
-    );
-    expect(titleText(methodology)).toBe('Privacy and control — DeclutrMail');
-    expect(methodology.description).toBe(
-      'What DeclutrMail stores from Gmail, how suggestions are made, what changes before you confirm, and when automation can run.',
-    );
-    expect(titleText(compare)).toBe('Gmail cleanup tools compared side by side — DeclutrMail');
-    expect(compare.description).toBe(
-      'DeclutrMail vs. Clean Email, Trimbox, SaneBox, Leave Me Alone, Unroll.Me and native Gmail — what each actually does. Official sources, unknowns left unknown.',
-    );
-    expect(titleText(answerUndo)).toBe('How does undo work for Gmail cleanup? — DeclutrMail');
-    // Facts, not the sentence: the window, Trash, and the one-way unsubscribe.
-    expect(answerUndo.description).toContain('30-day Activity Undo');
-    expect(answerUndo.description).toContain('Gmail Trash');
-    expect(answerUndo.description).toContain('can’t be recalled');
-    expect((answerUndo.description ?? '').length).toBeLessThanOrEqual(160);
-    expect(titleText(changelog)).toBe('DeclutrMail product updates — what changed, and when');
-    expect(changelog.description).toBe(
-      'What changed in DeclutrMail and when, listed by date with Added, Improved, and Fixed notes.',
-    );
+    expect(security.description).not.toMatch(/certif|audit/i);
+    expect(compare.description).toContain('unknowns left unknown');
   });
 });
 
 describe('homepage share card — Content deck drop2-r54 share.home', () => {
-  const SOCIAL_TITLE = 'Clear years of Gmail clutter. See every move first.';
-  const CARD_ALT = 'DeclutrMail: Clear years of Gmail clutter. See every move first.';
-
-  it('keeps the SEO document title and uses the approved social title', () => {
-    expect(titleText(landing)).toBe('Gmail cleanup tool with preview and undo | DeclutrMail');
-    expect(landing.openGraph).toMatchObject({ title: SOCIAL_TITLE });
-    expect(landing.twitter).toMatchObject({ title: SOCIAL_TITLE });
+  it('gives the share card one social title on both networks', () => {
+    const socialTitle = (landing.openGraph as { title?: unknown }).title;
+    expect(typeof socialTitle === 'string' && socialTitle.trim()).toBeTruthy();
+    expect(landing.twitter).toMatchObject({ title: socialTitle });
   });
 
-  it('uses the approved alt on the image route and the shared card helper', () => {
-    expect(defaultCardAlt).toBe(CARD_ALT);
+  it('draws the social title on the card image, describes it in the alt, and declares one card', () => {
     expect(defaultCardSize).toEqual({ width: 1200, height: 630 });
     expect(landing.openGraph).toMatchObject({
-      images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: CARD_ALT }],
+      images: [{ url: '/opengraph-image', ...defaultCardSize, alt: defaultCardAlt }],
     });
     expect(landing.twitter).toMatchObject({
-      images: [{ url: '/opengraph-image', alt: CARD_ALT }],
+      images: [{ url: '/opengraph-image', alt: defaultCardAlt }],
     });
 
     const source = readFileSync(
       nodePath.join(nodePath.dirname(fileURLToPath(import.meta.url)), '../opengraph-image.tsx'),
       'utf8',
     );
-    expect(source).toContain('>Clear years of Gmail clutter.</span>');
-    expect(source).toContain('>See every move first.</span>');
+    const socialTitle = String((landing.openGraph as { title?: unknown }).title);
+    const sentences = socialTitle.split(/(?<=\.)\s+/).filter(Boolean);
+    expect(sentences.length).toBeGreaterThan(0);
+    for (const sentence of sentences) {
+      expect(source).toContain(`>${sentence}</span>`);
+      expect(defaultCardAlt).toContain(sentence);
+    }
+    expect(defaultCardAlt).toContain('DeclutrMail');
   });
 });
 

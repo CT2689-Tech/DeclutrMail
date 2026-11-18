@@ -1,5 +1,11 @@
 # Repositioning content and packaging spec — product-wide
 
+> **Stale tier facts (2026-11-17).** T4 ("Autopilot, Pro-only; Free and Plus are existing-mail-only")
+> and the "up to three Gmail inboxes" lines are wrong now: Autopilot is on Plus, and inbox limits
+> are 1 / 2 / 5. Current facts live in `packages/shared/src/entitlements/pricing.config.ts`. Read
+> this spec for its reasoning, not its tier facts. T6 (banned marketing words) is voice guidance
+> now, not a CI rule (founder decision 2026-11-17).
+
 **Date:** 2026-08-01 · **Status:** proposed, nothing applied
 **Decides:** D250 (headline, reverses D223) · D251 (Screener Pro → Plus, founder-approved)
 **Also proposes:** downstream homepage, pricing, comparison, activation, retention, proof, research,

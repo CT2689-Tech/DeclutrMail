@@ -28,7 +28,6 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 
 <!-- Tick at least one verification source per D# closed. -->
 - [ ] Unit / integration tests added (list test names: ``)
-- [ ] Storybook story added (for new components)
 - [ ] Playwright E2E added (for user flows)
 - [ ] Gate subagent: [ ] privacy-auditor / [ ] architecture-guardian / [ ] schema-migration-reviewer / [ ] design-system-agent / [ ] webhook-security-auditor
 - [ ] Manual smoke (describe): 
@@ -37,9 +36,6 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 
 <!-- Migration PR -->
 - [ ] **Migration PR:** Atlas dry-run output attached. Rollback path: 
-
-<!-- Component PR -->
-- [ ] **Component PR:** Storybook story covers default + loading + error + empty states.
 
 <!-- API PR -->
 - [ ] **API PR:** Contract tests pass. OpenAPI updated. Response follows D202 envelope.

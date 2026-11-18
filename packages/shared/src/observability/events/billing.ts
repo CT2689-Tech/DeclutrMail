@@ -55,8 +55,6 @@ export interface BillingEventPayloads {
     cycle: 'monthly' | 'annual';
     /** D117 — user's explicit provider choice. */
     provider: 'paddle' | 'razorpay';
-    /** True when the Founding Pro promo price was claimed (D126). */
-    founding_pro: boolean;
   };
 
   /**
@@ -69,7 +67,6 @@ export interface BillingEventPayloads {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
     provider: 'paddle' | 'razorpay';
-    founding_pro: boolean;
   };
 
   /**
@@ -80,7 +77,6 @@ export interface BillingEventPayloads {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
     provider: 'paddle' | 'razorpay';
-    founding_pro: boolean;
     code: string;
   };
 
@@ -92,7 +88,6 @@ export interface BillingEventPayloads {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
     provider: 'paddle' | 'razorpay';
-    founding_pro: boolean;
   };
 
   /**
@@ -103,7 +98,6 @@ export interface BillingEventPayloads {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
     provider: 'paddle' | 'razorpay';
-    founding_pro: boolean;
   };
 
   /**
@@ -114,7 +108,6 @@ export interface BillingEventPayloads {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
     provider: 'paddle' | 'razorpay';
-    founding_pro: boolean;
   };
 
   /** D117/D120 — self-serve plan change on the existing subscription. */

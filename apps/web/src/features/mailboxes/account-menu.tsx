@@ -80,15 +80,8 @@ export function AccountMenu() {
   // D19/D81 inbox limit — gates ADDING (or reactivating) a Gmail
   // account; existing connections keep working even over-limit. The BE
   // mirror is InboxLimitGuard on connect-mailbox/start (402).
-  const {
-    tier,
-    inboxLimit,
-    inboxLimitReason,
-    inboxLimitOwner,
-    connectedInboxes,
-    atInboxLimit,
-    pricingV2,
-  } = useTier();
+  const { tier, inboxLimit, inboxLimitReason, inboxLimitOwner, connectedInboxes, atInboxLimit } =
+    useTier();
   const passInboxLimit = inboxLimitReason === 'pass';
   // Keep the closed disclosure cheap. Opening enables the mailbox-keyed
   // health reads: the selected mailbox dedupes with banner/Sync-now, while
@@ -522,7 +515,7 @@ export function AccountMenu() {
                       `${connectedInboxes} ${connectionTerm(connectedInboxes)} connected — ${inboxLimitOwner} includes ${inboxLimit}.`
                     : `${inboxLimitOwner} includes ${inboxLimit} ${connectionTerm(inboxLimit)}.`}
                 </span>
-                {pricingV2 && tier === 'plus' ? (
+                {tier === 'plus' ? (
                   <Link
                     href="/billing#change-plan"
                     onClick={() => setOpen(false)}
@@ -537,8 +530,8 @@ export function AccountMenu() {
                 ) : (
                   <Link
                     href={billingIntentPath({
-                      plan: pricingV2 ? 'plus' : 'pro',
-                      cycle: pricingV2 ? 'annual' : 'monthly',
+                      plan: 'plus',
+                      cycle: 'annual',
                       ...(from ? { from } : {}),
                     })}
                     onClick={() => setOpen(false)}
@@ -548,7 +541,7 @@ export function AccountMenu() {
                       textDecoration: 'none',
                     }}
                   >
-                    {pricingV2 ? plusConnectCta() : 'Upgrade to connect another →'}
+                    {plusConnectCta()}
                   </Link>
                 )}
               </div>
