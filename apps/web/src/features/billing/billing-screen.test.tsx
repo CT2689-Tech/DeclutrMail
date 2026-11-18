@@ -28,8 +28,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 let mockTier = 'free';
 let mockWorkspaceId = 'w';
 let mockCleanupRemaining: number | null = 3;
-let mockPassEnabled = false;
-let mockPricingV2 = false;
 let mockInboxLimit: number | undefined;
 let mockMailboxCount = 1;
 // QA-billing-20260901-04 — the real anniversary reset date, distinct
@@ -51,15 +49,14 @@ vi.mock('@/features/auth/auth-provider', () => {
       tier: mockTier,
       cleanupRemaining: mockCleanupRemaining,
       cleanupResetsAt: mockCleanupResetsAt,
-      passEnabled: mockPassEnabled,
-      pricingV2: mockPricingV2,
       ...(mockInboxLimit !== undefined ? { inboxLimit: mockInboxLimit } : {}),
     },
   });
   return { useAuth: auth, useOptionalAuth: auth };
 });
 
-// Provider launch is a side-effect seam (Paddle overlay) — stub it; the checkout CONTRACT is asserted on the wire
+// Provider launch is a side-effect seam (Paddle overlay) — stub it; the
+// checkout CONTRACT is asserted on the wire
 // and the overlay lifecycle is driven through the captured events arg.
 vi.mock('@/features/billing/checkout', async (importOriginal) => ({
   ...(await importOriginal<typeof CheckoutModule>()),
@@ -70,7 +67,7 @@ vi.mock('@/lib/posthog', () => ({ track: vi.fn(() => Promise.resolve()) }));
 
 import { ERROR_CODES, type BillingSubscription } from '@declutrmail/shared/contracts';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, METER, meterChipLine, TIER_MANIFEST } from '@declutrmail/shared/entitlements';
+import { fillStory, METER, meterChipLine, proWaitlistCta } from '@declutrmail/shared/entitlements';
 
 import { track } from '@/lib/posthog';
 import {
@@ -85,7 +82,7 @@ import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
 
 import { CheckoutLaunchError, launchCheckout, type CheckoutEvents } from './checkout';
 import type { BillingIntent } from './billing-intent';
-import { annualMonthsFree, quotedPlanPrice, REFUND_SETTLING_POLL_MS } from './billing-model';
+import { REFUND_SETTLING_POLL_MS } from './billing-model';
 import { BillingScreen } from './billing-screen';
 import { BillingInvoiceHistoryGate } from './billing-invoice-history-gate';
 import { pendingCheckoutKey, writePendingCheckout } from './pending-checkout';
@@ -180,6 +177,8 @@ const SUB: NonNullable<BillingSubscription['subscription']> = {
   pauseUntil: null,
   foundingMember: false,
   scheduledChange: null,
+  // The API resolves the subscription's price id to the amount it charges.
+  chargedUsdCents: 1900,
 };
 
 const PRO_SUB: BillingSubscription = {
@@ -195,11 +194,8 @@ const PLUS_SUB: BillingSubscription = {
   tier: 'plus',
   foundingMember: false,
   pendingCheckout: null,
-  subscription: { ...SUB, tier: 'plus' },
+  subscription: { ...SUB, tier: 'plus', chargedUsdCents: 900 },
 };
-
-/** Manifest-derived labels the picker must render (never literals). */
-const ANNUAL_TOGGLE = `Annual — ${annualMonthsFree('pro')} months free`;
 
 function billingDisabled503(): Response {
   return new Response(
@@ -218,7 +214,6 @@ function renderScreen(
   initialIntent: BillingIntent | null = null,
   returnTo?: string,
   options?: {
-    pricingV2?: boolean;
     country?: string | null;
     indiaCheckoutOpen?: boolean;
     checkoutGeoToken?: string | null;
@@ -246,7 +241,6 @@ function renderScreen(
       <BillingScreen
         initialIntent={initialIntent}
         returnTo={returnTo}
-        {...(options?.pricingV2 ? { pricingV2: true } : {})}
         {...(options?.country !== undefined ? { country: options.country } : {})}
         {...(options?.indiaCheckoutOpen ? { indiaCheckoutOpen: true } : {})}
         {...(options?.checkoutGeoToken ? { checkoutGeoToken: options.checkoutGeoToken } : {})}
@@ -254,6 +248,22 @@ function renderScreen(
     </QueryWrapper>,
   );
   return { ...result, client };
+}
+
+/** Free launch checkout: the Plus card is the preview, and its own button opens checkout. */
+async function buyPlus(): Promise<HTMLElement> {
+  const card = await screen.findByTestId('launch-offer-plus');
+  fireEvent.click(within(card).getByRole('button', { name: 'Get Plus' }));
+  return card;
+}
+
+/** Purchase controls a locked picker must not leave live. Launch cards stay visible but disabled. */
+function enabledPurchaseButtons(): HTMLElement[] {
+  return screen
+    .queryAllByRole('button', {
+      name: /^(Get Plus|Get Backlog Pass|Upgrade to .+|Buy .+ separately|Switch to .+)$/,
+    })
+    .filter((button) => !(button as HTMLButtonElement).disabled);
 }
 
 /** A subscriber's plan options open on request ("Change plan"). */
@@ -272,8 +282,6 @@ beforeEach(() => {
   mockTier = 'free';
   mockWorkspaceId = 'w';
   mockCleanupRemaining = 3;
-  mockPassEnabled = false;
-  mockPricingV2 = false;
   mockInboxLimit = undefined;
   mockMailboxCount = 1;
   vi.mocked(launchCheckout).mockClear();
@@ -313,7 +321,7 @@ describe('BillingScreen — designed states', () => {
 
   it('503 BILLING_DISABLED renders the honest dark-state, not an error', async () => {
     stubSubscription(billingDisabled503);
-    renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
+    renderScreen({ plan: 'pro', cycle: 'annual' });
 
     expect(await screen.findByTestId('billing-disabled-notice')).toBeInTheDocument();
     // Plan card still renders from the `me` tier…
@@ -322,7 +330,8 @@ describe('BillingScreen — designed states', () => {
     // …and the picker keeps the plans visible (they're final, D119) but
     // withholds every checkout affordance — even against a deep link.
     expect(screen.getByTestId('plan-option-pro')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeDisabled();
+    expect(enabledPurchaseButtons()).toEqual([]);
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Compare plans' })).not.toBeInTheDocument();
     expect(screen.getByText('Compare included features')).toBeInTheDocument();
@@ -361,13 +370,12 @@ describe('BillingScreen — designed states', () => {
 });
 
 describe('BillingScreen — plan picker (billing live, free tier)', () => {
-  it('plan card: Free, $0, monthly cleanup actions left, no cancel affordance', async () => {
+  it('plan card: Free, emails left this month, no cancel affordance', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Free')).toBeInTheDocument();
-    expect(within(card).getByText('$0')).toBeInTheDocument();
     // Local subscription absence does not establish whether the provider
     // retains a payment method, including after an abandoned checkout.
     expect(card).not.toHaveTextContent(/no card on file/i);
@@ -378,7 +386,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       within(card).getByText(
         meterChipLine({
           remaining: 3,
-          limit: TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0,
+          limit: METER.free.limit,
           resetAt: '2026-09-17T00:00:00.000Z',
         }).text,
       ),
@@ -386,46 +394,12 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(
       within(card).queryByRole('button', { name: 'Review cancellation' }),
     ).not.toBeInTheDocument();
-    // Picker marks Free as current — no CTA on the current plan.
-    const freeOption = screen.getByTestId('plan-option-free');
-    expect(within(freeOption).getByText('Current plan')).toBeInTheDocument();
-    expect(within(freeOption).queryByRole('button')).not.toBeInTheDocument();
+    // Free is the plan on the card; the offers below are what to buy.
+    expect(screen.queryByTestId('plan-option-free')).not.toBeInTheDocument();
+    expect(screen.getByTestId('launch-offer-plus')).toBeInTheDocument();
   });
 
-  it('one-tap toggle: every price + the manifest-derived savings badge update together', async () => {
-    stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen();
-
-    const picker = await screen.findByTestId('plan-picker');
-    // Default is annual (savings-forward), badge derived off the manifest.
-    const annualButton = within(picker).getByRole('button', { name: ANNUAL_TOGGLE });
-    expect(annualButton).toHaveAttribute('aria-pressed', 'true');
-    expect(
-      within(screen.getByTestId('plan-option-plus')).getByText(
-        new RegExp(`\\${quotedPlanPrice('plus', 'annual')}`),
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId('plan-option-pro')).getByText(
-        new RegExp(`\\${quotedPlanPrice('pro', 'annual')}`),
-      ),
-    ).toBeInTheDocument();
-
-    // ONE interaction flips every price.
-    fireEvent.click(within(picker).getByRole('button', { name: 'Monthly' }));
-    expect(
-      within(screen.getByTestId('plan-option-plus')).getByText(
-        new RegExp(`\\${quotedPlanPrice('plus', 'monthly')}`),
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(screen.getByTestId('plan-option-pro')).getByText(
-        new RegExp(`\\${quotedPlanPrice('pro', 'monthly')}`),
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it('TWO clicks to the provider: Upgrade to Pro → confirm → exact D117 contract body', async () => {
+  it('ONE click from the Plus card to the provider — exact D117 contract body', async () => {
     let checkoutBody: unknown = null;
     installFetchStub([
       {
@@ -453,33 +427,19 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    // Click 1 — the plan CTA opens the D226 confirm step in place.
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    expect(within(panel).getByText('Preview · before anything changes')).toBeInTheDocument();
-    // Defaults: annual cycle, Paddle provider, Founding Pro NOT claimed.
-    //
-    // The claim is an opt-in — its own control says "Claim" — so it must not
-    // arrive pre-ticked. Pre-ticked, the quoted price and the confirm button
-    // committed to a promotional point the user never chose, and Founding Pro
-    // is change-LOCKED once bought (`FOUNDING_PLAN_LOCKED`). The label still
-    // advertises $129 because that is what the promo costs; the CHARGE line
-    // quotes the standard point the picker is actually standing on.
-    expect(within(panel).getByRole('checkbox')).not.toBeChecked();
-    expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
-    expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
-    expect(
-      within(panel).getByText('14-day money-back on any purchase, once per customer.'),
-    ).toBeInTheDocument();
-    expect(within(panel).queryByText(/30-day money-back/)).not.toBeInTheDocument();
+    // The Plus card is the D226 preview: the charge and its terms are on it.
+    const panel = await screen.findByTestId('launch-offer-plus');
+    expect(panel).toHaveTextContent(/\$59 billed yearly/);
+    expect(panel).toHaveTextContent('14-day money-back on any purchase, once per customer.');
+    expect(panel).not.toHaveTextContent(/30-day money-back/);
 
-    // Click 2 — confirm into the provider surface.
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    // One click on the card's own button confirms into the provider surface.
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
 
     await waitFor(() =>
       expect(checkoutBody).toEqual({
         attemptId: expect.any(String),
-        tierId: 'pro',
+        tierId: 'plus',
         cycle: 'annual',
         provider: 'paddle',
       }),
@@ -490,141 +450,6 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       priceId: 'pri_test_123',
       customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
     });
-  });
-
-  // The positive half of the default-OFF change. Asserting only that the box
-  // starts unchecked would pass just as well if the claim were broken outright,
-  // so the opt-in has to be exercised: tick it, and the promo must reach the
-  // request body and re-quote the promotional price.
-  it('ticking Claim Founding Pro opts in — promo reaches the body and re-quotes', async () => {
-    let checkoutBody: unknown = null;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: FREE_BODY }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/checkout',
-        respond: async (req) => {
-          checkoutBody = await req.json();
-          return jsonOk({
-            data: {
-              provider: 'paddle',
-              kind: 'overlay',
-              priceId: 'pri_test_founding',
-              clientToken: 'test_token',
-              environment: 'sandbox',
-              customData: { workspace_id: '6f9619ff-8b86-4d01-b42d-00cf4fc964ff', sig: 'test-sig' },
-            },
-          });
-        },
-      },
-    ]);
-    renderScreen();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    expect(within(panel).getByText(/\$190 billed annually, starting today/)).toBeInTheDocument();
-
-    fireEvent.click(within(panel).getByRole('checkbox'));
-    expect(within(panel).getByRole('checkbox')).toBeChecked();
-    // The charge line follows the claim onto the promotional point.
-    expect(within(panel).getByText(/\$129 billed annually, starting today/)).toBeInTheDocument();
-
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
-    await waitFor(() =>
-      expect(checkoutBody).toEqual({
-        attemptId: expect.any(String),
-        tierId: 'pro',
-        cycle: 'annual',
-        provider: 'paddle',
-        promo: 'foundingPro',
-      }),
-    );
-  });
-
-  it('monthly cycle drops the promo and still defaults to the Paddle rail (D117)', async () => {
-    let checkoutBody: unknown = null;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: FREE_BODY }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/checkout',
-        respond: async (req) => {
-          checkoutBody = await req.json();
-          return jsonOk({
-            data: {
-              provider: 'paddle',
-              kind: 'overlay',
-              priceId: 'pri_test',
-              clientToken: 'test_token',
-              environment: 'sandbox',
-              customData: { workspace_id: 'ws-1', sig: 'test-sig' },
-            },
-          });
-        },
-      },
-    ]);
-    renderScreen();
-
-    const picker = await screen.findByTestId('plan-picker');
-    fireEvent.click(within(picker).getByRole('button', { name: 'Monthly' }));
-    fireEvent.click(within(picker).getByRole('button', { name: 'Upgrade to Pro' }));
-
-    const panel = await screen.findByTestId('checkout-panel');
-    expect(within(panel).queryByText(/Founding Pro/)).not.toBeInTheDocument();
-    // Paddle is the only rail: no provider choice is offered.
-    expect(within(panel).queryByRole('radio')).not.toBeInTheDocument();
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
-
-    await waitFor(() =>
-      expect(checkoutBody).toEqual({
-        attemptId: expect.any(String),
-        tierId: 'pro',
-        cycle: 'monthly',
-        provider: 'paddle',
-      }),
-    );
-  });
-
-  it('a deep-linked intent opens the confirm step with the exact plan and cycle', async () => {
-    stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen({ plan: 'pro', cycle: 'monthly' });
-
-    const panel = await screen.findByTestId('checkout-panel');
-    expect(screen.getByRole('button', { name: 'Monthly' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(panel).queryByText(/Founding Pro/)).not.toBeInTheDocument();
-  });
-
-  it('preserves an explicit Founding Pro annual claim from pricing', async () => {
-    stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
-
-    const panel = await screen.findByTestId('checkout-panel');
-    expect(screen.getByRole('button', { name: ANNUAL_TOGGLE })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
-    expect(within(panel).getByRole('checkbox')).toBeChecked();
-    expect(within(panel).getByText(/Claim Founding Pro — \$129\/yr/)).toBeInTheDocument();
-  });
-
-  it('Keep current plan collapses the confirm step without a request', async () => {
-    stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Keep current plan' }));
-
-    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
-    expect(launchCheckout).not.toHaveBeenCalled();
   });
 
   it('checkout 503 surfaces the honest billing-dark message inline', async () => {
@@ -638,9 +463,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const panel = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
 
     expect(
       await within(panel).findByText(
@@ -680,9 +504,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     vi.mocked(launchCheckout).mockRejectedValueOnce(new CheckoutLaunchError(true));
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const panel = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
 
     expect(
       await screen.findByRole('button', { name: 'Retry checkout window' }),
@@ -719,8 +542,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       await client.refetchQueries({ queryKey: billingKeys.subscription() });
       throw new Error('overlay blocked');
     });
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
     await waitFor(() =>
       expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull(),
@@ -756,9 +578,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const panel = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
 
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(notice).toHaveTextContent('Checkout started');
@@ -789,9 +610,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const panel = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
 
     await within(panel).findByRole('alert');
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
@@ -826,10 +646,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
+    const panel = await screen.findByTestId('launch-offer-plus');
     expect(subscriptionReads).toBe(1);
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
 
     // PRE-CLAIM: the guard threw before any provider call, so surfacing a
     // payment reservation would assert a charge that cannot exist — and
@@ -845,7 +664,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // ended, disable the picker, and unmount the panel carrying this
     // message — reinstating the lie the code exists to delete.
     expect(subscriptionReads).toBe(1);
-    expect(within(panel).getByRole('button', { name: 'Continue to checkout' })).toBeEnabled();
+    expect(within(panel).getByRole('button', { name: 'Get Plus' })).toBeEnabled();
   });
 
   it('the settling window explains itself instead of telling you to cancel', async () => {
@@ -889,8 +708,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // Still no purchase CTA — that part was always right, since the server
     // refuses this row's checkout until the refund settles.
-    expect(screen.queryByRole('button', { name: /Upgrade to Plus/i })).toBeNull();
-    expect(screen.queryByRole('button', { name: /Upgrade to Pro/i })).toBeNull();
+    expect(enabledPurchaseButtons()).toEqual([]);
   });
 
   // The state this change makes PRIMARY, and the one the founder's
@@ -931,7 +749,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // The plan is theirs, so there is nothing to buy — a locked picker is
     // CORRECT here, unlike in the backstop where it is a trap.
-    expect(screen.queryByRole('button', { name: /Upgrade to Pro/i })).toBeNull();
+    expect(enabledPurchaseButtons()).toEqual([]);
 
     // And the state it must NOT be: the pre-2026-08-25 screen said the
     // plan had ended while the account sat on Free.
@@ -1005,7 +823,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
           /subscription ended/i,
         ),
       );
-      expect(screen.getByRole('button', { name: /Upgrade to Plus/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Get Plus' })).toBeEnabled();
     } finally {
       vi.useRealTimers();
       focusManager.setFocused(undefined);
@@ -1033,7 +851,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       renderScreen();
-      await screen.findByRole('button', { name: /Upgrade to Plus/i });
+      await screen.findByRole('button', { name: 'Get Plus' });
       expect(reads).toBe(1);
 
       await act(async () => {
@@ -1157,8 +975,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     vi.mocked(returnAfterUpgrade).mockClear();
     renderScreen(null, '/brief');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     // No pending state before the overlay reports payment (§10 — the
@@ -1181,22 +998,23 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     // Checkout is LOCKED while the payment awaits its webhook — a
     // second checkout here could double-charge (SUBSCRIPTION_EXISTS
     // can't catch it: the subscription row doesn't exist yet).
-    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeDisabled();
+    expect(enabledPurchaseButtons()).toEqual([]);
     expect(screen.queryByRole('button', { name: 'Switch to Free' })).not.toBeInTheDocument();
 
     expect(returnAfterUpgrade).not.toHaveBeenCalled();
 
-    // "Webhook lands": the server now reports pro — the immediate
+    // "Webhook lands": the server now reports Plus — the immediate
     // post-completion refetch picks it up and the pending state clears.
     subscriptionBody = {
-      ...PRO_SUB,
-      subscription: PRO_SUB.subscription ? { ...PRO_SUB.subscription, cycle: 'annual' } : null,
+      ...PLUS_SUB,
+      subscription: PLUS_SUB.subscription ? { ...PLUS_SUB.subscription, cycle: 'annual' } : null,
     };
     act(() => capturedCheckoutEvents().onCompleted?.());
     await waitFor(() =>
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
     );
-    expect(within(screen.getByTestId('current-plan-card')).getByText('Pro')).toBeInTheDocument();
+    expect(within(screen.getByTestId('current-plan-card')).getByText('Plus')).toBeInTheDocument();
     await waitFor(() => expect(returnAfterUpgrade).toHaveBeenCalledWith('/brief'));
     // The lock lifts with the pending state — plan changes are
     // available again against the NEW tier.
@@ -1232,8 +1050,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     act(() => capturedCheckoutEvents().onCompleted?.());
@@ -1273,8 +1090,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     // Fake timers ONLY from here — the slow timer registers when the
@@ -1320,9 +1136,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       },
     ]);
     renderScreen();
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const panel = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
     expect(await within(panel).findByRole('alert')).toHaveTextContent(
       'Cancel deletion in Settings',
     );
@@ -1352,9 +1167,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const panel = await screen.findByTestId('launch-offer-plus');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
 
     expect(await within(panel).findByRole('alert')).toBeInTheDocument();
     expect(launchCheckout).not.toHaveBeenCalled();
@@ -1391,11 +1205,10 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    const panel = await screen.findByTestId('checkout-panel');
+    const panel = await screen.findByTestId('launch-offer-plus');
     expect(subscriptionReads).toBe(1);
 
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Get Plus' }));
 
     // The refetch is the fix; the message alone would leave the user stuck.
     await waitFor(() => expect(subscriptionReads).toBeGreaterThan(1));
@@ -1411,7 +1224,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     renderScreen();
 
     expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeDisabled();
+    expect(enabledPurchaseButtons()).toEqual([]);
   });
 
   it('another workspace’s pending record does not lock this one', async () => {
@@ -1419,7 +1233,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
 
-    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Get Plus' })).toBeEnabled();
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
     expect(
       window.localStorage.getItem(pendingCheckoutKey('someone-elses-workspace')),
@@ -1447,10 +1261,6 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     const notice = await screen.findByTestId('payment-processing-notice');
     expect(screen.getByRole('heading', { name: 'Plan & billing', level: 1 })).toBeInTheDocument();
-    // The coverage group states the limit with a live count, so the subtitle does not.
-    expect(screen.getByRole('region', { name: 'Your plan includes' })).toHaveTextContent(
-      '1 of 1 connected',
-    );
     expect(within(notice).queryByText('What we know')).not.toBeInTheDocument();
     expect(within(notice).queryByText('What happens next')).not.toBeInTheDocument();
     expect(within(notice).getByRole('link', { name: 'Contact billing support' })).toHaveAttribute(
@@ -1463,7 +1273,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(currentAccess).toHaveTextContent(
       meterChipLine({
         remaining: 3,
-        limit: TIER_MANIFEST.free.cleanupActionsPerMonth ?? 0,
+        limit: METER.free.limit,
         resetAt: mockCleanupResetsAt ?? '',
       }).text,
     );
@@ -1474,7 +1284,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     expect(notice).toHaveTextContent(
       'Checkout reported completion — your plan upgrade hasn’t come through yet.',
     );
-    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeDisabled();
 
     // D249: the release renders only after a provider check actually
     // ran. The reconcile route is UNSTUBBED here (599), so the check
@@ -1531,7 +1341,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
         await waitFor(() =>
           expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
         );
-        expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Get Plus' })).toBeEnabled();
       }
     },
   );
@@ -1874,8 +1684,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     // Another tab's ambiguous change surfaces its lock while the
@@ -1935,8 +1744,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     // The reservation exists BEFORE any payment happened — with an id.
@@ -1949,7 +1757,9 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
 
     // A second confirm (this or any tab) finds the reservation and
     // stands down: exactly ONE session was ever created.
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    fireEvent.click(
+      within(screen.getByTestId('launch-offer-plus')).getByRole('button', { name: 'Get Plus' }),
+    );
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Checkout started',
     );
@@ -1995,7 +1805,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
+    const plus = await screen.findByTestId('launch-offer-plus');
     // Lock lands silently — no storage event reaches this tab.
     window.localStorage.setItem(
       pendingCheckoutKey('w'),
@@ -2010,7 +1820,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    fireEvent.click(within(plus).getByRole('button', { name: 'Get Plus' }));
 
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Plan change unconfirmed',
@@ -2026,7 +1836,7 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
   it('a payment completed in ANOTHER tab locks this one live (storage event)', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
     renderScreen();
-    expect(await screen.findByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Get Plus' })).toBeEnabled();
 
     // Another tab writes the record; the browser fires `storage` here.
     const record = writePendingCheckout('w', 'checkout', 'free', null, 'plus', 'monthly');
@@ -2040,7 +1850,8 @@ describe('BillingScreen — plan picker (billing live, free tier)', () => {
     });
 
     expect(screen.getByTestId('payment-processing-notice')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Upgrade to/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeDisabled();
+    expect(enabledPurchaseButtons()).toEqual([]);
   });
 });
 
@@ -2087,14 +1898,12 @@ describe('BillingScreen — closing checkout without paying (exact transaction c
   const exactNone: Answer = { outcome: 'none_found', exact: true };
 
   async function openProCheckoutAndClose() {
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
     act(() => capturedCheckoutEvents().onClosed?.());
   }
   async function openPassCheckoutAndClose() {
-    mockPassEnabled = true;
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     // The Pass card is its own preview: its button opens checkout directly.
     fireEvent.click(await screen.findByRole('button', { name: 'Get Backlog Pass' }));
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
@@ -2178,8 +1987,7 @@ describe('BillingScreen — closing checkout without paying (exact transaction c
           ),
       );
       renderScreen();
-      fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Pro' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'Continue to checkout' }));
+      await buyPlus();
 
       const notice = await screen.findByTestId('payment-processing-notice');
       await within(notice).findByRole('link', { name: 'Contact billing support' });
@@ -2340,21 +2148,14 @@ describe('BillingScreen — checkout funnel events', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
 
     expect(tracked('checkout_started')).toEqual([
-      [
-        'checkout_started',
-        { tier: 'plus', cycle: 'annual', provider: 'paddle', founding_pro: false },
-      ],
+      ['checkout_started', { tier: 'plus', cycle: 'annual', provider: 'paddle' }],
     ]);
     expect(tracked('checkout_session_created')).toEqual([
-      [
-        'checkout_session_created',
-        { tier: 'plus', cycle: 'annual', provider: 'paddle', founding_pro: false },
-      ],
+      ['checkout_session_created', { tier: 'plus', cycle: 'annual', provider: 'paddle' }],
     ]);
     expect(tracked('checkout_failed')).toHaveLength(0);
 
@@ -2374,8 +2175,7 @@ describe('BillingScreen — checkout funnel events', () => {
     ]);
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
     act(() => capturedCheckoutEvents().onClosed?.());
 
@@ -2417,8 +2217,7 @@ describe('BillingScreen — checkout funnel events', () => {
       ]);
       renderScreen();
 
-      fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-      fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+      await buyPlus();
       expect(await screen.findByText(message)).toBeInTheDocument();
       expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
@@ -2432,7 +2231,6 @@ describe('BillingScreen — checkout funnel events', () => {
             tier: 'plus',
             cycle: 'annual',
             provider: 'paddle',
-            founding_pro: false,
             code,
           },
         ],
@@ -2453,8 +2251,7 @@ describe('BillingScreen — checkout funnel events', () => {
     vi.mocked(launchCheckout).mockRejectedValueOnce(new CheckoutLaunchError(true));
     renderScreen();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Upgrade to Plus' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue to checkout' }));
+    await buyPlus();
 
     expect(
       await screen.findByRole('button', { name: 'Retry checkout window' }),
@@ -2535,51 +2332,18 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
   });
 
-  it('explains why an existing paid subscriber cannot claim a Founding Pro pricing link', async () => {
-    mockTier = 'pro';
-    stubSubscription(() => jsonOk({ data: PRO_SUB }));
-    renderScreen({ plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
-
-    expect(
-      await screen.findByText(
-        /Your active paid subscription cannot be converted to the promotional price/,
-      ),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
-  });
-
   it('a deep link naming the same tier at a DIFFERENT cycle (monthly->annual) still auto-opens the confirm panel', async () => {
-    mockTier = 'pro';
-    stubSubscription(() => jsonOk({ data: PRO_SUB }));
-    renderScreen({ plan: 'pro', cycle: 'annual' });
+    mockTier = 'plus';
+    stubSubscription(() => jsonOk({ data: PLUS_SUB }));
+    renderScreen({ plan: 'plus', cycle: 'annual' });
 
-    // PRO_SUB/SUB is a paddle-granting Pro subscription on the MONTHLY
-    // cycle — a deep link naming Pro+annual is a genuine cycle switch on
+    // PLUS_SUB is a paddle-granting Plus subscription on the MONTHLY
+    // cycle — a deep link naming Plus+annual is a genuine cycle switch on
     // the same tier and must still open the change-plan panel.
     expect(await screen.findByTestId('change-plan-panel')).toBeInTheDocument();
   });
 
-  it('founding member: banner with the locked manifest price', async () => {
-    mockTier = 'pro';
-    stubSubscription(() =>
-      jsonOk({
-        data: {
-          ...PRO_SUB,
-          foundingMember: true,
-          pendingCheckout: null,
-          complimentary: null,
-          subscription: { ...SUB, cycle: 'annual', foundingMember: true },
-        },
-      }),
-    );
-    renderScreen();
-
-    const banner = await screen.findByTestId('founding-banner');
-    expect(within(banner).getByText('Founding Pro member')).toBeInTheDocument();
-    expect(within(banner).getByText(/price locked at \$129\/yr/)).toBeInTheDocument();
-  });
-
-  it('PRICING_V2 retires Founding Pro sales and uses the deck refund line', async () => {
+  it('Pro is waitlist only and the Plus card uses the deck refund line', async () => {
     installFetchStub([
       {
         method: 'GET',
@@ -2587,9 +2351,8 @@ describe('BillingScreen — paid subscriber', () => {
         respond: () => jsonOk({ data: FREE_BODY }),
       },
     ]);
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
 
-    expect(screen.queryByRole('button', { name: 'Upgrade to Pro' })).not.toBeInTheDocument();
     expect(
       await screen.findByRole('button', { name: /Join the Pro waitlist/ }),
     ).toBeInTheDocument();
@@ -2598,14 +2361,11 @@ describe('BillingScreen — paid subscriber', () => {
     const panel = await screen.findByTestId('launch-offer-plus');
     expect(panel).toHaveTextContent('14-day money-back on any purchase, once per customer.');
     expect(within(panel).queryByText('30-day money-back guarantee')).not.toBeInTheDocument();
-    expect(within(panel).queryByRole('checkbox')).not.toBeInTheDocument();
-    expect(within(panel).queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
   });
 
-  it('PRICING_V2 quotes one INR catalog on plain /billing for a Free account', async () => {
-    mockPassEnabled = true;
+  it('quotes one INR catalog on plain /billing for a Free account', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen(null, undefined, { pricingV2: true, country: 'IN', indiaCheckoutOpen: true });
+    renderScreen(null, undefined, { country: 'IN', indiaCheckoutOpen: true });
 
     const current = await screen.findByTestId('current-plan-card');
     expect(current).toHaveTextContent('Free');
@@ -2622,10 +2382,9 @@ describe('BillingScreen — paid subscriber', () => {
     expect(pass.textContent).not.toContain('$');
   });
 
-  it('PRICING_V2 keeps USD on plain /billing for a US Free account', async () => {
-    mockPassEnabled = true;
+  it('keeps USD on plain /billing for a US Free account', async () => {
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen(null, undefined, { pricingV2: true, country: 'US' });
+    renderScreen(null, undefined, { country: 'US' });
 
     const current = await screen.findByTestId('current-plan-card');
     expect(current).toHaveTextContent('Free');
@@ -2640,7 +2399,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('checkout-panel')).not.toBeInTheDocument();
   });
 
-  it('PRICING_V2 quotes USD for India on /billing while India checkout is closed', async () => {
+  it('quotes USD for India on /billing while India checkout is closed', async () => {
     let checkoutBody: unknown = null;
     let geoHeader: string | null = 'present';
     installFetchStub([
@@ -2659,7 +2418,7 @@ describe('BillingScreen — paid subscriber', () => {
         },
       },
     ]);
-    renderScreen(null, undefined, { pricingV2: true, country: 'IN' });
+    renderScreen(null, undefined, { country: 'IN' });
 
     // The card is the preview: its terms are on it and its button opens checkout.
     const panel = await screen.findByTestId('launch-offer-plus');
@@ -2678,7 +2437,7 @@ describe('BillingScreen — paid subscriber', () => {
     expect(geoHeader).toBeNull();
   });
 
-  it('PRICING_V2 leaves a US Paddle checkout open on /billing', async () => {
+  it('leaves a US Paddle checkout open on /billing', async () => {
     let checkoutBody: unknown = null;
     installFetchStub([
       {
@@ -2695,7 +2454,7 @@ describe('BillingScreen — paid subscriber', () => {
         },
       },
     ]);
-    renderScreen(null, undefined, { pricingV2: true, country: 'US' });
+    renderScreen(null, undefined, { country: 'US' });
 
     // The card is the preview: its terms are on it and its button opens checkout.
     const panel = await screen.findByTestId('launch-offer-plus');
@@ -2732,7 +2491,6 @@ describe('BillingScreen — paid subscriber', () => {
       },
     ]);
     renderScreen(null, undefined, {
-      pricingV2: true,
       country: 'IN',
       indiaCheckoutOpen: true,
       checkoutGeoToken: 'v1.IN.signed',
@@ -2754,7 +2512,6 @@ describe('BillingScreen — paid subscriber', () => {
   });
 
   it('India Pass checkout sends the Pass offer and a failed overlay retains the same reservation', async () => {
-    mockPassEnabled = true;
     let checkoutBody: unknown = null;
     let geoHeader: string | null = null;
     installFetchStub([
@@ -2780,7 +2537,6 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     vi.mocked(launchCheckout).mockRejectedValueOnce(new CheckoutLaunchError(true));
     renderScreen(null, undefined, {
-      pricingV2: true,
       country: 'IN',
       indiaCheckoutOpen: true,
       checkoutGeoToken: 'v1.IN.signed',
@@ -2808,39 +2564,18 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.getByRole('button', { name: 'Retry checkout window' })).toBeEnabled();
   });
 
-  it('PRICING_V2 hides the founding member sales banner', async () => {
-    mockTier = 'pro';
-    stubSubscription(() =>
-      jsonOk({
-        data: {
-          ...PRO_SUB,
-          foundingMember: true,
-          pendingCheckout: null,
-          complimentary: null,
-          subscription: { ...SUB, cycle: 'annual', foundingMember: true },
-        },
-      }),
-    );
-    renderScreen(null, undefined, { pricingV2: true });
-
-    await screen.findByTestId('current-plan-card');
-    expect(screen.queryByTestId('founding-banner')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Claim Founding Pro/)).not.toBeInTheDocument();
-  });
-
   it('one notice slot: the money notice leads, the rest wait behind "+N"', async () => {
     mockTier = 'pro';
+    writePendingCheckout('w', 'change_unconfirmed', 'pro', 'annual', 'plus', 'annual');
     stubSubscription(() =>
       jsonOk({
         data: {
           ...PRO_SUB,
-          foundingMember: true,
           pendingCheckout: null,
           complimentary: null,
           subscription: {
             ...SUB,
             cycle: 'annual',
-            foundingMember: true,
             scheduledChange: {
               tier: 'plus',
               cycle: 'annual',
@@ -2853,12 +2588,12 @@ describe('BillingScreen — paid subscriber', () => {
     );
     renderScreen();
 
-    // The scheduled change outranks the founding banner.
-    expect(await screen.findByTestId('scheduled-plan-change-notice')).toBeInTheDocument();
-    expect(screen.queryByTestId('founding-banner')).not.toBeInTheDocument();
+    // The unresolved money action outranks the scheduled change.
+    expect(await screen.findByTestId('payment-processing-notice')).toBeInTheDocument();
+    expect(screen.queryByTestId('scheduled-plan-change-notice')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('notice-slot-toggle'));
-    expect(screen.getByTestId('founding-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('scheduled-plan-change-notice')).toBeInTheDocument();
   });
 
   it('cancel flow: preview copy (D120/D121) → confirm posts reason → card updates', async () => {
@@ -2951,38 +2686,6 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(card).queryByText(/Renews/)).toBeNull();
     // The notice below still states what actually happens.
     expect(await screen.findByText(/Downgrade scheduled/)).toBeInTheDocument();
-  });
-
-  // Same screenshot: the strip toggled to Monthly badged "Pro $19/mo"
-  // CURRENT while the subscriber pays $190/yr. The badge marks the plan
-  // you are ON — tier AND cycle — not whichever cycle the toggle shows.
-  it('CURRENT badge does not follow the cycle toggle away from the real plan', async () => {
-    mockTier = 'pro';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: { ...PRO_SUB, subscription: { ...SUB, cycle: 'annual' } } }),
-      },
-    ]);
-    renderScreen();
-
-    // Annual is the default; the Pro card is genuinely current there.
-    await screen.findByTestId('current-plan-card');
-    await openPlanOptions();
-    expect(within(screen.getByTestId('plan-picker')).getByText('Current plan')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
-
-    // Now every card on screen is a switch target, so nothing is CURRENT.
-    await waitFor(() =>
-      expect(within(screen.getByTestId('plan-picker')).queryByText('Current plan')).toBeNull(),
-    );
-    // Screen readers must hear the same thing sighted users see — the
-    // badge and `aria-current` were driven by different flags, so the
-    // monthly card still announced itself as current (Codex, 2026-07-31).
-    expect(document.querySelector('[aria-current="true"]')).toBeNull();
-    expect(screen.getByText(/Switch to monthly billing/)).toBeInTheDocument();
   });
 
   // D118 — the way back out of a cancel. Before this, cancelling was a
@@ -3246,364 +2949,6 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('downgrade-panel')).not.toBeInTheDocument();
   });
 
-  it('paid→paid switch: D226 preview → POST /billing/change-plan with the exact body', async () => {
-    mockTier = 'plus';
-    let changeBody: unknown = null;
-    installFetchStub([
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: () =>
-          jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-              nextBilledAt: null,
-            },
-          }),
-      },
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan',
-        respond: async (req) => {
-          changeBody = await req.json();
-          return jsonOk({ data: PLUS_SUB }); // pre-change state (§10)
-        },
-      },
-    ]);
-    renderScreen();
-
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = await screen.findByTestId('change-plan-panel');
-    expect(within(panel).getByText('Preview · before anything changes')).toBeInTheDocument();
-    expect(within(panel).getByText(/Plus \(monthly\) → Pro \(annual\)/)).toBeInTheDocument();
-    await waitFor(() => expect(panel).toHaveTextContent('is charged today'));
-
-    await waitFor(() =>
-      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
-    );
-    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
-    await waitFor(() => expect(changeBody).toEqual({ tierId: 'pro', cycle: 'annual' }));
-
-    // The change is pending until the webhook lands: truthful banner,
-    // no optimistic tier, checkout locked.
-    expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
-      'Plan change accepted — confirming your plan.',
-    );
-    expect(within(screen.getByTestId('current-plan-card')).getByText('Plus')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Switch to/ })).not.toBeInTheDocument();
-  });
-
-  it('upgrade panel states the exact prorated charge from the provider preview', async () => {
-    mockTier = 'plus';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: () =>
-          jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '18101', currencyCode: 'USD' },
-              nextBilledAt: '2027-07-30T18:00:27.060Z',
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = await screen.findByTestId('change-plan-panel');
-    // Codex round 2 (QA-billing-20260901-10): the panel is a PREVIEW
-    // ("before anything changes") — nothing is charged until Confirm is
-    // clicked, so the copy names it conditionally rather than asserting
-    // a completed charge.
-    expect(await within(panel).findByText('If you confirm:')).toBeInTheDocument();
-    // The provider's own number, lowest-denomination → formatted; the
-    // date is the post-change renewal from the same preview. Text is
-    // split across inline nodes, so assert on the panel's textContent.
-    await waitFor(() =>
-      expect(panel).toHaveTextContent(
-        '$181.01 is charged today — the prorated difference for the rest of this period',
-      ),
-    );
-    expect(panel).toHaveTextContent(
-      'Pro starts as soon as your payment provider confirms, usually within a minute.',
-    );
-    expect(panel).toHaveTextContent('Next billing date: Jul 30, 2027.');
-    // Money moves today, so the guarantee is reassurance and belongs here
-    // — unlike the $0 downgrade branch, where it contradicts.
-    expect(panel).toHaveTextContent('14-day money-back on any purchase, once per customer.');
-  });
-
-  it('blocks an upgrade while its quote fails, then retries before allowing confirmation', async () => {
-    mockTier = 'plus';
-    let quoteCalls = 0;
-    let changeCalls = 0;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: () => {
-          quoteCalls++;
-          return quoteCalls === 1
-            ? jsonServerError()
-            : jsonOk({
-                data: {
-                  kind: 'immediate',
-                  result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-                  nextBilledAt: null,
-                },
-              });
-        },
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan',
-        respond: () => {
-          changeCalls++;
-          return jsonOk({ data: PLUS_SUB });
-        },
-      },
-    ]);
-    renderScreen();
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const confirm = screen.getByRole('button', { name: 'Confirm upgrade' });
-    expect(confirm).toBeDisabled();
-    fireEvent.click(confirm);
-    expect(changeCalls).toBe(0);
-    fireEvent.click(await screen.findByRole('button', { name: 'Refresh quote' }));
-    await waitFor(() => expect(confirm).toBeEnabled());
-    expect(screen.getByTestId('change-plan-panel')).toHaveTextContent('$12.00 is charged today');
-    fireEvent.click(confirm);
-    await waitFor(() => expect(changeCalls).toBe(1));
-    expect(quoteCalls).toBe(2);
-  });
-
-  it('rechecks freshness at confirm time and never submits an expired quote', async () => {
-    mockTier = 'plus';
-    let quoteCalls = 0;
-    let changeCalls = 0;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: () => {
-          quoteCalls++;
-          return jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-              nextBilledAt: null,
-            },
-          });
-        },
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan',
-        respond: () => {
-          changeCalls++;
-          return jsonOk({ data: PLUS_SUB });
-        },
-      },
-    ]);
-    renderScreen();
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const confirm = screen.getByRole('button', { name: 'Confirm upgrade' });
-    await waitFor(() => expect(confirm).toBeEnabled());
-    const now = Date.now();
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 31_000);
-    try {
-      fireEvent.click(confirm);
-      await waitFor(() => expect(quoteCalls).toBe(2));
-      expect(changeCalls).toBe(0);
-    } finally {
-      clock.mockRestore();
-    }
-  });
-
-  it('ignores a late quote for a previous cycle while the current target is still loading', async () => {
-    mockTier = 'plus';
-    const pending: Record<string, (response: Response) => void> = {};
-    const changed: unknown[] = [];
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: async (req) => {
-          const body = await req.json();
-          return new Promise<Response>((resolve) => {
-            pending[body.cycle] = resolve;
-          });
-        },
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan',
-        respond: async (req) => {
-          changed.push(await req.json());
-          return jsonOk({ data: PLUS_SUB });
-        },
-      },
-    ]);
-    renderScreen();
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    await waitFor(() => expect(pending.annual).toBeTypeOf('function'));
-    fireEvent.click(screen.getByRole('button', { name: 'Monthly' }));
-    await waitFor(() => expect(pending.monthly).toBeTypeOf('function'));
-    await act(async () =>
-      pending.annual!(
-        jsonOk({
-          data: {
-            kind: 'immediate',
-            result: { action: 'charge', amount: '9900', currencyCode: 'USD' },
-            nextBilledAt: null,
-          },
-        }),
-      ),
-    );
-    const confirm = screen.getByRole('button', { name: 'Confirm upgrade' });
-    expect(confirm).toBeDisabled();
-    expect(screen.getByTestId('change-plan-panel')).not.toHaveTextContent(
-      '$99.00 is charged today',
-    );
-    fireEvent.click(confirm);
-    expect(changed).toHaveLength(0);
-    await act(async () =>
-      pending.monthly!(
-        jsonOk({
-          data: {
-            kind: 'immediate',
-            result: { action: 'charge', amount: '800', currencyCode: 'USD' },
-            nextBilledAt: null,
-          },
-        }),
-      ),
-    );
-    await waitFor(() => expect(confirm).toBeEnabled());
-    expect(screen.getByTestId('change-plan-panel')).toHaveTextContent('$8.00 is charged today');
-    fireEvent.click(confirm);
-    await waitFor(() => expect(changed).toEqual([{ tierId: 'pro', cycle: 'monthly' }]));
-  });
-
-  it('requires a new settled quote after closing and reopening an outstanding preview', async () => {
-    mockTier = 'plus';
-    const pending: Array<(response: Response) => void> = [];
-    let changeCalls = 0;
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: () => new Promise<Response>((resolve) => pending.push(resolve)),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan',
-        respond: () => {
-          changeCalls++;
-          return jsonOk({ data: PLUS_SUB });
-        },
-      },
-    ]);
-    renderScreen();
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    await waitFor(() => expect(pending).toHaveLength(1));
-    fireEvent.click(
-      within(screen.getByTestId('change-plan-panel')).getByRole('button', {
-        name: 'Keep current plan',
-      }),
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to Pro' }));
-    await act(async () =>
-      pending[0]!(
-        jsonOk({
-          data: {
-            kind: 'immediate',
-            result: { action: 'charge', amount: '9900', currencyCode: 'USD' },
-            nextBilledAt: null,
-          },
-        }),
-      ),
-    );
-    await waitFor(() => expect(pending).toHaveLength(2));
-    const confirm = screen.getByRole('button', { name: 'Confirm upgrade' });
-    expect(confirm).toBeDisabled();
-    fireEvent.click(confirm);
-    expect(changeCalls).toBe(0);
-    await act(async () =>
-      pending[1]!(
-        jsonOk({
-          data: {
-            kind: 'immediate',
-            result: { action: 'charge', amount: '800', currencyCode: 'USD' },
-            nextBilledAt: null,
-          },
-        }),
-      ),
-    );
-    await waitFor(() => expect(confirm).toBeEnabled());
-    expect(screen.getByTestId('change-plan-panel')).toHaveTextContent('$8.00 is charged today');
-    expect(changeCalls).toBe(0);
-  });
-
-  it('does not accept an immediate preview without a provider amount', async () => {
-    mockTier = 'plus';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: () => jsonOk({ data: { kind: 'immediate', result: null, nextBilledAt: null } }),
-      },
-    ]);
-    renderScreen();
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    await screen.findByRole('button', { name: 'Refresh quote' });
-    expect(screen.getByRole('button', { name: 'Confirm upgrade' })).toBeDisabled();
-  });
-
   it('loads the manifest comparison when expanded and removes it when collapsed', async () => {
     mockTier = 'pro';
     stubSubscription(() => jsonOk({ data: PRO_SUB }));
@@ -3617,7 +2962,7 @@ describe('BillingScreen — paid subscriber', () => {
     disclosure.open = true;
     fireEvent(disclosure, new Event('toggle'));
     const table = await screen.findByRole('table', { name: 'Included features by plan' });
-    expect(within(table).getByRole('row', { name: 'Gmail accounts 1 1 5' })).toBeInTheDocument();
+    expect(within(table).getByRole('row', { name: 'Gmail accounts 1 2 5' })).toBeInTheDocument();
     expect(
       within(table).getByRole('row', {
         name: `Emails cleared a month ${METER.free.limit.toLocaleString('en-US')} No monthly limit No monthly limit`,
@@ -3674,44 +3019,6 @@ describe('BillingScreen — paid subscriber', () => {
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );
-  });
-
-  it('upgrade panel states a credit outcome as landing in the account balance, conditional on confirm', async () => {
-    mockTier = 'plus';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: () =>
-          jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'credit', amount: '450', currencyCode: 'USD' },
-              nextBilledAt: '2027-07-30T18:00:27.060Z',
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = await screen.findByTestId('change-plan-panel');
-    // Codex round 2 (QA-billing-20260901-10): a credit branch had no test
-    // — the panel is a preview, so the credit outcome must read as
-    // conditional on Confirm, and land in the account balance (never "the
-    // payment method", which is the charge destination).
-    expect(await within(panel).findByText('If you confirm:')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(panel).toHaveTextContent('no new charge today. The unused value of your current plan'),
-    );
-    expect(panel).toHaveTextContent('$4.50 is credited to your balance');
-    expect(panel).not.toHaveTextContent('credited to your existing payment method');
   });
 
   it('Pro→Plus schedules the downgrade without a charge or a weeks-long processing lock', async () => {
@@ -3886,85 +3193,20 @@ describe('BillingScreen — paid subscriber', () => {
     );
   });
 
-  it('an ambiguous provider error on an IMMEDIATE upgrade enters the lock+poll — no armed retry', async () => {
-    // A 502 on prorated_immediately is ambiguous — the charge may have
-    // landed before the response was lost. The panel must NOT stay open
-    // with a retryable confirm; the screen locks, polls, and completes
-    // normally if the upgrade turns out to have applied.
-    mockTier = 'plus';
-    let changeAttempts = 0;
-    installFetchStub([
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan/preview',
-        respond: () =>
-          jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-              nextBilledAt: null,
-            },
-          }),
-      },
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
-      },
-      {
-        method: 'POST',
-        path: '/api/billing/change-plan',
-        respond: () => {
-          changeAttempts += 1;
-          return new Response(
-            JSON.stringify({ error: { code: 'BILLING_PROVIDER_ERROR', message: 'ignored' } }),
-            { status: 502, headers: { 'content-type': 'application/json' } },
-          );
-        },
-      },
-    ]);
-    renderScreen();
-
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
-    const panel = await screen.findByTestId('change-plan-panel');
-    await waitFor(() =>
-      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
-    );
-    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
-
-    // Panel gone, outcome-neutral notice up, picker locked: the
-    // money-moving confirm is no longer armed, and the poll owns the
-    // reconciliation (the flip machinery is kind-agnostic and covered
-    // by the paid→paid switch test above).
-    const notice = await screen.findByTestId('payment-processing-notice');
-    expect(notice).toHaveTextContent('Plan change unconfirmed — confirming your plan.');
-    // Outcome-neutral: the provider's response was lost, so nothing is
-    // claimed as accepted or received.
-    expect(notice).not.toHaveTextContent(/accepted|received/i);
-    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
-    expect(screen.queryAllByRole('button', { name: /Switch to/ })).toHaveLength(0);
-    expect(changeAttempts).toBe(1);
-    // The persisted lock survives (a reload would re-lock).
-    const stored = window.localStorage.getItem(pendingCheckoutKey('w'));
-    expect(stored).not.toBeNull();
-    expect((JSON.parse(stored!) as { kind: string }).kind).toBe('change_unconfirmed');
-  });
-
   it('an interrupted change attempt locks the NEXT mount; release is a two-step assertion', async () => {
     // The attempt lock is written BEFORE the request — a reload/unmount
     // mid-flight leaves this record with no observed outcome. A fresh
     // mount must lock, and the only manual exit is the explicit
     // checked-first release.
-    mockTier = 'plus';
+    mockTier = 'pro';
     window.localStorage.setItem(
       pendingCheckoutKey('w'),
       JSON.stringify({
         workspaceId: 'w',
         kind: 'change_unconfirmed',
-        fromTier: 'plus',
+        fromTier: 'pro',
         fromCycle: 'monthly',
-        toTier: 'pro',
+        toTier: 'plus',
         toCycle: 'annual',
         at: Date.now() - 16 * 60_000,
       }),
@@ -3973,7 +3215,7 @@ describe('BillingScreen — paid subscriber', () => {
       {
         method: 'GET',
         path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
+        respond: () => jsonOk({ data: PRO_SUB }),
       },
     ]);
     renderScreen();
@@ -4000,7 +3242,7 @@ describe('BillingScreen — paid subscriber', () => {
       expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument(),
     );
     await openPlanOptions();
-    expect(await screen.findByRole('button', { name: 'Switch to Pro' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Switch to Plus' })).toBeInTheDocument();
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
 
@@ -4008,7 +3250,7 @@ describe('BillingScreen — paid subscriber', () => {
     // Web Locks path: `ifAvailable` hands the callback `null` when the
     // mutex is held elsewhere — the claim must refuse and fire nothing,
     // even with an EMPTY pending slot (the other tab is mid-write).
-    mockTier = 'plus';
+    mockTier = 'pro';
     let changePosts = 0;
     installFetchStub([
       {
@@ -4016,24 +3258,20 @@ describe('BillingScreen — paid subscriber', () => {
         path: '/api/billing/change-plan/preview',
         respond: () =>
           jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-              nextBilledAt: null,
-            },
+            data: { kind: 'deferred', effectiveAt: PRO_SUB.subscription!.currentPeriodEnd },
           }),
       },
       {
         method: 'GET',
         path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
+        respond: () => jsonOk({ data: PRO_SUB }),
       },
       {
         method: 'POST',
         path: '/api/billing/change-plan',
         respond: () => {
           changePosts += 1;
-          return jsonOk({ data: PLUS_SUB });
+          return jsonOk({ data: PRO_SUB });
         },
       },
     ]);
@@ -4047,12 +3285,12 @@ describe('BillingScreen — paid subscriber', () => {
     try {
       renderScreen();
       await openPlanOptions();
-      fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
       const panel = await screen.findByTestId('change-plan-panel');
       await waitFor(() =>
-        expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+        expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
       );
-      fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+      fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
 
       // Stand-down: panel closes, nothing fires, nothing was written.
       await waitFor(() =>
@@ -4070,7 +3308,7 @@ describe('BillingScreen — paid subscriber', () => {
     // Same race as the checkout stand-down, on the change-plan path:
     // the pessimistic attempt write must not clobber the silent lock,
     // and the money-moving POST must never fire.
-    mockTier = 'plus';
+    mockTier = 'pro';
     let changePosts = 0;
     installFetchStub([
       {
@@ -4078,38 +3316,34 @@ describe('BillingScreen — paid subscriber', () => {
         path: '/api/billing/change-plan/preview',
         respond: () =>
           jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-              nextBilledAt: null,
-            },
+            data: { kind: 'deferred', effectiveAt: PRO_SUB.subscription!.currentPeriodEnd },
           }),
       },
       {
         method: 'GET',
         path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
+        respond: () => jsonOk({ data: PRO_SUB }),
       },
       {
         method: 'POST',
         path: '/api/billing/change-plan',
         respond: () => {
           changePosts += 1;
-          return jsonOk({ data: PLUS_SUB });
+          return jsonOk({ data: PRO_SUB });
         },
       },
     ]);
     renderScreen();
 
     await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
     // Lock lands silently — no storage event reaches this tab.
     window.localStorage.setItem(
       pendingCheckoutKey('w'),
       JSON.stringify({
         workspaceId: 'w',
         kind: 'change_unconfirmed',
-        fromTier: 'plus',
+        fromTier: 'pro',
         fromCycle: 'monthly',
         toTier: 'plus',
         toCycle: 'annual',
@@ -4119,9 +3353,9 @@ describe('BillingScreen — paid subscriber', () => {
 
     const panel = await screen.findByTestId('change-plan-panel');
     await waitFor(() =>
-      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+      expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );
-    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
 
     expect(await screen.findByTestId('payment-processing-notice')).toHaveTextContent(
       'Plan change unconfirmed',
@@ -4140,18 +3374,18 @@ describe('BillingScreen — paid subscriber', () => {
   it('a lock landing from ANOTHER tab disarms an already-open confirm panel', async () => {
     // The open panel's Confirm is charge-capable — it must not outlive
     // a lock that says a money outcome elsewhere is unresolved.
-    mockTier = 'plus';
+    mockTier = 'pro';
     installFetchStub([
       {
         method: 'GET',
         path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
+        respond: () => jsonOk({ data: PRO_SUB }),
       },
     ]);
     renderScreen();
 
     await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
     expect(screen.getByTestId('change-plan-panel')).toBeInTheDocument();
 
     const record = writePendingCheckout(
@@ -4220,27 +3454,23 @@ describe('BillingScreen — paid subscriber', () => {
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
   });
 
-  it('a DEFINITIVE provider rejection on an upgrade stays inline — nothing applied, retry safe', async () => {
+  it('a DEFINITIVE provider rejection on a plan change stays inline — nothing applied, retry safe', async () => {
     // details.providerOutcome='definitive' means the provider itself
     // refused the call — outcome KNOWN, no lock, honest declined copy.
-    mockTier = 'plus';
+    mockTier = 'pro';
     installFetchStub([
       {
         method: 'POST',
         path: '/api/billing/change-plan/preview',
         respond: () =>
           jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-              nextBilledAt: null,
-            },
+            data: { kind: 'deferred', effectiveAt: PRO_SUB.subscription!.currentPeriodEnd },
           }),
       },
       {
         method: 'GET',
         path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
+        respond: () => jsonOk({ data: PRO_SUB }),
       },
       {
         method: 'POST',
@@ -4261,17 +3491,17 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
     const panel = await screen.findByTestId('change-plan-panel');
     await waitFor(() =>
-      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+      expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );
-    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
 
     const alert = await within(panel).findByRole('alert');
     expect(alert).toHaveTextContent(/declined this change — nothing was applied or charged/);
     expect(screen.queryByTestId('payment-processing-notice')).not.toBeInTheDocument();
-    expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled();
+    expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled();
     // Known outcome ⇒ the pessimistic attempt lock was released.
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).toBeNull();
   });
@@ -4281,7 +3511,7 @@ describe('BillingScreen — paid subscriber', () => {
     // a concurrent attempt (same target — target matching would alias)
     // re-writes the per-workspace key. A's definitive failure must NOT
     // clear that other attempt's unresolved lock.
-    mockTier = 'plus';
+    mockTier = 'pro';
     let resolveChange: ((r: Response) => void) | null = null;
     installFetchStub([
       {
@@ -4289,17 +3519,13 @@ describe('BillingScreen — paid subscriber', () => {
         path: '/api/billing/change-plan/preview',
         respond: () =>
           jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-              nextBilledAt: null,
-            },
+            data: { kind: 'deferred', effectiveAt: PRO_SUB.subscription!.currentPeriodEnd },
           }),
       },
       {
         method: 'GET',
         path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
+        respond: () => jsonOk({ data: PRO_SUB }),
       },
       {
         method: 'POST',
@@ -4310,12 +3536,12 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
     const panel = await screen.findByTestId('change-plan-panel');
     await waitFor(() =>
-      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+      expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );
-    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
     await waitFor(() => expect(resolveChange).not.toBeNull());
 
     // A wrote its lock (with its own attemptId) at click time.
@@ -4358,7 +3584,7 @@ describe('BillingScreen — paid subscriber', () => {
     // key. A is then ACCEPTED — but startPending('change') must not
     // replace B's change_unconfirmed lock (B's charge outcome is still
     // unknown); the screen surfaces B's lock instead.
-    mockTier = 'plus';
+    mockTier = 'pro';
     let resolveChange: ((r: Response) => void) | null = null;
     installFetchStub([
       {
@@ -4366,17 +3592,13 @@ describe('BillingScreen — paid subscriber', () => {
         path: '/api/billing/change-plan/preview',
         respond: () =>
           jsonOk({
-            data: {
-              kind: 'immediate',
-              result: { action: 'charge', amount: '1200', currencyCode: 'USD' },
-              nextBilledAt: null,
-            },
+            data: { kind: 'deferred', effectiveAt: PRO_SUB.subscription!.currentPeriodEnd },
           }),
       },
       {
         method: 'GET',
         path: '/api/billing/subscription',
-        respond: () => jsonOk({ data: PLUS_SUB }),
+        respond: () => jsonOk({ data: PRO_SUB }),
       },
       {
         method: 'POST',
@@ -4387,12 +3609,12 @@ describe('BillingScreen — paid subscriber', () => {
     renderScreen();
 
     await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Pro' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
     const panel = await screen.findByTestId('change-plan-panel');
     await waitFor(() =>
-      expect(within(panel).getByRole('button', { name: 'Confirm upgrade' })).toBeEnabled(),
+      expect(within(panel).getByRole('button', { name: 'Schedule downgrade' })).toBeEnabled(),
     );
-    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm upgrade' }));
+    fireEvent.click(within(panel).getByRole('button', { name: 'Schedule downgrade' }));
     await waitFor(() => expect(resolveChange).not.toBeNull());
 
     const mine = window.localStorage.getItem(pendingCheckoutKey('w'));
@@ -4408,7 +3630,7 @@ describe('BillingScreen — paid subscriber', () => {
     // A's outcome arrives: ACCEPTED (pre-change body, §10).
     act(() => {
       resolveChange!(
-        new Response(JSON.stringify({ data: PLUS_SUB }), {
+        new Response(JSON.stringify({ data: PRO_SUB }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -4450,12 +3672,11 @@ describe('BillingScreen — paid subscriber', () => {
     ]);
     renderScreen();
 
-    // Card tells ONE story: entitlement Free, $0 — the paused row's
+    // Card tells ONE story: entitlement Free — the paused row's
     // price/status/cancel never leak onto it. "No card on file" is a
     // provider claim the paused record contradicts, so it's absent too.
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Free')).toBeInTheDocument();
-    expect(within(card).getByText('$0')).toBeInTheDocument();
     expect(within(card).queryByText(/\$9/)).not.toBeInTheDocument();
     expect(within(card).queryByText(/no card on file/)).not.toBeInTheDocument();
     expect(
@@ -4471,7 +3692,8 @@ describe('BillingScreen — paid subscriber', () => {
     expect(within(notice).getByRole('button', { name: 'Review cancellation' })).toBeInTheDocument();
 
     // Plan changes stay locked while paused.
-    expect(screen.queryByRole('button', { name: /Upgrade to|Switch to/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeDisabled();
+    expect(enabledPurchaseButtons()).toEqual([]);
 
     fireEvent.click(within(notice).getByRole('button', { name: 'Review resume' }));
     const resumePanel = within(notice).getByTestId('resume-confirm-panel');
@@ -4797,7 +4019,7 @@ describe('BillingScreen — paid confirmation beneath complimentary access', () 
 
       const card = await screen.findByTestId('current-plan-card');
       expect(within(card).getByText('Complimentary')).toBeInTheDocument();
-      expect(within(card).queryByText(quotedPlanPrice('pro', 'annual')!)).not.toBeInTheDocument();
+      expect(within(card).queryByText('$19/yr')).not.toBeInTheDocument();
       expect(
         within(card).queryByRole('button', { name: 'Review cancellation' }),
       ).not.toBeInTheDocument();
@@ -4934,8 +4156,8 @@ describe('BillingScreen — one billing story (A6)', () => {
     // quoted Pro price (nobody is charged it) and no leaked Plus price.
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Pro')).toBeInTheDocument();
-    expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
-    expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();
+    expect(within(card).queryByText('$19/mo')).not.toBeInTheDocument();
+    expect(within(card).queryByText('$9/mo')).not.toBeInTheDocument();
     expect(within(card).getByText('Included with your account')).toBeInTheDocument();
     expect(
       within(card).queryByRole('button', { name: 'Review cancellation' }),
@@ -4985,8 +4207,8 @@ describe('BillingScreen — one billing story (A6)', () => {
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Pro')).toBeInTheDocument();
     expect(within(card).getByText('Included with your account')).toBeInTheDocument();
-    expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
-    expect(within(card).queryByText(quotedPlanPrice('pro', 'annual')!)).not.toBeInTheDocument();
+    expect(within(card).queryByText('$19/mo')).not.toBeInTheDocument();
+    expect(within(card).queryByText('$19/yr')).not.toBeInTheDocument();
     expect(screen.queryByTestId('non-backing-subscription-notice')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Buy Plus separately' })).toBeInTheDocument();
   });
@@ -4997,7 +4219,6 @@ describe('BillingScreen — one billing story (A6)', () => {
     // generic "Included with your account" would leave the reader
     // guessing why they were never charged.
     mockTier = 'pro';
-    mockPassEnabled = true;
     mockCleanupRemaining = null;
     stubSubscription(() =>
       jsonOk({
@@ -5011,7 +4232,7 @@ describe('BillingScreen — one billing story (A6)', () => {
         },
       }),
     );
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
 
     const card = await screen.findByTestId('current-plan-card');
     expect(within(card).getByText('Pro')).toBeInTheDocument();
@@ -5039,7 +4260,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(comparison.textContent).not.toMatch(/\$|\/yr|\/mo/);
     // No subscription exists, so nothing here may offer to manage one.
     expect(within(card).queryByRole('button', { name: 'Review cancellation' })).toBeNull();
-    expect(within(card).queryByText(quotedPlanPrice('pro', 'monthly')!)).not.toBeInTheDocument();
+    expect(within(card).queryByText('$19/mo')).not.toBeInTheDocument();
   });
 
   it.each([
@@ -5049,13 +4270,12 @@ describe('BillingScreen — one billing story (A6)', () => {
     'opens complimentary purchase options for a direct $offer $plan intent without charging',
     async (intent) => {
       mockTier = 'pro';
-      mockPassEnabled = true;
       stubSubscription(() =>
         jsonOk({
           data: { ...FREE_BODY, tier: 'pro', complimentary: { tier: 'pro', expiresAt: null } },
         }),
       );
-      renderScreen(intent, undefined, { pricingV2: true });
+      renderScreen(intent);
       const summary = await screen.findByText('View purchase options');
       expect(summary.closest('details')).toHaveAttribute('open');
       expect(await screen.findByTestId('checkout-panel')).toBeInTheDocument();
@@ -5083,12 +4303,15 @@ describe('BillingScreen — one billing story (A6)', () => {
     const note = await screen.findByTestId('complimentary-note');
     expect(note).toHaveTextContent('through Dec 31, 2026');
     expect(note).toHaveTextContent('return to your paid plan');
-    expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+    // Pro is waitlist only, so the comp's next step is the waitlist.
+    expect(screen.getByRole('button', { name: proWaitlistCta() })).toBeInTheDocument();
   });
 
   it('an active Pass is the Pass, not Plus / Complimentary', async () => {
     mockTier = 'plus';
     mockCleanupRemaining = null;
+    // A live Pass is what sets the one-account ceiling (`me.inboxLimit`).
+    mockInboxLimit = 1;
     stubSubscription(() =>
       jsonOk({
         data: {
@@ -5129,6 +4352,8 @@ describe('BillingScreen — one billing story (A6)', () => {
   it('a manual Pass is Backlog Pass with no price, refund link, or payment card', async () => {
     mockTier = 'plus';
     mockCleanupRemaining = null;
+    // A live Pass is what sets the one-account ceiling (`me.inboxLimit`).
+    mockInboxLimit = 1;
     stubSubscription(() =>
       jsonOk({
         data: {
@@ -5163,7 +4388,6 @@ describe('BillingScreen — one billing story (A6)', () => {
   it('a paid Pass keeps the buy-again line on the plan card', async () => {
     mockTier = 'plus';
     mockCleanupRemaining = null;
-    mockPricingV2 = true;
     stubSubscription(() =>
       jsonOk({
         data: {
@@ -5191,7 +4415,6 @@ describe('BillingScreen — one billing story (A6)', () => {
   it('a free manual Pass omits the buy-again line on the plan card', async () => {
     mockTier = 'plus';
     mockCleanupRemaining = null;
-    mockPricingV2 = true;
     stubSubscription(() =>
       jsonOk({
         data: {
@@ -5236,7 +4459,7 @@ describe('BillingScreen — one billing story (A6)', () => {
         },
       }),
     );
-    renderScreen({ plan: 'plus', cycle: 'annual' }, undefined, { pricingV2: true });
+    renderScreen({ plan: 'plus', cycle: 'annual' });
 
     await screen.findByTestId('current-plan-card');
     const plus = await screen.findByTestId('launch-offer-plus');
@@ -5468,7 +4691,6 @@ describe('BillingScreen — one billing story (A6)', () => {
   });
 
   it('a Pass confirm records the purchase on the checkout_intent lock', async () => {
-    mockPassEnabled = true;
     installFetchStub([
       {
         method: 'GET',
@@ -5491,7 +4713,7 @@ describe('BillingScreen — one billing story (A6)', () => {
           }),
       },
     ]);
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
 
     // The card is the preview: its terms are on it and its button opens checkout.
     const panel = await screen.findByTestId('launch-offer-pass');
@@ -5542,7 +4764,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     expect(notice).toHaveTextContent('Your current Pro plan');
     // The mismatch row never puts its price on the card…
     const card = screen.getByTestId('current-plan-card');
-    expect(within(card).queryByText(quotedPlanPrice('plus', 'monthly')!)).not.toBeInTheDocument();
+    expect(within(card).queryByText('$9/mo')).not.toBeInTheDocument();
     // …and it still occupies the server's one-live-subscription slot
     // (status past_due ∈ SUBSCRIPTION_EXISTS), so no checkout affordance
     // renders at all.
@@ -5577,7 +4799,7 @@ describe('BillingScreen — one billing story (A6)', () => {
     // the ended row does not lock the picker.
     const card = screen.getByTestId('current-plan-card');
     expect(within(card).queryByText(/no card on file/)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Upgrade to Pro' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeEnabled();
   });
 
   it('a malformed 200 payload renders the honest unknown state, never invented facts', async () => {
@@ -5880,9 +5102,8 @@ describe('Billing setup and checkout loader recovery', () => {
         'http://localhost',
       ).searchParams.get('returnTo');
       expect(destination).toBe('/billing?plan=pro&cycle=annual');
-      expect(
-        screen.queryByRole('button', { name: 'Continue to checkout' }),
-      ).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Get Plus' })).toBeDisabled();
+      expect(enabledPurchaseButtons()).toEqual([]);
       expect(launchCheckout).not.toHaveBeenCalled();
     },
   );
@@ -5939,9 +5160,8 @@ describe('Billing setup and checkout loader recovery', () => {
         },
       },
     ]);
-    renderScreen({ plan: 'pro', cycle: 'monthly' });
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    renderScreen();
+    await buyPlus();
     await screen.findByRole('link', { name: 'Resume setup' });
     expect(reads).toBeGreaterThan(1);
     expect(launchCheckout).not.toHaveBeenCalled();
@@ -5979,9 +5199,8 @@ describe('Billing setup and checkout loader recovery', () => {
     vi.mocked(launchCheckout)
       .mockRejectedValueOnce(new CheckoutLaunchError(true))
       .mockResolvedValue(undefined);
-    renderScreen({ plan: 'pro', cycle: 'monthly' });
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    renderScreen();
+    await buyPlus();
     const retry = await screen.findByRole('button', { name: 'Retry checkout window' });
     expect(window.localStorage.getItem(pendingCheckoutKey('w'))).not.toBeNull();
     fireEvent.click(retry);
@@ -6025,9 +5244,8 @@ it.each(['reject', 'closed', 'completed'] as const)(
           reject = j;
         }),
     );
-    const rendered = renderScreen({ plan: 'pro', cycle: 'monthly' });
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const rendered = renderScreen();
+    await buyPlus();
     await waitFor(() => expect(launchCheckout).toHaveBeenCalledTimes(1));
     const events = vi.mocked(launchCheckout).mock.calls[0]![1]!;
     const beforeOpen = vi.mocked(launchCheckout).mock.calls[0]![2]!;
@@ -6082,9 +5300,8 @@ it('does not create checkout after the originating owner changes during its Web 
     },
   ]);
   try {
-    const rendered = renderScreen({ plan: 'pro', cycle: 'monthly' });
-    const panel = await screen.findByTestId('checkout-panel');
-    fireEvent.click(within(panel).getByRole('button', { name: 'Continue to checkout' }));
+    const rendered = renderScreen();
+    await buyPlus();
     await waitFor(() => expect(release).toBeTypeOf('function'));
     mockWorkspaceId = 'new-owner';
     rendered.rerender(
@@ -6263,7 +5480,7 @@ it('a fulfilled attempt refreshes entitlement-dependent caches in a browser with
   );
 });
 
-it('a historical fulfilled Plus attempt cannot redirect a later Pro upgrade request', async () => {
+it('a historical fulfilled Plus attempt cannot redirect a later plan change request', async () => {
   vi.mocked(returnAfterUpgrade).mockClear();
   mockTier = 'plus';
   stubSubscription(() =>
@@ -6284,7 +5501,8 @@ it('a historical fulfilled Plus attempt cannot redirect a later Pro upgrade requ
       },
     }),
   );
-  renderScreen({ plan: 'pro', cycle: 'annual', from: '/automations' });
+  // PLUS_SUB is monthly, so a Plus annual link is a real plan change.
+  renderScreen({ plan: 'plus', cycle: 'annual', from: '/automations' });
   await screen.findByTestId('change-plan-panel');
   expect(returnAfterUpgrade).not.toHaveBeenCalled();
 });
@@ -6562,8 +5780,6 @@ describe('BillingScreen — a hold on a checkout the latest read no longer names
 describe('BillingScreen — launch layout (D119 redesign)', () => {
   it('names the Backlog Pass, not Plus, as the plan a Pass holder is on after a subscription ended', async () => {
     mockTier = 'plus';
-    mockPricingV2 = true;
-    mockPassEnabled = true;
     stubSubscription(() =>
       jsonOk({
         data: {
@@ -6576,7 +5792,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
         },
       }),
     );
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const notice = await screen.findByTestId('non-backing-subscription-notice');
     expect(notice).toHaveTextContent('Your Plus subscription ended.');
     expect(notice).toHaveTextContent('Your account is on Backlog Pass.');
@@ -6589,10 +5805,9 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
     'tells a launch-price Plus subscriber their plan covers 2 Gmail accounts when %s',
     async (_label, inboxLimit) => {
       mockTier = 'plus';
-      mockPricingV2 = true;
       mockInboxLimit = inboxLimit;
       stubSubscription(() => jsonOk({ data: PLUS_SUB }));
-      renderScreen(null, undefined, { pricingV2: true });
+      renderScreen();
       const coverage = await screen.findByRole('region', { name: 'Your plan includes' });
       // The legacy manifest still lists one account for Plus; launch Plus has two.
       expect(coverage).toHaveTextContent('1 of 2 connected');
@@ -6602,10 +5817,8 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
   );
 
   it('leads a Free account with its offers, then the answers, with no empty history', async () => {
-    mockPassEnabled = true;
-    mockPricingV2 = true;
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const status = await screen.findByTestId('current-plan-card');
     const plus = screen.getByTestId('launch-offer-plus');
     const pass = screen.getByTestId('launch-offer-pass');
@@ -6627,10 +5840,8 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
   });
 
   it('groups the billing questions under one heading with no rule between them', async () => {
-    mockPassEnabled = true;
-    mockPricingV2 = true;
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const faq = await screen.findByTestId('billing-faq');
     expect(within(faq).getByText('Questions')).toBeInTheDocument();
     const rows = faq.querySelectorAll('details');
@@ -6645,10 +5856,9 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
   });
 
   it('still tells a Free account above its Gmail limit that adding one is blocked', async () => {
-    mockPricingV2 = true;
     mockMailboxCount = 3;
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const status = await screen.findByTestId('current-plan-card');
     expect(status).toHaveTextContent('3 of 1 connected');
     expect(within(status).getByRole('link', { name: /Gmail accounts/ })).toHaveAttribute(
@@ -6659,7 +5869,6 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
   });
 
   it('an ambiguous checkout failure locks the offers without a stale "Try again"', async () => {
-    mockPricingV2 = true;
     installFetchStub([
       {
         method: 'GET',
@@ -6678,7 +5887,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
           ),
       },
     ]);
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const plus = await screen.findByTestId('launch-offer-plus');
     fireEvent.click(within(plus).getByRole('button', { name: 'Get Plus' }));
 
@@ -6688,7 +5897,6 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
   });
 
   it('a rejected checkout keeps its message on the card and the offers open', async () => {
-    mockPricingV2 = true;
     installFetchStub([
       {
         method: 'GET',
@@ -6707,7 +5915,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
           ),
       },
     ]);
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const plus = await screen.findByTestId('launch-offer-plus');
     fireEvent.click(within(plus).getByRole('button', { name: 'Get Plus' }));
 
@@ -6717,9 +5925,8 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
   });
 
   it('keeps the Free status to one row at or under the Gmail limit', async () => {
-    mockPricingV2 = true;
     stubSubscription(() => jsonOk({ data: FREE_BODY }));
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const status = await screen.findByTestId('current-plan-card');
     expect(status).toHaveTextContent('Free');
     expect(status).not.toHaveTextContent('connected');
@@ -6727,7 +5934,6 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
   });
 
   it('opens checkout from one click on Get Plus, with the terms already on the card', async () => {
-    mockPricingV2 = true;
     let posts = 0;
     installFetchStub([
       {
@@ -6744,7 +5950,7 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
         },
       },
     ]);
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const plus = await screen.findByTestId('launch-offer-plus');
     expect(screen.getByTestId('launch-offer-plus-terms')).toHaveTextContent(
       fillStory(WS1_COPY['launch.plus.terms']),
@@ -6758,9 +5964,8 @@ describe('BillingScreen — launch layout (D119 redesign)', () => {
 
   it('keeps a subscriber’s plan options closed until Change plan, then opens them below', async () => {
     mockTier = 'plus';
-    mockPricingV2 = true;
     stubSubscription(() => jsonOk({ data: PLUS_SUB }));
-    renderScreen(null, undefined, { pricingV2: true });
+    renderScreen();
     const card = await screen.findByTestId('current-plan-card');
     expect(screen.queryByTestId('plan-picker')).not.toBeInTheDocument();
     expect(screen.queryByTestId('launch-offer-plus')).not.toBeInTheDocument();

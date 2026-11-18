@@ -14,11 +14,13 @@ const RESULT = {
 };
 
 describe('ActionsController.unsubscribeIntent', () => {
+  // `includesBacklogAction` is accepted for older clients and ignored:
+  // unsubscribe draws nothing from the Free meter.
   it.each([
-    [{ senderId: SENDER_ID }, false, false],
-    [{ senderId: SENDER_ID, includesBacklogAction: true }, true, false],
-    [{ senderId: SENDER_ID, override: true }, false, true],
-  ] as const)('forwards the parsed flags (%s)', async (body, backlog, override) => {
+    [{ senderId: SENDER_ID }, false],
+    [{ senderId: SENDER_ID, includesBacklogAction: true }, false],
+    [{ senderId: SENDER_ID, override: true }, true],
+  ] as const)('forwards the parsed override (%s)', async (body, override) => {
     const recordUnsubscribeIntent = vi.fn().mockResolvedValue(RESULT);
     const controller = new ActionsController(
       { recordUnsubscribeIntent } as never,
@@ -33,7 +35,6 @@ describe('ActionsController.unsubscribeIntent', () => {
       mailboxAccountId: MAILBOX_ID,
       senderId: SENDER_ID,
       idempotencyKey: 'idempotency-key-123',
-      includesBacklogAction: backlog,
       override,
     });
   });

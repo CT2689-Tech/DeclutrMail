@@ -29,8 +29,8 @@ import { appendUpgradeRecord, hasUnresolvedUpgrade } from '../upgrade-intents.js
  * cancel) against PGlite. Adapters are stubbed — their provider-API
  * behavior is covered by their own specs; these tests pin the
  * service's DB semantics: single-active-subscription rule, catalog
- * fail-closed, billing-region recording, founding availability, and
- * the cancel → cancel_at_period_end + reason-audit flow.
+ * fail-closed, billing-region recording, and the cancel →
+ * cancel_at_period_end + reason-audit flow.
  */
 
 async function freshDb(): Promise<DrizzleDb> {
@@ -207,7 +207,7 @@ describe('BillingService', () => {
           .update(providerSyncState)
           .set({ readinessStatus: state as 'failed' | 'queued' | 'syncing' });
       await expect(
-        service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+        service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
       ).rejects.toMatchObject({ code: 'CHECKOUT_SETUP_REQUIRED' });
       expect(paddleCheckout).not.toHaveBeenCalled();
       expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
@@ -230,7 +230,7 @@ describe('BillingService', () => {
         false,
       );
       await expect(
-        service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+        service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
       ).rejects.toMatchObject({ code: 'CHECKOUT_SETUP_REQUIRED' });
       expect(paddleCheckout).not.toHaveBeenCalled();
       expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
@@ -254,7 +254,7 @@ describe('BillingService', () => {
     expect((await service.getSubscription(principal.workspaceId)).checkoutSetupComplete).toBe(true);
     await service.createCheckout(principal, {
       tierId: 'plus',
-      cycle: 'monthly',
+      cycle: 'annual',
       provider: 'paddle',
     });
     expect(paddleCheckout).toHaveBeenCalledTimes(1);
@@ -265,7 +265,7 @@ describe('BillingService', () => {
       .insert(accountDeletionRequests)
       .values({ userId: principal.userId, effectiveAt: new Date(), basis: 'flat-grace' });
     await expect(
-      service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'CHECKOUT_DELETION_PENDING' });
     expect(paddleCheckout).not.toHaveBeenCalled();
     expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
@@ -279,7 +279,7 @@ describe('BillingService', () => {
     const txn = 'txn_01abcdefghjkmnpqrstvwxyz12';
     const request = {
       tierId: 'plus' as const,
-      cycle: 'monthly' as const,
+      cycle: 'annual' as const,
       provider: 'paddle' as const,
       attemptId: firstId,
     };
@@ -421,7 +421,7 @@ describe('BillingService', () => {
       await expect(
         service.createCheckout(principal, {
           tierId: 'plus',
-          cycle: 'monthly',
+          cycle: 'annual',
           provider: 'paddle',
           attemptId: '11111111-1111-4111-8111-111111111111',
         }),
@@ -433,7 +433,7 @@ describe('BillingService', () => {
       await expect(
         service.createCheckout(principal, {
           tierId: 'plus',
-          cycle: 'monthly',
+          cycle: 'annual',
           provider: 'paddle',
           attemptId: '22222222-2222-4222-8222-222222222222',
         }),
@@ -443,7 +443,7 @@ describe('BillingService', () => {
   });
 
   it('retains every attempt when a claim is released or replaced after expiry', async () => {
-    const dto = { tierId: 'plus', cycle: 'monthly', provider: 'paddle' } as const;
+    const dto = { tierId: 'plus', cycle: 'annual', provider: 'paddle' } as const;
     await service.createCheckout(principal, dto);
     await db
       .delete(pendingCheckouts)
@@ -463,7 +463,7 @@ describe('BillingService', () => {
 
   describe('naming the Paddle transaction on the claim (D249 follow-up)', () => {
     const TXN = 'txn_01ky067arw41802a6ssessknxh';
-    const dto = { tierId: 'plus', cycle: 'monthly', provider: 'paddle' } as const;
+    const dto = { tierId: 'plus', cycle: 'annual', provider: 'paddle' } as const;
 
     it('stores the server-created transaction id on THIS claim and writes no ledger artifact', async () => {
       await service.createCheckout(principal, dto);
@@ -480,8 +480,6 @@ describe('BillingService', () => {
     });
 
     it('stores it for a Backlog Pass too', async () => {
-      vi.stubEnv('PRICING_V2', 'true');
-      vi.stubEnv('BILLING_PASS_ENABLED', 'true');
       vi.stubEnv('PADDLE_ENV', 'production');
       vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
       vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_01m4ss18n1c9r5s9p973tef9v2');
@@ -583,17 +581,17 @@ describe('BillingService', () => {
   it('checkout resolves the catalog price, records billing_region, delegates to the adapter', async () => {
     await service.createCheckout(principal, {
       tierId: 'plus',
-      cycle: 'monthly',
+      cycle: 'annual',
       provider: 'paddle',
     });
     expect(paddleCheckout).toHaveBeenCalledWith({
       workspaceId: principal.workspaceId,
       userEmail: 'buyer@example.com',
       tierId: 'plus',
-      cycle: 'monthly',
-      providerPriceId: 'pri_plus_m',
+      cycle: 'annual',
+      providerPriceId: 'pri_plus_a',
       trustedCountry: null,
-      checkoutCode: 'other',
+      checkoutCode: 'plus_annual',
     });
     const [user] = await db.select().from(users).where(eq(users.id, principal.userId));
     expect(user!.billingRegion).toBe('international');
@@ -602,14 +600,13 @@ describe('BillingService', () => {
   it('ignores a client country and forwards only the verified country', async () => {
     await service.createCheckout(
       principal,
-      { tierId: 'plus', cycle: 'monthly', provider: 'paddle', country: 'IN' },
+      { tierId: 'plus', cycle: 'annual', provider: 'paddle', country: 'IN' },
       null,
     );
     expect(paddleCheckout).toHaveBeenCalledWith(
-      expect.objectContaining({ trustedCountry: null, checkoutCode: 'other' }),
+      expect.objectContaining({ trustedCountry: null, checkoutCode: 'plus_annual' }),
     );
 
-    vi.stubEnv('PRICING_V2', 'true');
     vi.stubEnv('PADDLE_ENV', 'production');
     vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
     vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_india_pass');
@@ -635,7 +632,6 @@ describe('BillingService', () => {
   });
 
   it('charges USD when a verified India country has no live India price ids', async () => {
-    vi.stubEnv('PRICING_V2', 'true');
     vi.stubEnv('PADDLE_ENV', 'production');
     try {
       await db
@@ -672,8 +668,6 @@ describe('BillingService', () => {
   });
 
   it('forwards India Pass checkout as pass_onetime with the verified IN country', async () => {
-    vi.stubEnv('PRICING_V2', 'true');
-    vi.stubEnv('BILLING_PASS_ENABLED', 'true');
     vi.stubEnv('PADDLE_ENV', 'production');
     vi.stubEnv('PADDLE_LIVE_INDIA_PLUS_ANNUAL_PRICE_ID', 'pri_india_plus');
     vi.stubEnv('PADDLE_LIVE_INDIA_PASS_PRICE_ID', 'pri_01m4ss18n1c9r5s9p973tef9v2');
@@ -702,11 +696,11 @@ describe('BillingService', () => {
     // second opener is refused BEFORE any provider session exists.
     await service.createCheckout(principal, {
       tierId: 'plus',
-      cycle: 'monthly',
+      cycle: 'annual',
       provider: 'paddle',
     });
     await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
     expect(paddleCheckout).toHaveBeenCalledTimes(1);
   });
@@ -714,12 +708,12 @@ describe('BillingService', () => {
   it('an expired legacy claim stays held until its provider artifact is resolved', async () => {
     await service.createCheckout(principal, {
       tierId: 'plus',
-      cycle: 'monthly',
+      cycle: 'annual',
       provider: 'paddle',
     });
     await db.update(pendingCheckouts).set({ expiresAt: new Date(0) });
     await expect(
-      service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
     expect(paddleCheckout).toHaveBeenCalledTimes(1);
     expect((await service.getSubscription(principal.workspaceId)).pendingCheckout).toMatchObject({
@@ -734,10 +728,10 @@ describe('BillingService', () => {
     // explicit no-charge assertion reopens.
     paddleCheckout.mockRejectedValueOnce(new Error('paddle timeout'));
     await expect(
-      service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toThrow('paddle timeout');
     await expect(
-      service.createCheckout(principal, { tierId: 'plus', cycle: 'monthly', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
     expect(paddleCheckout).toHaveBeenCalledTimes(1);
 
@@ -747,7 +741,7 @@ describe('BillingService', () => {
       .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
     await service.createCheckout(principal, {
       tierId: 'plus',
-      cycle: 'monthly',
+      cycle: 'annual',
       provider: 'paddle',
     });
     expect(paddleCheckout).toHaveBeenCalledTimes(2);
@@ -756,24 +750,20 @@ describe('BillingService', () => {
   it('releasePendingCheckout refuses a legacy assertion and preserves the checkout evidence', async () => {
     await service.createCheckout(principal, {
       tierId: 'plus',
-      cycle: 'monthly',
+      cycle: 'annual',
       provider: 'paddle',
     });
     await expect(service.releasePendingCheckout(principal.workspaceId)).rejects.toMatchObject({
       code: 'CHECKOUT_IN_FLIGHT',
     });
     await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
     expect(paddleCheckout).toHaveBeenCalledTimes(1);
     expect(await db.select().from(pendingCheckouts)).toHaveLength(1);
   });
 
   it('never returns a localizable Paddle price for an omitted, US, or IN country', async () => {
-    const previous = process.env.PRICING_V2;
-    process.env.PRICING_V2 = 'true';
-    const previousPass = process.env.BILLING_PASS_ENABLED;
-    process.env.BILLING_PASS_ENABLED = 'true';
     paddleCheckout.mockResolvedValue({
       provider: 'paddle',
       kind: 'overlay',
@@ -782,64 +772,53 @@ describe('BillingService', () => {
       environment: 'sandbox',
       customData: { workspace_id: 'set-below', sig: 'test-sig' },
     });
-    try {
-      for (const dto of [
-        { tierId: 'plus' as const, cycle: 'annual' as const, provider: 'paddle' as const },
-        {
-          tierId: 'plus' as const,
-          cycle: 'annual' as const,
-          provider: 'paddle' as const,
-          country: 'US' as const,
-        },
-        {
-          tierId: 'plus' as const,
-          cycle: 'annual' as const,
-          provider: 'paddle' as const,
-          country: 'IN' as const,
-        },
-        {
-          tierId: 'plus' as const,
-          cycle: 'annual' as const,
-          provider: 'paddle' as const,
-          country: 'IN' as const,
-          offer: 'pass_onetime' as const,
-        },
-      ]) {
-        await expect(service.createCheckout(principal, dto)).rejects.toMatchObject({
-          code: 'BILLING_PROVIDER_ERROR',
-        });
-        await db
-          .delete(pendingCheckouts)
-          .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
-      }
-      paddleCheckout.mockResolvedValue({
-        provider: 'paddle',
-        kind: 'overlay',
-        transactionId: 'txn_01ky067arw41802a6ssessknxh',
-        clientToken: 'test_tok',
-        environment: 'sandbox',
-        customData: { workspace_id: 'set-below', sig: 'test-sig' },
+    for (const dto of [
+      { tierId: 'plus' as const, cycle: 'annual' as const, provider: 'paddle' as const },
+      {
+        tierId: 'plus' as const,
+        cycle: 'annual' as const,
+        provider: 'paddle' as const,
+        country: 'US' as const,
+      },
+      {
+        tierId: 'plus' as const,
+        cycle: 'annual' as const,
+        provider: 'paddle' as const,
+        country: 'IN' as const,
+      },
+      {
+        tierId: 'plus' as const,
+        cycle: 'annual' as const,
+        provider: 'paddle' as const,
+        country: 'IN' as const,
+        offer: 'pass_onetime' as const,
+      },
+    ]) {
+      await expect(service.createCheckout(principal, dto)).rejects.toMatchObject({
+        code: 'BILLING_PROVIDER_ERROR',
       });
-      await expect(
-        service.createCheckout(principal, {
-          tierId: 'plus',
-          cycle: 'annual',
-          provider: 'paddle',
-        }),
-      ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
-    } finally {
-      if (previousPass === undefined) delete process.env.BILLING_PASS_ENABLED;
-      else process.env.BILLING_PASS_ENABLED = previousPass;
-      if (previous === undefined) delete process.env.PRICING_V2;
-      else process.env.PRICING_V2 = previous;
+      await db
+        .delete(pendingCheckouts)
+        .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
     }
+    paddleCheckout.mockResolvedValue({
+      provider: 'paddle',
+      kind: 'overlay',
+      transactionId: 'txn_01ky067arw41802a6ssessknxh',
+      clientToken: 'test_tok',
+      environment: 'sandbox',
+      customData: { workspace_id: 'set-below', sig: 'test-sig' },
+    });
+    await expect(
+      service.createCheckout(principal, {
+        tierId: 'plus',
+        cycle: 'annual',
+        provider: 'paddle',
+      }),
+    ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
   });
 
   it('opens a USD-locked Paddle transaction for an omitted, US, or IN country', async () => {
-    const previous = process.env.PRICING_V2;
-    process.env.PRICING_V2 = 'true';
-    const previousPass = process.env.BILLING_PASS_ENABLED;
-    process.env.BILLING_PASS_ENABLED = 'true';
     const locked = {
       provider: 'paddle' as const,
       kind: 'overlay' as const,
@@ -848,41 +827,34 @@ describe('BillingService', () => {
       environment: 'sandbox' as const,
     };
     paddleCheckout.mockResolvedValue(locked);
-    try {
-      for (const dto of [
-        { tierId: 'plus' as const, cycle: 'annual' as const, provider: 'paddle' as const },
-        {
-          tierId: 'plus' as const,
-          cycle: 'annual' as const,
-          provider: 'paddle' as const,
-          country: 'US' as const,
-        },
-        {
-          tierId: 'plus' as const,
-          cycle: 'annual' as const,
-          provider: 'paddle' as const,
-          country: 'IN' as const,
-        },
-        {
-          tierId: 'plus' as const,
-          cycle: 'annual' as const,
-          provider: 'paddle' as const,
-          offer: 'pass_onetime' as const,
-        },
-      ]) {
-        const session = await service.createCheckout(principal, dto);
-        expect(session).toEqual(locked);
-        expect(session).not.toHaveProperty('priceId');
-        expect(session).not.toHaveProperty('customData');
-        await db
-          .delete(pendingCheckouts)
-          .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
-      }
-    } finally {
-      if (previousPass === undefined) delete process.env.BILLING_PASS_ENABLED;
-      else process.env.BILLING_PASS_ENABLED = previousPass;
-      if (previous === undefined) delete process.env.PRICING_V2;
-      else process.env.PRICING_V2 = previous;
+    for (const dto of [
+      { tierId: 'plus' as const, cycle: 'annual' as const, provider: 'paddle' as const },
+      {
+        tierId: 'plus' as const,
+        cycle: 'annual' as const,
+        provider: 'paddle' as const,
+        country: 'US' as const,
+      },
+      {
+        tierId: 'plus' as const,
+        cycle: 'annual' as const,
+        provider: 'paddle' as const,
+        country: 'IN' as const,
+      },
+      {
+        tierId: 'plus' as const,
+        cycle: 'annual' as const,
+        provider: 'paddle' as const,
+        offer: 'pass_onetime' as const,
+      },
+    ]) {
+      const session = await service.createCheckout(principal, dto);
+      expect(session).toEqual(locked);
+      expect(session).not.toHaveProperty('priceId');
+      expect(session).not.toHaveProperty('customData');
+      await db
+        .delete(pendingCheckouts)
+        .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
     }
   });
 
@@ -917,7 +889,7 @@ describe('BillingService', () => {
       billingCycle: 'monthly',
     });
     await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
   });
 
@@ -936,7 +908,7 @@ describe('BillingService', () => {
       billingCycle: 'monthly',
     });
     await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'SUBSCRIPTION_PAUSED_BLOCKS_NEW' });
   });
 
@@ -965,7 +937,7 @@ describe('BillingService', () => {
       },
     ]);
     await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
   });
 
@@ -990,7 +962,7 @@ describe('BillingService', () => {
       .insert(subscriptions)
       .values({ workspaceId: principal.workspaceId, ...REFUND_SETTLING_ROW });
     await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'SUBSCRIPTION_REFUND_SETTLING' });
   });
 
@@ -1007,7 +979,7 @@ describe('BillingService', () => {
       cancelSource: 'chargeback',
     });
     await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
   });
 
@@ -1022,36 +994,8 @@ describe('BillingService', () => {
       entitlementEndsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     });
     await expect(
-      service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
     ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
-  });
-
-  it('blocks foundingPro checkout when the 250-cap (here 2) is exhausted', async () => {
-    // Two founding subscriptions in OTHER workspaces exhaust the cap.
-    for (const n of [1, 2]) {
-      const [ws] = await db
-        .insert(workspaces)
-        .values({ name: `F${n}` })
-        .returning({ id: workspaces.id });
-      await db.insert(subscriptions).values({
-        workspaceId: ws!.id,
-        provider: 'paddle',
-        providerSubscriptionId: `sub_f${n}`,
-        tier: 'pro',
-        status: 'active',
-        providerPriceId: 'pri_pro_f',
-        billingCycle: 'annual',
-        foundingMember: true,
-      });
-    }
-    await expect(
-      service.createCheckout(principal, {
-        tierId: 'pro',
-        cycle: 'annual',
-        provider: 'paddle',
-        promo: 'foundingPro',
-      }),
-    ).rejects.toMatchObject({ code: 'FOUNDING_PRO_SOLD_OUT' });
   });
 
   it('getSubscription returns a free manual Pass transaction id', async () => {
@@ -2188,7 +2132,7 @@ describe('BillingService', () => {
       // told to wait for a refund that has nothing to do with them.
       await seedRefundedThenRepurchased();
       await expect(
-        service.createCheckout(principal, { tierId: 'pro', cycle: 'annual', provider: 'paddle' }),
+        service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'paddle' }),
       ).rejects.toMatchObject({ code: 'SUBSCRIPTION_EXISTS' });
     });
   });
@@ -2517,14 +2461,7 @@ describe('BillingService', () => {
   });
 });
 
-describe('BillingService PRICING_V2', () => {
-  const previous = process.env.PRICING_V2;
-
-  afterEach(() => {
-    if (previous === undefined) delete process.env.PRICING_V2;
-    else process.env.PRICING_V2 = previous;
-  });
-
+describe('BillingService launch catalog refusals', () => {
   function service(): BillingService {
     return new BillingService(
       {} as never,
@@ -2535,25 +2472,16 @@ describe('BillingService PRICING_V2', () => {
     );
   }
 
-  it('rejects Pro and Founding checkout before a provider call', async () => {
-    process.env.PRICING_V2 = 'true';
-    const checkout = service();
+  it('rejects Pro checkout before a provider call', async () => {
     await expect(
-      checkout.createCheckout(
+      service().createCheckout(
         { userId: 'user-1', workspaceId: 'workspace-1' },
         { tierId: 'pro', cycle: 'annual', provider: 'paddle' },
-      ),
-    ).rejects.toMatchObject({ code: 'PLAN_NOT_PURCHASABLE' });
-    await expect(
-      checkout.createCheckout(
-        { userId: 'user-1', workspaceId: 'workspace-1' },
-        { tierId: 'pro', cycle: 'annual', provider: 'paddle', promo: 'foundingPro' },
       ),
     ).rejects.toMatchObject({ code: 'PLAN_NOT_PURCHASABLE' });
   });
 
   it('rejects a new Plus monthly checkout', async () => {
-    process.env.PRICING_V2 = 'true';
     await expect(
       service().createCheckout(
         { userId: 'user-1', workspaceId: 'workspace-1' },
@@ -2562,11 +2490,15 @@ describe('BillingService PRICING_V2', () => {
     ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
   });
 
-  it('rejects a Pass checkout while the flag is off', async () => {
-    process.env.PRICING_V2 = 'true';
-    delete process.env.BILLING_PASS_ENABLED;
+  it('rejects a Pass checkout while the Pass price is unprovisioned', async () => {
     await expect(
-      service().createCheckout(
+      new BillingService(
+        {} as never,
+        new BillingCatalog([], 0, null),
+        {} as never,
+        {} as never,
+        {} as never,
+      ).createCheckout(
         { userId: 'user-1', workspaceId: 'workspace-1' },
         { tierId: 'plus', cycle: 'annual', provider: 'paddle', offer: 'pass_onetime' },
       ),

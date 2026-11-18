@@ -320,12 +320,6 @@ export const ERROR_CODES = {
     message:
       'This plan is ending because of a refund or chargeback, so it can’t be restored here. Email support@declutrmail.com and we’ll sort it out.',
   },
-  FOUNDING_PRO_SOLD_OUT: {
-    status: 409,
-    severityTier: 'inline_recoverable',
-    retryable: false,
-    message: 'All 250 Founding Pro spots have been claimed.',
-  },
   SUBSCRIPTION_PAUSED: {
     status: 409,
     severityTier: 'inline_recoverable',

@@ -12,8 +12,7 @@ import {
 import { useTier } from '@/features/auth/api/use-tier';
 import { useVisitorPriceLocale } from '@/features/billing/billing-currency';
 import { billingIntentPath } from '@/features/billing/billing-intent';
-import { launchPlusQuote, moneyBackNote } from '@/features/billing/billing-model';
-import { currencyForPricePoint, formatMoney } from '@/features/marketing/pricing/pricing-model';
+import { launchPlusQuote, MONEY_BACK_NOTE } from '@/features/billing/billing-model';
 
 import { useAutopilotRules } from './api/use-autopilot-rules';
 import { useRulePreview } from './api/use-rule-preview';
@@ -39,7 +38,6 @@ export function AutopilotEntitlementSurface() {
 }
 
 export function AutopilotObservePreview() {
-  const { pricingV2 } = useTier();
   const rules = useAutopilotRules();
   const preview = useRulePreview();
   const [previewRuleId, setPreviewRuleId] = useState<string | null>(null);
@@ -55,19 +53,11 @@ export function AutopilotObservePreview() {
   const grantingName = TIER_MANIFEST[grantingTier].name;
   // The plan granting unattended action — derived, never hardcoded.
   const actName = TIER_MANIFEST[minimumTierForCapability('autopilot-active')].name;
-  const monthly = TIER_MANIFEST[grantingTier].prices.monthly;
   // Was a hardcoded `$` template — an India-bound user read "$19/mo"
   // here and was charged ₹1,599 at the checkout this nudge leads to.
-  // Launch pricing sells Plus annual at $59. Flags off still quote monthly.
+  // Launch pricing sells Plus annual; Pro is not sold, so it has no quote.
   const visitorLocale = useVisitorPriceLocale();
-  const checkoutCycle = pricingV2 ? 'annual' : 'monthly';
-  const price = pricingV2
-    ? grantingPlan === 'plus'
-      ? launchPlusQuote(visitorLocale)
-      : null
-    : monthly == null
-      ? null
-      : `${formatMoney(monthly, currencyForPricePoint(monthly))}/mo`;
+  const price = grantingPlan === 'plus' ? launchPlusQuote(visitorLocale) : null;
 
   return (
     <div
@@ -214,7 +204,7 @@ export function AutopilotObservePreview() {
         </p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <Link
-            href={billingIntentPath({ plan: grantingPlan, cycle: checkoutCycle })}
+            href={billingIntentPath({ plan: grantingPlan, cycle: 'annual' })}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -250,9 +240,7 @@ export function AutopilotObservePreview() {
             Compare plans
           </Link>
         </div>
-        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-          {moneyBackNote(pricingV2)}
-        </p>
+        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
       </div>
     </div>
   );

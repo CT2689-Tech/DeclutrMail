@@ -1,9 +1,11 @@
 // apps/api/src/billing/billing-catalog.ts — runtime view of the D117
 // price catalog.
 //
-// SOURCE OF TRUTH: `TIER_MANIFEST` (packages/shared/src/entitlements)
-// carries the production `paddlePriceId` per price point, written by hand.
-// (The catalog-provisioning workflow was deleted 2026-11-17.)
+// SOURCE OF TRUTH: the entitlements pricing config
+// (packages/shared/src/entitlements/pricing.config.ts), which carries the
+// production Paddle price ids, written by hand. New checkouts sell
+// `PLUS_ANNUAL_2026_10`; retired price ids resolve through
+// `LEGACY_PRICE_IDS` for subscribers who already have them.
 //
 // SANDBOX OVERRIDE: sandbox catalog ids are DIFFERENT objects from the
 // live ones (Paddle sandbox has its own id space), and the manifest can
@@ -25,7 +27,6 @@ import {
   OFFERS,
   PLUS_ANNUAL_2026_10,
   SANDBOX_PRICE_IDS,
-  TIER_MANIFEST,
   indiaPaddlePriceId,
   usablePriceId,
 } from '@declutrmail/shared/entitlements';
@@ -34,6 +35,13 @@ import type {
   BillingProviderId,
   PurchasableTier,
 } from '@declutrmail/shared/contracts';
+
+/**
+ * D126 Founding Pro seat cap. Founding Pro is retired: no checkout
+ * sells it. The webhook still honours this cap for a founding-price
+ * subscription, so a legacy one reconciles exactly as before.
+ */
+export const FOUNDING_MAX_REDEMPTIONS = 250;
 
 /** D117 plan codes. */
 export const PLAN_CODES = [
@@ -66,60 +74,14 @@ function parseOverrides(raw: string | undefined): Overrides {
   return JSON.parse(raw) as Overrides;
 }
 
-/** Build the runtime catalog: manifest price points + env id overlay. */
+/**
+ * Build the runtime catalog. New checkouts are Plus annual at the
+ * 2026-10 price. Plus monthly ($9) and the previous $90 annual stay
+ * resolvable through `LEGACY_PRICE_IDS` for subscribers who already
+ * have them. They are not new-checkout SKUs, and a catalog overlay
+ * cannot put monthly back. Pro is not sold.
+ */
 export function buildCatalog(env: NodeJS.ProcessEnv = process.env): CatalogEntry[] {
-  if (env.PRICING_V2 === 'true') return buildV2Catalog(env);
-  return buildCurrentCatalog(env);
-}
-
-/**
- * Today's catalog. `PRICING_V2` off must keep this shape, including
- * Pro and Founding, so existing subscribers and tests stay put.
- */
-function buildCurrentCatalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
-  const overrides = parseOverrides(env.BILLING_CATALOG_JSON);
-  const entries: CatalogEntry[] = [];
-
-  for (const tierId of ['plus', 'pro'] as const) {
-    const tier = TIER_MANIFEST[tierId];
-    for (const cycle of ['monthly', 'annual'] as const) {
-      const point = tier.prices[cycle];
-      if (!point) continue;
-      const planCode = `${tierId}_${cycle}` as PlanCode;
-      entries.push({
-        planCode,
-        tierId,
-        cycle,
-        founding: false,
-        usdCents: point.usdCents,
-        paddlePriceId: overrides.paddle?.[planCode] ?? point.paddlePriceId,
-      });
-    }
-  }
-
-  const promo = TIER_MANIFEST.pro.promo;
-  if (promo) {
-    entries.push({
-      planCode: 'pro_annual_founding',
-      tierId: 'pro',
-      cycle: 'annual',
-      founding: true,
-      usdCents: promo.annual.usdCents,
-      paddlePriceId: overrides.paddle?.pro_annual_founding ?? promo.annual.paddlePriceId,
-    });
-  }
-
-  return entries;
-}
-
-/**
- * Launch catalog. New checkouts are Plus annual at the 2026-10 price.
- * Plus monthly ($9) and the previous $90 annual stay resolvable through
- * `LEGACY_PRICE_IDS` for subscribers who already have them. They are not
- * new-checkout SKUs, and a catalog overlay cannot put monthly back.
- * Pro is not sold.
- */
-function buildV2Catalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
   const overrides = parseOverrides(env.BILLING_CATALOG_JSON);
   return [
     {
@@ -137,7 +99,7 @@ function buildV2Catalog(env: NodeJS.ProcessEnv): CatalogEntry[] {
   ];
 }
 
-/** Pass stays out of `buildCatalog()` so the flag-on subscription snapshot is unchanged. */
+/** Pass stays out of `buildCatalog()`: it is a one-time price, not a subscription plan. */
 export function passPriceFromEnv(env: NodeJS.ProcessEnv = process.env): string | null {
   let overlay: string | undefined;
   const raw = env.BILLING_CATALOG_JSON;
@@ -174,7 +136,7 @@ export class BillingCatalog {
   constructor(
     private readonly entries: CatalogEntry[] = buildCatalog(),
     /** D126 cap — injectable so tests can exercise the counter cheaply. */
-    readonly foundingMaxRedemptions: number = TIER_MANIFEST.pro.promo?.maxRedemptions ?? 0,
+    readonly foundingMaxRedemptions: number = FOUNDING_MAX_REDEMPTIONS,
     passPriceId?: string | null,
   ) {
     this.passPaddlePriceId =

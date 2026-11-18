@@ -10,7 +10,6 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 
 // Parametrizable tier — useTier() reads useAuth() from this module.
 let mockTier = 'free';
-let mockPricingV2 = false;
 vi.mock('next/navigation', () => ({
   usePathname: () => '/senders',
   useSearchParams: () => new URLSearchParams('sender=sender-1&q=news'),
@@ -30,7 +29,6 @@ vi.mock('@/features/auth/auth-provider', () => ({
         },
       ],
       tier: mockTier,
-      pricingV2: mockPricingV2,
       cleanupRemaining: mockTier === 'free' ? 0 : null,
     },
   }),
@@ -48,7 +46,6 @@ import { UpgradeModalHost } from './upgrade-modal-host';
 
 beforeEach(() => {
   mockTier = 'free';
-  mockPricingV2 = false;
   useUpgradeGateStore.getState().dismiss();
 });
 
@@ -86,7 +83,7 @@ describe('UpgradeModal', () => {
     act(() => {
       useUpgradeGateStore.getState().report({
         reason: 'free_cap',
-        details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+        details: { remaining: 0, limit: 1000, used: 1000, requiredUnits: 1, resetsAt: null },
       });
     });
     expect(await screen.findByTestId('upgrade-modal')).toBeInTheDocument();
@@ -101,7 +98,7 @@ describe('UpgradeModal', () => {
     act(() => {
       useUpgradeGateStore.getState().report({
         reason: 'free_cap',
-        details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+        details: { remaining: 0, limit: 1000, used: 1000, requiredUnits: 1, resetsAt: null },
       });
     });
     const dialog = screen.getByTestId('upgrade-modal');
@@ -130,7 +127,7 @@ describe('UpgradeModal', () => {
       act(() => {
         useUpgradeGateStore.getState().report({
           reason: 'free_cap',
-          details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+          details: { remaining: 0, limit: 1000, used: 1000, requiredUnits: 1, resetsAt: null },
         });
       });
 
@@ -147,24 +144,27 @@ describe('UpgradeModal', () => {
   it('free_cap (spent): headline + Plus pitch + money-back note + Plus deep link', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
-      details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+      details: { remaining: 0, limit: 1000, used: 1000, requiredUnits: 1, resetsAt: null },
     });
     render(<UpgradeModal />);
 
     expect(screen.getByTestId('upgrade-modal')).toBeInTheDocument();
     expect(screen.getByText('Not enough free emails left this month')).toBeInTheDocument();
-    // Manifest-derived price (D19) of the plan the CTA buys: Plus $9/mo.
     expect(screen.getByText(/Plus removes the monthly cap/)).toBeInTheDocument();
     expect(
       screen.getAllByText(/14-day money-back on any purchase, once per customer/),
     ).toHaveLength(1);
     expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
+    expect(screen.getByText('Unsubscribe, Keep, Later and Undo stay free.')).toBeInTheDocument();
     // ONE checkout path (D117): the CTA deep-links the nudged plan into
-    // /billing's confirm step via the validated billing intent.
-    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
+    // /billing's confirm step via the validated billing intent. Launch
+    // pricing sells Plus annual only.
+    expect(screen.getByRole('link', { name: 'Get Plus' })).toHaveAttribute(
       'href',
-      '/billing?plan=plus&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
+    expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /\$9\/mo/ })).not.toBeInTheDocument();
     // The pitch names only Plus, so the other plans stay one click away.
     const compare = screen.getByRole('link', { name: /compare plans/i });
     expect(compare).toHaveAttribute(
@@ -175,32 +175,10 @@ describe('UpgradeModal', () => {
     expect(useUpgradeGateStore.getState().hit).toBeNull();
   });
 
-  it('PRICING_V2 shows the deck refund line on the same layout', () => {
-    mockPricingV2 = true;
+  it('quotes INR chips for a trusted India locale', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
-      details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
-    });
-    render(<UpgradeModal />);
-
-    expect(
-      screen.getAllByText(/14-day money-back on any purchase, once per customer/),
-    ).toHaveLength(1);
-    expect(screen.queryByText(/30-day money-back guarantee/)).not.toBeInTheDocument();
-    expect(screen.getByText('Unsubscribe, Keep, Later and Undo stay free.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Get Plus' })).toHaveAttribute(
-      'href',
-      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
-    );
-    expect(screen.getByText('$59 a year · no monthly limit')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: /\$9\/mo/ })).not.toBeInTheDocument();
-  });
-
-  it('PRICING_V2 quotes INR chips for a trusted India locale', () => {
-    mockPricingV2 = true;
-    useUpgradeGateStore.getState().report({
-      reason: 'free_cap',
-      details: { remaining: 0, limit: 50, used: 50, requiredUnits: 1, resetsAt: null },
+      details: { remaining: 0, limit: 1000, used: 1000, requiredUnits: 1, resetsAt: null },
     });
     render(
       <BillingCurrencyProvider locale="inr">
@@ -211,35 +189,6 @@ describe('UpgradeModal', () => {
     expect(screen.getByText('₹1,999 a year · no monthly limit')).toBeInTheDocument();
     expect(screen.queryByText('$59 a year · no monthly limit')).not.toBeInTheDocument();
     expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
-  });
-
-  it('PRICING_V2 points a Plus feature gate at annual', () => {
-    mockPricingV2 = true;
-    useUpgradeGateStore.getState().report({
-      reason: 'pro_feature',
-      details: { capability: 'quiet', tier: 'free', requiredTier: 'plus' },
-    });
-    render(<UpgradeModal />);
-
-    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59 a year$/ })).toHaveAttribute(
-      'href',
-      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
-    );
-  });
-
-  it('PRICING_V2 points a Pro feature gate at annual', () => {
-    mockPricingV2 = true;
-    mockTier = 'plus';
-    useUpgradeGateStore.getState().report({
-      reason: 'pro_feature',
-      details: { capability: 'followups', tier: 'plus', requiredTier: 'pro' },
-    });
-    render(<UpgradeModal />);
-
-    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
-      'href',
-      '/billing?plan=pro&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
-    );
   });
 
   it('emails-cleared 402 offers clear-what-fits then Plus', () => {
@@ -325,7 +274,7 @@ describe('UpgradeModal', () => {
   it('free_cap (partial): bulk-needs-more headline', () => {
     useUpgradeGateStore.getState().report({
       reason: 'free_cap',
-      details: { remaining: 2, limit: 50, used: 48, requiredUnits: 4, resetsAt: null },
+      details: { remaining: 2, limit: 1000, used: 998, requiredUnits: 4, resetsAt: null },
     });
     render(<UpgradeModal />);
 
@@ -337,8 +286,8 @@ describe('UpgradeModal', () => {
       reason: 'free_cap',
       details: {
         remaining: 0,
-        limit: 50,
-        used: 50,
+        limit: 1000,
+        used: 1000,
         requiredUnits: 1,
         resetsAt: '2026-08-27T10:00:00.000Z',
       },
@@ -365,9 +314,10 @@ describe('UpgradeModal', () => {
     expect(
       screen.getByText(/Pro unlocks cleanup for every sender in a filter/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
+    // Pro is waitlist only, so its path carries no price.
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+      '/billing?plan=pro&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 
@@ -380,9 +330,9 @@ describe('UpgradeModal', () => {
 
     expect(screen.getByText('This feature is part of Plus')).toBeInTheDocument();
     expect(screen.getByText('Plus unlocks this feature.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$9\/mo$/ })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^Upgrade to Plus\s*\$59 a year$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=plus&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+      '/billing?plan=plus&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 
@@ -396,15 +346,15 @@ describe('UpgradeModal', () => {
 
     expect(screen.getByText('This feature is part of Pro')).toBeInTheDocument();
     expect(screen.getByText('Pro unlocks this feature.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
+    // Pro is waitlist only, so its path carries no price.
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+      '/billing?plan=pro&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 
   it('pass_second_account: locked r37 copy, Plus checkout, no Free reuse', () => {
     mockTier = 'plus';
-    mockPricingV2 = true;
     useUpgradeGateStore.getState().report({
       reason: 'pass_second_account',
       details: { limit: 1, connected: 1, reason: 'pass' },
@@ -431,7 +381,6 @@ describe('UpgradeModal', () => {
 
   it('pass_second_account quotes Plus in INR from the visitor locale', () => {
     mockTier = 'plus';
-    mockPricingV2 = true;
     useUpgradeGateStore.getState().report({
       reason: 'pass_second_account',
       details: { limit: 1, connected: 1, reason: 'pass' },
@@ -463,9 +412,10 @@ describe('UpgradeModal', () => {
     expect(
       screen.getByText(/Pro raises the limit to 5 connected Gmail accounts/),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /^Upgrade to Pro\s*\$19\/mo$/ })).toHaveAttribute(
+    // Pro is waitlist only, so its path carries no price.
+    expect(screen.getByRole('link', { name: /^Upgrade to Pro$/ })).toHaveAttribute(
       'href',
-      '/billing?plan=pro&cycle=monthly&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
+      '/billing?plan=pro&cycle=annual&from=%2Fsenders%3Fsender%3Dsender-1%26q%3Dnews',
     );
   });
 

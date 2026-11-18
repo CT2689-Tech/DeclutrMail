@@ -49,6 +49,7 @@ describe('navigateToCheckout', () => {
     '/billing?plan=plus&cycle=monthly&offer=pass_onetime',
     '/billing?plan=plus&cycle=annual&offer=pass_onetime&offer=pass_onetime',
     '/billing?plan=plus&cycle=annual&offer=pass_onetime&next=https://evil.test',
+    '/billing?plan=pro&cycle=annual&promo=foundingPro',
     'https://evil.test/billing?plan=plus&cycle=annual&offer=pass_onetime',
   ])('does not carry an untrusted Pass destination into permissions: %s', (path) => {
     expect(permissionEntryUrl(path)).toBe('/sign-in');
@@ -57,10 +58,10 @@ describe('navigateToCheckout', () => {
     h.apiGet.mockResolvedValue({ data: { id: 'u1' } });
     const push = vi.fn();
 
-    await navigateToCheckout(push, { plan: 'pro', cycle: 'annual', promo: 'foundingPro' });
+    await navigateToCheckout(push, { plan: 'plus', cycle: 'annual' });
 
     expect(h.apiGet).toHaveBeenCalledWith('/api/auth/me', { suppressAuthRedirect: true });
-    expect(push).toHaveBeenCalledWith('/billing?plan=pro&cycle=annual&promo=foundingPro');
+    expect(push).toHaveBeenCalledWith('/billing?plan=plus&cycle=annual');
   });
 
   it('sends an unauthed visitor to the permissions entry URL', async () => {

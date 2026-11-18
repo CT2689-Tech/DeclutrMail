@@ -12,7 +12,7 @@ const NOW = '2026-10-27T07:01:00.000Z';
 
 describe('PricingStory', () => {
   it('shows one unit, a check glyph, and the refund sentence once', () => {
-    render(<PricingStory passEnabled locale="usd" now={NOW} />);
+    render(<PricingStory locale="usd" now={NOW} />);
 
     const cards = screen.getAllByRole('article');
     const passCard = cards.find((card) => card.getAttribute('data-plan') === 'pass');
@@ -49,19 +49,16 @@ describe('PricingStory', () => {
   it.each(['usd', 'inr'] as const)(
     'keeps India prices and omits the UPI pay line for %s visitors',
     (locale) => {
-      for (const passEnabled of [true, false]) {
-        const view = render(<PricingStory passEnabled={passEnabled} locale={locale} now={NOW} />);
-        expect(
-          screen.getByRole('heading', { name: 'What do you charge in India?' }),
-        ).toBeInTheDocument();
-        expect(view.container.textContent).toMatch(/rupees and include GST/);
-        expect(view.container.textContent).not.toMatch(/You can pay with UPI/);
-        if (locale === 'inr') {
-          expect(view.container.textContent).not.toContain('$');
-          expect(view.container.textContent).toContain('₹1,999');
-          expect(view.container.textContent).toMatch(/a year/);
-        }
-        view.unmount();
+      const view = render(<PricingStory locale={locale} now={NOW} />);
+      expect(
+        screen.getByRole('heading', { name: 'What do you charge in India?' }),
+      ).toBeInTheDocument();
+      expect(view.container.textContent).toMatch(/rupees and include GST/);
+      expect(view.container.textContent).not.toMatch(/You can pay with UPI/);
+      if (locale === 'inr') {
+        expect(view.container.textContent).not.toContain('$');
+        expect(view.container.textContent).toContain('₹1,999');
+        expect(view.container.textContent).toMatch(/a year/);
       }
     },
   );

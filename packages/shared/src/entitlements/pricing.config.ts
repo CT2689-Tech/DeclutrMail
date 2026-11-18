@@ -1,29 +1,32 @@
 // @declutrmail/shared/entitlements — THE pricing config (D19).
 //
-// The single production edit point for prices, quota, inbox limits,
-// undo windows, feature tiers, selector tiers, selector caps and
-// cleanup counting. Changing any of them is a one-value edit HERE plus
-// an intentional update to the pinned snapshot test — nothing else in
-// the codebase carries a dollar amount, a tier limit, a quota number
-// or a plan name as a literal.
+// The single production edit point for prices, the Free meter, inbox
+// limits, undo windows, feature tiers, selector tiers and selector caps.
+// Changing any of them is a one-value edit HERE plus an intentional
+// update to the pinned snapshot test — nothing else in the codebase
+// carries a dollar amount, a tier limit, a quota number or a plan name
+// as a literal.
 //
 // Live Paddle price ids are written into this file by hand. The catalog
-// provisioning workflow was deleted 2026-11-17 with the Razorpay rail; create
-// new Paddle products and prices in the Paddle dashboard.
+// provisioning workflow was deleted 2026-11-17; create new Paddle products
+// and prices in the Paddle dashboard.
 // India pays through Paddle in INR (`indiaPaddlePriceId` below).
 //
-// Ladder per the A3 free-tier activation decision (founder, 2026-07-26 —
-// docs/execution/a3-pricing-rework-plan.md), as amended by the packaging
-// decision of 2026-08-23 (founder). Prices, Founding Pro and every
-// provider SKU are unchanged.
+// Ladder per the 2026-10 launch pricing (founder decision "4A",
+// 2026-11-17, retired the earlier monthly ladder, Founding Pro and the
+// 50-cleanup-action Free limit):
 //
-//   Free  — the whole manual product, metered at 50 cleanup actions
-//           per month on the workspace's signup anniversary.
+//   Free  — the whole manual product, metered by `METER` (emails
+//           cleared per signup month).
 //   Plus  — Free + unlimited volume + the Screener + the WHOLE Autopilot,
 //           unattended action included, plus the Quiet window that
-//           governs it.
+//           governs it. Sold annually at `PLUS_ANNUAL_2026_10`.
+//   Pass  — `OFFERS.backlogPass`: Plus access for a fixed window, once.
 //   Pro   — Plus + the two attention surfaces (Brief, Follow-ups) and
-//           5 connected inboxes.
+//           more connected inboxes. Waitlist only (`tierIsPurchasable`).
+//
+// Retired price ids stay resolvable through `LEGACY_PRICE_IDS` so a
+// refund or chargeback on an old subscription still maps to its tier.
 //
 // WHAT MOVED AND WHY (amends D19, D77, D98, D251):
 //
@@ -48,7 +51,7 @@
 //     category's proven ladder axis, and it is what Pro leans on now
 //     that automation sits on Plus.
 
-import type { ActionTier, ActionVerb, SelectorType } from '../contracts/verb-constants';
+import type { ActionTier, SelectorType } from '../contracts/verb-constants';
 import type { Capability, PricePoint, TierManifest } from './types';
 
 /**
@@ -93,9 +96,8 @@ const PRO_CAPABILITIES: readonly Capability[] = [...PLUS_CAPABILITIES, 'brief', 
 /**
  * Which tier unlocks each action SELECTOR. Total record — adding a
  * selector without deciding its tier is a compile error. Multi-sender
- * bulk is Free per A3 (metered by the monthly cleanup quota; the bulk
- * capacity check runs inside one transaction — see
- * `ActionsService.enqueueBulkComposite`).
+ * bulk is Free per A3 (metered by `METER`; the bulk capacity check runs
+ * inside one transaction — see `ActionsService.enqueueBulkComposite`).
  */
 export const SELECTOR_TIERS: Record<SelectorType, ActionTier> = {
   sender: 'free',
@@ -108,139 +110,66 @@ export const SELECTOR_CAPS: Partial<Record<SelectorType, number>> = {
   'multi-sender': 1000,
 };
 
-/**
- * Which verbs draw down the monthly cleanup quota. Total record. Keep
- * and Unarchive are free and unlimited — Keep is policy-only and writes
- * no `action_jobs` row, so counting it would require a write path built
- * purely for metering.
- */
-export const COUNTS_AS_CLEANUP: Record<ActionVerb, boolean> = {
-  keep: false,
-  archive: true,
-  later: true,
-  unsubscribe: true,
-  delete: true,
-  unarchive: false,
-};
+/** Connected Gmail accounts per self-serve tier. */
+export const INBOXES = { free: 1, plus: 2, pro: 5 } as const;
 
 /**
  * The D19 tier manifest. Team/enterprise entitlement values (inbox
  * limit, undo window, capabilities) are PROVISIONAL pro-equivalents:
- * neither tier is purchasable at launch, so the values only matter if a
- * workspace is assigned administratively — the plan's Pro feature gates
- * treat `tier ∈ {pro, team, enterprise}` as unlocked. Their real models
- * land with the Team build (waitlist ≥ 50) / Enterprise sales motion.
+ * neither tier is purchasable, so the values only matter if a workspace
+ * is assigned administratively — the plan's Pro feature gates treat
+ * `tier ∈ {pro, team, enterprise}` as unlocked. They stay because the
+ * `workspace_tier` enum still carries both values.
  */
 export const TIER_MANIFEST: TierManifest = {
   free: {
     id: 'free',
     name: 'Free',
-    prices: {
-      // $0 — a price point so the pricing page renders the amount from
-      // the manifest; no checkout SKU ever exists for $0 (ids stay null).
-      monthly: { usdCents: 0, inrPaise: 0, paddlePriceId: null },
-      annual: null,
-    },
-    inboxLimit: 1,
+    inboxLimit: INBOXES.free,
     // 2026-08-23 — the undo window is uniform across the ladder. It is
     // the trust claim, not an upsell.
     undoWindowDays: 30,
-    // A3 — 50 cleanup actions per month, resetting on the workspace's
-    // signup anniversary. One unit = one sender acted upon; the counting
-    // rule lives on `EntitlementsService.cleanupUnitsUsed`, driven by
-    // `COUNTS_AS_CLEANUP` above.
-    cleanupActionsPerMonth: 50,
     capabilities: FREE_CAPABILITIES,
     purchasable: true,
   },
   plus: {
     id: 'plus',
     name: 'Plus',
-    prices: {
-      monthly: {
-        usdCents: 900,
-        inrPaise: 74_900,
-        paddlePriceId: 'pri_01ky15axxbeeyge87f9hehw37t',
-      },
-      // $90/yr — 2 months free vs monthly (D19).
-      annual: {
-        usdCents: 9000,
-        inrPaise: 749_900,
-        paddlePriceId: 'pri_01ky15axzc9mz8sxw43c0wtn6h',
-      },
-    },
-    inboxLimit: 1,
+    inboxLimit: INBOXES.plus,
     undoWindowDays: 30,
-    cleanupActionsPerMonth: null,
     capabilities: PLUS_CAPABILITIES,
     purchasable: true,
   },
   pro: {
     id: 'pro',
     name: 'Pro',
-    prices: {
-      monthly: {
-        usdCents: 1900,
-        inrPaise: 159_900,
-        paddlePriceId: 'pri_01ky15ay15wqjaz0wjfnhe94vs',
-      },
-      // $190/yr — 2 months free vs monthly (founder-confirmed 2026-07-14).
-      annual: {
-        usdCents: 19000,
-        inrPaise: 1_599_900,
-        paddlePriceId: 'pri_01ky15ay2p27rbevtvc0gb6qta',
-      },
-    },
     // 2026-08-23 — Pro carries 5 inboxes. Account count is the axis Pro
     // leans on now that automation sits on Plus.
-    inboxLimit: 5,
+    inboxLimit: INBOXES.pro,
     undoWindowDays: 30,
-    cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,
     purchasable: true,
-    promo: {
-      id: 'foundingPro',
-      name: 'Founding Pro',
-      // $129/yr, first 250 paying users; grants pro (its host tier)
-      // capabilities. Price locked while the subscription stays active
-      // (`workspaces.founding_member`).
-      annual: {
-        usdCents: 12900,
-        inrPaise: 1_099_900,
-        paddlePriceId: 'pri_01ky15ay4bj9t68bv158hwwfqw',
-      },
-      maxRedemptions: 250,
-    },
   },
   team: {
     id: 'team',
     name: 'Team',
-    prices: { monthly: null, annual: null },
-    inboxLimit: 5,
+    inboxLimit: INBOXES.pro,
     undoWindowDays: 30,
-    cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,
     purchasable: false,
-    nonPurchasableRow: { kind: 'waitlist', label: 'Join the waitlist' },
   },
   enterprise: {
     id: 'enterprise',
     name: 'Enterprise',
-    prices: { monthly: null, annual: null },
-    inboxLimit: 5,
+    inboxLimit: INBOXES.pro,
     undoWindowDays: 30,
-    cleanupActionsPerMonth: null,
     capabilities: PRO_CAPABILITIES,
     purchasable: false,
-    nonPurchasableRow: { kind: 'contact', label: 'Contact sales' },
   },
 };
 
 /** Catalog generation identifier. It is not a public launch or publication date. */
 export const PRICING_VERSION = '2026-10-27';
-
-/** Connected Gmail accounts while `PRICING_V2` is on. */
-export const INBOXES = { free: 1, plus: 2, pro: 5 } as const;
 
 export const POLICY = {
   refundWindowDays: 14,
@@ -251,8 +180,8 @@ export const POLICY = {
 } as const;
 
 /**
- * Emails-cleared meter. Enforced only while `METER_V2` is on.
- * Archive and Delete count. Undo refunds restored emails in the same period.
+ * Free's emails-cleared meter. Archive and Delete count. Undo refunds
+ * restored emails in the same period.
  */
 export const METER = {
   unit: 'email',
@@ -350,14 +279,13 @@ function launchPrice(usdCents: number, paise: number, paddlePriceId: string): Pr
 /** Plus annual 2026-10 ($59 / ₹1,999). */
 export const PLUS_ANNUAL_2026_10 = launchPrice(5900, 199_900, 'pri_01m4qk99878y7jynh1h00jfhy8');
 
-/** Backlog Pass config. JSON-LD lists it only while `BILLING_PASS_ENABLED` is on. */
+/** Backlog Pass config. Always purchasable; JSON-LD lists it once its price id is real. */
 export const OFFERS = {
   backlogPass: {
     kind: 'one_time',
     grantsTier: 'plus',
     durationDays: 30,
     stacks: 'extend',
-    enabledFlag: 'BILLING_PASS_ENABLED',
     price: launchPrice(1900, 79_900, 'pri_01m4qkayqz3t54gdh9jq5b8ypq'),
   },
 } as const;

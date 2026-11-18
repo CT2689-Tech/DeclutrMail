@@ -117,12 +117,10 @@ describe('UnsubscribeBacklogService', () => {
     actions = new ActionsService(db as never, labelQueue as never, undefined, unsubQueue as never);
     entitlements = new EntitlementsService(db as never);
     svc = new UnsubscribeBacklogService(actions, entitlements, db as never);
-    delete process.env.METER_V2;
   });
 
   afterEach(() => {
     process.env.UNSUB_SEND_ENABLED = 'true';
-    delete process.env.METER_V2;
   });
 
   it.each([
@@ -204,7 +202,8 @@ describe('UnsubscribeBacklogService', () => {
       .from(actionJobs)
       .where(eq(actionJobs.idempotencyKey, `unsub:order-key-1-${senderId}`));
     expect(unsub?.compositeId).toBe(result.backlog?.actionId);
-    expect(await entitlements.cleanupUnitsUsed(workspaceId)).toBe(1);
+    // The archive spends its four emails; the unsubscribe draws nothing.
+    expect(await entitlements.cleanupUnitsUsed(workspaceId)).toBe(4);
   });
 
   it.each(['accepted', 'unconfirmed', 'failed'] as const)(
@@ -302,8 +301,7 @@ describe('UnsubscribeBacklogService', () => {
     expect(await actions.listInFlight(mailboxId)).toMatchObject([{ total: 1, mixedVerbs: false }]);
   });
 
-  it('402s on the email count under METER_V2 and sends no unsubscribe', async () => {
-    process.env.METER_V2 = 'true';
+  it('402s on the email count and sends no unsubscribe', async () => {
     const alreadyCleared = METER.free.limit - 3;
     await db.insert(actionJobs).values({
       mailboxAccountId: mailboxId,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { declutrPriceDetail, declutrPriceSummary } from '@declutrmail/shared/copy/launch';
+import { passAmount, plusAmount } from '@declutrmail/shared/entitlements';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 
 import {
@@ -118,17 +119,22 @@ describe('comparison data', () => {
     expect(copy).toContain('Unsubscribe is not a reversible DeclutrMail action');
     expect(copy).not.toMatch(/every decision keeps running|all actions are undoable/i);
     expect(copy).not.toMatch(/founding offer/i);
-    const summary = declutrPriceSummary();
-    const detail = declutrPriceDetail();
-    if (summary === '') {
-      for (const comparison of COMPARISONS) {
-        const price = comparison.rows.find((row) => row.label === 'Public starting point');
-        expect(price?.declutrMail.summary).toBe('');
-        expect(price?.declutrMail.detail ?? '').toBe('');
-      }
-    } else {
-      expect(copy).toContain(summary);
-      expect(copy).toContain(detail);
+    expect(copy).toContain(declutrPriceSummary());
+    expect(copy).toContain(declutrPriceDetail());
+  });
+
+  it('prices DeclutrMail at the launch catalog on every comparison', () => {
+    for (const comparison of COMPARISONS) {
+      const price = comparison.rows.find((row) => row.label === 'Public starting point');
+      expect(price?.declutrMail.summary, comparison.slug).toBe(
+        'Free, Plus or a one-time Backlog Pass',
+      );
+      expect(price?.declutrMail.detail, comparison.slug).toContain(
+        `Plus is ${plusAmount('usd')} a year`,
+      );
+      expect(price?.declutrMail.detail, comparison.slug).toContain(
+        `Backlog Pass is ${passAmount('usd')} once`,
+      );
     }
   });
 

@@ -101,7 +101,6 @@ export default async function BillingPage({
       <BillingScreen
         initialIntent={initialIntent}
         returnTo={parseUpgradeReturnTo(params.from)}
-        pricingV2={flags.pricingV2}
         country={country}
         indiaCheckoutOpen={indiaCheckoutOpen}
         checkoutGeoToken={checkoutGeoToken}

@@ -1,11 +1,8 @@
 /**
- * Pricing-page view model (D17 pricing leg; ladder per D19/D77/D81).
- *
- * PURE derivations over `TIER_MANIFEST` — the single source of truth
- * for every dollar amount, limit, and capability on /pricing. Nothing
- * in this folder hardcodes a price: re-pricing the manifest re-prices
- * the page (and the tests, which assert AGAINST the manifest rather
- * than against literals).
+ * Shared pricing helpers (D17 pricing leg; ladder per D19/D77/D81):
+ * money formatting, the charged currency, and per-tier copy. Amounts
+ * come from the entitlements pricing config; nothing here hardcodes a
+ * price.
  *
  * Verb language (D227): the only user-facing action verbs on this
  * surface are Keep · Archive · Unsubscribe · Later · Delete. "Screener"
@@ -13,33 +10,10 @@
  * appears.
  */
 
-import { WS1_COPY } from '@declutrmail/shared/copy/launch';
-import {
-  CAPABILITIES,
-  fillStory,
-  SELECTOR_TIERS,
-  TIER_IDS,
-  TIER_MANIFEST,
-  type Capability,
-  type PromoDefinition,
-  type TierDefinition,
-  type TierId,
-} from '@declutrmail/shared/entitlements';
-
-export type BillingInterval = 'monthly' | 'annual';
+import { TIER_IDS, type Capability, type TierId } from '@declutrmail/shared/entitlements';
 
 /** Manifest order IS display order (free → enterprise, per D19). */
 export const PRICING_TIER_ORDER: readonly TierId[] = TIER_IDS;
-
-/** All five tier definitions in display order, straight off the manifest. */
-export function pricingTiers(): readonly TierDefinition[] {
-  return PRICING_TIER_ORDER.map((id) => TIER_MANIFEST[id]);
-}
-
-/** Only tiers a visitor can actually choose today. */
-export function comparablePricingTiers(): readonly TierDefinition[] {
-  return pricingTiers().filter((tier) => tier.purchasable);
-}
 
 /** $0 / $9 / $7.50 — whole dollars unless the amount has real cents. */
 export function formatUsd(cents: number): string {
@@ -92,9 +66,9 @@ export function currencyForPricePoint(
     inr?: { paise: number };
     usdCents?: number;
   },
-  geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean },
+  geo?: { country?: string | null; indiaCheckoutOpen?: boolean },
 ): Currency {
-  if (geo?.pricingV2 === true) {
+  if (geo !== undefined) {
     if (geo.country?.toUpperCase() !== 'IN' || geo.indiaCheckoutOpen !== true) return 'USD';
     const paise = point.inr?.paise ?? point.inrPaise ?? 0;
     const usd = point.usdCents ?? 0;
@@ -118,61 +92,6 @@ export function formatMoney(
   return currency === 'INR' ? formatInr(point.inrPaise) : formatUsd(point.usdCents);
 }
 
-/** What a tier card's price slot shows for the selected interval. */
-export interface PriceLine {
-  /** "$9" — formatted manifest amount. */
-  amount: string;
-  /** "/mo" | "/yr". */
-  per: string;
-  /** "$7.50/mo effective" on annual cards; absent on monthly + $0. */
-  note?: string;
-}
-
-/**
- * Price line for a purchasable tier at an interval. Falls back to the
- * other interval when one isn't offered (Free has no annual price —
- * the card keeps showing $0). Returns null only when the manifest has
- * no price at all (team/enterprise).
- */
-export function priceLineFor(
-  tier: TierDefinition,
-  interval: BillingInterval,
-  geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean },
-): PriceLine | null {
-  const point = tier.prices[interval] ?? tier.prices.monthly ?? tier.prices.annual;
-  if (!point) return null;
-  // Clamped per point, matching what checkout will actually charge.
-  const currency = currencyForPricePoint(point, geo);
-  const isAnnual = point === tier.prices.annual && tier.prices.annual !== null;
-  const zero = currency === 'INR' ? point.inrPaise === 0 : point.usdCents === 0;
-  if (zero) {
-    return { amount: formatMoney({ usdCents: 0, inrPaise: 0 }, currency), per: '' };
-  }
-  if (isAnnual) {
-    // The "/mo effective" note divides the SAME currency's annual
-    // amount — mixing the two currencies here would invent a rate.
-    const perMonth =
-      currency === 'INR'
-        ? { usdCents: 0, inrPaise: Math.round(point.inrPaise / 12) }
-        : { usdCents: Math.round(point.usdCents / 12), inrPaise: 0 };
-    return {
-      amount: formatMoney(point, currency),
-      per: '/yr',
-      note: `${formatMoney(perMonth, currency)}/mo effective`,
-    };
-  }
-  return { amount: formatMoney(point, currency), per: '/mo' };
-}
-
-/** The Founding Pro promo (D19 launch offer), straight off the manifest. */
-export function foundingProPromo(): { hostTier: TierDefinition; promo: PromoDefinition } | null {
-  for (const id of PRICING_TIER_ORDER) {
-    const tier = TIER_MANIFEST[id];
-    if (tier.promo) return { hostTier: tier, promo: tier.promo };
-  }
-  return null;
-}
-
 /**
  * One-sentence tier jobs (D19's "Job" column). Copy, not entitlement
  * data — the only per-tier strings that legitimately live outside the
@@ -182,8 +101,7 @@ export const TIER_JOBS: Readonly<Record<TierId, string>> = {
   free: 'Review and clean up senders in one Gmail inbox.',
   plus: 'Clear a larger backlog and set rules for future mail.',
   // QA-billing-20260901-10: "every account" overclaimed against the
-  // manifest's actual inboxLimit (5) — the /pricing Pro card already
-  // prints "5 connected inboxes" directly beneath this same sentence.
+  // manifest's actual inboxLimit (5).
   pro: 'Stay on top of your Gmail inboxes with Brief and Follow-ups.',
   team: 'Review and manage email together.',
   enterprise: 'Manage more inboxes with organizational controls.',
@@ -224,157 +142,3 @@ export const CAPABILITY_LABELS: Readonly<Record<Capability, string>> = {
   snoozed: 'Later review queue',
   followups: 'Follow-ups',
 };
-
-/**
- * Card bullet lines, derived from the manifest. Free enumerates its
- * surfaces + quotas; each later tier shows "Everything in <prev>" plus
- * the capabilities and quota changes the manifest actually adds — so a
- * manifest edit (new capability, lifted limit) rewrites the cards.
- */
-export function cardBullets(tier: TierDefinition): readonly string[] {
-  const idx = PRICING_TIER_ORDER.indexOf(tier.id);
-  const prev = idx > 0 ? TIER_MANIFEST[PRICING_TIER_ORDER[idx - 1] as TierId] : null;
-  // De-duplicated on the way out: capabilities may share a label (see
-  // `CAPABILITY_LABELS`), and a card that lists "Autopilot" twice reads
-  // as a bug regardless of how many capabilities back it.
-  const seen = new Set<string>();
-  const out: string[] = [];
-  const bullets = {
-    push(line: string): void {
-      if (seen.has(line)) return;
-      seen.add(line);
-      out.push(line);
-    },
-  };
-
-  if (!prev) {
-    for (const capability of tier.capabilities) {
-      if (capability === 'cleanup-actions' && tier.cleanupActionsPerMonth !== null) {
-        bullets.push(fillStory(WS1_COPY['pricing.free.features'][0]));
-      } else {
-        bullets.push(CAPABILITY_LABELS[capability]);
-      }
-    }
-  } else {
-    bullets.push(`Everything in ${prev.name}`);
-    for (const capability of tier.capabilities) {
-      if (!prev.capabilities.includes(capability)) {
-        bullets.push(CAPABILITY_LABELS[capability]);
-      }
-    }
-    if (prev.cleanupActionsPerMonth !== null && tier.cleanupActionsPerMonth === null) {
-      bullets.push(WS1_COPY['pricing.plus.features'][0]);
-    }
-  }
-
-  if (!prev || tier.inboxLimit !== prev.inboxLimit) {
-    bullets.push(`${tier.inboxLimit} connected ${tier.inboxLimit === 1 ? 'inbox' : 'inboxes'}`);
-  }
-  if (!prev || tier.undoWindowDays !== prev.undoWindowDays) {
-    bullets.push(`${tier.undoWindowDays}-day Activity Undo for Archive, Later, and Delete`);
-  }
-
-  if (tier.id === SELECTOR_TIERS['sender-filter']) {
-    bullets.push('All-matching cleanup — act on every sender matching your filters');
-  }
-  return out;
-}
-
-/** A comparison-table row: label + one cell per tier in display order. */
-export interface CompareRow {
-  label: string;
-  /** '✓-like truthy string, quota string, or null (em-dash cell). */
-  values: readonly (string | null)[];
-}
-
-/**
- * The full comparison table, derived from the manifest:
- *   - one row per capability (`CAPABILITIES` order), cell = included?
- *     (the cleanup row shows the Free monthly quota instead of a bare
- *     check — that quota is the Free→Plus upgrade trigger, D19/A3);
- *   - quota rows (inboxes / undo window) from the manifest limits.
- */
-export function compareRows(): readonly CompareRow[] {
-  // Team and Enterprise have provisional Pro-equivalent values in the
-  // entitlement manifest for administrative safety. Publishing those
-  // placeholders as purchasable promises would be misleading, so the
-  // launch comparison covers only Free / Plus / Pro. The unavailable
-  // tiers remain visible below the cards as waitlist/contact rows.
-  const tiers = comparablePricingTiers();
-
-  // One row per LABEL, not per capability. Capabilities that share a
-  // label collapse into a single row — see `CAPABILITY_LABELS` for why
-  // the sharing is safe and what enforces it.
-  const capabilityRows: CompareRow[] = [];
-  const rowByLabel = new Map<string, CompareRow>();
-  for (const capability of CAPABILITIES) {
-    const label = CAPABILITY_LABELS[capability];
-    if (rowByLabel.has(label)) continue;
-    const row: CompareRow = {
-      label,
-      values: tiers.map((tier) => {
-        if (!tier.capabilities.includes(capability)) return null;
-        if (capability === 'cleanup-actions') {
-          return tier.cleanupActionsPerMonth === null
-            ? 'Unlimited'
-            : `${tier.cleanupActionsPerMonth}/month`;
-        }
-        return 'Included';
-      }),
-    };
-    rowByLabel.set(label, row);
-    capabilityRows.push(row);
-  }
-
-  const quotaRows: CompareRow[] = [
-    {
-      label: 'Gmail accounts',
-      values: tiers.map((tier) => String(tier.inboxLimit)),
-    },
-    {
-      label: 'Activity Undo for Archive, Later, and Delete',
-      values: tiers.map((tier) => `${tier.undoWindowDays} days`),
-    },
-  ];
-
-  const selectorRows: CompareRow[] = [
-    {
-      label: 'All-matching cleanup',
-      values: tiers.map((tier) =>
-        SELECTOR_TIERS['sender-filter'] === tier.id ? 'Included' : null,
-      ),
-    },
-  ];
-
-  return [...capabilityRows, ...quotaRows, ...selectorRows];
-}
-
-/**
- * Whole months of the monthly price the annual cycle saves ("2 months
- * free"), derived from the manifest — never a hardcoded claim. Null
- * when a cycle is missing, the tier is free, or the saving isn't an
- * exact whole number of months (an approximate claim would be a lie).
- */
-export function annualMonthsFree(tier: TierId): number | null {
-  const { monthly, annual } = TIER_MANIFEST[tier].prices;
-  if (!monthly || !annual) return null;
-  const currency = currencyForPricePoint(monthly);
-  if (currencyForPricePoint(annual) !== currency) return null;
-  const monthlyAmount = currency === 'INR' ? monthly.inrPaise : monthly.usdCents;
-  const annualAmount = currency === 'INR' ? annual.inrPaise : annual.usdCents;
-  if (monthlyAmount <= 0) return null;
-  const saved = monthlyAmount * 12 - annualAmount;
-  return saved > 0 && saved % monthlyAmount === 0 ? saved / monthlyAmount : null;
-}
-
-/**
- * The annual saving shared by EVERY purchasable paid tier, or null when
- * the tiers disagree — a single toggle badge must not promise a saving
- * some plan doesn't deliver.
- */
-export function sharedAnnualMonthsFree(): number | null {
-  const values = (['plus', 'pro'] as const).map((id) => annualMonthsFree(id));
-  const [first] = values;
-  if (first == null || values.some((v) => v !== first)) return null;
-  return first;
-}

@@ -7,22 +7,13 @@ import { ConfirmPanel } from './checkout-confirm-panel';
 const CHECKOUT =
   'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.';
 
-function renderPanel(options?: {
-  pricingV2?: boolean;
-  country?: string | null;
-  indiaCheckoutOpen?: boolean;
-}) {
+function renderPanel(options?: { country?: string | null; indiaCheckoutOpen?: boolean }) {
   return render(
     <ConfirmPanel
       target="plus"
-      cycle="annual"
-      pricingV2={options?.pricingV2 ?? false}
       country={options?.country ?? null}
       indiaCheckoutOpen={options?.indiaCheckoutOpen ?? false}
-      pricePointOverride={options?.pricingV2 ? PLUS_ANNUAL_2026_10 : null}
-      foundingEligible={false}
-      claimFounding={false}
-      onClaimFoundingChange={() => undefined}
+      pricePoint={PLUS_ANNUAL_2026_10}
       isPending={false}
       errorMessage={null}
       onConfirm={() => undefined}
@@ -33,7 +24,7 @@ function renderPanel(options?: {
 
 describe('INR pause copy on checkout confirm', () => {
   it('quotes USD for an India Paddle checkout while India prices are not open', () => {
-    renderPanel({ pricingV2: true, country: 'IN' });
+    renderPanel({ country: 'IN' });
     const panel = screen.getByTestId('checkout-panel');
     expect(panel).not.toHaveTextContent(CHECKOUT);
     expect(panel).toHaveTextContent(/\$59 billed yearly/);
@@ -43,7 +34,7 @@ describe('INR pause copy on checkout confirm', () => {
   });
 
   it('opens an INR Paddle quote when India checkout is available', () => {
-    renderPanel({ pricingV2: true, country: 'IN', indiaCheckoutOpen: true });
+    renderPanel({ country: 'IN', indiaCheckoutOpen: true });
     const panel = screen.getByTestId('checkout-panel');
     expect(panel).not.toHaveTextContent(CHECKOUT);
     expect(panel).toHaveTextContent(/₹1,999 billed yearly/);
@@ -52,7 +43,7 @@ describe('INR pause copy on checkout confirm', () => {
   });
 
   it('keeps a USD Paddle checkout open while rupee purchases are paused', () => {
-    renderPanel({ pricingV2: true, country: 'US' });
+    renderPanel({ country: 'US' });
     const panel = screen.getByTestId('checkout-panel');
     expect(panel).not.toHaveTextContent(CHECKOUT);
     expect(panel).toHaveTextContent(/\$59 billed yearly/);

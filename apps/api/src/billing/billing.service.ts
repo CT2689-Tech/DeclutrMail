@@ -65,8 +65,6 @@ import {
   fillStory,
   indiaPaddlePriceId,
   indiaPaddlePricesConfigured,
-  isBillingPassEnabled,
-  isPricingV2,
   proNotPurchasableMessage,
   type PaddleCheckoutCode,
 } from '@declutrmail/shared/entitlements';
@@ -75,7 +73,6 @@ import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import type { BillingProvider, ProviderInvoicePage } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
-import { foundingRedemptionCount } from './founding-redemptions.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { GRANTING_STATUSES, lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
@@ -194,7 +191,7 @@ export class BillingService {
     dto: CheckoutRequest,
     trustedCountry: string | null = null,
   ): Promise<CheckoutSession> {
-    if (isPricingV2() && (dto.tierId === 'pro' || dto.promo === 'foundingPro')) {
+    if (dto.tierId === 'pro') {
       throw new AppException({
         code: 'PLAN_NOT_PURCHASABLE',
         message: proNotPurchasableMessage(),
@@ -202,13 +199,13 @@ export class BillingService {
     }
     const pass = dto.offer === 'pass_onetime';
     if (pass) {
-      if (!isBillingPassEnabled() || !this.catalog.passPaddlePriceId) {
+      if (!this.catalog.passPaddlePriceId) {
         throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
       }
     }
     // Launch pricing sells Plus annual and the Pass. Monthly is not a
     // new checkout, including when a client still sends cycle=monthly.
-    if (isPricingV2() && !pass && dto.cycle === 'monthly') {
+    if (!pass && dto.cycle === 'monthly') {
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
     }
     // One subscription per workspace at a time — plan CHANGES are a
@@ -226,20 +223,9 @@ export class BillingService {
     // Paddle's currency is chosen in the adapter from `trustedCountry`,
     // which is the verified geo token. `dto.country` is ignored.
 
-    const founding = !pass && dto.promo === 'foundingPro';
-    if (founding) {
-      // Advisory availability check — the AUTHORITATIVE gate is the
-      // race-safe counter in the webhook path; this stops obviously
-      // sold-out checkouts before the user reaches a payment form.
-      const remaining = await this.foundingRemaining();
-      if (remaining <= 0) {
-        throw new AppException({ code: 'FOUNDING_PRO_SOLD_OUT' });
-      }
-    }
-
     const priceId = pass
       ? this.catalog.passPaddlePriceId
-      : this.catalog.resolvePriceId(dto.provider, dto.tierId, dto.cycle, founding);
+      : this.catalog.resolvePriceId(dto.provider, dto.tierId, dto.cycle);
     if (!priceId) {
       // Catalog not provisioned for this price point (founder step F3).
       throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
@@ -331,7 +317,7 @@ export class BillingService {
 
     const checkoutCode: PaddleCheckoutCode = pass
       ? 'pass_onetime'
-      : isPricingV2() && dto.tierId === 'plus' && dto.cycle === 'annual' && !founding
+      : dto.tierId === 'plus' && dto.cycle === 'annual'
         ? 'plus_annual'
         : 'other';
     // Live India ids unbound means this checkout is USD, even when the
@@ -399,7 +385,7 @@ export class BillingService {
     }
 
     this.logger.log(
-      `billing.checkout_created workspace=${principal.workspaceId} provider=${dto.provider} tier=${dto.tierId} cycle=${dto.cycle} founding=${founding}`,
+      `billing.checkout_created workspace=${principal.workspaceId} provider=${dto.provider} tier=${dto.tierId} cycle=${dto.cycle}`,
     );
     recordProductEvent(
       this.productEvents,
@@ -423,7 +409,7 @@ export class BillingService {
     const checkoutCode: PaddleCheckoutCode =
       dto.offer === 'pass_onetime'
         ? 'pass_onetime'
-        : isPricingV2() && dto.tierId === 'plus' && dto.cycle === 'annual'
+        : dto.tierId === 'plus' && dto.cycle === 'annual'
           ? 'plus_annual'
           : 'other';
     const selected = selectPaddleCheckoutPrice(process.env, {
@@ -1766,7 +1752,6 @@ export class BillingService {
     return this.getSubscription(principal.workspaceId);
   }
 
-  /** D126 — Founding Pro spots left (advisory; webhook path is authoritative). */
   /**
    * D119 / ADR-0035 — the workspace's billing documents, proxied on
    * read from the provider.
@@ -2002,12 +1987,5 @@ export class BillingService {
       providerSubscriptionId: sub.providerSubscriptionId,
     });
     return { ...result, provider: sub.provider };
-  }
-
-  async foundingRemaining(): Promise<number> {
-    return Math.max(
-      0,
-      this.catalog.foundingMaxRedemptions - (await foundingRedemptionCount(this.db)),
-    );
   }
 }

@@ -350,7 +350,10 @@ describe('ConfirmActionModal — live-preview confirm gate', () => {
         compositePreview={livePreview}
       />,
     );
-    expect(screen.getByRole('button', { name: 'Get Plus' })).toBeInTheDocument();
+    // The upgrade sheet this opens leads with the Backlog Pass.
+    expect(
+      screen.getByRole('button', { name: fillStory(WS1_COPY['cap.pass.button']) }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: fillStory(WS1_COPY['cap.plus.link']) }),
     ).not.toBeInTheDocument();

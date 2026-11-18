@@ -71,7 +71,7 @@ describe('rendered public promises and product entry', () => {
   });
 
   it('retains valid checkout intent through the permission checkpoint and final OAuth hop', () => {
-    const intent = '/billing?plan=pro&cycle=annual&promo=foundingPro';
+    const intent = '/billing?plan=plus&cycle=annual&offer=pass_onetime';
     const entry = new URL(permissionEntryUrl(intent), 'https://declutrmail.test');
     expect(entry.pathname).toBe('/sign-in');
     expect(entry.searchParams.get('returnTo')).toBe(intent);

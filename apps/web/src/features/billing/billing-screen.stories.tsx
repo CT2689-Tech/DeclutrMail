@@ -138,20 +138,11 @@ const meta: StoryMeta<typeof BillingScreen> = {
 
 export default meta;
 
-/** Free workspace — $0 card, lifetime-cleanup counter, Free marked current,
- *  picker with the annual-default toggle + per-plan Upgrade CTAs. */
+/** Free workspace without a meter summary (an older API): the status line,
+ *  then Plus and the Backlog Pass side by side. */
 export const FreeTier: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(makeClient(meFixture('free', 3), FREE_BODY)),
-};
-
-/** Deep-linked intent (pricing page / gate nudge / TierGate) — the D226
- *  confirm step opens pre-selected: one click left to the provider. */
-export const IntentConfirmOpen: Story<typeof BillingScreen> = {
-  render: (_args: ComponentProps<typeof BillingScreen>) =>
-    frame(makeClient(meFixture('free', 3), FREE_BODY), {
-      initialIntent: { plan: 'pro', cycle: 'annual', promo: 'foundingPro' },
-    }),
 };
 
 /** The truthful post-checkout state (§10): payment made in the overlay,
@@ -325,7 +316,7 @@ export const DowngradeRestoring: Story<typeof BillingScreen> = {
     ),
 };
 
-/** Founding Pro member — locked-price banner (D126). */
+/** An existing Founding Pro member (D126): the plan card names the price lock. */
 export const FoundingMember: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
@@ -490,16 +481,12 @@ export const LaunchFree: Story<typeof BillingScreen> = {
       makeClient(
         {
           ...meFixture('free', 640),
-          pricingV2: true,
-          passEnabled: true,
-          meterV2: true,
           cleanupLimit: 1000,
           cleanupUsed: 360,
           cleanupResetsAt: '2026-11-07T08:00:00.000Z',
         },
         FREE_BODY,
       ),
-      { pricingV2: true },
     ),
 };
 
@@ -508,7 +495,7 @@ export const LaunchPlusSubscriber: Story<typeof BillingScreen> = {
   render: () =>
     frame(
       makeClient(
-        { ...meFixture('plus', null), pricingV2: true, passEnabled: true, inboxLimit: 2 },
+        { ...meFixture('plus', null), inboxLimit: 2 },
         {
           complimentary: null,
           tier: 'plus',
@@ -525,7 +512,6 @@ export const LaunchPlusSubscriber: Story<typeof BillingScreen> = {
             : null,
         },
       ),
-      { pricingV2: true },
     ),
 };
 
@@ -547,7 +533,7 @@ export const LaunchPlusPastDue: Story<typeof BillingScreen> = {
   render: () =>
     frame(
       makeClient(
-        { ...meFixture('plus', null), pricingV2: true, passEnabled: true, inboxLimit: 2 },
+        { ...meFixture('plus', null), inboxLimit: 2 },
         {
           complimentary: null,
           tier: 'plus',
@@ -556,7 +542,6 @@ export const LaunchPlusPastDue: Story<typeof BillingScreen> = {
           subscription: LAUNCH_PLUS_SUB ? { ...LAUNCH_PLUS_SUB, status: 'past_due' } : null,
         },
       ),
-      { pricingV2: true },
     ),
 };
 
@@ -565,7 +550,7 @@ export const LaunchPassHolder: Story<typeof BillingScreen> = {
   render: () =>
     frame(
       makeClient(
-        { ...meFixture('plus', null), pricingV2: true, passEnabled: true, inboxLimit: 1 },
+        { ...meFixture('plus', null), inboxLimit: 1 },
         {
           checkoutSetupComplete: true,
           complimentary: { tier: 'plus', expiresAt: '2026-11-30T00:00:00.000Z', source: 'pass' },
@@ -575,7 +560,6 @@ export const LaunchPassHolder: Story<typeof BillingScreen> = {
           subscription: null,
         },
       ),
-      { pricingV2: true },
     ),
 };
 
@@ -597,13 +581,10 @@ export const LaunchFreeOverLimit: Story<typeof BillingScreen> = {
               readiness: 'ready',
             },
           ],
-          pricingV2: true,
-          passEnabled: true,
           inboxLimit: 1,
         },
         FREE_BODY,
       ),
-      { pricingV2: true },
     );
   },
 };
@@ -613,7 +594,7 @@ export const CompedPro: Story<typeof BillingScreen> = {
   render: (_args: ComponentProps<typeof BillingScreen>) =>
     frame(
       makeClient(
-        { ...meFixture('pro', null), pricingV2: true, passEnabled: true },
+        { ...meFixture('pro', null) },
         {
           complimentary: { tier: 'pro', expiresAt: null },
           tier: 'pro',
@@ -622,7 +603,6 @@ export const CompedPro: Story<typeof BillingScreen> = {
           subscription: null,
         },
       ),
-      { pricingV2: true },
     ),
 };
 
@@ -631,7 +611,7 @@ export const CompedProWithPaymentHistory: Story<typeof BillingScreen> = {
   render: () =>
     frame(
       makeClient(
-        { ...meFixture('pro', null), pricingV2: true, passEnabled: true },
+        { ...meFixture('pro', null) },
         {
           complimentary: { tier: 'pro', expiresAt: null },
           tier: 'pro',
@@ -657,7 +637,6 @@ export const CompedProWithPaymentHistory: Story<typeof BillingScreen> = {
           omittedRows: 0,
         },
       ),
-      { pricingV2: true },
     ),
 };
 

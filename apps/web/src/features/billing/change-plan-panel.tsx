@@ -12,7 +12,7 @@ import {
   formatBillingDate,
   formatProviderAmount,
   isDeferredDowngrade,
-  moneyBackNote,
+  MONEY_BACK_NOTE,
   quotedPlanPrice,
 } from './billing-model';
 
@@ -33,7 +33,6 @@ export function ChangePlanPanel({
   currentPeriodEnd,
   isPending,
   errorMessage,
-  pricingV2 = false,
   onConfirm,
   onDismiss,
 }: {
@@ -44,12 +43,10 @@ export function ChangePlanPanel({
   currentPeriodEnd: string | null;
   isPending: boolean;
   errorMessage: string | null;
-  /** Server launch flag. The refund line is the deck sentence either way. */
-  pricingV2?: boolean;
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
-  const toLabel = quotedPlanPrice(target, cycle, pricingV2);
+  const toLabel = quotedPlanPrice(target, cycle);
   const samePlan = target === fromTier && cycle === fromCycle;
   const isDowngrade = isDeferredDowngrade(fromTier, fromCycle, target, cycle);
   const effectiveDate = formatBillingDate(currentPeriodEnd);
@@ -197,9 +194,7 @@ export function ChangePlanPanel({
               2026-07-30). The guarantee still governs the ORIGINAL charge;
               /refunds is where its terms live. */}
           {isDowngrade ? null : (
-            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-              {moneyBackNote(pricingV2)}
-            </p>
+            <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>{MONEY_BACK_NOTE}</p>
           )}
         </>
       )}
@@ -211,7 +206,7 @@ export function ChangePlanPanel({
             : 'This quote needs refreshing before you can confirm.'}
         </p>
       ) : null}
-      <PlanConsequences fromTier={fromTier} toTier={target} pricingV2={pricingV2} />
+      <PlanConsequences fromTier={fromTier} toTier={target} />
       {!samePlan && !quoteReady && !preview.isFetching ? (
         <Button onClick={() => void preview.refetch()} disabled={isPending}>
           Refresh quote

@@ -37,7 +37,6 @@ import { apiPost } from '@/lib/api/client';
 import {
   currencyForPricePoint,
   formatMoney,
-  priceLineFor,
   TIER_JOBS,
 } from '@/features/marketing/pricing/pricing-model';
 import { visitorPriceLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
@@ -48,13 +47,11 @@ import { billingKeys } from './api/query-keys';
 import type { BillingIntent } from './billing-intent';
 import { useChangePlan } from './api/use-change-plan';
 import { useCheckout } from './api/use-checkout';
-import { useFoundingRemaining } from './api/use-founding-remaining';
 import {
   chargedPlanPrice,
   formatBillingDate,
   isDeferredDowngrade,
-  moneyBackNote,
-  sharedAnnualMonthsFree,
+  MONEY_BACK_NOTE,
   STRIP_TIER_IDS,
   type StripTierId,
   type SubscriptionRecord,
@@ -84,20 +81,19 @@ const BillingComparison = dynamic(
   },
 );
 
-const { color, font, motion, radius, shadow, text } = tokens;
+const { color, motion, radius, text } = tokens;
 
 /** Self-serve checkout targets (D19) — mirrors `PurchasableTierSchema`. */
 type PaidTier = 'plus' | 'pro';
 
 /**
  * Inline plan picker (D117/D119/D120) — supersedes the PlanChangeModal
- * round-trip. One prominent monthly/annual segmented control drives
- * every price on the three cards; each non-current plan carries ONE
- * primary CTA that expands the confirm panel in place:
+ * round-trip. Launch pricing sells Plus annually and the Backlog Pass
+ * once; Pro is waitlist only. Each non-current plan carries ONE primary
+ * CTA that expands the confirm panel in place:
  *
  *   - Paid target, no granting subscription → the real checkout confirm
- *     (D226's mandatory preview: Founding Pro claim when Pro-annual
- *     per D126, the exact charge line) →
+ *     (D226's mandatory preview: the exact charge line) →
  *     `launchCheckout` opens the provider surface. Two clicks total.
  *   - Paid target with a granting subscription → the SELF-SERVE plan
  *     change (D117/D120): D226 preview of the switch, then
@@ -108,7 +104,7 @@ type PaidTier = 'plus' | 'pro';
  *
  * Errors render inline from the shared ERROR_CODES vocabulary —
  * BILLING_DISABLED / BILLING_NOT_PROVISIONED (billing dark, F-queue),
- * FOUNDING_PRO_SOLD_OUT, SUBSCRIPTION_EXISTS, FOUNDING_PLAN_LOCKED —
+ * SUBSCRIPTION_EXISTS, FOUNDING_PLAN_LOCKED —
  * never a generic toast.
  *
  * `disabled` (billing dark 503, pending plan action, paused sub) keeps
@@ -182,7 +178,6 @@ const PRE_CLAIM_REJECTIONS = new Set([
   // opposite of true: they were just refused, nothing reached a provider,
   // and the reservation would lock the retry the message invites.
   'SUBSCRIPTION_REFUND_SETTLING',
-  'FOUNDING_PRO_SOLD_OUT',
   'BILLING_NOT_PROVISIONED',
   'BILLING_DISABLED',
   'BAD_REQUEST',
@@ -195,8 +190,6 @@ export function PlanPicker({
   grantingSub,
   disabled,
   initialIntent = null,
-  pricingV2 = false,
-  passEnabled = false,
   country = null,
   indiaCheckoutOpen = false,
   checkoutGeoToken = null,
@@ -233,10 +226,6 @@ export function PlanPicker({
   disabled: boolean;
   /** Validated pricing-page/gate-nudge choice carried through auth. */
   initialIntent?: BillingIntent | null;
-  /** From the server. The browser bundle cannot read the pricing env. */
-  pricingV2?: boolean;
-  /** From `/api/auth/me`. Hidden when false. */
-  passEnabled?: boolean;
   country?: string | null;
   /** From the server. Absent means rupee checkout stays paused. */
   indiaCheckoutOpen?: boolean;
@@ -335,7 +324,7 @@ export function PlanPicker({
   // they ARE the picker. Each card carries its own preview and opens
   // checkout directly. Included and complimentary plans keep the strip.
   const launchOffers =
-    pricingV2 && grantingSub === null && (currentTier === 'free' || currentAccess?.kind === 'pass');
+    grantingSub === null && (currentTier === 'free' || currentAccess?.kind === 'pass');
   // A deep link names an offer: point at its card. Opening a payment
   // surface on page load is never the deep link's job.
   const [highlighted] = useState<'plus' | 'pass' | null>(() =>
@@ -349,22 +338,12 @@ export function PlanPicker({
   );
   const [launching, setLaunching] = useState<'plus' | 'pass' | null>(null);
   const [comparisonOpen, setComparisonOpen] = useState(false);
-  const [cycle, setCycle] = useState<BillingCycle>(
-    pricingV2 ? 'annual' : (initialIntent?.cycle ?? 'annual'),
-  );
+  // Launch pricing sells annual only, whatever cycle a deep link names.
+  const cycle: BillingCycle = 'annual';
   const [selected, setSelected] = useState<StripTierId | null>(null);
   const [passSelected, setPassSelected] = useState(
     !launchOffers && initialIntent?.offer === 'pass_onetime',
   );
-  // Default OFF. The control reads "Claim Founding Pro", which is the
-  // language of an opt-in, and it was pre-ticked — so the quoted price and
-  // the confirm button committed to a promotional price point the user never
-  // chose. Founding Pro is also change-LOCKED once bought
-  // (`FOUNDING_PLAN_LOCKED`), so a default-on discount silently opts someone
-  // into a subscription they cannot re-plan. An explicit deep link
-  // (`initialIntent.promo`) still arrives pre-ticked, because there the user
-  // did choose it. Founder call, 2026-07-29.
-  const [claimFounding, setClaimFounding] = useState(initialIntent?.promo === 'foundingPro');
   const queryClient = useQueryClient();
   const checkout = useCheckout();
 
@@ -390,7 +369,6 @@ export function PlanPicker({
   // A pricing-page/gate-nudge CTA lands with an exact plan+cycle — open
   // the confirm panel directly (the deep link IS the plan click).
   const intentPlan = initialIntent?.plan ?? null;
-  const intentCycle = initialIntent?.cycle ?? null;
   const intentOffer = initialIntent?.offer ?? null;
   useEffect(() => {
     // QA-sign-in-20260829-03: a deep link naming the tier AND cycle the
@@ -400,13 +378,9 @@ export function PlanPicker({
     // A deep link naming a DIFFERENT tier, OR the same tier at a DIFFERENT
     // cycle (a real monthly<->annual switch), still opens normally; both
     // are the intended change flow.
-    // A leftover `cycle=monthly` link cannot open a monthly checkout
-    // while launch pricing is on. The offered cycle is annual.
-    const intentCycleForOpen = pricingV2 ? 'annual' : intentCycle;
-    const intentCycleDiffers =
-      intentCycleForOpen !== null &&
-      grantingSub !== null &&
-      intentCycleForOpen !== grantingSub.cycle;
+    // A leftover `cycle=monthly` link cannot open a monthly checkout.
+    // The offered cycle is annual.
+    const intentCycleDiffers = grantingSub !== null && grantingSub.cycle !== 'annual';
     // A Pass or other complimentary grant can floor the entitlement at
     // Plus without a paid subscription. That is not "already on Plus"
     // for checkout — /billing?plan=plus still opens Before you pay.
@@ -419,7 +393,7 @@ export function PlanPicker({
       intentPlan &&
       // The Pass preview owns this link; do not queue a subscription behind it.
       intentOffer !== 'pass_onetime' &&
-      !(pricingV2 && intentPlan === 'pro') &&
+      intentPlan !== 'pro' &&
       !alreadyOnPaidPlan &&
       !disabled &&
       !consumedIntent.current
@@ -427,16 +401,7 @@ export function PlanPicker({
       consumedIntent.current = true;
       setSelected(intentPlan);
     }
-  }, [
-    intentPlan,
-    intentCycle,
-    intentOffer,
-    currentTier,
-    disabled,
-    grantingSub,
-    pricingV2,
-    launchOffers,
-  ]);
+  }, [intentPlan, intentOffer, currentTier, disabled, grantingSub, launchOffers]);
 
   useEffect(() => {
     if (!highlighted) return;
@@ -463,26 +428,7 @@ export function PlanPicker({
     // Reset fns are referentially stable — deps stay minimal on purpose.
   }, [disabled, selected, launching]);
 
-  // QA-billing-20260901-09/-05: independent of `selected` — the Pro
-  // card's own disclosure needs this before the confirm panel is ever
-  // opened, not just once it is.
-  // Founding Pro sales UI stays while PRICING_V2 is off. The flag
-  // retires the claim, the first-250 hint, and the deep-link notice.
-  const foundingPossible = !pricingV2 && cycle === 'annual' && grantingSub === null;
-  const foundingAvailability = useFoundingRemaining(foundingPossible);
-  const foundingSoldOut =
-    foundingPossible &&
-    foundingAvailability.data !== undefined &&
-    foundingAvailability.data.remaining <= 0;
-  const foundingEligible =
-    !pricingV2 &&
-    selected === 'pro' &&
-    cycle === 'annual' &&
-    grantingSub === null &&
-    !foundingSoldOut;
-  const founding = foundingEligible && claimFounding;
   const errorMessage = checkoutErrorMessage(checkout.error);
-  const monthsFree = sharedAnnualMonthsFree();
 
   function closePanel() {
     setSelected(null);
@@ -501,7 +447,7 @@ export function PlanPicker({
     setLaunchError(null);
     setPassSelected(false);
     setSelected((prev) => (prev === id ? null : id));
-    if (pricingV2 && id === 'plus') {
+    if (id === 'plus') {
       void track('plus_selected', { source: 'plan_picker' });
       void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'plus' });
     }
@@ -516,18 +462,14 @@ export function PlanPicker({
     // ATOMICALLY (Web Locks mutex) and RESERVED (`checkout_intent`)
     // before any payment surface can open. A second tab's claim now
     // finds the reservation and stands down.
-    const tier = TIER_MANIFEST[target];
-    const manifestPoint = cycle === 'annual' ? tier.prices.annual : tier.prices.monthly;
-    const foundingPoint =
-      !pass && foundingEligible && claimFounding && tier.promo ? tier.promo.annual : null;
+    // Launch checkout is Paddle only: Plus annual or the Pass.
     const quotedPoint = pass
       ? OFFERS.backlogPass.price
-      : (foundingPoint ??
-        (pricingV2 && target === 'plus' && cycle === 'annual'
-          ? PLUS_ANNUAL_2026_10
-          : manifestPoint));
+      : target === 'plus'
+        ? PLUS_ANNUAL_2026_10
+        : null;
     const quotedCurrency = quotedPoint
-      ? currencyForPricePoint(quotedPoint, { pricingV2, country, indiaCheckoutOpen })
+      ? currencyForPricePoint(quotedPoint, { country, indiaCheckoutOpen })
       : 'USD';
     if (
       disabled ||
@@ -546,21 +488,15 @@ export function PlanPicker({
       return;
     }
     setLaunchError(null);
-    const funnel = {
-      tier: target,
-      cycle,
-      provider: 'paddle',
-      founding_pro: founding,
-    } as const;
+    const funnel = { tier: target, cycle, provider: 'paddle' } as const;
     // Intent only — the POST below is what writes `pending_checkouts`.
     void track('checkout_started', funnel);
     checkout.mutate(
       {
         attemptId,
         tierId: target,
-        cycle: pass ? 'annual' : cycle,
+        cycle,
         provider: 'paddle',
-        ...(founding ? { promo: 'foundingPro' as const } : {}),
         ...(pass ? { offer: 'pass_onetime' as const } : {}),
         ...(checkoutGeoToken ? { checkoutGeoToken } : {}),
       },
@@ -609,8 +545,8 @@ export function PlanPicker({
             .then(
               () => undefined,
               // Overlay never opened. A Paddle transaction without an
-              // open window is not payable from email. Keep the confirm panel, show the
-              // existing open-failed sentence, and release the local
+              // open window is not payable from email. Keep the confirm
+              // panel, show the existing open-failed sentence, and release the local
               // reservation so retry is armed. Do not paint
               // "Checkout started".
               (err: unknown) => {
@@ -716,24 +652,21 @@ export function PlanPicker({
   // "Already included in Plus" misnamed a Pro plan. Withhold it.
   const passIncluded =
     grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro');
-  const passOffer =
-    pricingV2 && passEnabled && !passIncluded ? (
-      <PassOfferCard
-        compact={quietPassOffer}
-        locale={visitorPriceLocale({ country, indiaCheckoutOpen })}
-        included={
-          grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro')
-        }
-        selected={passSelected}
-        disabled={disabled}
-        onSelect={() => {
-          setSelected(null);
-          setPassSelected(true);
-          void track('pass_selected', { source: 'plan_picker' });
-          void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'pass' });
-        }}
-      />
-    ) : null;
+  const passOffer = !passIncluded ? (
+    <PassOfferCard
+      compact={quietPassOffer}
+      locale={visitorPriceLocale({ country, indiaCheckoutOpen })}
+      included={grantingSub !== null && (grantingSub.tier === 'plus' || grantingSub.tier === 'pro')}
+      selected={passSelected}
+      disabled={disabled}
+      onSelect={() => {
+        setSelected(null);
+        setPassSelected(true);
+        void track('pass_selected', { source: 'plan_picker' });
+        void track('upgrade_cta_clicked', { source: 'plan_picker', plan: 'pass' });
+      }}
+    />
+  ) : null;
 
   function buyLaunchOffer(kind: 'plus' | 'pass') {
     if (disabled) return;
@@ -755,7 +688,6 @@ export function PlanPicker({
 
   const launchLayout = launchOffers ? (
     <LaunchOffers
-      passEnabled={passEnabled}
       passHolder={currentAccess?.kind === 'pass'}
       country={country}
       indiaCheckoutOpen={indiaCheckoutOpen}
@@ -783,9 +715,6 @@ export function PlanPicker({
         {currentAccess?.kind !== 'complimentary' || !includedAccess ? (
           <h2 style={{ ...tokens.typography.sectionTitle, margin: 0 }}>Plans</h2>
         ) : null}
-        {pricingV2 ? null : (
-          <CycleToggle cycle={cycle} onChange={setCycle} monthsFree={monthsFree} />
-        )}
       </div>
 
       {/* The launch cards carry their own terms, and the Pass is not a subscription. */}
@@ -793,24 +722,6 @@ export function PlanPicker({
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
           Your current access is shown above. Buying a subscription starts a separate recurring
           payment. Review the price and renewal details before checkout.
-        </p>
-      ) : null}
-
-      {!pricingV2 && initialIntent?.promo === 'foundingPro' && grantingSub !== null ? (
-        <p
-          role="status"
-          style={{
-            margin: 0,
-            padding: '12px 14px',
-            border: `1px solid ${color.border}`,
-            borderRadius: radius.md,
-            background: color.card,
-            color: color.fgSoft,
-            fontSize: text.sm,
-          }}
-        >
-          Founding Pro is for new annual Pro subscriptions. Your active paid subscription cannot be
-          converted to the promotional price; your current plan remains unchanged.
         </p>
       ) : null}
 
@@ -831,10 +742,10 @@ export function PlanPicker({
               // Pro is no longer sold at launch. An existing Pro subscription is
               // a readout of its own cycle, rather than an annual purchase quote.
               const cardCycle =
-                pricingV2 && id === 'pro' && displayedSubscription?.tier === 'pro'
+                id === 'pro' && displayedSubscription?.tier === 'pro'
                   ? displayedSubscription.cycle
                   : cycle;
-              return pricingV2 && id === 'pro' && id !== currentOfferTier ? (
+              return id === 'pro' && id !== currentOfferTier ? (
                 <ProWaitlistCard key={id} disabled={disabled} />
               ) : (
                 <PlanCard
@@ -852,34 +763,20 @@ export function PlanPicker({
                       ? chargedPlanPrice(
                           displayedSubscription.tier,
                           displayedSubscription.cycle,
-                          displayedSubscription.foundingMember,
                           displayedSubscription.providerPriceId,
                           displayedSubscription.chargedUsdCents,
                           displayedSubscription.chargedCurrency,
                         )
                       : undefined
                   }
-                  canSwitchCycle={pricingV2 ? false : grantingSub?.provider === 'paddle'}
                   isSelected={id === selected}
                   disabled={disabled}
                   hasGrantingSubscription={grantingSub !== null}
-                  {...(pricingV2 ? { geo: { pricingV2: true, country, indiaCheckoutOpen } } : {})}
-                  {...(pricingV2 && id === 'plus' && cycle === 'annual'
-                    ? { priceOverride: launchPlusLine(country, indiaCheckoutOpen) }
-                    : {})}
+                  price={stripPrice(id, country, indiaCheckoutOpen)}
                   onSelect={() => onSelect(id)}
-                  showFoundingHint={
-                    !pricingV2 &&
-                    id === 'pro' &&
-                    id !== currentTier &&
-                    foundingPossible &&
-                    !foundingSoldOut
-                  }
                   foundingMemberNote={
                     id === currentTier && grantingSub?.foundingMember === true
-                      ? pricingV2
-                        ? WS1_COPY['cancel.founding']
-                        : 'Founding Pro — price locked while this subscription stays active. Canceling ends the lock for good.'
+                      ? WS1_COPY['cancel.founding']
                       : null
                   }
                 />
@@ -892,15 +789,10 @@ export function PlanPicker({
           {passSelected && !disabled ? (
             <ConfirmPanel
               target="plus"
-              cycle="annual"
               offer="pass_onetime"
-              pricingV2={pricingV2}
               country={country}
               indiaCheckoutOpen={indiaCheckoutOpen}
-              pricePointOverride={OFFERS.backlogPass.price}
-              foundingEligible={false}
-              claimFounding={false}
-              onClaimFoundingChange={setClaimFounding}
+              pricePoint={OFFERS.backlogPass.price}
               isPending={checkout.isPending}
               errorMessage={launchError ?? errorMessage}
               onConfirm={() => void onConfirm('plus')}
@@ -915,7 +807,6 @@ export function PlanPicker({
                 <DowngradePanel
                   currentTier={currentTier}
                   currentPeriodEnd={grantingSub.currentPeriodEnd}
-                  pricingV2={pricingV2}
                   onRequestCancel={() => {
                     closePanel();
                     onRequestCancel();
@@ -929,7 +820,6 @@ export function PlanPicker({
                 fromTier={grantingSub.tier}
                 fromCycle={grantingSub.cycle}
                 currentPeriodEnd={grantingSub.currentPeriodEnd}
-                pricingV2={pricingV2}
                 isPending={changePlan.isPending}
                 errorMessage={
                   changePlan.error ? planChangeInlineErrorMessage(changePlan.error) : null
@@ -937,32 +827,22 @@ export function PlanPicker({
                 onConfirm={() => void onConfirmChange(selected)}
                 onDismiss={closePanel}
               />
-            ) : (
+            ) : selected === 'plus' ? (
+              // Launch checkout sells Plus annual only; Pro is waitlist only.
               <ConfirmPanel
                 target={selected}
-                cycle={cycle}
-                pricingV2={pricingV2}
                 country={country}
                 indiaCheckoutOpen={indiaCheckoutOpen}
-                pricePointOverride={
-                  pricingV2 && selected === 'plus' && cycle === 'annual'
-                    ? PLUS_ANNUAL_2026_10
-                    : null
-                }
-                foundingEligible={foundingEligible}
-                claimFounding={claimFounding}
-                onClaimFoundingChange={setClaimFounding}
+                pricePoint={PLUS_ANNUAL_2026_10}
                 isPending={checkout.isPending}
                 errorMessage={launchError ?? errorMessage}
                 onConfirm={() => void onConfirm(selected)}
                 onDismiss={() => {
-                  void track('checkout_closed', {
-                    plan: selected === 'pro' ? 'pro' : 'plus',
-                  });
+                  void track('checkout_closed', { plan: 'plus' });
                   closePanel();
                 }}
               />
-            )
+            ) : null
           ) : null}
         </>
       )}
@@ -993,7 +873,7 @@ export function PlanPicker({
           tabIndex={0}
           style={{ overflowX: 'auto', marginBottom: 16 }}
         >
-          {comparisonOpen ? <BillingComparison pricingV2={pricingV2} /> : null}
+          {comparisonOpen ? <BillingComparison /> : null}
         </div>
       </details>
     </>
@@ -1065,77 +945,32 @@ export function planChangeInlineErrorMessage(error: unknown): string | null {
   return checkoutErrorMessage(error);
 }
 
-function CycleToggle({
-  cycle,
-  onChange,
-  monthsFree,
-}: {
-  cycle: BillingCycle;
-  onChange: (cycle: BillingCycle) => void;
-  /** Manifest-derived annual saving shared by every paid plan, or null. */
-  monthsFree: number | null;
-}) {
-  const options: { value: BillingCycle; label: string }[] = [
-    { value: 'monthly', label: 'Monthly' },
-    {
-      value: 'annual',
-      label: monthsFree !== null ? `Annual — ${monthsFree} months free` : 'Annual',
-    },
-  ];
-  return (
-    <div
-      role="group"
-      aria-label="Billing interval"
-      data-testid="cycle-toggle"
-      style={{
-        display: 'inline-flex',
-        background: color.fill,
-        borderRadius: radius.pill,
-        padding: 3,
-        gap: 2,
-      }}
-    >
-      {options.map((opt) => {
-        const on = cycle === opt.value;
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            aria-pressed={on}
-            onClick={() => onChange(opt.value)}
-            style={{
-              border: 'none',
-              cursor: 'pointer',
-              height: 30,
-              padding: '0 14px',
-              borderRadius: radius.pill,
-              fontFamily: font.sans,
-              fontSize: text.sm,
-              fontWeight: 600,
-              background: on ? color.card : 'transparent',
-              color: on ? color.fg : color.fgMuted,
-              boxShadow: on ? shadow.card : 'none',
-              transition: `background ${motion.fast} ${motion.ease}, color ${motion.fast} ${motion.ease}`,
-            }}
-          >
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function launchPlusLine(
   country: string | null,
   indiaCheckoutOpen: boolean,
-): { amount: string; per: string; note?: string } {
+): { amount: string; per: string } {
   return launchPriceDisplay(visitorPriceLocale({ country, indiaCheckoutOpen })).plus;
+}
+
+/**
+ * The list price a strip card shows: Free's $0 and the launch Plus
+ * annual price. Pro is not sold, so its card (shown only as the current
+ * plan) has no list price — the subscription or access label speaks.
+ */
+function stripPrice(
+  tierId: StripTierId,
+  country: string | null,
+  indiaCheckoutOpen: boolean,
+): { amount: string; per: string } | null {
+  if (tierId === 'free') {
+    return launchPriceDisplay(visitorPriceLocale({ country, indiaCheckoutOpen })).free;
+  }
+  if (tierId === 'plus') return launchPlusLine(country, indiaCheckoutOpen);
+  return null;
 }
 
 /** Plus and the Backlog Pass side by side, each its own preview + checkout. */
 function LaunchOffers({
-  passEnabled,
   passHolder,
   country,
   indiaCheckoutOpen,
@@ -1147,7 +982,6 @@ function LaunchOffers({
   highlighted,
   onBuy,
 }: {
-  passEnabled: boolean;
   /** A second Pass extends the first, so the card says so. */
   passHolder: boolean;
   country: string | null;
@@ -1160,7 +994,7 @@ function LaunchOffers({
   highlighted: 'plus' | 'pass' | null;
   onBuy: (kind: 'plus' | 'pass') => void;
 }) {
-  const geo = { pricingV2: true, country, indiaCheckoutOpen };
+  const geo = { country, indiaCheckoutOpen };
   const plusCurrency = currencyForPricePoint(PLUS_ANNUAL_2026_10, geo);
   const passCurrency = currencyForPricePoint(OFFERS.backlogPass.price, geo);
   const plusLocale = plusCurrency === 'INR' ? 'inr' : 'usd';
@@ -1181,7 +1015,7 @@ function LaunchOffers({
           ...(summary ? [summary] : []),
           fillStory(WS1_COPY['launch.taxNote']),
           ...(currency === 'INR' ? [fillStory(WS1_COPY['checkout.inr'], 'inr')] : []),
-          moneyBackNote(true),
+          MONEY_BACK_NOTE,
           ...(promo ? [`${promo} ${WS1_COPY['checkout.codeEnter']}`] : []),
         ];
   const plusMonthly = formatMoney(
@@ -1231,33 +1065,31 @@ function LaunchOffers({
           highlighted={highlighted === 'plus'}
           onBuy={() => onBuy('plus')}
         />
-        {passEnabled ? (
-          <LaunchOfferCard
-            testId="launch-offer-pass"
-            badge={fillStory(WS1_COPY['pricing.pass.badge'])}
-            name={fillStory(WS1_COPY['pricing.pass.name'])}
-            amount={passAmount(passLocale)}
-            per={fillStory(WS1_COPY['pricing.pass.priceSuffix'], passLocale)}
-            hint={fillStory(
-              WS1_COPY[passHolder ? 'launch.pass.extend' : 'pricing.pass.renewal'],
-              passLocale,
-            )}
-            features={fillStoryList(WS1_COPY['pricing.pass.features'], passLocale).slice(0, 3)}
-            terms={termsFor(null, passCurrency, passPaused, promoBanner(new Date(), true))}
-            ctaLabel={
-              passPaused
-                ? WS1_COPY['pricing.inrPaused.button']
-                : pendingOffer === 'pass'
-                  ? opening
-                  : fillStory(WS1_COPY['pricing.pass.cta'])
-            }
-            pending={pendingOffer !== null}
-            disabled={disabled || passPaused}
-            error={errorOffer === 'pass' ? errorMessage : null}
-            highlighted={highlighted === 'pass'}
-            onBuy={() => onBuy('pass')}
-          />
-        ) : null}
+        <LaunchOfferCard
+          testId="launch-offer-pass"
+          badge={fillStory(WS1_COPY['pricing.pass.badge'])}
+          name={fillStory(WS1_COPY['pricing.pass.name'])}
+          amount={passAmount(passLocale)}
+          per={fillStory(WS1_COPY['pricing.pass.priceSuffix'], passLocale)}
+          hint={fillStory(
+            WS1_COPY[passHolder ? 'launch.pass.extend' : 'pricing.pass.renewal'],
+            passLocale,
+          )}
+          features={fillStoryList(WS1_COPY['pricing.pass.features'], passLocale).slice(0, 3)}
+          terms={termsFor(null, passCurrency, passPaused, promoBanner(new Date(), true))}
+          ctaLabel={
+            passPaused
+              ? WS1_COPY['pricing.inrPaused.button']
+              : pendingOffer === 'pass'
+                ? opening
+                : fillStory(WS1_COPY['pricing.pass.cta'])
+          }
+          pending={pendingOffer !== null}
+          disabled={disabled || passPaused}
+          error={errorOffer === 'pass' ? errorMessage : null}
+          highlighted={highlighted === 'pass'}
+          onBuy={() => onBuy('pass')}
+        />
       </div>
       <ProWaitlistLine disabled={disabled} />
     </>
@@ -1387,11 +1219,8 @@ function PlanCard({
   currentPriceLabel,
   isSelected,
   disabled,
-  canSwitchCycle,
   hasGrantingSubscription,
-  geo,
-  priceOverride,
-  showFoundingHint,
+  price,
   foundingMemberNote,
   onSelect,
 }: {
@@ -1408,25 +1237,15 @@ function PlanCard({
   currentPriceLabel?: string | null | undefined;
   isSelected: boolean;
   disabled: boolean;
-  /** Whether a self-serve cycle switch is offered. */
-  canSwitchCycle: boolean;
   hasGrantingSubscription: boolean;
-  geo?: { pricingV2?: boolean; country?: string | null; indiaCheckoutOpen?: boolean };
-  priceOverride?: { amount: string; per: string; note?: string };
-  /** QA-billing-20260901-05 — show the Founding Pro price on this card,
-   *  gated by live availability (the parent already checked). */
-  showFoundingHint?: boolean;
+  /** The card's list price, or null when the plan is not sold. */
+  price: { amount: string; per: string } | null;
   /** QA-billing-20260901-09 — this card's own subscription carries the
    *  founding price lock; name what canceling costs. */
   foundingMemberNote?: string | null;
   onSelect: () => void;
 }) {
   const tier = TIER_MANIFEST[tierId];
-  const price = priceOverride ?? priceLineFor(tier, cycle, geo);
-  const foundingPrice =
-    showFoundingHint && tier.promo
-      ? formatMoney(tier.promo.annual, currencyForPricePoint(tier.promo.annual))
-      : null;
   // The badge marks the plan you are ON — tier AND cycle. Tier alone
   // made it follow the cycle toggle: a Pro ANNUAL subscriber flipping
   // the strip to Monthly saw "Pro · $19/mo · CURRENT", i.e. the badge
@@ -1435,8 +1254,7 @@ function PlanCard({
   // below already drew this distinction — "Switch to monthly billing" —
   // so the card contradicted itself.
   //
-  // `currentCycle` is a fact on the subscription record and
-  // `canSwitchCycle` is the affordance; they stay separate props.
+  // `currentCycle` is a fact on the subscription record.
   //
   // `currentCycle` is null when no subscription grants the current plan.
   // Free and complimentary plans have no billing cycle to compare.
@@ -1444,14 +1262,12 @@ function PlanCard({
     isCurrent && (accessLabel !== undefined || tierId === 'free' || currentCycle === cycle);
   const separatePurchase = !hasGrantingSubscription && tierId !== 'free' && !isUpgrade;
   // CTA per card state. Every non-current card gets one so the row
-  // reads as equals; the current card's only action is switching its
-  // billing cycle via the toggle.
+  // reads as equals. Launch pricing sells one cycle, so the current card
+  // has no cycle switch.
   const cta = isCurrent
-    ? hasGrantingSubscription && canSwitchCycle && currentCycle !== null && currentCycle !== cycle
-      ? `Switch to ${cycle} billing`
-      : !hasGrantingSubscription && tierId === 'plus'
-        ? `Buy ${tier.name} separately`
-        : null
+    ? !hasGrantingSubscription && tierId === 'plus'
+      ? `Buy ${tier.name} separately`
+      : null
     : tierId === 'free'
       ? hasGrantingSubscription
         ? 'Switch to Free'
@@ -1505,23 +1321,10 @@ function PlanCard({
         }}
       >
         {accessLabel ?? currentPriceLabel ?? (price ? `${price.amount}${price.per}` : '—')}
-        {accessLabel === undefined && currentPriceLabel == null && price?.note ? (
-          <span
-            style={{ color: color.fgMuted, fontSize: text.sm, fontWeight: 400, letterSpacing: 0 }}
-          >
-            {' '}
-            · {price.note}
-          </span>
-        ) : null}
       </span>
       <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.4 }}>
         {TIER_JOBS[tierId]}
       </span>
-      {foundingPrice && tier.promo ? (
-        <span style={{ fontSize: text.sm, color: color.primary, lineHeight: 1.4 }}>
-          {tier.promo.name}: {foundingPrice}/yr for the first 250 — confirmed at checkout.
-        </span>
-      ) : null}
       {foundingMemberNote ? (
         <span style={{ fontSize: text.sm, color: color.fgMuted, lineHeight: 1.4 }}>
           {foundingMemberNote}
@@ -1554,12 +1357,10 @@ function PlanCard({
 function DowngradePanel({
   currentTier,
   currentPeriodEnd,
-  pricingV2,
   onRequestCancel,
 }: {
   currentTier: TierId;
   currentPeriodEnd: string | null;
-  pricingV2: boolean;
   onRequestCancel: () => void;
 }) {
   const end = formatBillingDate(currentPeriodEnd);
@@ -1586,7 +1387,7 @@ function DowngradePanel({
           : `Your ${tierLabel} features will remain active until the end of the current period. Then you’ll switch to Free.`}{' '}
         Downgrading to Free means canceling your subscription — the next step covers cancellation.
       </p>
-      <PlanConsequences fromTier={currentTier} toTier="free" pricingV2={pricingV2} />
+      <PlanConsequences fromTier={currentTier} toTier="free" />
       <div>
         <Button tone="default" onClick={onRequestCancel}>
           Continue to cancellation

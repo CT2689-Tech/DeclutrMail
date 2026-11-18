@@ -6,7 +6,6 @@
 // `features/marketing/pricing`.
 
 import type { Metadata } from 'next';
-import dynamic from 'next/dynamic';
 import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
@@ -17,17 +16,10 @@ import {
 } from '@/features/marketing/pricing/load-pricing-flags';
 import { pricingPageMetadata } from '@/features/marketing/pricing/pricing-metadata';
 import { visitorPricingLocale } from '@/features/marketing/pricing/visitor-pricing-locale';
-import { PricingScreen } from '@/features/marketing/pricing/pricing-screen';
+import { PricingStory } from '@/features/marketing/pricing/pricing-story';
 import '@/features/marketing/pricing/pricing.css';
 
-const PricingStory = dynamic(() =>
-  import('@/features/marketing/pricing/pricing-story').then((mod) => mod.PricingStory),
-);
-
-export async function generateMetadata(): Promise<Metadata> {
-  const flags = await loadPricingFlags();
-  return pricingPageMetadata(flags.pricingV2, flags.passEnabled);
-}
+export const metadata: Metadata = pricingPageMetadata();
 
 /**
  * DYNAMIC ON PURPOSE (Option A′, founder 2026-08-14). The billing rail
@@ -51,17 +43,12 @@ export default async function PricingPage() {
   });
   return (
     <BillingCurrencyProvider locale={locale}>
-      {flags.pricingV2 ? (
-        <PricingStory
-          passEnabled={flags.passEnabled}
-          locale={locale}
-          now={new Date().toISOString()}
-          rupeePurchasesOpen={rupeePurchasesOpen}
-          inrPaused={country === 'IN' && !rupeePurchasesOpen}
-        />
-      ) : (
-        <PricingScreen />
-      )}
+      <PricingStory
+        locale={locale}
+        now={new Date().toISOString()}
+        rupeePurchasesOpen={rupeePurchasesOpen}
+        inrPaused={country === 'IN' && !rupeePurchasesOpen}
+      />
     </BillingCurrencyProvider>
   );
 }

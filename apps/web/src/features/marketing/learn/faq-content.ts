@@ -4,7 +4,7 @@ import {
   BILLING_MANAGEMENT_NOTE,
 } from '@/features/billing/billing-copy';
 import { fillWs3, WS1_COPY, WS3_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
-import { fillStory, isPricingV2 } from '@declutrmail/shared/entitlements';
+import { fillStory } from '@declutrmail/shared/entitlements';
 import { PRIVACY_STORAGE_ITEMS } from '@declutrmail/shared';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { FaqEntry } from './types';
@@ -169,21 +169,8 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
   },
 ];
 
-/** Live refund answer. The window comes from `pricing.faq.refunds.a`. */
-export function refundSupportAnswer(_pricingV2 = isPricingV2()): string {
-  return fillStory(WS1_COPY['pricing.faq.refunds.a']);
-}
-
-/** FAQ entries with the refund answer read at render time. */
-export function publishedFaqEntries(pricingV2 = isPricingV2()): readonly FaqEntry[] {
-  return FAQ_ENTRIES.map((entry) =>
-    entry.id === 'refunds-support' ? { ...entry, answer: refundSupportAnswer(pricingV2) } : entry,
-  );
-}
-
 /** Help and acquisition FAQ share the same answer for overlapping product questions. */
-export function faqAnswer(id: string, pricingV2 = isPricingV2()): string {
-  if (id === 'refunds-support') return refundSupportAnswer(pricingV2);
+export function faqAnswer(id: string): string {
   const entry = FAQ_ENTRIES.find((item) => item.id === id);
   if (!entry) throw new Error(`Unknown public FAQ: ${id}`);
   return entry.answer;

@@ -74,9 +74,7 @@ export class UnsubscribeBacklogService {
         olderThanDays,
       );
       if (measured.count > 0) {
-        if (process.env.METER_V2 === 'true') {
-          await this.entitlements.assertCleanupCapacity(input.mailboxAccountId, measured.count);
-        }
+        await this.entitlements.assertCleanupCapacity(input.mailboxAccountId, measured.count);
         const enqueued = await this.enqueueBacklog(input, actionable, reach, olderThanDays);
         backlog = enqueued.backlog;
         if (
@@ -203,7 +201,6 @@ export class UnsubscribeBacklogService {
         mailboxAccountId: input.mailboxAccountId,
         senderId,
         idempotencyKey: `${input.idempotencyKey}-${senderId}`,
-        skipCleanupCharge: true,
         ...(compositeId ? { compositeId } : {}),
         ...(input.override === true ? { override: true } : {}),
       });
