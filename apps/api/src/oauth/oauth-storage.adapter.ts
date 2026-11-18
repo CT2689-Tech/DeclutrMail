@@ -6,7 +6,12 @@ import { oauthAuthCodes, oauthClients, oauthInteractions, oauthTokens } from '@d
 import type { DrizzleDb } from '../db/db.module.js';
 import { oauthIssuer } from '../mcp/mcp-config.js';
 import { hashOAuthSecret } from './oauth-hash.js';
-import { findLiveGrant, revokeGrant, type RevokedGrant } from './oauth-store.js';
+import {
+  findLiveGrant,
+  revokeGrant,
+  revokeSupersededGrants,
+  type RevokedGrant,
+} from './oauth-store.js';
 
 /**
  * Storage adapter between `oidc-provider` and our tables (ADR-0048 rule
@@ -42,6 +47,18 @@ type Row = Record<string, unknown>;
  */
 export type ReuseRevocation = RevokedGrant & { kind: 'refresh_token' | 'authorization_code' };
 export type ReuseReporter = (event: ReuseRevocation) => void;
+
+/** An earlier connection to the same app, retired because a newer one took its place. */
+export type ReplacedGrant = RevokedGrant & { replacedBy: string };
+export type ReplacedReporter = (event: ReplacedGrant) => void;
+
+/**
+ * Expired requests removed each time one is stored. Anyone can park a
+ * request without signing in, and the retention worker runs once a day;
+ * taking a few expired rows out on every insert keeps this table near
+ * (arrival rate x 15 minutes) however long that goes on.
+ */
+const EXPIRED_REQUESTS_REMOVED_PER_WRITE = 10;
 
 /** The authorization endpoint; a request resumes at `<this>/<request id>`. */
 export const OAUTH_RESUME_PATH = '/oauth/authorize';
@@ -320,6 +337,7 @@ class AuthorizationCodeStore extends BaseStore {
     db: DrizzleDb,
     model: string,
     private readonly reportReuse: ReuseReporter,
+    private readonly reportReplaced: ReplacedReporter,
   ) {
     super(db, model);
   }
@@ -363,8 +381,18 @@ class AuthorizationCodeStore extends BaseStore {
       .update(oauthAuthCodes)
       .set({ usedAt: sql`now()` })
       .where(and(eq(oauthAuthCodes.codeHash, codeHash), isNull(oauthAuthCodes.usedAt)))
-      .returning({ id: oauthAuthCodes.id });
-    if (consumed.length > 0) return;
+      .returning({ grantId: oauthAuthCodes.grantId });
+    const [exchanged] = consumed;
+    if (exchanged) {
+      // The library consumes a code only after the client, the redirect
+      // URI and the PKCE verifier all checked out, so this is the moment
+      // the new connection becomes real — and the moment it replaces any
+      // earlier one this person gave the same app.
+      const replaced = await revokeSupersededGrants(this.db, exchanged.grantId);
+      for (const grant of replaced)
+        this.reportReplaced({ ...grant, replacedBy: exchanged.grantId });
+      return;
+    }
 
     const [row] = await this.db
       .select({ grantId: oauthAuthCodes.grantId })
@@ -406,6 +434,14 @@ class InteractionStore extends BaseStore {
       .insert(oauthInteractions)
       .values({ idHash: hashOAuthSecret(id), ...values })
       .onConflictDoUpdate({ target: oauthInteractions.idHash, set: values });
+    await this.db.execute(sql`
+      DELETE FROM oauth_interactions
+      WHERE ctid IN (
+        SELECT ctid FROM oauth_interactions
+        WHERE expires_at < now()
+        LIMIT ${sql.raw(String(EXPIRED_REQUESTS_REMOVED_PER_WRITE))}
+      )
+    `);
   }
 
   async find(id: string): Promise<AdapterPayload | undefined> {
@@ -465,6 +501,7 @@ class UnsupportedStore extends BaseStore {
 export function createOAuthStorageAdapter(
   db: DrizzleDb,
   reportReuse: ReuseReporter = () => undefined,
+  reportReplaced: ReplacedReporter = () => undefined,
 ): (model: string) => Adapter {
   return (model) => {
     switch (model) {
@@ -477,7 +514,7 @@ export function createOAuthStorageAdapter(
       case 'RefreshToken':
         return new TokenStore(db, model, 'refresh', reportReuse);
       case 'AuthorizationCode':
-        return new AuthorizationCodeStore(db, model, reportReuse);
+        return new AuthorizationCodeStore(db, model, reportReuse, reportReplaced);
       case 'Interaction':
         return new InteractionStore(db, model);
       case 'Session':

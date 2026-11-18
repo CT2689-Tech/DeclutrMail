@@ -140,6 +140,7 @@ describe('OAuth authorization server — hardening', () => {
       ],
       ['a text-direction override', 'Claude‮⁦ evil', 'Claude evil'],
       ['a newline and a tab', 'Clau\nde\tAI', 'ClaudeAI'],
+      ['a pile of combining marks', `C${'\u0301'.repeat(40)}laude`, 'C\u0301\u0301laude'],
     ])('stores a readable name for %s', async (_label, sent, stored) => {
       const response = await api.json('/oauth/register', {
         client_name: sent,
@@ -152,6 +153,25 @@ describe('OAuth authorization server — hardening', () => {
         .from(oauthClients)
         .where(eq(oauthClients.clientId, response.json.client_id));
       expect(row!.clientName).toBe(stored);
+    });
+  });
+
+  describe('a name with nothing to read is no name', () => {
+    it.each([
+      ['characters that render as nothing', '\u3164\u3164\u3164'],
+      ['only marks and symbols', '\u0301\u0301 ·· '],
+    ])('registers %s as an unnamed app', async (_label, sent) => {
+      const response = await api.json('/oauth/register', {
+        client_name: sent,
+        redirect_uris: [REDIRECT_URI],
+      });
+      expect(response.status).toBe(201);
+      expect(response.json).not.toHaveProperty('client_name');
+      const [row] = await harness.db
+        .select()
+        .from(oauthClients)
+        .where(eq(oauthClients.clientId, response.json.client_id));
+      expect(row!.clientName).toBeNull();
     });
   });
 
@@ -292,6 +312,114 @@ describe('OAuth authorization server — hardening', () => {
     });
   });
 
+  describe('what an anonymous caller can make the authorization endpoint store', () => {
+    const parked = async () =>
+      (await harness.db.select({ payload: oauthInteractions.payload }).from(oauthInteractions)).map(
+        (row) => JSON.stringify(row.payload),
+      );
+
+    it('keeps the parameters it acts on and drops the rest', async () => {
+      const clientId = await registerClient(harness.base);
+      const url =
+        authorizeUrl(clientId, pkce().challenge) +
+        '&login_hint=HINT-THAT-MUST-NOT-BE-STORED&claims=%7B%22x%22%3A1%7D&nonce=N-NOT-STORED';
+      await reachConsent(new Browser(harness.base, ada), url);
+      const rows = await parked();
+      expect(rows.some((row) => row.includes('state-123'))).toBe(true);
+      for (const dropped of ['HINT-THAT-MUST-NOT-BE-STORED', 'N-NOT-STORED', 'claims']) {
+        expect(
+          rows.some((row) => row.includes(dropped)),
+          dropped,
+        ).toBe(false);
+      }
+    });
+
+    it('refuses a URL longer than any real request, and parks nothing', async () => {
+      const clientId = await registerClient(harness.base);
+      const before = (await parked()).length;
+      const response = await new Browser(harness.base, ada).get(
+        authorizeUrl(clientId, pkce().challenge, { state: 's'.repeat(5_000) }),
+      );
+      expect(response.status).toBe(414);
+      expect(await parked()).toHaveLength(before);
+    });
+
+    it.each(['form_post', 'fragment', 'web_message'])(
+      'refuses response_mode=%s before anything is parked',
+      async (mode) => {
+        const clientId = await registerClient(harness.base);
+        const before = (await parked()).length;
+        const response = await new Browser(harness.base, ada).get(
+          authorizeUrl(clientId, pkce().challenge, { response_mode: mode }),
+        );
+        expect(response.status).toBe(400);
+        expect(response.text).toContain('invalid_request');
+        expect(await parked()).toHaveLength(before);
+      },
+    );
+
+    it('accepts response_mode=query, the one it offers', async () => {
+      const clientId = await registerClient(harness.base);
+      const { path } = await reachConsent(
+        new Browser(harness.base, ada),
+        authorizeUrl(clientId, pkce().challenge, { response_mode: 'query' }),
+      );
+      expect(path).toMatch(/^\/api\/oauth\/interactions\//);
+    });
+
+    it('takes expired requests out as new ones arrive', async () => {
+      await harness.db.delete(oauthInteractions);
+      await harness.db.insert(oauthInteractions).values(
+        Array.from({ length: 15 }, (_, i) => ({
+          idHash: `expired-${i}`,
+          payload: {},
+          expiresAt: new Date(Date.now() - 60_000),
+        })),
+      );
+      const clientId = await registerClient(harness.base);
+      await new Browser(harness.base).get(authorizeUrl(clientId, pkce().challenge));
+      const rows = await harness.db.select().from(oauthInteractions);
+      const expired = rows.filter((row) => row.expiresAt.getTime() < Date.now());
+      // Ten go with each stored request; the new one stays.
+      expect(expired).toHaveLength(5);
+      expect(rows).toHaveLength(6);
+    });
+  });
+
+  describe('a stored client is never refused by a rule added after it registered', () => {
+    it('loads a registration that today’s limits would turn away', async () => {
+      const clientId = 'stored-before-the-limit';
+      const uris = Array.from({ length: 11 }, (_, i) => `https://client.example/cb${i}`);
+      await harness.db.insert(oauthClients).values({
+        clientId,
+        clientName: 'Older App',
+        redirectUris: uris,
+        registrationType: 'dynamic',
+        metadata: {
+          client_id: clientId,
+          client_name: 'Older App',
+          redirect_uris: uris,
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          token_endpoint_auth_method: 'none',
+          application_type: 'web',
+          // A field the allowlist drops must still be dropped on load.
+          sector_identifier_uri: 'https://127.0.0.1:9/never-fetched',
+        },
+      });
+      const browser = new Browser(harness.base, ada);
+      const { path } = await reachConsent(
+        browser,
+        authorizeUrl(clientId, pkce().challenge, { redirect_uri: uris[10] }),
+      );
+      const details = await browser.get(`${path}/details`);
+      expect(details.json.data).toMatchObject({
+        appName: 'Older App',
+        redirectHost: 'client.example',
+      });
+    });
+  });
+
   describe('the code is released only to the approver’s own browser session', () => {
     it('refuses a resume that carries the request’s cookies but no session', async () => {
       const { browser, resumeUrl } = await approved(ada);
@@ -426,6 +554,31 @@ describe('OAuth authorization server — hardening', () => {
       );
     });
 
+    it('Deny by a second person does not touch the first person’s approval', async () => {
+      const first = await approved(ada);
+      harness.securityEvents.record.mockClear();
+      const denied = await new Browser(harness.base).request(`${first.path}/deny`, {
+        method: 'POST',
+        headers: {
+          cookie: `${grace.cookie}; ${first.browser.cookiesFor(first.path)}`,
+          'x-csrf-token': grace.csrf,
+        },
+      });
+      expect(denied.status).toBe(200);
+      // The request now carries the denial, so no code can come of it…
+      const resumed = await first.browser.get(denied.json.data.redirectTo);
+      expect(outcome(resumed.location)).toMatchObject({ code: null, error: 'access_denied' });
+      // …and nothing was revoked, or recorded, in the first person's name.
+      const [grant] = await harness.db
+        .select()
+        .from(oauthGrants)
+        .where(eq(oauthGrants.clientId, first.clientId));
+      expect(grant!.revokedAt).toBeNull();
+      expect(harness.securityEvents.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'connected_app.disconnected' }),
+      );
+    });
+
     it('leaves no live grant when the request vanishes during Approve', async () => {
       const clientId = await registerClient(harness.base);
       const browser = new Browser(harness.base, ada);
@@ -495,10 +648,87 @@ describe('OAuth authorization server — hardening', () => {
       expect(stale.json.error).toBe('invalid_grant');
       expect((await api.bearer('/mcp', second.tokens.access_token)).status).toBe(200);
 
-      const connected = harness.securityEvents.record.mock.calls
-        .map(([event]) => event as { eventType: string; payload: { replaced?: string[] } })
-        .find((event) => event.eventType === 'connected_app.connected');
-      expect(connected!.payload.replaced).toHaveLength(1);
+      // The earlier connection's end is on the record, against its owner.
+      expect(harness.securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'connected_app.disconnected',
+          userId: ada.userId,
+          payload: expect.objectContaining({ reason: 'replaced' }),
+        }),
+      );
+    });
+
+    it('keeps the working connection until the new one is actually usable', async () => {
+      const clientId = await registerClient(harness.base);
+      const working = await connect(harness, ada, { clientId });
+      const alive = async () => (await api.bearer('/mcp', working.tokens.access_token)).status;
+
+      // Approve again: nothing is replaced yet.
+      const again = await approved(ada, clientId);
+      expect(await alive()).toBe(200);
+      // The code is issued but not exchanged: still nothing replaced.
+      const resumed = await again.browser.get(again.resumeUrl);
+      const { code } = outcome(resumed.location);
+      expect(await alive()).toBe(200);
+
+      // Only the exchange — proof the new connection works — replaces it.
+      const exchanged = await api.form('/oauth/token', {
+        grant_type: 'authorization_code',
+        code: code!,
+        code_verifier: again.proof.verifier,
+        client_id: clientId,
+        redirect_uri: REDIRECT_URI,
+      });
+      expect(exchanged.status).toBe(200);
+      expect(await alive()).toBe(401);
+      expect((await api.bearer('/mcp', exchanged.json.access_token)).status).toBe(200);
+    });
+
+    it('an approval that never completes costs the person nothing', async () => {
+      // A crafted link for the person's real app: they approve, and the
+      // code never reaches anything that can use it.
+      const clientId = await registerClient(harness.base);
+      const working = await connect(harness, ada, { clientId });
+      const again = await approved(ada, clientId);
+      const refused = await api.get(again.resumeUrl, {
+        cookie: again.browser.cookiesFor(again.resumeUrl),
+      });
+      expect(outcome(refused.location).error).toBe('access_denied');
+
+      expect((await api.bearer('/mcp', working.tokens.access_token)).status).toBe(200);
+      const refreshed = await api.form('/oauth/token', {
+        grant_type: 'refresh_token',
+        refresh_token: working.tokens.refresh_token,
+        client_id: clientId,
+      });
+      expect(refreshed.status).toBe(200);
+      const list = await new Browser(harness.base, ada).get('/api/oauth/grants');
+      expect(list.json.data.apps).toHaveLength(1);
+    });
+
+    it('an exchange retires every other approval the person gave the app', async () => {
+      // Two requests approved side by side (two tabs); one is completed.
+      const clientId = await registerClient(harness.base);
+      const first = await approved(ada, clientId);
+      const second = await approved(ada, clientId);
+      const resumed = await second.browser.get(second.resumeUrl);
+      const exchanged = await api.form('/oauth/token', {
+        grant_type: 'authorization_code',
+        code: outcome(resumed.location).code!,
+        code_verifier: second.proof.verifier,
+        client_id: clientId,
+        redirect_uri: REDIRECT_URI,
+      });
+      expect(exchanged.status).toBe(200);
+      const live = (
+        await harness.db.select().from(oauthGrants).where(eq(oauthGrants.clientId, clientId))
+      ).filter((grant) => grant.revokedAt === null);
+      expect(live).toHaveLength(1);
+      // The abandoned tab can no longer produce a code: its approval is
+      // gone, so the person is asked again.
+      const stale = await first.browser.get(first.resumeUrl);
+      expect(stale.location).toMatch(/^\/api\/oauth\/interactions\//);
+      expect(stale.location).not.toContain('code=');
     });
 
     it('leaves another person’s connection to the same app alone', async () => {

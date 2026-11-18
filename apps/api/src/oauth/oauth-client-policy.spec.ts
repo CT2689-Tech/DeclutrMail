@@ -3,8 +3,8 @@ import { describe, expect, it } from 'vitest';
 
 import { applyClientRegistrationPolicy } from './oauth-client-policy.js';
 
-const apply = (metadata: Record<string, unknown>) => {
-  applyClientRegistrationPolicy(metadata);
+const apply = (metadata: Record<string, unknown>, registering = true) => {
+  applyClientRegistrationPolicy(metadata, { registering });
   return metadata;
 };
 

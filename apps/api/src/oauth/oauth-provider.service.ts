@@ -42,6 +42,30 @@ export const INTERACTION_PATH = '/api/oauth/interactions';
  */
 const MAX_BODY_BYTES = 8 * 1024;
 
+/**
+ * Longest request URL. An authorization request stores its parameters
+ * until the person decides; one with the longest redirect URI and a
+ * generous `state` is well under half of this.
+ */
+const MAX_URL_LENGTH = 4 * 1024;
+
+/**
+ * The authorization-request parameters this server acts on. Everything
+ * else a caller sends is dropped before the library parks the request.
+ */
+const AUTHORIZATION_PARAMETERS = [
+  'client_id',
+  'response_type',
+  'redirect_uri',
+  'code_challenge',
+  'code_challenge_method',
+  'state',
+  'scope',
+  'resource',
+  'prompt',
+  'response_mode',
+] as const;
+
 /** Domain-separation label for the cookie-signing key derived below. */
 const COOKIE_KEY_CONTEXT = 'declutrmail:oauth-interaction-cookies:v1';
 
@@ -143,16 +167,34 @@ export class OAuthProviderService implements OnModuleInit {
     const db = this.db;
 
     const configuration: Configuration = {
-      adapter: createOAuthStorageAdapter(db, (reuse) => {
-        // The grant is already revoked; this is the audit row saying why.
-        void this.securityEvents.record({
-          eventType: 'connected_app.token_reuse_revoked',
-          severity: 'warning',
-          userId: reuse.userId,
-          workspaceId: reuse.workspaceId,
-          payload: { kind: reuse.kind, clientId: reuse.clientId, grantId: reuse.grantId },
-        });
-      }),
+      adapter: createOAuthStorageAdapter(
+        db,
+        (reuse) => {
+          // The grant is already revoked; this is the audit row saying why.
+          void this.securityEvents.record({
+            eventType: 'connected_app.token_reuse_revoked',
+            severity: 'warning',
+            userId: reuse.userId,
+            workspaceId: reuse.workspaceId,
+            payload: { kind: reuse.kind, clientId: reuse.clientId, grantId: reuse.grantId },
+          });
+        },
+        (replaced) => {
+          // The person connected the same app again; this is the earlier
+          // connection going away, recorded against its owner.
+          void this.securityEvents.record({
+            eventType: 'connected_app.disconnected',
+            severity: 'info',
+            userId: replaced.userId,
+            workspaceId: replaced.workspaceId,
+            payload: {
+              grantId: replaced.grantId,
+              reason: 'replaced',
+              replacedBy: replaced.replacedBy,
+            },
+          });
+        },
+      ),
 
       // --- what is offered -------------------------------------------
       responseTypes: ['code'],
@@ -252,9 +294,16 @@ export class OAuthProviderService implements OnModuleInit {
         // RFC 7591 fields the library does not know. Declaring them is
         // also what makes it call the validator.
         properties: ['software_id', 'software_version'],
-        validator: (_ctx, key, _value, metadata) => {
-          // Called once per declared property; the policy runs once.
-          if (key === 'software_id') applyClientRegistrationPolicy(metadata);
+        validator: (ctx, key, _value, metadata) => {
+          // Called once per declared property; the policy runs once. The
+          // library also calls this when it loads a stored client (no
+          // request context then), where nothing may be refused: a
+          // tighter limit must never break an app already connected.
+          if (key === 'software_id') {
+            applyClientRegistrationPolicy(metadata, {
+              registering: ctx?.oidc?.route === 'registration',
+            });
+          }
         },
       },
       // No cross-origin browser access to the client endpoints: MCP
@@ -279,17 +328,29 @@ export class OAuthProviderService implements OnModuleInit {
     provider.proxy = true;
 
     provider.use(async (ctx, next) => {
-      // A repeated `scope` parameter is malformed; leave it for the
-      // library to refuse rather than paper over it with a default.
       // The library's router ignores case and a trailing slash; so does
-      // this, or those spellings would skip the scope handling.
-      const { scope: requested } = ctx.query;
+      // this, or those spellings would skip what follows.
       if (
         ctx.method === 'GET' &&
-        ctx.path.replace(/\/+$/, '').toLowerCase() === OAUTH_ROUTES.authorization &&
-        !Array.isArray(requested)
+        ctx.path.replace(/\/+$/, '').toLowerCase() === OAUTH_ROUTES.authorization
       ) {
-        ctx.query = { ...ctx.query, scope: grantableScope(requested) };
+        // Anyone can call this endpoint, and the library stores what it
+        // is sent until the person decides. Keep the parameters this
+        // server acts on and drop the rest (`login_hint`, `claims`, …).
+        const query: Record<string, string | string[] | undefined> = {};
+        for (const name of AUTHORIZATION_PARAMETERS) {
+          if (ctx.query[name] !== undefined) query[name] = ctx.query[name];
+        }
+        // The code goes back in the query string and nowhere else:
+        // `form_post` needs an inline script this API's content security
+        // policy forbids, which would strand the person after Approve.
+        if (query.response_mode !== undefined && query.response_mode !== 'query') {
+          throw new errors.InvalidRequest('response_mode must be query');
+        }
+        // A repeated `scope` parameter is malformed; leave it for the
+        // library to refuse rather than paper over it with a default.
+        if (!Array.isArray(query.scope)) query.scope = grantableScope(query.scope);
+        ctx.query = query;
       }
       await next();
       if (ctx.oidc?.route === 'discovery' && isRecord(ctx.body)) {
@@ -354,7 +415,8 @@ export class OAuthProviderService implements OnModuleInit {
  * Requests refused before the library reads them. Postgres cannot store
  * U+0000 in text or jsonb, so a value carrying one would otherwise fail
  * at the first query and come back as a 500; and nothing these endpoints
- * accept needs a large body.
+ * accept needs a large body or a long URL. (A body over Nest's own 100 KB
+ * limit never gets here: its parser rejects that first.)
  */
 function malformedRequest(
   req: IncomingMessage & { rawBody?: Buffer },
@@ -362,6 +424,9 @@ function malformedRequest(
   const body = Buffer.isBuffer(req.rawBody) ? req.rawBody : undefined;
   if (body && body.length > MAX_BODY_BYTES) {
     return { status: 413, reason: 'request body is too large' };
+  }
+  if ((req.url ?? '').length > MAX_URL_LENGTH) {
+    return { status: 414, reason: 'request URL is too long' };
   }
   const nul = /%00|\\u0000/i;
   if (

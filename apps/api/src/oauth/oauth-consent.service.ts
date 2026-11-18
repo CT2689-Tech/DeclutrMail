@@ -16,13 +16,7 @@ import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js
 import { mcpResourceUrl } from '../mcp/mcp-config.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { grantableScope, OAuthProviderService } from './oauth-provider.service.js';
-import {
-  createGrant,
-  findLiveGrant,
-  hasDeletionInFlight,
-  revokeGrant,
-  revokeSupersededGrants,
-} from './oauth-store.js';
+import { createGrant, findLiveGrant, hasDeletionInFlight, revokeGrant } from './oauth-store.js';
 
 /** A pending authorization request, read through the library's own cookie check. */
 interface PendingRequest {
@@ -135,21 +129,16 @@ export class OAuthConsentService {
       throw this.asGone(error);
     }
 
-    // Connecting an app again replaces its earlier connection. Done only
-    // now, with the new approval recorded, so a request that vanished
-    // above never costs the person the connection they already had.
-    const replaced = await revokeSupersededGrants(this.db, {
-      grantId,
-      userId: principal.userId,
-      clientId: pending.clientId,
-    });
-
+    // An earlier connection to the same app is NOT retired here. It is
+    // replaced when this approval's code is exchanged (see the storage
+    // adapter): an approval that never completes must not cost the
+    // person the connection they already have.
     await this.securityEvents.record({
       eventType: 'connected_app.connected',
       severity: 'info',
       userId: principal.userId,
       workspaceId: principal.workspaceId,
-      payload: { grantId, clientId: pending.clientId, scopes: pending.scopes, replaced },
+      payload: { grantId, clientId: pending.clientId, scopes: pending.scopes },
     });
     return { redirectTo };
   }
@@ -159,6 +148,7 @@ export class OAuthConsentService {
     req: IncomingMessage,
     res: ServerResponse,
     requestId: string,
+    principal: SessionPrincipal,
   ): Promise<ConnectorConsentResult> {
     const pending = await this.load(req, res, requestId);
     let redirectTo: string;
@@ -173,9 +163,14 @@ export class OAuthConsentService {
       throw this.asGone(error);
     }
     // Approve, then Deny, on the same request: the app is told
-    // `access_denied`, so the approval's grant must not stay live.
-    if (pending.approvedGrantId) {
-      const revoked = await revokeGrant(this.db, pending.approvedGrantId);
+    // `access_denied`, so the approval's grant must not stay live. Only
+    // the denier's own approval: someone else's is no longer reachable
+    // (the request now carries the denial) and retention retires it.
+    const approved = pending.approvedGrantId
+      ? await findLiveGrant(this.db, pending.approvedGrantId)
+      : undefined;
+    if (approved?.userId === principal.userId) {
+      const revoked = await revokeGrant(this.db, approved.id);
       if (revoked) {
         await this.securityEvents.record({
           eventType: 'connected_app.disconnected',

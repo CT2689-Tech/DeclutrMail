@@ -25,7 +25,9 @@ import { errors } from 'oidc-provider';
  * Runs through `extraClientMetadata.validator`, which the library calls
  * BEFORE its own type checks — so every value here is still untrusted
  * input and is read defensively. Mutating `metadata` is the documented
- * way to set values; the library re-applies its defaults afterwards.
+ * way to set values; the library re-applies its defaults afterwards. It
+ * calls the validator both when a client registers and whenever it
+ * loads a stored one; only a registration is ever refused.
  */
 
 const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -56,7 +58,11 @@ const MAX_REDIRECT_URI_LENGTH = 255;
  * (not valid text; Postgres refuses them in jsonb).
  */
 const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}]/u;
-const UNPRINTABLE_ALL = /[\p{Cc}\p{Cf}\p{Cs}]/gu;
+/** For a name a person reads: also every character that renders as nothing. */
+const INVISIBLE_ALL = /[\p{Cc}\p{Cf}\p{Cs}\p{Default_Ignorable_Code_Point}]/gu;
+/** More than two combining marks on one character is decoration, not a name. */
+const STACKED_MARKS = /(\p{M}{2})\p{M}+/gu;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
 
 type Metadata = Record<string, unknown>;
 
@@ -75,14 +81,19 @@ function boundedString(value: unknown, max: number): string | undefined {
  * The name a person reads when deciding whether to trust the app.
  * Invisible characters are removed rather than refused — a text
  * direction override can make one name render as another — and the cut
- * is by character, so it never splits one in half.
+ * is by character, so it never splits one in half. A name with no
+ * letter or digit left is no name: the app is shown as unnamed.
  */
 function displayName(value: string): string {
-  const visible = value.replace(UNPRINTABLE_ALL, '').trim();
-  return [...visible].slice(0, MAX_CLIENT_NAME).join('').trim();
+  const visible = value.replace(INVISIBLE_ALL, '').replace(STACKED_MARKS, '$1').trim();
+  const name = [...visible].slice(0, MAX_CLIENT_NAME).join('').trim();
+  return LETTER_OR_DIGIT.test(name) ? name : '';
 }
 
-export function applyClientRegistrationPolicy(metadata: Metadata): void {
+export function applyClientRegistrationPolicy(
+  metadata: Metadata,
+  { registering }: { registering: boolean },
+): void {
   // 2. Keep only what this server uses.
   for (const key of Object.keys(metadata)) {
     if (!KEPT_METADATA.has(key)) delete metadata[key];
@@ -90,6 +101,11 @@ export function applyClientRegistrationPolicy(metadata: Metadata): void {
 
   // 1. Public clients only.
   metadata.token_endpoint_auth_method = 'none';
+
+  // The library runs this again each time it loads a stored client. The
+  // two rules above are safe to re-apply; the rest judged the request
+  // that registered it, and refusing now would lock out a connected app.
+  if (!registering) return;
 
   if (typeof metadata.client_name === 'string') {
     const name = displayName(metadata.client_name);

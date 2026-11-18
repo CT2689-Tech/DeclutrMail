@@ -61,26 +61,26 @@ export async function createGrant(db: DrizzleDb, grant: NewGrant): Promise<strin
   });
 }
 
-/** Whether a registered client with this id still exists. */
-export async function clientExists(db: DrizzleDb, clientId: string): Promise<boolean> {
-  const [row] = await db
-    .select({ clientId: oauthClients.clientId })
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, clientId))
-    .limit(1);
-  return row !== undefined;
-}
-
 /**
  * Connecting an app again replaces its earlier connection: revoke every
- * other live grant this person gave this client. Otherwise the old
- * refresh token keeps working beside the new one, and Settings lists the
- * same app twice.
+ * other live grant the same person gave the same client. Otherwise the
+ * old refresh token keeps working beside the new one, and Settings lists
+ * the same app twice.
+ *
+ * Called when the NEW grant's code is exchanged, never at Approve: until
+ * then the new connection is not usable, and an approval that never
+ * completes must not cost the person the connection they have.
  */
 export async function revokeSupersededGrants(
   db: DrizzleDb,
-  current: { grantId: string; userId: string; clientId: string },
-): Promise<string[]> {
+  currentGrantId: string,
+): Promise<RevokedGrant[]> {
+  const [current] = await db
+    .select({ userId: oauthGrants.userId, clientId: oauthGrants.clientId })
+    .from(oauthGrants)
+    .where(eq(oauthGrants.id, currentGrantId))
+    .limit(1);
+  if (!current) return [];
   const superseded = await db
     .select({ id: oauthGrants.id })
     .from(oauthGrants)
@@ -88,13 +88,14 @@ export async function revokeSupersededGrants(
       and(
         eq(oauthGrants.userId, current.userId),
         eq(oauthGrants.clientId, current.clientId),
-        ne(oauthGrants.id, current.grantId),
+        ne(oauthGrants.id, currentGrantId),
         isNull(oauthGrants.revokedAt),
       ),
     );
-  const revoked: string[] = [];
+  const revoked: RevokedGrant[] = [];
   for (const { id } of superseded) {
-    if (await revokeGrant(db, id)) revoked.push(id);
+    const grant = await revokeGrant(db, id);
+    if (grant) revoked.push(grant);
   }
   return revoked;
 }

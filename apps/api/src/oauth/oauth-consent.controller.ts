@@ -94,7 +94,8 @@ export class OAuthConsentController {
     @Param('id') id: string,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    @CurrentUser() user: SessionPrincipal,
   ): Promise<Envelope<ConnectorConsentResult>> {
-    return ok(await this.consent.deny(req, res, assertRequestId(id)));
+    return ok(await this.consent.deny(req, res, assertRequestId(id), user));
   }
 }
