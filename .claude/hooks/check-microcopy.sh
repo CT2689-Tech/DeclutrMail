@@ -97,7 +97,7 @@ case "$file_path" in
     ;;
 esac
 
-# ── Marketing truth constraints (ADR-0030 T2/T3/T5/T6) ──────────────
+# ── Marketing truth constraints (ADR-0030 T2/T3/T5) ─────────────────
 #
 # ADR-0030:105-108 records that these were NOT hook-enforced: "a false
 # reversibility or privacy claim in marketing copy passes CI silently
@@ -200,36 +200,11 @@ case "$file_path" in
     check "forward-looking privacy absolute (T5 — use the locked plain-language privacy badge)" \
       "never reads? (your |the )?(e-?mail|message|inbox|body|bodies)|we never read|does ?n[o'’]t read (your |the )?(e-?mail|message|body|bodies)|never looks? at (your |the )?(e-?mail|message)"
 
-    # T6 — D209 forbidden words. All nine: AI magic, supercharged, nuke,
-    # destroy, blast, obliterate, standalone smart, standalone
-    # intelligent, AI-powered. Separator-flexible ("AI powered",
-    # "AI-powered") and inflection-flexible ("nuking", "destroys").
-    check "D209 forbidden marketing word (T6)" \
-      "AI[- ]magic|supercharg[a-z]*|\bnuk(e|es|ed|ing)\b|obliterat[a-z]*|\bblast(s|ed|ing)?\b|\bdestroy(s|ed|ing)?\b|AI[- ]powered"
-
-    # T6 — standalone `smart` / `intelligent`. Compound product nouns are
-    # legitimate and must not trip this: competitors ship "smart folders"
-    # and "Smart Inbox", and comparison pages have to name them.
-    check "standalone 'smart'/'intelligent' (T6/D209 — name the mechanism instead)" \
-      "\b(smart|intelligent)\b[- ]?[a-z]*" \
-      "smart[- ](folder|label|inbox|filter|compose|reply|feature|view|list)|smartphone|intelligent[- ](sort|sorting|inbox|filter)"
-
-    # T6 — 'clean' as a verb applied to the user's data, including the
-    # phrasal form ("clean up your inbox"). The NOUN "cleanup" is fine and
-    # is the product's own category word, so the pattern requires a
-    # following possessive + data object.
-    #
-    # A leading TYPOGRAPHIC quote exempts the phrase: copy that QUOTES a
-    # vague goal in order to criticise it (“Clean my inbox” is too broad
-    # to verify) is discussing the words, not making the claim — the same
-    # carve-out tests and the copy modules get above.
-    #
-    # Straight ' and " deliberately do NOT exempt. They are string-literal
-    # syntax far more often than quotation, so honouring them would let
-    # `'clean up your inbox'` — the single most likely way this ban is
-    # actually violated — walk straight through the carve-out.
-    check "'clean' as a verb on user data (T6/D209 — 'cleanup' the noun is fine)" \
-      "[^“‘’[:alnum:]]clean(s|ing|ed)? (up |out )?(your|their|the|my) ([a-z]+ )?(gmail|inbox|mail|e-?mail|mailbox|messages)"
+    # T6 (banned marketing words: "AI-powered", standalone "smart", "clean
+    # up your inbox", "nuke", "blast"…) was removed 2026-11-17 (founder
+    # decision). It was a voice preference, not a truth rule, and it
+    # blocked the category's main search phrase. The words remain voice
+    # guidance in .agents/product-marketing.md.
 
     # Product language — reserve "decision" for what a user wants for a
     # sender, "action" for execution, and plain scan/storage language for
@@ -283,8 +258,13 @@ case "$file_path" in
 esac
 
 # Scope: apps/web/** + any *.stories.* anywhere (Storybook stories live in
-# packages/shared and apps/web both)
+# packages/shared and apps/web both). Marketing pages are out of scope for
+# the verb rule (2026-11-17): it governs product UI, and marketing copy may
+# say "Screen new senders" or "Screenshots".
 case "$file_path" in
+  */apps/web/src/app/\(marketing\)/*|*/apps/web/src/features/marketing/*)
+    exit 0
+    ;;
   */apps/web/*|*.stories.tsx|*.stories.ts|*.stories.jsx|*.stories.js|*.stories.mdx)
     ;;
   *)
@@ -292,7 +272,7 @@ case "$file_path" in
     ;;
 esac
 
-# Canonical verbs check (D227): "Screen" as a user-facing verb is banned.
+# Canonical verbs check (CLAUDE.md §2.2): "Screen" as a user-facing verb is banned.
 # The Screener feature name is allowed (always capitalized + product noun).
 #
 # Trip patterns:
@@ -309,10 +289,12 @@ esac
 
 violations=0
 
-# 1) JSX text content: >Screen< or >Screen all< etc.
-if grep -nE '>[[:space:]]*Screen([[:space:]][^<]*)?<' "$file_path" >/dev/null 2>&1; then
+# 1) JSX text content: >Screen< or >Screen all< etc. "Screen reader" is
+#    accessibility text, not a verb.
+jsx_matches=$(grep -nE '>[[:space:]]*Screen([[:space:]][^<]*)?<' "$file_path" 2>/dev/null | grep -viE 'screen[[:space:]]+readers?' || true)
+if [ -n "$jsx_matches" ]; then
   echo "❌ check-microcopy: 'Screen' as a user-facing action in JSX text" >&2
-  grep -nE '>[[:space:]]*Screen([[:space:]][^<]*)?<' "$file_path" | sed 's/^/   /' >&2
+  printf '%s\n' "$jsx_matches" | sed 's/^/   /' >&2
   violations=$((violations + 1))
 fi
 
@@ -321,7 +303,7 @@ fi
 #    follow-up check instead).
 if grep -nE "['\"]Screen([[:space:]]|['\"\$])" "$file_path" >/dev/null 2>&1; then
   # Filter out "Screener" matches — those are allowed
-  matches=$(grep -nE "['\"]Screen([[:space:]]|['\"\$])" "$file_path" | grep -v "Screener" || true)
+  matches=$(grep -nE "['\"]Screen([[:space:]]|['\"\$])" "$file_path" | grep -v "Screener" | grep -viE 'screen[[:space:]]+readers?' || true)
   if [ -n "$matches" ]; then
     echo "❌ check-microcopy: 'Screen' as an action in a UI string literal" >&2
     echo "$matches" | sed 's/^/   /' >&2

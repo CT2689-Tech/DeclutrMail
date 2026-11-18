@@ -20,7 +20,7 @@ Repository completion is not production verification. See [current founder gates
 
 ## 0. If you are overwhelmed, do this
 
-This runbook assumes a solo founder and no paid acquisition budget; current customer counts have not been re-queried. The product
+This runbook assumes a solo founder and a paid-marketing cap of $200 a month (founder decision 2026-11-17); current customer counts have not been re-queried. The product
 already has a landing page, how-tos, `/vs` pages, and `/inbox-simulator`.
 Attribution plumbing exists in the repository. Verify it survives the production OAuth path before increasing outreach; do not rebuild it or add pages merely to expand the inventory.
 
@@ -31,7 +31,7 @@ Today:
 2. Complete the production verification gates in the founder checklist, then address the unchecked launch-copy tasks below.
 3. Every day, run **the community loop** even if launch is not booked.
 
-Do not: re-edit the hero without evidence, install duplicate marketing skills, start a Discord, buy ads,
+Do not: install duplicate marketing skills, start a Discord, spend past the $200 monthly cap,
 or wait for SEO. Search Console (`sc-domain:declutrmail.com`, 24 May–21 Aug 2026)
 showed how-tos getting impressions and **zero clicks**. Re-query before repeating
 that sentence.
@@ -64,13 +64,11 @@ Homepage only when they asked for the company, not the product.
 | Verbs     | Keep · Archive · Unsubscribe · Later · Delete                                                        | "Screen" in UI or posts                                                               |
 | Undo      | Archive / Later / Delete; 30-day window on every tier; Delete requires retained Trash                | "Every action is reversible" (unsubscribe cannot be recalled)                         |
 | Autopilot | Backlog Pass while active, and Plus: preview, then Act now or Watch first                            | Advertising Pro as currently purchasable; predicted categories                        |
-| Proof     | Founder mailbox only, labeled as yours, numbers re-queried at publish                                | Fake users, testimonials, MAU                                                         |
+| Proof     | Founder mailbox only, labeled as yours, numbers re-queried at publish                                | Fake users, fabricated or unpermissioned testimonials, MAU                            |
 | CASA      | Google approved a verification (21 Apr 2026)                                                         | "Google certified us"                                                                 |
 | Offer     | Backlog Pass $19 once for 30 days; Plus $59/year; Pro is coming                                      | Former monthly prices, Founding Pro, or invented remaining availability               |
 | Free      | 1,000 Archive/Delete emails per signup month, 1 Gmail account; Unsubscribe, Keep and Later unlimited | Calling the allowance 50 actions or counting unsubscribes against it                  |
 | Refund    | Published 14-day refund policy, once per customer                                                    | Reusing an older 30-day money-back promise                                            |
-
-Do not list in AI-tool directories (category prediction is banned).
 
 ---
 
@@ -142,7 +140,7 @@ Handles (~30 min):
 
 This week, not the same half hour:
 
-- [ ] Product Hunt Coming Soon collecting followers (the only launch-notification list the CAN-SPAM gate allows — no capture forms on content pages)
+- [ ] Product Hunt Coming Soon collecting followers (the only launch-notification list until `BUSINESS_POSTAL_ADDRESS` is set; then signup forms may follow, see §8)
 - [ ] Start HN seasoning: 3 comments this week, no product
 - [ ] Immigration counsel before you book Show HN if H‑1B operating-authorization is still open. This runbook does not decide that.
 
@@ -206,7 +204,7 @@ PH gallery (5 frames): (1) preview → confirm → undo, (2) preview modal with 
 
 ### Phase E — Directories (after B is live)
 
-Tell Cursor: **"Follow MARKETING-RUNBOOK.md Phase E. Use directory-submissions. Skip every AI-tool directory."**
+Tell Cursor: **"Follow MARKETING-RUNBOOK.md Phase E. Use directory-submissions."** AI-tool directories are fine; use the AI disclosure in `docs/marketing/directory-submissions.md`.
 
 - [ ] AlternativeTo + SaaSHub, destination `/vs` pages
 - [ ] LinkedIn company + Crunchbase, byte-identical facts
@@ -259,18 +257,18 @@ Install instructions do not establish account access or authorize external actio
 
 Reddit stays on the **custom** skill. Do not install a second Reddit automation skill.
 
-| You want                           | Say this to Cursor                                                 | Skill                   | Constraint from this runbook                                                                                                                                                                                                                                                             |
-| ---------------------------------- | ------------------------------------------------------------------ | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Measure launch traffic             | "Phase B. Use the attribution skill."                              | `attribution`           | Set-once first-touch `ref` + separate self-report. Never sum them. No multi-touch                                                                                                                                                                                                        |
-| Safer public copy                  | "Phase C. Use copy-editing."                                       | `copy-editing`          | Locked privacy headline                                                                                                                                                                                                                                                                  |
-| New HN/PH/X words                  | "Write the Show HN body. Use copywriting."                         | `copywriting`           | Agents may only draft user-facing copy. All live user-facing words come from the Content bot's owner deck, word for word. Product strings live in `packages/shared/src/copy/launch`. Nothing gets published or shipped without Content's sign-off. Simulator first, no kicker copy on HN |
-| X or LinkedIn post                 | "Turn this cleanup session into one X post. Use the social skill." | `social`                | 1 original/day, not 3–10. Link in LinkedIn first comment                                                                                                                                                                                                                                 |
-| Simulator / pricing convert better | "CRO the simulator end-card."                                      | `cro`, `ab-testing`     | Diagnose first; a randomized test needs a feasible, predeclared design                                                                                                                                                                                                                   |
-| AlternativeTo blurb                | "Directory copy for AlternativeTo. Skip AI directories."           | `directory-submissions` | After Phase B                                                                                                                                                                                                                                                                            |
-| First user interviews              | "Draft 5 interview prompts."                                       | `customer-research`     | After users exist                                                                                                                                                                                                                                                                        |
-| Blog/social chrome                 | "Generate a blog hero. Not a fake Gmail screenshot."               | `image`                 | Real product shots via the built-in browser; identify synthetic simulator content                                                                                                                                                                                                        |
-| Shot list for the 20s clip         | "Shot list for preview→confirm→undo. Screen recording, no avatar." | `video`                 | Real capture. No talking-head                                                                                                                                                                                                                                                            |
-| Reddit reply                       | Paste URL + "draft a comment"                                      | `ct-reddit`             | You click submit. ≤2/day                                                                                                                                                                                                                                                                 |
+| You want                           | Say this to Cursor                                                 | Skill                   | Constraint from this runbook                                                                                                                                                                                                      |
+| ---------------------------------- | ------------------------------------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Measure launch traffic             | "Phase B. Use the attribution skill."                              | `attribution`           | Set-once first-touch `ref` + separate self-report. Never sum them. No multi-touch                                                                                                                                                 |
+| Safer public copy                  | "Phase C. Use copy-editing."                                       | `copy-editing`          | Locked privacy headline                                                                                                                                                                                                           |
+| New HN/PH/X words                  | "Write the Show HN body. Use copywriting."                         | `copywriting`           | Agents draft posts; the founder approves anything posted from their own accounts. Site copy is Tier 2 (CLAUDE.md §2.0): ship it. Product strings live in `packages/shared/src/copy/launch`. Simulator first, no kicker copy on HN |
+| X or LinkedIn post                 | "Turn this cleanup session into one X post. Use the social skill." | `social`                | 1 original/day, not 3–10. Link in LinkedIn first comment                                                                                                                                                                          |
+| Simulator / pricing convert better | "CRO the simulator end-card."                                      | `cro`, `ab-testing`     | Diagnose first; a randomized test needs a feasible, predeclared design                                                                                                                                                            |
+| AlternativeTo blurb                | "Directory copy for AlternativeTo."                                | `directory-submissions` | After Phase B                                                                                                                                                                                                                     |
+| First user interviews              | "Draft 5 interview prompts."                                       | `customer-research`     | After users exist                                                                                                                                                                                                                 |
+| Blog/social chrome                 | "Generate a blog hero. Not a fake Gmail screenshot."               | `image`                 | Real product shots via the built-in browser; identify synthetic simulator content                                                                                                                                                 |
+| Shot list for the 20s clip         | "Shot list for preview→confirm→undo. Screen recording, no avatar." | `video`                 | Real capture. No talking-head                                                                                                                                                                                                     |
+| Reddit reply                       | Paste URL + "draft a comment"                                      | `ct-reddit`             | You click submit. ≤2/day                                                                                                                                                                                                          |
 
 Every Haines skill reads `.agents/product-marketing.md` first. Keep that file honest.
 
@@ -292,11 +290,19 @@ Use those URLs as comment destinations. Do not wait for them to rank.
 
 ## 8. Explicitly not channels (now)
 
-- Owned email / newsletter on content pages (CAN-SPAM postal-address gate). Resend = transactional only
-- Paid ads
+Allowed, with conditions (founder decisions 2026-11-17):
+
+- **Paid marketing** up to **$200 a month** in total (ads, sponsored newsletters, paid directory
+  fast-tracks). The content pipeline refuses a publication approval that would cross the
+  cap; it cannot see spend made outside it, so log that spend too.
+- **Owned email / newsletter signup on content pages** once `BUSINESS_POSTAL_ADDRESS`
+  (`packages/shared/src/copy/postal-address.ts`) is set, which CAN-SPAM needs for commercial email,
+  and `/privacy` discloses the list. Until then Resend stays transactional only.
+
+Not channels:
+
 - Discord / Slack community
 - G2 / Capterra review pushes
-- AI-tool directories
 - Privacy-absolutist forums (a public rejection of a closed-source cloud Gmail tool becomes a durable cite; skip)
 - Auto-posting, upvote pods, alt accounts
 

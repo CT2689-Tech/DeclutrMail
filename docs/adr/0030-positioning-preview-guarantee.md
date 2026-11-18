@@ -1,6 +1,6 @@
 # ADR-0030: Positioning — sell the preview guarantee, not the sender unit
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-11-17 (default positioning, not a mandate)
 - **Date:** 2026-08-02
 - **Accepted:** 2026-08-02
 - **Deciders:** chintan.a.thakkar@gmail.com, 13-agent marketing panel, Codex marketing pass
@@ -27,13 +27,19 @@ shipped headline itself is D250.
 
 ## Decision
 
+> **Amended 2026-11-17.** This is the default positioning, not a rule. Positioning is Tier 2
+> (CLAUDE.md §2.0): a page, post or experiment may lead with the sender, bulk unsubscribe or
+> storage when that serves the reader. "Never the lead claim" and "Objections come after
+> desire" below are guidance. "Truth outranks appeal" and "Never compress a generated
+> claim" still bind, because they are truth rules (Tier 1b).
+
 **Lead with the guarantee, use the sender as the mechanism.**
 
 Every public surface — landing, pricing, comparison, onboarding, lifecycle email, launch
 posts — argues from what Gmail structurally does not offer:
 
 1. **A scope preview before the mutation.** Exact count, sample, and the precise Gmail
-   changes, every time. Gemini's cleanup acts on a chat command with no scope preview.
+   changes, every time.
 2. **A per-sender record and an undo window.** Activity holds what happened; label
    changes are reversible for the plan's window.
 3. **A stated, falsifiable data boundary.** `We never fetch or store full email contents.`
@@ -80,8 +86,9 @@ Gmail (D194, D72).
 ### Positive
 
 - The lead claim is one Gmail cannot copy without rebuilding its bulk-action model.
-- The tier ladder narrates the position rather than straining against it: Plus approves
-  every batch, Pro is where approval is delegated (D251).
+- The tier ladder narrated the position when this was written: Plus approved every batch,
+  Pro delegated approval (D251). Superseded: unattended Autopilot is on Plus
+  (`pricing.config.ts`).
 - Every claim is falsifiable against code, which is the posture the product already sells.
 
 ### Negative
@@ -107,9 +114,8 @@ Gmail (D194, D72).
 - `check-microcopy.sh` enforces the privacy-badge ban (`Bodies read: 0` and `Full bodies fetched: 0`,
   both banned per D228) and the D227 verb rule, but only under
   `apps/web/**`, `*.stories.tsx`, and `packages/shared/**` — it does not scan `docs/`.
-  The constraints in this ADR are **not** hook-enforced; a false reversibility or privacy
-  claim in marketing copy passes CI silently today. Treat the truth-scan in the copy
-  spec's review brief as the compensating control.
+  When this was written the constraints were not hook-enforced. `check-microcopy.sh` has
+  since gained an ADR-0030 truth block (T2/T3/T5/T6); `docs/` is still not scanned.
 
 ## References
 

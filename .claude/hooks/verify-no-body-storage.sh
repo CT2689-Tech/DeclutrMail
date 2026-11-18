@@ -76,11 +76,13 @@ if grep -nE "[A-Za-z_]*FORMAT[A-Za-z_]*\s*=\s*['\"](full|raw)['\"]" "$file_path"
   findings=$((findings + 1))
 fi
 
-# Pattern 3: Banned trust copy (D228). This is the only HARD block —
-# trust copy violations are easy to grep and severe to ship.
-if grep -niE "bod(y|ies)\s+read.*0" "$file_path" >/dev/null 2>&1; then
-  echo "❌ verify-no-body-storage: banned trust copy 'Bodies read: 0' in $file_path (D228)" >&2
-  grep -niE "bod(y|ies)\s+read.*0" "$file_path" | sed 's/^/   /' >&2
+# Pattern 3: Banned trust copy (CLAUDE.md §2.1). This is the only HARD block —
+# trust copy violations are easy to grep and severe to ship. Word-bounded
+# (2026-11-17): the old `bod(y|ies)\s+read.*0` also matched "nobody reads
+# the 40 promos…".
+if grep -niE "\bbod(y|ies)\s+read:?\s*0\b" "$file_path" >/dev/null 2>&1; then
+  echo "❌ verify-no-body-storage: banned trust copy 'Bodies read: 0' in $file_path (CLAUDE.md §2.1)" >&2
+  grep -niE "\bbod(y|ies)\s+read:?\s*0\b" "$file_path" | sed 's/^/   /' >&2
   exit 2
 fi
 

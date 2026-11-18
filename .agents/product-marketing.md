@@ -206,11 +206,14 @@ evidence and must not be presented as DeclutrMail testimonials:
 matching count; exact Gmail changes; approve; Activity; undo window; existing mail; future rules;
 Observe; review; Gmail stays home; one inbox / two inboxes.
 
-**Words and phrases to avoid:** inbox zero as the sole aspiration; sender-first as the sole
-differentiator; safe without explaining why; privacy-first; clean as a verb on user data; AI magic;
-supercharged; nuke; destroy; blast; obliterate; smart or intelligent as standalone adjectives;
-AI-powered as a standalone claim; every action is reversible; blocks or prevents new senders;
-never reads your email; automatic importance ranking.
+**Never say (false or unprovable):** every action is reversible; blocks or prevents new senders;
+never reads your email; privacy-first; automatic importance ranking; safe without explaining why.
+
+**Prefer to avoid (voice, not rules — use when it is true and specific):** inbox zero as the sole
+aspiration; sender-first as the sole differentiator; AI magic; supercharged; nuke; destroy; blast;
+obliterate; smart or intelligent as standalone adjectives. "Clean up your Gmail" is fine; it is the
+category's own search phrase. "AI-powered" is fine for a feature that really uses AI (suggestion
+explanations, the Daily Brief), never as a blanket claim. These were a CI ban until 2026-11-17.
 
 **Glossary:**
 

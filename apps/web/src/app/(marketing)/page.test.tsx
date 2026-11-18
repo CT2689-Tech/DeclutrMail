@@ -43,25 +43,22 @@ describe('landing page — D134', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });
-  it('renders the launch headline as the page h1', async () => {
-    await renderLanding();
-    const h1 = screen.getByRole('heading', { level: 1 });
-    expect(h1.textContent).toBe('Clear Gmail clutter. See what moves first.');
-    expect(h1.querySelector('em')?.textContent).toBe('See what moves first.');
+  // The headline's wording is copy, free to change; one non-empty h1 that
+  // labels the hero is the structure search and screen readers rely on.
+  it('renders exactly one non-empty h1, as the hero heading', async () => {
+    const { container } = await renderLanding();
+    const headings = screen.getAllByRole('heading', { level: 1 });
+    expect(headings).toHaveLength(1);
+    const [h1] = headings;
+    expect(h1?.textContent?.trim()).toBeTruthy();
+    expect(container.querySelector('.dm-mkt-hero')?.getAttribute('aria-labelledby')).toBe(h1?.id);
   });
 
-  it('states the D228 trust copy once, in Privacy, plus one collapsed scope disclosure', async () => {
+  it('states the trust copy in Privacy, plus one collapsed scope disclosure', async () => {
     const { container } = await renderLanding();
-    // Once, at the Privacy section: never on the hero (CLAUDE.md §8.5).
-    // The only further copy stays inside the collapsed scope disclosure
-    // beside the final "Start free".
-    const visible = container.cloneNode(true) as HTMLElement;
-    visible.querySelectorAll('details').forEach((node) => node.remove());
-    expect((visible.textContent ?? '').split(PRIVACY_BADGE_HEADLINE).length - 1).toBe(1);
+    // Marketing pages may lead with or repeat the exact privacy sentence
+    // (CLAUDE.md §8.5, founder decision 2026-11-17); Privacy must carry it.
     expect(container.querySelector('#privacy')?.textContent).toContain(PRIVACY_BADGE_HEADLINE);
-    expect(container.querySelector('.dm-mkt-hero')?.textContent).not.toContain(
-      PRIVACY_BADGE_HEADLINE,
-    );
     expect(container.querySelectorAll('details.dm-mkt-scope')).toHaveLength(1);
     expect(container.querySelector('.dm-home-inventory-lists')).toBeInTheDocument();
     // What actually needs guarding is that the generated list reaches the
@@ -79,8 +76,9 @@ describe('landing page — D134', () => {
     expect(text.toLowerCase()).not.toContain('full bodies fetched');
     expect(text).not.toMatch(/\bverbs?\b/i);
     expect(text).not.toMatch(/product chapters|quota bands|methodology/i);
-    // "Screener" (the feature name) is allowed; bare "Screen" is not.
-    expect(/Screen(?!er)/.test(text)).toBe(false);
+    // The verb "Screen" is banned as a whole word. "Screener" (the feature
+    // name), "Screenshots" and "Screen reader" are other words.
+    expect(text).not.toMatch(/\bScreen\b(?! readers?\b)/);
     // Legal terms are founder-confirmed (2026-07-08); no page may still
     // carry the interim "Pending confirmation" marker.
     expect(text).not.toContain('Pending confirmation');
@@ -299,9 +297,10 @@ describe('landing page — D134', () => {
 
   it('carries Gmail cleanup, preview and undo into page metadata', () => {
     expect(metadata.description).toContain('Preview which emails will move before you confirm');
-    expect(metadata.title).toEqual({
-      absolute: 'Gmail cleanup tool with preview and undo | DeclutrMail',
-    });
+    // Facts, not the exact sentence: SEO title tests must not need a test edit.
+    const title = (metadata.title as { absolute?: string } | undefined)?.absolute ?? '';
+    expect(title).toMatch(/\bGmail\b/);
+    expect(title).toMatch(/DeclutrMail$/);
   });
 
   describe('D138 verification claim — the item the visitor can check', () => {

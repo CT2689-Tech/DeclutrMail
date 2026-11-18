@@ -104,8 +104,9 @@ needs a qualifier to be true is first a candidate for deletion. Never
 propose a caveat clause as the fix for an untrue sentence without first
 testing whether the sentence can go. A preview owes the count, where the
 email goes and how to undo — "what does not change" only where the user
-would plausibly fear it (CLAUDE.md §2.3). Trust and privacy copy once per
-flow, at the decision point.
+would plausibly fear it (CLAUDE.md §2.3). In product flows, trust and privacy
+copy appears once per flow, at the decision point. Marketing pages may lead
+with or repeat the exact privacy sentence (founder decision 2026-11-17).
 
 Also: hedges (*may*, *should*, *typically*, *usually*) — state it or drop it.
 And scroll cost: if explanation pushes the primary action below the fold, the
