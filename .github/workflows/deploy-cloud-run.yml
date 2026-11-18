@@ -430,21 +430,40 @@ jobs:
             --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,RESEND_API_KEY=resend-api-key-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,BRANDFETCH_API_KEY=brandfetch-api-key-prod:latest" \
             --quiet
 
+      - name: Route worker traffic to the new revision
+        run: |
+          set -euo pipefail
+          # `gcloud run deploy` only moves traffic while the service routes
+          # to "latest". The 2026-10-31 billing key refresh pinned traffic
+          # to one revision by name (`--to-revisions`), so every later
+          # deploy created a worker revision at 0% and the release stopped
+          # at the billing notice check for 18 days. Route to latest on
+          # every release so a named pin cannot freeze the worker again.
+          gcloud run services update-traffic declutrmail-worker \
+            --region="$WORKER_REGION" --project="$PROJECT" \
+            --to-latest --quiet
+
       - name: Smoke worker revision
         run: |
           set -euo pipefail
           # Worker URL is private (--no-allow-unauthenticated). We can't
-          # hit it from CI. Instead, assert the revision is Ready via
-          # the Cloud Run control plane. The HTTP startup probe now requires
-          # bootstrapComplete, not merely an open TCP port.
-          REVISION=$(gcloud run services describe declutrmail-worker \
-            --region="$WORKER_REGION" --project="$PROJECT" \
-            --format="value(status.latestReadyRevisionName)")
+          # hit it from CI. Instead, assert via the Cloud Run control plane
+          # that the revision this release created is Ready and is the one
+          # serving. The HTTP startup probe now requires bootstrapComplete,
+          # not merely an open TCP port.
+          SERVICE=$(gcloud run services describe declutrmail-worker \
+            --region="$WORKER_REGION" --project="$PROJECT" --format=json)
+          REVISION=$(jq -er '.status.latestCreatedRevisionName' <<<"$SERVICE")
+          SERVING=$(jq -er '
+            .status.traffic | map(select((.percent // 0) > 0)) |
+            if length == 1 and .[0].percent == 100 then .[0].revisionName
+            else error("Worker must have one 100% serving revision") end' <<<"$SERVICE")
           STATUS=$(gcloud run revisions describe "$REVISION" \
             --region="$WORKER_REGION" --project="$PROJECT" \
             --format="value(status.conditions[0].status)")
-          echo "Worker revision $REVISION status: $STATUS"
+          echo "Worker revision $REVISION status: $STATUS; serving: $SERVING"
           test "$STATUS" = "True" || (echo "Worker revision NOT Ready" && exit 1)
+          test "$SERVING" = "$REVISION" || (echo "New worker revision is NOT serving" && exit 1)
 
       - name: Verify billing notice worker before API producers
         run: |
