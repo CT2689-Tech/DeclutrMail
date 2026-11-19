@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # launch-preflight.sh — machine-checkable state of the founder launch
-# checklist (docs/execution/founder-launch-checklist.md).
+# checklist (docs/marketing/README.md, "Before launch").
 #
 # Every founder task in that doc has a probe here. Agents (and the
 # founder) run this instead of re-deriving curl/dig invocations by hand:

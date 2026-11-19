@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Baseline/diff and known-backlink workflows adapted from claude-seo.
-// See docs/execution/marketing-system/claude-seo-NOTICE.txt for provenance.
+// See docs/marketing/claude-seo-NOTICE.txt for provenance.
 import { createHash, randomUUID } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { existsSync } from 'node:fs';
@@ -15,7 +15,7 @@ const USER_AGENT = 'DeclutrMailSEO/1.0 (public website monitoring)';
 const CATEGORIES = ['technical', 'content', 'aeo', 'backlinks', 'measurement'];
 const SOURCES = ['search', 'ai', 'backlinks', 'conversion'];
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CONFIG = path.join(REPO, 'docs/execution/marketing-system/seo-engine.config.json');
+const CONFIG = path.join(REPO, 'docs/marketing/seo-engine.config.json');
 const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const day = (value) =>
   typeof value === 'string' &&

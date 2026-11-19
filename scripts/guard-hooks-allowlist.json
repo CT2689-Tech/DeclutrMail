@@ -93,22 +93,6 @@
         "- **No counter-style privacy claims**: never \"0 bodies read\", \"Bodies read: 0\", \"Full bodies"
       ],
       "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
-    },
-    {
-      "guard": "verify-no-body-storage",
-      "file": "docs/reviews/user-facing-language-audit-2026-07-14.md",
-      "hits": [
-        "- Privacy language must describe Gmail's short preview honestly and must not use the retired “Bodies read: 0” claim (D7, D228)."
-      ],
-      "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
-    },
-    {
-      "guard": "verify-no-body-storage",
-      "file": "docs/superpowers/plans/2026-07-27-email-foundation.md",
-      "hits": [
-        "- **Trust copy (D7, D228; CLAUDE.md §2.1):** the badge line is exactly `We never fetch or store full email contents.` plus the generated storage list from `packages/shared/src/contracts/gmail-data-inventory.ts`. Counter-style claims are banned — never `Full bodies fetched: 0` or `Bodies read: 0 forever`."
-      ],
-      "reason": "Doc quoting the banned trust copy to state the ban; not product copy."
     }
   ]
 }

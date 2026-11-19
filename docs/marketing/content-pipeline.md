@@ -1,8 +1,8 @@
 # Content and directory publication pipeline
 
 This extends the existing growth automation with research, private drafting,
-review previews, exact-version approvals and publication staging. Additional
-tool, subscription and campaign spend remains $0. It does not add a paid CMS,
+review previews, exact-version approvals and publication staging. Paid
+marketing is capped at $200 a month (founder decision 2026-11-17). It does not add a paid CMS,
 model API, outreach sender or second scheduler.
 
 Integration owner: the current Codex content-pipeline session. Owned changes are

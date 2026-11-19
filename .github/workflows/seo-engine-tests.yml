@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - 'scripts/seo-engine*'
-      - 'docs/execution/marketing-system/seo-engine*'
+      - 'docs/marketing/seo-engine*'
       - '.github/workflows/seo-engine-tests.yml'
   push:
     branches: [main]
     paths:
       - 'scripts/seo-engine*'
-      - 'docs/execution/marketing-system/seo-engine*'
+      - 'docs/marketing/seo-engine*'
       - '.github/workflows/seo-engine-tests.yml'
   merge_group:
 

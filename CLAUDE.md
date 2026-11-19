@@ -3,6 +3,8 @@
 > Gmail cleanup SaaS. Solo founder (Chintan) + AI agents. Read this at the start of every session.
 > Agents, hooks and docs cite these section numbers: keep them stable.
 
+**Start here.** Rules and how to work: this file. Marketing: `docs/marketing/README.md` (the marketing hub). Decisions: `docs/adr/`. Open founder actions: `docs/log/founder-followups/`. Operations: `docs/runbooks/`. This repository is public on GitHub.
+
 ## 1. How to work
 
 ### 1.1 Think before coding
@@ -78,7 +80,7 @@ Categories are user-assigned or rule-matched, never predicted.
 
 ### 2.7 Marketing work
 
-Tier 2, so ship. Still binding:
+Tier 2, so ship. The marketing hub, `docs/marketing/README.md`, is the single source for marketing: what is true, what is next, where each file lives. Still binding:
 
 - Every claim about DeclutrMail or a competitor has an openable source and a date.
 - Prices and limits come from `packages/shared/src/entitlements/pricing.config.ts`.
@@ -179,7 +181,7 @@ Tier 2: pick what serves the user and ship. Otherwise stop and ask only for Tier
 
 ## 10. What not to do
 
-Bypass hooks or force-push `main`; run `atlas migrate apply` against production from a laptop; commit secrets; add "while I'm here" changes.
+Bypass hooks or force-push `main`; run `atlas migrate apply` against production from a laptop; commit secrets or personal details (the repo is public); add "while I'm here" changes.
 
 ### 10.1 No fake completion
 
