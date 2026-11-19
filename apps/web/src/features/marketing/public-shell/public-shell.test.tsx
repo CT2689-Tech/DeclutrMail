@@ -186,7 +186,7 @@ describe('PublicFooter directory', () => {
     ).toHaveLength(17);
     expect(
       within(footer.getByRole('navigation', { name: 'Guides' })).getAllByRole('link'),
-    ).toHaveLength(7);
+    ).toHaveLength(15);
     expect(
       within(footer.getByRole('navigation', { name: 'Learn' })).queryByRole('link', {
         name: 'Compare',

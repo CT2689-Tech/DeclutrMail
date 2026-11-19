@@ -40,7 +40,7 @@ const PREVIOUS_HOW_IT_WORKS =
   'Gmail remains the reading/reply surface; manual actions affect the previewed messages; Autopilot presets (Plus and Pro) handle future matches, unattended only after deliberately activating a rule on either plan';
 
 const PREVIOUS_HELP =
-  'what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan, metered monthly on Free), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion';
+  'what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion';
 
 /** Keep the previous sentence while a plan-name token is still empty. */
 function filledLlmsFix(template: string): string {

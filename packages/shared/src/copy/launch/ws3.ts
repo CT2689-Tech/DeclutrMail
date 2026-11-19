@@ -381,7 +381,7 @@ export const WS3_COPY = {
   'ws3.llms.fix.howItWorks':
     'Gmail remains the reading/reply surface; Archive, Later and Delete you start yourself change only the previewed messages; Autopilot rules ({plusName}) handle future matches, and act without asking only after you deliberately set a rule to Act now',
   'ws3.llms.fix.help':
-    'what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan, metered monthly on {freeName}), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Watch first vs Act now, disconnecting and account deletion',
+    'what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Watch first vs Act now, disconnecting and account deletion',
   'ws3.llms.fix.pricingLink':
     'Pricing: {freeName}, {plusName} and the one-time {passName}; {proName} is waitlist only. {refundDays}-day money-back on any purchase, once per customer.',
   'ws3.llms.fix.beta':
