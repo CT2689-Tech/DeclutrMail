@@ -15,7 +15,6 @@ export default tseslint.config(
       '.claude/**',
       '.playwright-mcp/**',
       'pnpm-lock.yaml',
-      'docs/design/screens/**',
     ],
   },
   js.configs.recommended,

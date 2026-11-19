@@ -189,4 +189,4 @@ Never ship stubs as done: mocked Gmail calls, fake progress, fake billing state,
 
 ## 11. Logs and learning
 
-One file per entry in `docs/log/learnings/`, `docs/log/mistakes/` (add one when a bug ships) and `docs/log/founder-followups/`; each folder's README holds the format. Rules go in `docs/adr/`. A pattern moves into this file through a `chore/distill-*` PR when it recurs 3+ times or carries privacy, security, billing or data-loss risk. Agents edit this file only when the founder asks.
+One file per entry in `docs/log/learnings/`, `docs/log/mistakes/` (add one when a bug ships) and `docs/log/founder-followups/`; each folder's README holds the format. Code comments that cite `MISTAKES.md`, `LEARNINGS.md` or `FOUNDER-FOLLOWUPS.md` with a date point at root files deleted on 2026-11-19: read them with `git show cb785809:<file>`. Rules go in `docs/adr/`. A pattern moves into this file through a `chore/distill-*` PR when it recurs 3+ times or carries privacy, security, billing or data-loss risk. Agents edit this file only when the founder asks.

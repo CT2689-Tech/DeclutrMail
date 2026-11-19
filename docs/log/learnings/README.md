@@ -1,7 +1,7 @@
 # Learnings
 
-One file per entry. Entries written before 2026-09-27 stay in the frozen
-[`LEARNINGS.md`](../../../LEARNINGS.md) at the repo root.
+One file per entry. Entries written before 2026-09-27 were in the root
+`LEARNINGS.md`, deleted 2026-11-19; read them with `git show cb785809:LEARNINGS.md`.
 
 When to add one: CLAUDE.md §11.
 

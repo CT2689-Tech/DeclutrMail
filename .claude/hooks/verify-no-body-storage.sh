@@ -96,7 +96,7 @@ fi
 if [ "$findings" -gt 0 ]; then
   echo "" >&2
   echo "   Heuristic findings — privacy-auditor subagent runs the full review." >&2
-  echo "   If false positive, document why in PR body or LEARNINGS.md." >&2
+  echo "   If false positive, document why in the PR body or docs/log/learnings/." >&2
 fi
 
 # PostToolUse: warnings don't block (the edit already happened).
