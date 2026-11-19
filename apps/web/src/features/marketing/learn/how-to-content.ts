@@ -52,7 +52,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           sender: 'Project Digest',
           detail: '12 inbox messages · marked read often',
           action: 'Later',
-          result: 'Current email moves to DeclutrMail/Later.',
+          result: 'Waits under DeclutrMail/Later, then returns to the inbox at the time you pick.',
         },
         {
           sender: 'Coupon Parade',
@@ -865,7 +865,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         title: 'What a mass delete changes',
         paragraphs: [
           'Deleting in Gmail moves messages to Trash. Google says a message stays there for up to 30 days, during which you can move it back, and is permanently deleted after that. Emptying Trash yourself ends recovery sooner.',
-          'A delete changes only the email matched now. It does not contact the sender, create a filter, or stop future delivery. If you only want a clear inbox, archiving the same selection keeps the email under All Mail.',
+          'If you only want a clear inbox, archiving the same selection keeps the email under All Mail.',
         ],
         callout: {
           title: 'Select all means all',
@@ -920,13 +920,13 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         id: 'by-sender',
         title: 'When the pile comes from a few senders',
         paragraphs: [
-          'Search needs you to know what to type. If the clutter is recurring senders you cannot name from memory, DeclutrMail groups the saved Gmail details by sender and lists each sender with its volume and read rate.',
+          'Search needs you to know what to type. If the clutter is recurring senders you cannot name from memory, DeclutrMail groups the saved Gmail details by sender and lists each sender with its volume and how much is marked read.',
           'Delete there is a decision per sender with a preview. It moves the matching email to Gmail Trash and does not create a rule for future email.',
         ],
         steps: [
           {
             name: WS3_COPY['ws3.liveFix.learn.firstScanStep'],
-            text: 'Senders appear with their volume and read rate once the first Gmail scan finishes.',
+            text: 'Senders appear with their volume and how much is marked read once the first Gmail scan finishes.',
           },
           {
             name: 'Check a sender before deciding',
@@ -938,7 +938,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Confirm, then look at Activity',
-            text: 'Activity records what moved. Archive, Later, and Delete can be undone from there while their undo window is open.',
+            text: 'Activity records what moved.',
           },
         ],
       },
@@ -1066,7 +1066,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         steps: [
           {
             name: 'Find the senders that repeat',
-            text: 'Senders are listed with volume and read rate. A low read rate is evidence, not proof, that a list is unwanted; read recent subjects first.',
+            text: 'Senders are listed with volume and how much is marked read. Little marked read is evidence, not proof, that a list is unwanted; read recent subjects first.',
           },
           {
             name: 'Choose Unsubscribe or Delete per sender',
@@ -1074,7 +1074,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Check Activity',
-            text: 'Archive, Later, and Delete can be undone from Activity while their undo window is open. A sent unsubscribe request cannot be taken back.',
+            text: `Archive, Later, and Delete can be undone from Activity ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while their undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. A sent unsubscribe request cannot be taken back.`,
           },
         ],
       },
@@ -1085,11 +1085,6 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           'Deleting changes the email that exists now. The same senders will write again unless you unsubscribe or add a filter.',
           'In Gmail, open an email from the list and click Unsubscribe next to the sender’s name. Google says it may take a few days for the email to stop, and that some senders send you to their website instead. A Gmail filter can archive or delete future email that matches a search you define.',
         ],
-        callout: {
-          title: 'Delete is not unsubscribe',
-          body: 'Emptying the Promotions tab does not contact any sender. Treat cleanup and future delivery as two decisions.',
-          tone: 'warning',
-        },
       },
     ],
     sources: [
@@ -1161,8 +1156,8 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         id: 'why-one-page',
         title: 'Why the selection stops at one page',
         paragraphs: [
-          'Google’s instructions say the Select box selects all messages on the current page. Google’s own example shows a page of 50 conversations selected, next to a link that selects all 2,000 conversations in Inbox.',
-          'A bigger page is not the fix. Google’s Outlook-to-Gmail guide says the web view shows up to 100 messages or conversations per screen, which is still one page. The link in the notification is what reaches the rest.',
+          'Google’s instructions say the Select box selects all messages on the current page.',
+          'A bigger page is not the fix; the link in the notification is what reaches the rest.',
         ],
       },
       {
@@ -1224,7 +1219,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Confirm and check Activity',
-            text: 'Activity records the result. Delete can be undone from there while its undo window is open.',
+            text: 'Activity records what moved.',
           },
         ],
       },
@@ -1243,11 +1238,6 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         label: 'Google: Delete messages in Gmail',
         description:
           'Official Select box behavior, the notification link that selects all conversations, and Trash retention.',
-      },
-      {
-        href: 'https://support.google.com/mail/answer/9259955?hl=en',
-        label: 'Google: View & find email',
-        description: 'Official note that the web view shows up to 100 messages per screen.',
       },
       {
         href: 'https://support.google.com/mail/answer/7190?hl=en',
@@ -1269,7 +1259,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     description:
       'Delete old emails in Gmail in bulk by date with older_than: and before: searches, checks to run before selecting all, and what Trash keeps.',
     intro:
-      'Age is the one condition Gmail search handles precisely. The operators are short; the judgment is in deciding what old email you still need before you select all of it.',
+      'Gmail search can select by age exactly. The operators are short; the judgment is in deciding what old email you still need before you select all of it.',
     readingMinutes: 6,
     example: {
       label: 'Made-up example',
@@ -1329,7 +1319,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Delete and check Trash',
-            text: 'Click Delete. The email moves to Trash, where Gmail keeps it for up to 30 days before deleting it permanently.',
+            text: 'Click Delete, then open Trash and check a few messages.',
           },
         ],
       },
@@ -1361,7 +1351,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         steps: [
           {
             name: 'Open a sender with a long history',
-            text: 'In Clean up, open the sender and read its recent subjects, volume, and read rate.',
+            text: 'In Clean up, open the sender and read its recent subjects, volume, and how much is marked read.',
           },
           {
             name: 'Choose Archive or Delete and set How far back',
@@ -1369,7 +1359,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Confirm and check Activity',
-            text: 'Archive, Later, and Delete can be undone from Activity while their undo window is open. Deleted email is also in Gmail Trash.',
+            text: `Archive, Later, and Delete can be undone from Activity ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while their undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. Deleted email is also in Gmail Trash.`,
           },
         ],
       },
@@ -1437,7 +1427,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           sender: 'Weekly Reading List',
           detail: '45 inbox messages · 10% marked read',
           action: 'Later',
-          result: 'Current email moves to DeclutrMail/Later.',
+          result: 'Waits under DeclutrMail/Later, then returns to the inbox at the time you pick.',
         },
       ],
     },
@@ -1469,7 +1459,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Delete and check Trash',
-            text: 'Click Delete. The email moves to Trash, where Gmail keeps it for up to 30 days before deleting it permanently.',
+            text: 'Click Delete, then open Trash and check a few messages.',
           },
         ],
       },
@@ -1494,12 +1484,12 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         title: 'Where DeclutrMail fits, and where it does not',
         paragraphs: [
           'DeclutrMail does not select email by unread state. For “every unread message”, Gmail’s search is the right tool.',
-          'It works by sender and shows each sender’s read rate, the share of that sender’s email marked read. That answers a different question: which senders keep sending email you never get to. A low read rate is evidence, not proof, that a sender is unwanted.',
+          'It works by sender and shows how much of each sender’s email from the last 90 days is marked read. That answers a different question: which senders keep sending email you never get to. Little of it marked read is evidence, not proof, that a sender is unwanted.',
         ],
         steps: [
           {
-            name: 'Look for high volume and a low read rate',
-            text: 'Sort for senders that send a lot and have a low read rate. Read recent subjects before deciding.',
+            name: 'Find senders you rarely read',
+            text: 'Turn on Mostly unread (90 days), then sort by Most received. Read recent subjects before deciding.',
           },
           {
             name: 'Decide once per sender',
@@ -1575,7 +1565,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           sender: 'Long Reads Weekly',
           detail: '24 inbox messages · wanted, not urgent',
           action: 'Later',
-          result: 'Current email moves to DeclutrMail/Later.',
+          result: 'Waits under DeclutrMail/Later, then returns to the inbox at the time you pick.',
         },
         {
           sender: 'Expired Event Invites',
@@ -1589,9 +1579,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
       {
         id: 'three-outcomes',
         title: 'Know the three outcomes before you start',
-        paragraphs: [
-          'Every cleanup step in Gmail ends in one of three places, and they are easy to confuse.',
-        ],
+        paragraphs: ['Three outcomes are easy to confuse:'],
         bullets: [
           'Delete moves email to Trash. Google keeps it there for up to 30 days, then deletes it permanently.',
           'Archive takes email out of the inbox. It can still be found under All Mail, and a reply brings the conversation back.',
@@ -1631,13 +1619,13 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         id: 'by-sender',
         title: 'Then go sender by sender',
         paragraphs: [
-          'After the broad passes, what remains is easier to sort by who is sending it. An inbox may hold thousands of messages from a few dozen recurring senders.',
-          'DeclutrMail groups the saved Gmail details by sender and shows each sender’s volume and read rate. You make one decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. It does not select by Gmail category, unread state, or date across the mailbox; the Gmail steps above cover those.',
+          'After the broad passes, what remains is easier to sort by who is sending it.',
+          'DeclutrMail groups the saved Gmail details by sender and shows each sender’s volume and how much is marked read. You make one decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. It does not select by Gmail category, unread state, or date across the mailbox; the Gmail steps above cover those.',
         ],
         steps: [
           {
             name: WS3_COPY['ws3.liveFix.learn.firstScanStep'],
-            text: 'Senders appear with their volume and read rate once the first Gmail scan finishes.',
+            text: 'Senders appear with their volume and how much is marked read once the first Gmail scan finishes.',
           },
           {
             name: 'Start with the senders that send the most',
@@ -1649,7 +1637,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Check Activity',
-            text: 'Archive, Later, and Delete can be undone from Activity while their undo window is open. A sent unsubscribe request cannot be taken back.',
+            text: `Archive, Later, and Delete can be undone from Activity ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while their undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. A sent unsubscribe request cannot be taken back.`,
           },
         ],
       },
@@ -1671,7 +1659,6 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         title: 'Keep it from filling up again',
         paragraphs: [
           'Repeat a short version each month: one search for old Promotions email, one look at the senders that grew, and a few unsubscribes. Gmail’s Manage subscriptions page, under More on the left, lists active subscriptions in one place; Google says it is still rolling out and may not be available to you yet.',
-          'The aim is not an empty inbox. It is an inbox where what arrives is email you chose to keep receiving.',
         ],
       },
     ],
@@ -1742,7 +1729,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           sender: 'Long Reads Weekly',
           detail: '24 inbox messages · wanted, not urgent',
           action: 'Later',
-          result: 'Current email moves to DeclutrMail/Later.',
+          result: 'Waits under DeclutrMail/Later, then returns to the inbox at the time you pick.',
         },
       ],
     },
@@ -1753,10 +1740,6 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         paragraphs: [
           'Google describes Archive as moving email out of your inbox while keeping it. The message is not deleted and does not go to Trash. After you archive it, you can still find it under the All Mail label, and an in:archive search finds it.',
           'Delete is the one to be careful with. It moves email to Trash, where Gmail keeps it for up to 30 days before deleting it permanently. Archive does not send anything to Trash.',
-        ],
-        bullets: [
-          'Archive: out of the inbox, kept in All Mail.',
-          'Delete: moved to Trash for up to 30 days, then deleted permanently.',
         ],
       },
       {
@@ -1810,18 +1793,13 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           'Google states that if someone replies to a message you archived, it returns to your inbox. Archive moves the email that exists now; it does not hide the conversation from future replies.',
           'If you want email from a sender archived automatically, that takes a Gmail filter, which can archive email matching a search you define. It is a separate decision; the auto-archive guide covers how to set one up and how to tell it apart from a one-time archive.',
         ],
-        callout: {
-          title: 'Archive is not a rule',
-          body: 'A one-time archive changes the email that exists now. New email from the same sender still lands in the inbox until you add a filter or unsubscribe.',
-          tone: 'truth',
-        },
       },
       {
         id: 'declutrmail-boundary',
         title: 'Where DeclutrMail fits',
         paragraphs: [
-          'DeclutrMail’s Archive works per sender. It removes the Inbox label from the current email from that sender, so the email ends up in the same All Mail and in:archive results described above. Nothing is deleted, and no rule for future email is created.',
-          `Each Archive is recorded in Activity, where it can be undone ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while its undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. Later works the same way and also adds a DeclutrMail/Later label, so that email is under the label in Gmail too.`,
+          'DeclutrMail’s Archive works per sender. That sender’s inbox email ends up in the same All Mail and in:archive results described above, and nothing is deleted.',
+          `Each Archive is recorded in Activity, where it can be undone ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while its undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. Later also takes that email out of the inbox; it waits in Gmail under the DeclutrMail/Later label, then comes back to the inbox at the time you pick.`,
         ],
         steps: [
           {
@@ -1868,7 +1846,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     description:
       'Recover deleted Gmail email from Trash within 30 days using Move to, and see which steps, like Empty Trash now, delete your email permanently.',
     intro:
-      'Deleting in Gmail is usually not final. Email goes to Trash first, and for up to 30 days getting it back takes a few clicks. The steps that make it final are worth knowing before a bulk cleanup.',
+      'Deleting in Gmail is not final at first. Email goes to Trash first, and for up to 30 days getting it back takes a few clicks. The steps that make it final are worth knowing before a bulk cleanup.',
     readingMinutes: 5,
     example: {
       label: 'Made-up example',
@@ -1948,8 +1926,8 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
         id: 'declutrmail-boundary',
         title: 'Where DeclutrMail fits',
         paragraphs: [
-          'DeclutrMail’s Delete works per sender and moves that sender’s current email to Gmail Trash. Everything above still applies: the email sits in Gmail Trash, and Move to brings it back.',
-          `Each Delete is also recorded in Activity, where it can be undone ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while its undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. Emptying Gmail Trash still deletes the email permanently. A sent unsubscribe request cannot be taken back.`,
+          'DeclutrMail’s Delete works per sender and moves that sender’s matching email to Gmail Trash. Everything above still applies: the email sits in Gmail Trash, and Move to brings it back.',
+          `Each Delete is also recorded in Activity, where it can be undone ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while its undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. Emptying Gmail Trash still deletes the email permanently.`,
         ],
         steps: [
           {
