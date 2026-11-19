@@ -9,4 +9,4 @@
 4. Write one line per date on this entry: no checkout, abandoned, paid and granted, or paid and not granted.
 **Verifies by:** This entry gives a result for every date, and any "paid and not granted" case is fixed or refunded.
 **Who:** Founder
-**Status:** Open
+**Status:** Skipped 2026-11-19 — founder closed it: billing was off until late July, the 31 Jul pair was billing testing, and no paid-but-not-granted case is known. Not checked in the Paddle or Razorpay dashboards.
