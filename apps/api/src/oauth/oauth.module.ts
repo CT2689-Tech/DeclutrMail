@@ -12,7 +12,7 @@ import { OAuthProviderService } from './oauth-provider.service.js';
  * OAuthModule — DeclutrMail as an OAuth 2.1 authorization server for
  * the MCP connector (ADR-0048 rule 4, docs/spec/mcp-connector.md §4).
  *
- * Always loaded; every route 404s until `MCP_ENABLED=true`, and nothing
+ * Always loaded; every route 404s while `MCP_ENABLED` is off, and nothing
  * is constructed while it is off.
  *
  * Imports:

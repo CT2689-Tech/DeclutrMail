@@ -110,7 +110,7 @@ const pubsubWebhookEnabled = process.env.PUBSUB_WEBHOOK_ENABLED === 'true';
     NotificationsModule,
     ResendWebhookModule,
     // MCP connector (ADR-0048) — OAuth authorization server + `/mcp`.
-    // Always loaded; every route 404s until MCP_ENABLED=true.
+    // Always loaded; every route 404s while MCP_ENABLED is off (mcp-config.ts).
     OAuthModule,
     McpModule,
     ...(pubsubWebhookEnabled ? [WebhooksModule] : []),

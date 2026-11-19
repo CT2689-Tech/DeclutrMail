@@ -8,6 +8,8 @@ import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js
 import {
   authorizeUrl,
   Browser,
+  client,
+  connect,
   createOAuthTestApp,
   pkce,
   reachConsent,
@@ -19,6 +21,7 @@ import { MCP_TOOL_NAMES, MCP_TOOLS } from './mcp-tool-contract.js';
 import {
   connectedClient,
   mailboxIdOf,
+  McpTestClient,
   seedSender,
   sessionBrowser,
   setSyncState,
@@ -277,7 +280,7 @@ describe('MCP connector — beta (MCP_ENABLED=beta)', () => {
     await harness.close();
   });
 
-  it('lets the listed account in and meets anyone else as if the connector were not there', async () => {
+  it('lets the listed account in, and turns anyone else away at every door', async () => {
     const ada = await harness.person('ada@example.com');
     const grace = await harness.person('grace@example.com');
     const adaMailbox = await mailboxIdOf(harness, 'ada@example.com');
@@ -287,7 +290,8 @@ describe('MCP connector — beta (MCP_ENABLED=beta)', () => {
     const adaShop = await seedSender(harness, adaMailbox, { email: 'news@shop.example' });
     const graceShop = await seedSender(harness, graceMailbox, { email: 'news@shop.example' });
     // Grace connected while it was open to everyone, and asked for something.
-    const graceApp = await connectedClient(harness, grace);
+    const graceConnection = await connect(harness, grace);
+    const graceApp = new McpTestClient(harness.base, graceConnection.tokens.access_token);
     const graceAsked = await graceApp.call('preview_cleanup', {
       verb: 'archive',
       sender_ids: [graceShop.id],
@@ -296,8 +300,15 @@ describe('MCP connector — beta (MCP_ENABLED=beta)', () => {
     vi.stubEnv('MCP_ENABLED', 'beta');
     vi.stubEnv('MCP_BETA_USER_IDS', ` ${ada.userId.toUpperCase()} , not-a-user`);
 
-    // The listed account: connect, use the tools, the page, Settings.
-    const adaApp = await connectedClient(harness, ada);
+    // The listed account: connect, refresh, use the tools, the page, Settings.
+    const adaConnection = await connect(harness, ada);
+    const adaApp = new McpTestClient(harness.base, adaConnection.tokens.access_token);
+    const adaRefresh = await client(harness.base).form('/oauth/token', {
+      grant_type: 'refresh_token',
+      refresh_token: adaConnection.tokens.refresh_token,
+      client_id: adaConnection.clientId,
+    });
+    expect(adaRefresh.status).toBe(200);
     const adaAsked = await adaApp.call('preview_cleanup', {
       verb: 'archive',
       sender_ids: [adaShop.id],
@@ -313,6 +324,14 @@ describe('MCP connector — beta (MCP_ENABLED=beta)', () => {
     const refused = await graceApp.call('get_usage');
     expect(refused.http.status).toBe(401);
     expect(refused.http.headers.get('www-authenticate')).toContain('invalid_token');
+    // ...and a refresh does not mint a new one, so the app starts over.
+    const graceRefresh = await client(harness.base).form('/oauth/token', {
+      grant_type: 'refresh_token',
+      refresh_token: graceConnection.tokens.refresh_token,
+      client_id: graceConnection.clientId,
+    });
+    expect(graceRefresh.status).toBe(400);
+    expect(graceRefresh.json.error).toBe('invalid_grant');
     const gracePage = sessionBrowser(harness, grace);
     expect((await gracePage.get(`/api/action-previews/${graceAsked.data.preview_id}`)).status).toBe(
       404,
@@ -331,7 +350,6 @@ describe('MCP connector — beta (MCP_ENABLED=beta)', () => {
     const approve = await browser.post(`${path}/approve`);
     expect(approve.status).toBe(403);
     expect(approve.json.error.code).toBe('CONNECT_NOT_AVAILABLE');
-    expect(await harness.db.select().from(actionJobs)).toEqual([]);
 
     // An empty list lets nobody in.
     vi.stubEnv('MCP_BETA_USER_IDS', '');

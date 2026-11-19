@@ -348,20 +348,16 @@ export class ActionPreviewsService {
     } catch (error) {
       const refusal = refusalOf(error);
       if (refusal) {
-        recordProductEvent(
-          this.productEvents,
-          'connector_request_refused',
-          { verb: preview.verb, preview_id: preview.id, reason: refusal },
-          userId,
-        );
         // Refused for a reason the person must act on (the monthly limit,
         // a plan, sending switched off). Their press is spent: back to
         // pending, so after an upgrade or a reset the assistant cannot
         // start it without a new press.
-        await this.db
+        const spent = await this.db
           .update(actionPreviews)
           .set({ state: 'pending', confirmedAt: null, claimedAt: null, refusedCode: refusal })
           .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
+          .returning({ id: actionPreviews.id })
+          .then((rows) => rows.length > 0)
           .catch((cause: unknown) => {
             // The original refusal is what the caller needs, so it is the
             // one thrown. Unrecorded, the press is not spent: once the
@@ -373,7 +369,17 @@ export class ActionPreviewsService {
               cause,
               refusal,
             );
+            return false;
           });
+        // Counted once per spent press: an unrecorded refusal spent nothing.
+        if (spent) {
+          recordProductEvent(
+            this.productEvents,
+            'connector_request_refused',
+            { verb: preview.verb, preview_id: preview.id, reason: refusal },
+            userId,
+          );
+        }
       } else {
         // A fault, not a decision (the queue was down, say): the press
         // stands and a retry continues the same attempt. Give the claim
@@ -389,7 +395,7 @@ export class ActionPreviewsService {
       }
       throw error;
     }
-    await this.db
+    const [marked] = await this.db
       .update(actionPreviews)
       .set({
         state: 'applied',
@@ -397,13 +403,18 @@ export class ActionPreviewsService {
         actionId: outcome.actionId,
         result: outcome.result,
       })
-      .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')));
-    recordProductEvent(
-      this.productEvents,
-      'connector_request_started',
-      { verb: preview.verb, preview_id: preview.id },
-      userId,
-    );
+      .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
+      .returning({ id: actionPreviews.id });
+    // Counted when this request applied it to at least one sender; a
+    // request that found every sender skipped started nothing.
+    if (marked && outcome.result.appliedSenders > 0) {
+      recordProductEvent(
+        this.productEvents,
+        'connector_request_started',
+        { verb: preview.verb, preview_id: preview.id },
+        userId,
+      );
+    }
     const applied = await this.findOwned(previewId, userId);
     if (!applied) throw notFound();
     return applied;

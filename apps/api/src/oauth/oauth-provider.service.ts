@@ -14,6 +14,7 @@ import {
   INTERACTION_TTL_SEC,
   MCP_SCOPES,
   REFRESH_TOKEN_TTL_SEC,
+  mcpAllowedFor,
   mcpEnabled,
   mcpResourceUrl,
   oauthIssuer,
@@ -265,6 +266,10 @@ export class OAuthProviderService implements OnModuleInit {
       // --- people ----------------------------------------------------
       findAccount: async (ctx, sub) => {
         const user = await findAuthorizableUser(db, sub);
+        // In beta, an account off the list is no account here: resume
+        // sends `access_denied`, and a code exchange or refresh answers
+        // `invalid_grant`, so the app starts over and Approve refuses.
+        const allowed = user !== undefined && mcpAllowedFor(user.userId);
         // Resume is the step that releases the code. Approve was pressed
         // under a DeclutrMail session; the library's own cookies only
         // prove which REQUEST is being resumed, and a cookie can be
@@ -273,11 +278,11 @@ export class OAuthProviderService implements OnModuleInit {
         // can still be acted for. Refusing here sends `access_denied`
         // back to the app instead of a code.
         if (ctx.oidc?.route === 'resume') {
-          if (!user || !(await this.holdsSessionFor(ctx.req, sub))) {
+          if (!allowed || !(await this.holdsSessionFor(ctx.req, sub))) {
             throw new errors.AccessDenied('the approving session is not present');
           }
         }
-        if (!user) return undefined;
+        if (!allowed) return undefined;
         return { accountId: user.userId, claims: async () => ({ sub: user.userId }) };
       },
       interactions: {

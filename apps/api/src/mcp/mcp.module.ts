@@ -23,8 +23,8 @@ import { McpToolsService } from './mcp-tools.service.js';
  *
  * The connector is a second client of the action pipeline: it imports
  * the modules whose services the web app's own controllers call, and
- * adds no mail behavior. Always loaded; every route 404s until
- * `MCP_ENABLED=true`, and the MCP server is built on the first request.
+ * adds no mail behavior. Always loaded; every route 404s while
+ * `MCP_ENABLED` is off, and the MCP server is built on the first request.
  *
  * `RateLimitModule` and `DbModule` are global.
  */

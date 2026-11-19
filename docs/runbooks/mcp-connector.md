@@ -19,12 +19,20 @@ One variable, `MCP_ENABLED`, read on every request.
 ¹ `/.well-known/oauth-*`, `/oauth/*`, `/mcp`, `/api/oauth/*`,
 `/api/action-previews/*`.
 
-In `beta`, an account not on the list meets the connector as if it were
-off: Approve answers 403 `CONNECT_NOT_AVAILABLE` ("Connecting apps is not
-available for your account yet."), `/mcp` answers 401 `invalid_token` (the
-app asks the person to connect again), and the confirm page and
-Settings → Connected apps answer 404. Removing someone from the list cuts
-them off on their next request.
+In `beta`, an account not on the list can open the consent page, but
+Approve answers 403 `CONNECT_NOT_AVAILABLE` ("Connecting apps is not
+available for your account yet."). If it connected earlier (under `true`,
+or while listed), its access token gets 401 `invalid_token` at `/mcp` and
+its refresh token 400 `invalid_grant`, so the app starts over and meets
+that refusal; the confirm page and Settings → Connected apps answer 404.
+Removing someone from the list cuts them off on their next request. Their
+connection stays stored, unusable, and works again if the mode later goes
+to `true` before its refresh token expires.
+
+**Beta is not a smaller attack surface.** Registration, authorize, token
+and the discovery documents are public in `beta` exactly as in `true`: the
+list only decides who can approve and use. Beta needs the same security
+review as `true`.
 
 Production sets `MCP_ENABLED=false` in `.github/workflows/deploy-cloud-run.yml`
 (`API_ENV_BASE`). That line is the only place to change it: the deploy's
@@ -33,11 +41,13 @@ lasts until the next deploy.
 
 ## Before the first switch-on
 
-1. PR merged, and **Migration apply (Atlas → Supabase)** green on `main` for
+1. The independent security review the spec requires (§9) has passed.
+   This applies to `beta` too (above).
+2. PR merged, and **Migration apply (Atlas → Supabase)** green on `main` for
    `0101_mcp_connector` (CI applies it; never from a laptop).
-2. `API_URL=https://api.declutrmail.com` is in `API_ENV_BASE` (it is the
+3. `API_URL=https://api.declutrmail.com` is in `API_ENV_BASE` (it is the
    OAuth issuer; the API refuses to boot with the connector on without it).
-3. The founder follow-up on Google's Limited Use policy
+4. The founder follow-up on Google's Limited Use policy
    (`docs/log/founder-followups/2026-11-19-mcp-connector-google-limited-use.md`)
    is decided. Until then `/privacy` §4 says Gmail data goes to no third
    party but subprocessors, which a connected assistant is not: stay at
@@ -103,17 +113,23 @@ decision, not a step of this runbook.
 The funnel, last 7 days (read-only):
 
 ```sql
-select event, props->>'client' as client, count(*),
-       count(distinct props->>'preview_id') as requests
+select event, count(*), count(distinct props->>'preview_id') as requests
 from product_events
 where event::text like 'connector\_%' and occurred_at > now() - interval '7 days'
-group by 1, 2 order by 1, 2;
+group by 1 order by 1;
 ```
 
 Ask-to-start conversion is `connector_request_started` over
-`connector_request_prepared`, counted by distinct `preview_id`.
-`connector_request_refused` with `reason = 'QUOTA_EXHAUSTED'` or
-`'UPGRADE_REQUIRED'` is someone who wanted more than their plan allows.
+`connector_request_prepared`, counted by distinct `preview_id`. Started
+counts a request applied to at least one sender; refused counts a press
+that was spent. `connector_request_refused` with `reason =
+'QUOTA_EXHAUSTED'` or `'UPGRADE_REQUIRED'` is someone who wanted more than
+their plan allows. `client` (which assistant) is on connected, tool-called
+and prepared; join viewed, started and refused to prepared on
+`preview_id` for it. Connected minus disconnected is not the number of
+live connections (a connection replaced by a reconnect, a denial after
+Approve and account deletion write no disconnect): count
+`oauth_grants where revoked_at is null` for that.
 Event definitions: `docs/observability/event-taxonomy.md`.
 
 ## Roll back

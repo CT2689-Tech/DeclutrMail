@@ -67,18 +67,19 @@ address, sender, subject, app name or grant id is stored. `client` is a
 family read from the app's sign-in return address: `claude`, `chatgpt`,
 `local` (loopback or a custom scheme) or `other`.
 
-| Event                        | When                                            | Props                                                                                               |
-| ---------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `connector_app_connected`    | The person pressed Approve                      | `client`                                                                                            |
-| `connector_app_disconnected` | Disconnect in Settings                          | none                                                                                                |
-| `connector_tool_called`      | Every tool call that reached a handler          | `client`, `tool`, `outcome` (`ok` · `error`)                                                        |
-| `connector_request_prepared` | `preview_cleanup` stored a request              | `client`, `verb`, `preview_id`, `requested_bucket` (senders), `emails`                              |
-| `connector_confirm_viewed`   | The confirm page loaded a request still waiting | `verb`, `preview_id` — a refetch writes again: count distinct `preview_id`                          |
-| `connector_request_started`  | A confirmed request started                     | `verb`, `preview_id`                                                                                |
-| `connector_request_refused`  | A press was refused and spent                   | `verb`, `preview_id`, `reason` (`QUOTA_EXHAUSTED` · `UPGRADE_REQUIRED` · `UNSUBSCRIBE_UNAVAILABLE`) |
+| Event                        | When                                                            | Props                                                                                               |
+| ---------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `connector_app_connected`    | The person pressed Approve                                      | `client`                                                                                            |
+| `connector_app_disconnected` | Disconnect in Settings                                          | none                                                                                                |
+| `connector_tool_called`      | Every tool call that reached a handler                          | `client`, `tool`, `outcome` (`ok` · `error`)                                                        |
+| `connector_request_prepared` | `preview_cleanup` stored a request                              | `client`, `verb`, `preview_id`, `requested_bucket` (senders), `emails`                              |
+| `connector_confirm_viewed`   | The confirm page loaded a request still waiting                 | `verb`, `preview_id` — a refetch writes again: count distinct `preview_id`                          |
+| `connector_request_started`  | A confirmed request was applied to at least one sender          | `verb`, `preview_id`                                                                                |
+| `connector_request_refused`  | A press was refused, and the refusal recorded (the press spent) | `verb`, `preview_id`, `reason` (`QUOTA_EXHAUSTED` · `UPGRADE_REQUIRED` · `UNSUBSCRIBE_UNAVAILABLE`) |
 
 The ask-to-start funnel is `prepared → confirm_viewed → started | refused`,
-joined on `preview_id`.
+joined on `preview_id`. Only connected, tool-called and prepared carry
+`client`; join the others to prepared on `preview_id` for it.
 
 ## Identifier conventions
 

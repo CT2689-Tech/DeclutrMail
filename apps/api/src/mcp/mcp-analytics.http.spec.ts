@@ -14,6 +14,7 @@ import { REFUSALS } from './action-previews.service.js';
 import {
   connectedClient,
   mailboxIdOf,
+  protectSender,
   seedSender,
   sessionBrowser,
   setSyncState,
@@ -148,6 +149,35 @@ describe('MCP connector — product funnel', () => {
     expect(
       (await eventsOf(grace.userId)).some((r) => r.event === 'connector_request_started'),
     ).toBe(false);
+  });
+
+  it('a request that acted on no sender is not counted as started', async () => {
+    const lin = await harness.person('lin@example.com');
+    const mailboxId = await mailboxIdOf(harness, 'lin@example.com');
+    await setSyncState(harness, mailboxId, 'ready');
+    const shop = await seedSender(harness, mailboxId, { email: 'news@shop.example', mail: 3 });
+    const app = await connectedClient(harness, lin);
+    const asked = await app.call('preview_cleanup', { verb: 'archive', sender_ids: [shop.id] });
+    const previewId = asked.data.preview_id as string;
+    // Protected after the request was prepared: the start skips it.
+    await protectSender(harness, mailboxId, shop.id);
+
+    const page = sessionBrowser(harness, lin);
+    const pressed = await page.post(`/api/action-previews/${previewId}/confirm`);
+    expect(pressed.status).toBe(200);
+    expect(pressed.json.data.state).toBe('applied');
+    expect(pressed.json.data.outcome.appliedSenders).toBe(0);
+    // Wait for a later event, so a started row written before it would be here.
+    await page.request(
+      `/api/oauth/grants/${(await page.get('/api/oauth/grants')).json.data.apps[0].id}`,
+      {
+        method: 'DELETE',
+      },
+    );
+    await landed(lin.userId, 'connector_app_disconnected');
+    expect((await eventsOf(lin.userId)).some((r) => r.event === 'connector_request_started')).toBe(
+      false,
+    );
   });
 
   it('every value the connector sends is one the sanitizer and the table accept', async () => {

@@ -148,12 +148,15 @@ export class OAuthConsentService {
       workspaceId: principal.workspaceId,
       payload: { grantId, clientId: pending.clientId, scopes: pending.scopes },
     });
+    // Labelled from every registered return address, as the tool events
+    // are. A failed lookup labels it "other"; it never fails the approval.
+    const registered = await this.oauth.provider.Client.find(pending.clientId).catch(
+      () => undefined,
+    );
     recordProductEvent(
       this.productEvents,
       'connector_app_connected',
-      // The return address this request named; a client that named none
-      // counts as "other" rather than costing the approval a lookup.
-      { client: connectorClient(pending.redirectUri ? [pending.redirectUri] : []) },
+      { client: connectorClient(registered?.redirectUris ?? []) },
       principal.userId,
     );
     return { redirectTo };

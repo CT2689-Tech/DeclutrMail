@@ -53,7 +53,8 @@ follow, and both are legal calls, not code:
    a one-tool change (the tool still says how much a sender sends and how
    old it is). Say so and a session makes it.
 4. Until 1–2 are done: keep `MCP_ENABLED=false`, or `beta` with only your
-   own user id (your data, your assistant).
+   own user id (your data, your assistant) once the security review has
+   passed (beta serves the same public sign-in routes as `true`).
 
 **Verifies by:** `/privacy` §4 names connected apps (or the connector stays
 off), and this entry records the decision on 1a–1c.
