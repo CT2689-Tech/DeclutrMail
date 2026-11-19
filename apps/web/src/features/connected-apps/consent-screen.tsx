@@ -165,6 +165,9 @@ function decisionErrorCopy(error: unknown): string {
   if (apiErrorCode(error) === 'CONNECT_DELETION_PENDING') {
     return 'Account deletion is scheduled. Cancel it in Settings to connect an app.';
   }
+  if (apiErrorCode(error) === 'CONNECT_NOT_AVAILABLE') {
+    return 'Connecting apps is not available for your account yet.';
+  }
   return 'That did not go through. Try again.';
 }
 

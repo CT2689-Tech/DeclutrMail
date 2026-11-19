@@ -416,6 +416,13 @@ export const ERROR_CODES = {
     message:
       'This connection request is no longer available. Go back to your app and connect again.',
   },
+  // The connector is in beta and this account is not on the list.
+  CONNECT_NOT_AVAILABLE: {
+    status: 403,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Connecting apps is not available for your account yet.',
+  },
   // An account on its way out cannot hand an assistant new access.
   CONNECT_DELETION_PENDING: {
     status: 409,

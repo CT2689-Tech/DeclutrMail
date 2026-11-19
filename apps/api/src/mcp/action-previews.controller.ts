@@ -1,14 +1,25 @@
-import { Controller, Get, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  HttpCode,
+  Inject,
+  Optional,
+  Param,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
 import { ok, type ActionPreviewView, type Envelope } from '@declutrmail/shared/contracts';
 
+import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
 import { AppException } from '../common/app-exception.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { ActionPreviewsService, type PreviewDetail } from './action-previews.service.js';
-import { McpEnabledGuard } from './mcp-enabled.guard.js';
+import { McpEnabledGuard, McpUserAllowedGuard } from './mcp-enabled.guard.js';
 import { McpToolError } from './mcp-tool-errors.js';
 
 const PREVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,9 +39,12 @@ const PREVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  * its own mailbox, whichever one is active in the app.
  */
 @Controller('action-previews')
-@UseGuards(McpEnabledGuard, JwtGuard)
+@UseGuards(McpEnabledGuard, JwtGuard, McpUserAllowedGuard)
 export class ActionPreviewsController {
-  constructor(private readonly previews: ActionPreviewsService) {}
+  constructor(
+    private readonly previews: ActionPreviewsService,
+    @Optional() @Inject(PRODUCT_EVENTS) private readonly productEvents?: ProductEventsPort,
+  ) {}
 
   @Get(':id')
   @RateLimit({ bucket: 'triage-load' })
@@ -40,6 +54,16 @@ export class ActionPreviewsController {
   ): Promise<Envelope<ActionPreviewView>> {
     const detail = PREVIEW_ID.test(id) ? await this.previews.findOwned(id, user.userId) : null;
     if (!detail) throw new AppException({ code: 'PREVIEW_NOT_FOUND' });
+    // The page was opened on a request still waiting for a press. A
+    // refetch records it again: count distinct preview_id.
+    if (detail.preview.state === 'pending' && !detail.expired) {
+      recordProductEvent(
+        this.productEvents,
+        'connector_confirm_viewed',
+        { verb: detail.preview.verb, preview_id: detail.preview.id },
+        user.userId,
+      );
+    }
     return ok(await this.view(detail));
   }
 

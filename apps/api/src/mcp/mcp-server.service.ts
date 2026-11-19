@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional, type OnModuleDestroy } from '@nestjs/common';
 import { toNodeHandler, type NodeMcpRequestHandler } from '@modelcontextprotocol/node';
 import {
   createMcpHandler,
@@ -10,6 +10,9 @@ import {
 } from '@modelcontextprotocol/server';
 import type { Request, Response } from 'express';
 
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
+
+import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { mcpResourceUrl } from './mcp-config.js';
 import {
   MCP_TOOL_NAMES,
@@ -75,7 +78,10 @@ export class McpServerService implements OnModuleDestroy {
   private readonly logger = new Logger(McpServerService.name);
   private handler: { node: NodeMcpRequestHandler; close: () => Promise<void> } | null = null;
 
-  constructor(private readonly tools: McpToolsService) {}
+  constructor(
+    private readonly tools: McpToolsService,
+    @Optional() @Inject(PRODUCT_EVENTS) private readonly productEvents?: ProductEventsPort,
+  ) {}
 
   async handle(req: Request, res: Response, principal: McpPrincipal): Promise<void> {
     const resource = new URL(mcpResourceUrl());
@@ -170,14 +176,25 @@ export class McpServerService implements OnModuleDestroy {
           }
           const result = await this.tools.run(name, principal, args as McpToolInput<N>);
           const output = tool.output.parse(result);
+          this.recordCall(name, principal, 'ok');
           return {
             content: [{ type: 'text', text: JSON.stringify(output) }],
             structuredContent: output,
           };
         } catch (error) {
+          this.recordCall(name, principal, 'error');
           return this.errorResult(name, error);
         }
       },
+    );
+  }
+
+  private recordCall(name: McpToolName, principal: McpPrincipal, outcome: 'ok' | 'error'): void {
+    recordProductEvent(
+      this.productEvents,
+      'connector_tool_called',
+      { client: principal.client, tool: name, outcome },
+      principal.userId,
     );
   }
 

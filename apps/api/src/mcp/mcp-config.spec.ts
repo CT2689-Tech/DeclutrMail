@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { apiPublicUrl, mcpEnabled, mcpResourceUrl, oauthIssuer } from './mcp-config.js';
+import {
+  apiPublicUrl,
+  mcpAllowedFor,
+  mcpEnabled,
+  mcpResourceUrl,
+  oauthIssuer,
+} from './mcp-config.js';
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -41,5 +47,41 @@ describe('API_URL as the OAuth issuer', () => {
   ])('refuses %s', (_label, value, message) => {
     vi.stubEnv('API_URL', value);
     expect(() => apiPublicUrl()).toThrow(message);
+  });
+});
+
+describe('MCP_ENABLED=beta', () => {
+  const listed = '0198d95f-a409-7000-8000-000000000001';
+  const other = '0198d95f-a409-7000-8000-000000000002';
+
+  it('opens the routes, but only for the listed user ids', () => {
+    vi.stubEnv('MCP_ENABLED', 'beta');
+    vi.stubEnv('MCP_BETA_USER_IDS', `${listed}, ${other.toUpperCase()}`);
+    expect(mcpEnabled()).toBe(true);
+    expect(mcpAllowedFor(listed)).toBe(true);
+    expect(mcpAllowedFor(other)).toBe(true);
+    vi.stubEnv('MCP_BETA_USER_IDS', listed);
+    expect(mcpAllowedFor(other)).toBe(false);
+    // The deploy's env list is comma-delimited: several ids go space-separated.
+    vi.stubEnv('MCP_BETA_USER_IDS', `${listed} ${other};`);
+    expect(mcpAllowedFor(listed)).toBe(true);
+    expect(mcpAllowedFor(other)).toBe(true);
+  });
+
+  it.each([[''], [undefined], [' , ']])('an empty list (%j) lets nobody in', (list) => {
+    vi.stubEnv('MCP_ENABLED', 'beta');
+    vi.stubEnv('MCP_BETA_USER_IDS', list);
+    expect(mcpAllowedFor(listed)).toBe(false);
+  });
+
+  it('lets everyone in when on, and nobody when off, whatever the list says', () => {
+    vi.stubEnv('MCP_BETA_USER_IDS', listed);
+    vi.stubEnv('MCP_ENABLED', 'true');
+    expect(mcpAllowedFor(other)).toBe(true);
+    vi.stubEnv('MCP_ENABLED', 'false');
+    expect(mcpAllowedFor(listed)).toBe(false);
+    expect(mcpEnabled()).toBe(false);
+    vi.stubEnv('MCP_ENABLED', 'Beta');
+    expect(mcpEnabled()).toBe(false);
   });
 });

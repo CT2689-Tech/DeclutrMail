@@ -9,7 +9,10 @@ import {
   users,
 } from '@declutrmail/db';
 
+import type { ConnectorClient } from '@declutrmail/shared/analytics/sanitize-product-event';
+
 import type { DrizzleDb } from '../db/db.module.js';
+import { connectorClient } from './connector-client.js';
 import { hashOAuthSecret } from './oauth-hash.js';
 
 /**
@@ -213,6 +216,8 @@ export interface VerifiedAccessToken {
   /** RFC 8707 audience the token was issued for. */
   resource: string;
   expiresAt: Date;
+  /** Which assistant, for the product funnel only. */
+  client: ConnectorClient;
 }
 
 /**
@@ -234,9 +239,12 @@ export async function findAccessToken(
       resource: oauthGrants.resource,
       expiresAt: oauthTokens.expiresAt,
       payload: oauthTokens.payload,
+      redirectUris: oauthClients.redirectUris,
     })
     .from(oauthTokens)
     .innerJoin(oauthGrants, eq(oauthGrants.id, oauthTokens.grantId))
+    // Left: the funnel label must never decide whether a token is valid.
+    .leftJoin(oauthClients, eq(oauthClients.clientId, oauthGrants.clientId))
     .where(
       and(
         eq(oauthTokens.tokenHash, hashOAuthSecret(token)),
@@ -273,6 +281,7 @@ export async function findAccessToken(
     scopes: scope.split(' ').filter(Boolean),
     resource: audience,
     expiresAt: row.expiresAt,
+    client: connectorClient(row.redirectUris ?? []),
   };
 }
 

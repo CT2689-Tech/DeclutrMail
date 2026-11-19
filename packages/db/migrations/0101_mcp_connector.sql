@@ -1,8 +1,9 @@
 -- MCP connector (ADR-0048, spec §7): the OAuth authorization server, the
 -- stored previews a person confirms, and which connected app an action came
--- from. Additive: seven new tables, nothing existing is altered. The foreign
--- keys take a brief lock on workspaces, users, mailbox_accounts and
--- action_jobs, so bound the wait.
+-- from. Seven new tables, plus the connector's funnel events on
+-- product_events (end of file), which only widens what that table accepts.
+-- The foreign keys take a brief lock on workspaces, users, mailbox_accounts
+-- and action_jobs, so bound the wait.
 SET lock_timeout = '3s';
 --> statement-breakpoint
 CREATE TABLE oauth_clients (
@@ -198,5 +199,51 @@ ALTER TABLE action_origins ENABLE ROW LEVEL SECURITY;
 CREATE INDEX action_origins_grant_id_idx ON action_origins(grant_id);
 --> statement-breakpoint
 CREATE INDEX action_origins_client_id_idx ON action_origins(client_id);
+--> statement-breakpoint
+-- The connector's funnel on product_events (0086): seven event names and
+-- six prop keys (client, tool, outcome, verb, reason, preview_id), each a
+-- closed list or a uuid. Nothing in this file writes the new labels:
+-- Postgres cannot use an enum value added in the same transaction, and
+-- ADD VALUE IF NOT EXISTS is accepted inside it on Postgres 12+ (0087).
+ALTER TYPE "public"."product_event_name" ADD VALUE IF NOT EXISTS 'connector_app_connected';
+--> statement-breakpoint
+ALTER TYPE "public"."product_event_name" ADD VALUE IF NOT EXISTS 'connector_app_disconnected';
+--> statement-breakpoint
+ALTER TYPE "public"."product_event_name" ADD VALUE IF NOT EXISTS 'connector_tool_called';
+--> statement-breakpoint
+ALTER TYPE "public"."product_event_name" ADD VALUE IF NOT EXISTS 'connector_request_prepared';
+--> statement-breakpoint
+ALTER TYPE "public"."product_event_name" ADD VALUE IF NOT EXISTS 'connector_confirm_viewed';
+--> statement-breakpoint
+ALTER TYPE "public"."product_event_name" ADD VALUE IF NOT EXISTS 'connector_request_started';
+--> statement-breakpoint
+ALTER TYPE "public"."product_event_name" ADD VALUE IF NOT EXISTS 'connector_request_refused';
+--> statement-breakpoint
+-- The CHECK is replaced by a strictly wider one, so every existing row
+-- passes it. The table is small (one row per funnel step) and the scan
+-- runs under the lock_timeout above.
+ALTER TABLE "product_events" DROP CONSTRAINT "product_events_props_chk";
+--> statement-breakpoint
+ALTER TABLE "product_events" ADD CONSTRAINT "product_events_props_chk" CHECK (
+  jsonb_typeof("props") = 'object'
+  AND ("props" - ARRAY['kind', 'plan', 'requested_bucket', 'duration_s', 'emails', 'template', 'mode', 'error_class', 'provider', 'mailbox_id', 'client', 'tool', 'outcome', 'verb', 'reason', 'preview_id']::text[]) = '{}'::jsonb
+  AND strpos("props"::text, '@') = 0
+  AND ("props"->'kind' IS NULL OR (jsonb_typeof("props"->'kind') = 'string' AND "props"->>'kind' IN ('gmail', 'workspace')))
+  AND ("props"->'plan' IS NULL OR (jsonb_typeof("props"->'plan') = 'string' AND "props"->>'plan' ~ '^[A-Za-z0-9._+-]{1,64}$'))
+  AND ("props"->'requested_bucket' IS NULL OR (jsonb_typeof("props"->'requested_bucket') = 'string' AND "props"->>'requested_bucket' IN ('1', '2-10', '11-100', '101-1000', '1001+')))
+  AND ("props"->'duration_s' IS NULL OR (jsonb_typeof("props"->'duration_s') = 'number' AND ("props"->>'duration_s')::numeric IN (0, 30, 60, 120, 300, 600, 1800, 3600, 7200)))
+  AND ("props"->'emails' IS NULL OR (jsonb_typeof("props"->'emails') = 'number' AND ("props"->>'emails')::numeric IN (0, 100, 1000, 10000, 50000, 100000)))
+  AND ("props"->'template' IS NULL OR (jsonb_typeof("props"->'template') = 'string' AND "props"->>'template' IN ('sync_complete', 'sync_reminder_24h', 'lapse', 'weekly', 'weekly_detail', 'sync_failed', 'gmail_reconnect', 'deletion_scheduled')))
+  AND ("props"->'mode' IS NULL OR (jsonb_typeof("props"->'mode') = 'string' AND "props"->>'mode' IN ('login', 'connect', 'reconnect')))
+  AND ("props"->'error_class' IS NULL OR (jsonb_typeof("props"->'error_class') = 'string' AND "props"->>'error_class' ~ '^[A-Za-z][A-Za-z0-9]{0,63}$'))
+  AND ("props"->'provider' IS NULL OR (jsonb_typeof("props"->'provider') = 'string' AND "props"->>'provider' = 'google'))
+  AND ("props"->'mailbox_id' IS NULL OR (jsonb_typeof("props"->'mailbox_id') = 'string' AND "props"->>'mailbox_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'))
+  AND ("props"->'client' IS NULL OR (jsonb_typeof("props"->'client') = 'string' AND "props"->>'client' IN ('claude', 'chatgpt', 'local', 'other')))
+  AND ("props"->'tool' IS NULL OR (jsonb_typeof("props"->'tool') = 'string' AND "props"->>'tool' IN ('list_mailboxes', 'list_senders', 'get_sender', 'get_usage', 'preview_cleanup', 'apply_cleanup', 'get_action_status', 'list_recent_actions', 'undo', 'protect_sender')))
+  AND ("props"->'outcome' IS NULL OR (jsonb_typeof("props"->'outcome') = 'string' AND "props"->>'outcome' IN ('ok', 'error')))
+  AND ("props"->'verb' IS NULL OR (jsonb_typeof("props"->'verb') = 'string' AND "props"->>'verb' IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')))
+  AND ("props"->'reason' IS NULL OR (jsonb_typeof("props"->'reason') = 'string' AND "props"->>'reason' IN ('QUOTA_EXHAUSTED', 'UPGRADE_REQUIRED', 'UNSUBSCRIBE_UNAVAILABLE')))
+  AND ("props"->'preview_id' IS NULL OR (jsonb_typeof("props"->'preview_id') = 'string' AND "props"->>'preview_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'))
+);
 --> statement-breakpoint
 RESET lock_timeout;

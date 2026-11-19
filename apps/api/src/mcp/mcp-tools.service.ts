@@ -2,10 +2,16 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 
 import type { ActionJobStatus } from '@declutrmail/db';
 import { actionPreviewFacts } from '@declutrmail/shared/actions';
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
+import { bucketEmailCount } from '@declutrmail/shared/analytics/sanitize-product-event';
 import { decodeCursor, encodeCursor } from '@declutrmail/shared/contracts';
 
 import { ActionsService } from '../actions/actions.service.js';
-import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
+import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
+import {
+  EntitlementsService,
+  requestedBucket,
+} from '../common/entitlements/entitlements.service.js';
 import { TOKEN_BUCKET_STORE } from '../common/rate-limit/rate-limit.interceptor.js';
 import {
   BUCKET_DEFAULTS,
@@ -73,6 +79,7 @@ export class McpToolsService {
     private readonly entitlements: EntitlementsService,
     private readonly previews: ActionPreviewsService,
     @Optional() @Inject(TOKEN_BUCKET_STORE) private readonly buckets: TokenBucketStore | null,
+    @Optional() @Inject(PRODUCT_EVENTS) private readonly productEvents?: ProductEventsPort,
   ) {}
 
   /** Run one tool for one principal. Throws `McpToolError` or what a service threw. */
@@ -197,6 +204,18 @@ export class McpToolsService {
         olderThanDays: args.older_than_days ?? null,
         wakeAt: args.wake_at === undefined ? null : new Date(args.wake_at),
       });
+      recordProductEvent(
+        this.productEvents,
+        'connector_request_prepared',
+        {
+          client: principal.client,
+          verb: preview.verb,
+          preview_id: preview.id,
+          requested_bucket: requestedBucket(preview.senderIds.length),
+          emails: bucketEmailCount(preview.emailCount),
+        },
+        principal.userId,
+      );
       const facts = actionPreviewFacts(preview.verb, preview.alsoVerb);
       return {
         mailbox: mailbox.email,

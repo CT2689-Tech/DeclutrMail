@@ -4,18 +4,21 @@ import {
   Get,
   Inject,
   NotFoundException,
+  Optional,
   Param,
   UseGuards,
 } from '@nestjs/common';
 
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
 import { ok, type ConnectedApps, type Envelope } from '@declutrmail/shared/contracts';
 
+import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CurrentUser, JwtGuard } from '../auth/jwt.guard.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
 import { RateLimit } from '../common/rate-limit/index.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import { McpEnabledGuard } from '../mcp/mcp-enabled.guard.js';
+import { McpEnabledGuard, McpUserAllowedGuard } from '../mcp/mcp-enabled.guard.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
 import { listConnectedGrants, revokeOwnedGrant } from './oauth-store.js';
 
@@ -30,11 +33,12 @@ import { listConnectedGrants, revokeOwnedGrant } from './oauth-store.js';
  * approved it, and this must work with zero connected Gmail accounts.
  */
 @Controller('oauth/grants')
-@UseGuards(McpEnabledGuard, JwtGuard)
+@UseGuards(McpEnabledGuard, JwtGuard, McpUserAllowedGuard)
 export class OAuthGrantsController {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly securityEvents: SecurityEventsService,
+    @Optional() @Inject(PRODUCT_EVENTS) private readonly productEvents?: ProductEventsPort,
   ) {}
 
   @Get()
@@ -73,6 +77,7 @@ export class OAuthGrantsController {
         workspaceId: user.workspaceId,
         payload: { grantId: id },
       });
+      recordProductEvent(this.productEvents, 'connector_app_disconnected', {}, user.userId);
     }
     return ok({ id });
   }

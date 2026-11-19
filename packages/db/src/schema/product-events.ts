@@ -18,6 +18,14 @@ export const productEventName = pgEnum('product_event_name', [
   'checkout_created',
   'purchase_confirmed',
   'email_link_clicked',
+  // 0101: the MCP connector's funnel.
+  'connector_app_connected',
+  'connector_app_disconnected',
+  'connector_tool_called',
+  'connector_request_prepared',
+  'connector_confirm_viewed',
+  'connector_request_started',
+  'connector_request_refused',
 ]);
 
 const PROP_KEYS = [
@@ -31,6 +39,12 @@ const PROP_KEYS = [
   'error_class',
   'provider',
   'mailbox_id',
+  'client',
+  'tool',
+  'outcome',
+  'verb',
+  'reason',
+  'preview_id',
 ] as const;
 
 /**
@@ -50,6 +64,12 @@ const PROPS_VALUE_CHECKS = [
   `("props"->'error_class' IS NULL OR (jsonb_typeof("props"->'error_class') = 'string' AND "props"->>'error_class' ~ '^[A-Za-z][A-Za-z0-9]{0,63}$'))`,
   `("props"->'provider' IS NULL OR (jsonb_typeof("props"->'provider') = 'string' AND "props"->>'provider' = 'google'))`,
   `("props"->'mailbox_id' IS NULL OR (jsonb_typeof("props"->'mailbox_id') = 'string' AND "props"->>'mailbox_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'))`,
+  `("props"->'client' IS NULL OR (jsonb_typeof("props"->'client') = 'string' AND "props"->>'client' IN ('claude', 'chatgpt', 'local', 'other')))`,
+  `("props"->'tool' IS NULL OR (jsonb_typeof("props"->'tool') = 'string' AND "props"->>'tool' IN ('list_mailboxes', 'list_senders', 'get_sender', 'get_usage', 'preview_cleanup', 'apply_cleanup', 'get_action_status', 'list_recent_actions', 'undo', 'protect_sender')))`,
+  `("props"->'outcome' IS NULL OR (jsonb_typeof("props"->'outcome') = 'string' AND "props"->>'outcome' IN ('ok', 'error')))`,
+  `("props"->'verb' IS NULL OR (jsonb_typeof("props"->'verb') = 'string' AND "props"->>'verb' IN ('keep', 'archive', 'unsubscribe', 'later', 'delete')))`,
+  `("props"->'reason' IS NULL OR (jsonb_typeof("props"->'reason') = 'string' AND "props"->>'reason' IN ('QUOTA_EXHAUSTED', 'UPGRADE_REQUIRED', 'UNSUBSCRIBE_UNAVAILABLE')))`,
+  `("props"->'preview_id' IS NULL OR (jsonb_typeof("props"->'preview_id') = 'string' AND "props"->>'preview_id' ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'))`,
 ].join('\n    AND ');
 
 export const PRODUCT_EVENT_PROPS_CHECK_SQL = `jsonb_typeof("props") = 'object'

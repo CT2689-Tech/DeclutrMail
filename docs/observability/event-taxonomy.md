@@ -59,6 +59,27 @@ mailbox content. Server-side PostHog stays absent.
 event. Its only prop is `kind: 'gmail' | 'workspace'`. The Google `hd`
 claim is not stored.
 
+### Connector funnel (`product_events`, ADR-0048)
+
+First-party rows, written by the API, not PostHog. Every prop is a closed
+list or a uuid (`sanitize-product-event.ts` and the table's CHECK). No
+address, sender, subject, app name or grant id is stored. `client` is a
+family read from the app's sign-in return address: `claude`, `chatgpt`,
+`local` (loopback or a custom scheme) or `other`.
+
+| Event                        | When                                            | Props                                                                                               |
+| ---------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `connector_app_connected`    | The person pressed Approve                      | `client`                                                                                            |
+| `connector_app_disconnected` | Disconnect in Settings                          | none                                                                                                |
+| `connector_tool_called`      | Every tool call that reached a handler          | `client`, `tool`, `outcome` (`ok` · `error`)                                                        |
+| `connector_request_prepared` | `preview_cleanup` stored a request              | `client`, `verb`, `preview_id`, `requested_bucket` (senders), `emails`                              |
+| `connector_confirm_viewed`   | The confirm page loaded a request still waiting | `verb`, `preview_id` — a refetch writes again: count distinct `preview_id`                          |
+| `connector_request_started`  | A confirmed request started                     | `verb`, `preview_id`                                                                                |
+| `connector_request_refused`  | A press was refused and spent                   | `verb`, `preview_id`, `reason` (`QUOTA_EXHAUSTED` · `UPGRADE_REQUIRED` · `UNSUBSCRIBE_UNAVAILABLE`) |
+
+The ask-to-start funnel is `prepared → confirm_viewed → started | refused`,
+joined on `preview_id`.
+
 ## Identifier conventions
 
 | Identifier   | Format           | Origin                                                 |

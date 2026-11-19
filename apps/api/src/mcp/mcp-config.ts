@@ -5,15 +5,47 @@ import { CONNECTOR_SCOPES } from '@declutrmail/shared/contracts';
  *
  * `MCP_ENABLED` gates the whole connector surface — the OAuth
  * authorization server, the consent and Connected-apps routes, and
- * `/mcp`. It is off unless set to exactly `true`, and every gated route
- * answers 404 while it is off, so a disabled deployment is
- * indistinguishable from one that never shipped the connector.
+ * `/mcp` — in three settings, each spelled exactly:
+ *
+ *   unset or anything else  off: every gated route answers 404, so a
+ *                           disabled deployment is indistinguishable from
+ *                           one that never shipped the connector
+ *   `beta`                  on, for the user ids in `MCP_BETA_USER_IDS`
+ *                           only; an empty list lets nobody in
+ *   `true`                  on, for everyone
  *
  * Read per call, never cached: tests flip it, and a Cloud Run revision
  * gets a fresh process anyway.
  */
+export type McpMode = 'off' | 'beta' | 'on';
+
+export function mcpMode(): McpMode {
+  const value = process.env.MCP_ENABLED;
+  if (value === 'true') return 'on';
+  if (value === 'beta') return 'beta';
+  return 'off';
+}
+
+/** The routes exist: on for everyone, or on for the beta list. */
 export function mcpEnabled(): boolean {
-  return process.env.MCP_ENABLED === 'true';
+  return mcpMode() !== 'off';
+}
+
+/**
+ * Whether this person may connect an app and use one. In beta, only the
+ * listed user ids; anyone else meets the connector as if it were not
+ * there. Separated by spaces, commas or semicolons: the deploy's own
+ * env list is comma-delimited, so several ids go there space-separated.
+ */
+export function mcpAllowedFor(userId: string): boolean {
+  const mode = mcpMode();
+  if (mode === 'on') return true;
+  if (mode === 'off') return false;
+  const listed = (process.env.MCP_BETA_USER_IDS ?? '')
+    .split(/[\s,;]+/)
+    .map((id) => id.toLowerCase())
+    .filter(Boolean);
+  return listed.includes(userId.toLowerCase());
 }
 
 /**
@@ -25,7 +57,9 @@ export function mcpEnabled(): boolean {
 export function apiPublicUrl(): URL {
   const raw = process.env.API_URL;
   if (!raw) {
-    throw new Error('MCP_ENABLED=true requires API_URL (the public origin of this API).');
+    throw new Error(
+      'The MCP connector (MCP_ENABLED) requires API_URL, the public origin of this API.',
+    );
   }
   const url = new URL(raw);
   const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';

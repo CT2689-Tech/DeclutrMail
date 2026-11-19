@@ -27,6 +27,7 @@ function principalOf(person: TestPerson): McpPrincipal {
     workspaceId: person.workspaceId,
     grantId: '00000000-0000-4000-8000-000000000000',
     clientId: 'test',
+    client: 'local',
     scopes: ['read', 'cleanup'],
   };
 }

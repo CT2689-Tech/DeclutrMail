@@ -15,6 +15,8 @@ import { freshTestPglite } from '@declutrmail/db/testing';
 
 import { ActionsService } from '../actions/actions.service.js';
 import { UnsubscribeBacklogService } from '../actions/unsubscribe-backlog.service.js';
+import { PRODUCT_EVENTS } from '../analytics/product-events.port.js';
+import { ProductEventsWriter } from '../analytics/product-events.writer.js';
 import { CsrfGuard } from '../auth/csrf.guard.js';
 import { CsrfService } from '../auth/csrf.service.js';
 import { JwtGuard } from '../auth/jwt.guard.js';
@@ -180,6 +182,9 @@ export async function createOAuthTestApp(
         useValue: new UnsubscribeBacklogService(actions, entitlements, db),
       },
       { provide: EntitlementsService, useValue: entitlements },
+      // The real writer: a connector event the table's CHECK refuses is
+      // dropped with a log line, so tests read the rows, not the calls.
+      { provide: PRODUCT_EVENTS, useClass: ProductEventsWriter },
       { provide: SyncService, useValue: sync },
       { provide: SendersReadService, useValue: new SendersReadService(db) },
       { provide: SendersPolicyService, useValue: new SendersPolicyService(db) },

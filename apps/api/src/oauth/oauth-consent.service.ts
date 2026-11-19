@@ -1,20 +1,23 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { errors } from 'oidc-provider';
 
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
 import {
   ConnectorScopeSchema,
   type ConnectorConsent,
   type ConnectorConsentResult,
 } from '@declutrmail/shared/contracts';
 
+import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import type { SessionPrincipal } from '../auth/sessions.service.js';
 import { AppException } from '../common/app-exception.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
-import { mcpResourceUrl } from '../mcp/mcp-config.js';
+import { mcpAllowedFor, mcpResourceUrl } from '../mcp/mcp-config.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
+import { connectorClient } from './connector-client.js';
 import { grantableScope, OAuthProviderService } from './oauth-provider.service.js';
 import { createGrant, findLiveGrant, hasDeletionInFlight, revokeGrant } from './oauth-store.js';
 
@@ -50,6 +53,7 @@ export class OAuthConsentService {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly mailboxes: MailboxAccountsService,
     private readonly securityEvents: SecurityEventsService,
+    @Optional() @Inject(PRODUCT_EVENTS) private readonly productEvents?: ProductEventsPort,
   ) {}
 
   /** What the consent page shows before the person decides. */
@@ -85,6 +89,10 @@ export class OAuthConsentService {
     principal: SessionPrincipal,
   ): Promise<ConnectorConsentResult> {
     const pending = await this.load(req, res, requestId);
+    // In beta, only the listed accounts can hand an assistant access.
+    if (!mcpAllowedFor(principal.userId)) {
+      throw new AppException({ code: 'CONNECT_NOT_AVAILABLE' });
+    }
     // An account on its way out cannot hand an assistant new access (spec §7).
     if (await hasDeletionInFlight(this.db, principal.userId)) {
       throw new AppException({ code: 'CONNECT_DELETION_PENDING' });
@@ -140,6 +148,14 @@ export class OAuthConsentService {
       workspaceId: principal.workspaceId,
       payload: { grantId, clientId: pending.clientId, scopes: pending.scopes },
     });
+    recordProductEvent(
+      this.productEvents,
+      'connector_app_connected',
+      // The return address this request named; a client that named none
+      // counts as "other" rather than costing the approval a lookup.
+      { client: connectorClient(pending.redirectUri ? [pending.redirectUri] : []) },
+      principal.userId,
+    );
     return { redirectTo };
   }
 

@@ -4,6 +4,11 @@
 -- app an earlier action came from. No Gmail data, action history or undo
 -- state lives here.
 --
+-- product_events keeps the seven connector event names and the wider
+-- props CHECK: Postgres cannot drop an enum label, both only widen what
+-- the table accepts, and code without the connector writes none of them.
+-- Connector rows already recorded stay until the 13-month retention.
+--
 -- ROLL THE CODE BACK FIRST. Account deletion and the daily retention worker
 -- run statements against these tables whether or not MCP_ENABLED is on, so
 -- dropping them under the code that shipped with this migration breaks both.

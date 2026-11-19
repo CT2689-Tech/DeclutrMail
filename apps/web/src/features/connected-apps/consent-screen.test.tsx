@@ -355,6 +355,21 @@ describe('ConsentScreen', () => {
     expect(unavailable(screen.getByRole('button', { name: 'Deny' }))).toBe(false);
   });
 
+  it('an account outside the beta is told connecting is not available, and can still Deny', async () => {
+    renderScreen([
+      details(),
+      {
+        method: 'POST',
+        path: `${BASE}/approve`,
+        respond: () => jsonError(403, 'CONNECT_NOT_AVAILABLE'),
+      },
+    ]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('not available');
+    expect(screen.queryByText(/try again/i)).toBeNull();
+    expect(unavailable(screen.getByRole('button', { name: 'Deny' }))).toBe(false);
+  });
+
   it('a failed decision says to try again and leaves both choices open', async () => {
     renderScreen([
       details(),

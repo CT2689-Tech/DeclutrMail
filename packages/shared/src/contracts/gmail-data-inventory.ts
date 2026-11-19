@@ -644,11 +644,14 @@ export const GMAIL_OPERATIONAL_AUDIT_DATA_INVENTORY = [
     id: 'product-funnel-events',
     category: 'connection',
     label: 'Product funnel counts',
-    fetchedFrom: ['DeclutrMail signup, connect, sync, and billing events'],
+    fetchedFrom: [
+      'DeclutrMail signup, connect, sync, and billing events',
+      'Connected-app events: connect, tool use, confirm page, start, disconnect',
+    ],
     storageRefs: ['product_events.*'],
     derived: true,
     purpose:
-      'Count how people move from signup to a paid plan. Rows store an event name and a closed set of labels such as plan and duration bucket.',
+      'Count how people move from signup to a paid plan, and how connected apps are used. Rows store an event name and a closed set of labels such as plan, duration bucket, assistant family, and tool name.',
     retention:
       'Rows are deleted 13 months after they are written. Account deletion clears the user link and leaves the de-identified count until that window ends. Rows do not contain email addresses or email contents.',
     removalTrigger: 'retention-policy',

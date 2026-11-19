@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, eq, gt, inArray, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
 import {
@@ -17,12 +17,14 @@ import {
   type ActionPreviewVerb,
 } from '@declutrmail/db';
 import { unsubscribeCapabilityOf } from '@declutrmail/shared/actions';
+import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
 import { gmailComposeUrlFromMailto } from '@declutrmail/shared/contracts';
 import { createLimiter, UNSUB_SEND_DISABLED_CODE, unsubSendsEnabled } from '@declutrmail/workers';
 
 import { ActionsService } from '../actions/actions.service.js';
 import type { UnsubscribeBacklogSenderResult } from '../actions/actions.types.js';
 import { UnsubscribeBacklogService } from '../actions/unsubscribe-backlog.service.js';
+import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
 import { EntitlementsService } from '../common/entitlements/entitlements.service.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { exceptionCode, McpToolError, toToolError } from './mcp-tool-errors.js';
@@ -126,6 +128,7 @@ export class ActionPreviewsService {
     private readonly actions: ActionsService,
     private readonly entitlements: EntitlementsService,
     private readonly unsubscribeBacklog: UnsubscribeBacklogService,
+    @Optional() @Inject(PRODUCT_EVENTS) private readonly productEvents?: ProductEventsPort,
   ) {}
 
   /** `preview_cleanup`: count what the verb would touch and store the request. */
@@ -345,6 +348,12 @@ export class ActionPreviewsService {
     } catch (error) {
       const refusal = refusalOf(error);
       if (refusal) {
+        recordProductEvent(
+          this.productEvents,
+          'connector_request_refused',
+          { verb: preview.verb, preview_id: preview.id, reason: refusal },
+          userId,
+        );
         // Refused for a reason the person must act on (the monthly limit,
         // a plan, sending switched off). Their press is spent: back to
         // pending, so after an upgrade or a reset the assistant cannot
@@ -389,6 +398,12 @@ export class ActionPreviewsService {
         result: outcome.result,
       })
       .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')));
+    recordProductEvent(
+      this.productEvents,
+      'connector_request_started',
+      { verb: preview.verb, preview_id: preview.id },
+      userId,
+    );
     const applied = await this.findOwned(previewId, userId);
     if (!applied) throw notFound();
     return applied;
@@ -938,7 +953,7 @@ export function refusalOf(error: unknown): string | null {
  * change before the same request could start, and none is raised after
  * anything was started. Every other failure keeps the press.
  */
-const REFUSALS: ReadonlySet<string> = new Set([
+export const REFUSALS: ReadonlySet<string> = new Set([
   'QUOTA_EXHAUSTED',
   'UPGRADE_REQUIRED',
   'UNSUBSCRIBE_UNAVAILABLE',

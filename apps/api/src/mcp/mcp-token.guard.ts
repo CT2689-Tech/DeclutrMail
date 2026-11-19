@@ -17,13 +17,15 @@ import {
 } from '@modelcontextprotocol/server';
 import type { Request, Response } from 'express';
 
+import type { ConnectorClient } from '@declutrmail/shared/analytics/sanitize-product-event';
+
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import {
   findAccessToken,
   touchGrantLastUsed,
   type VerifiedAccessToken,
 } from '../oauth/oauth-store.js';
-import { mcpResourceUrl } from './mcp-config.js';
+import { mcpAllowedFor, mcpResourceUrl } from './mcp-config.js';
 
 /** Who an MCP request acts for. Set by `McpTokenGuard`. */
 export interface McpPrincipal {
@@ -32,6 +34,8 @@ export interface McpPrincipal {
   /** The grant behind the token — the "via Claude" origin of anything it does. */
   grantId: string;
   clientId: string;
+  /** Which assistant, for the product funnel only. */
+  client: ConnectorClient;
   scopes: readonly string[];
 }
 
@@ -80,7 +84,10 @@ export class McpTokenGuard implements CanActivate {
         verifier: {
           verifyAccessToken: async (token) => {
             const found = await findAccessToken(this.db, token);
-            if (!found || !URL.canParse(found.resource)) {
+            // In beta, a token of someone not (or no longer) on the list is
+            // answered as invalid: the app asks them to connect again, and
+            // the consent page refuses.
+            if (!found || !URL.canParse(found.resource) || !mcpAllowedFor(found.userId)) {
               throw new OAuthError(OAuthErrorCode.InvalidToken, 'Token is not valid');
             }
             verified = found;
@@ -113,6 +120,7 @@ export class McpTokenGuard implements CanActivate {
       workspaceId: verified.workspaceId,
       grantId: verified.grantId,
       clientId: verified.clientId,
+      client: verified.client,
       scopes: verified.scopes,
     };
     // Presence telemetry for Settings → Connected apps. Never fails the

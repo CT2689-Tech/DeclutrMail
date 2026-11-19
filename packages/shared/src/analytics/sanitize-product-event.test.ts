@@ -46,4 +46,30 @@ describe('sanitizeProductEvent', () => {
     expect(sanitizeErrorClass('TransientError')).toBe('TransientError');
     expect(sanitizeErrorClass('not a class')).toBe('UnknownError');
   });
+
+  it('keeps a connector event whose labels are on the closed lists', () => {
+    const PREVIEW = '0198d95f-a409-7000-8000-000000000001';
+    expect(
+      sanitizeProductEvent(
+        'connector_request_prepared',
+        { client: 'claude', verb: 'archive', preview_id: PREVIEW, requested_bucket: '2-10' },
+        USER,
+      ),
+    ).toEqual({
+      name: 'connector_request_prepared',
+      props: { client: 'claude', verb: 'archive', preview_id: PREVIEW, requested_bucket: '2-10' },
+      userId: USER,
+    });
+  });
+
+  it.each([
+    ['an app name as client', { client: 'My Mail Bot' }],
+    ['a tool outside the connector', { tool: 'send_email', outcome: 'ok' }],
+    ['an outcome outside ok/error', { tool: 'get_usage', outcome: 'refused' }],
+    ['a verb outside the five', { verb: 'screen' }],
+    ['a reason outside the refusals', { reason: 'INTERNAL_ERROR' }],
+    ['a preview id that is not a uuid', { preview_id: 'news@shop.example' }],
+  ])('drops a connector event carrying %s', (_label, props) => {
+    expect(sanitizeProductEvent('connector_tool_called', props, USER)).toBeNull();
+  });
 });

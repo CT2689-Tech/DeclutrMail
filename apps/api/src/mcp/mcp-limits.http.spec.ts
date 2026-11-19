@@ -5,7 +5,15 @@ import { accountDeletionRequests, actionJobs, actionPreviews } from '@declutrmai
 
 import { InMemoryTokenBucketStore } from '../common/rate-limit/in-memory-token-bucket.store.js';
 import { MailboxAccountsService } from '../mailboxes/mailbox-accounts.service.js';
-import { createOAuthTestApp, type OAuthTestApp } from '../oauth/oauth-test-harness.js';
+import {
+  authorizeUrl,
+  Browser,
+  createOAuthTestApp,
+  pkce,
+  reachConsent,
+  registerClient,
+  type OAuthTestApp,
+} from '../oauth/oauth-test-harness.js';
 import { McpRateLimitGuard } from './mcp-rate-limit.guard.js';
 import { MCP_TOOL_NAMES, MCP_TOOLS } from './mcp-tool-contract.js';
 import {
@@ -256,5 +264,81 @@ describe('MCP connector — Gmail account disconnected', () => {
     // The other account's request is untouched and still confirmable.
     const stillGood = await page.post(`/api/action-previews/${other.data.preview_id}/confirm`);
     expect(stillGood.status).toBe(200);
+  });
+});
+
+describe('MCP connector — beta (MCP_ENABLED=beta)', () => {
+  let harness: OAuthTestApp;
+
+  beforeAll(async () => {
+    harness = await createOAuthTestApp();
+  }, 60_000);
+  afterAll(async () => {
+    await harness.close();
+  });
+
+  it('lets the listed account in and meets anyone else as if the connector were not there', async () => {
+    const ada = await harness.person('ada@example.com');
+    const grace = await harness.person('grace@example.com');
+    const adaMailbox = await mailboxIdOf(harness, 'ada@example.com');
+    const graceMailbox = await mailboxIdOf(harness, 'grace@example.com');
+    await setSyncState(harness, adaMailbox, 'ready');
+    await setSyncState(harness, graceMailbox, 'ready');
+    const adaShop = await seedSender(harness, adaMailbox, { email: 'news@shop.example' });
+    const graceShop = await seedSender(harness, graceMailbox, { email: 'news@shop.example' });
+    // Grace connected while it was open to everyone, and asked for something.
+    const graceApp = await connectedClient(harness, grace);
+    const graceAsked = await graceApp.call('preview_cleanup', {
+      verb: 'archive',
+      sender_ids: [graceShop.id],
+    });
+
+    vi.stubEnv('MCP_ENABLED', 'beta');
+    vi.stubEnv('MCP_BETA_USER_IDS', ` ${ada.userId.toUpperCase()} , not-a-user`);
+
+    // The listed account: connect, use the tools, the page, Settings.
+    const adaApp = await connectedClient(harness, ada);
+    const adaAsked = await adaApp.call('preview_cleanup', {
+      verb: 'archive',
+      sender_ids: [adaShop.id],
+    });
+    expect(adaAsked.isError).toBe(false);
+    const adaPage = sessionBrowser(harness, ada);
+    expect((await adaPage.get(`/api/action-previews/${adaAsked.data.preview_id}`)).status).toBe(
+      200,
+    );
+    expect((await adaPage.get('/api/oauth/grants')).status).toBe(200);
+
+    // Anyone else: the token stops working, and the page and Settings 404.
+    const refused = await graceApp.call('get_usage');
+    expect(refused.http.status).toBe(401);
+    expect(refused.http.headers.get('www-authenticate')).toContain('invalid_token');
+    const gracePage = sessionBrowser(harness, grace);
+    expect((await gracePage.get(`/api/action-previews/${graceAsked.data.preview_id}`)).status).toBe(
+      404,
+    );
+    expect(
+      (await gracePage.post(`/api/action-previews/${graceAsked.data.preview_id}/confirm`)).status,
+    ).toBe(404);
+    expect((await gracePage.get('/api/oauth/grants')).status).toBe(404);
+
+    // ...and connecting again is refused at Approve, with a reason.
+    const browser = new Browser(harness.base, grace);
+    const { path } = await reachConsent(
+      browser,
+      authorizeUrl(await registerClient(harness.base), pkce().challenge),
+    );
+    const approve = await browser.post(`${path}/approve`);
+    expect(approve.status).toBe(403);
+    expect(approve.json.error.code).toBe('CONNECT_NOT_AVAILABLE');
+    expect(await harness.db.select().from(actionJobs)).toEqual([]);
+
+    // An empty list lets nobody in.
+    vi.stubEnv('MCP_BETA_USER_IDS', '');
+    expect((await adaApp.call('get_usage')).http.status).toBe(401);
+    expect((await adaPage.get('/api/oauth/grants')).status).toBe(404);
+
+    vi.stubEnv('MCP_ENABLED', 'true');
+    expect((await adaApp.call('get_usage')).isError).toBe(false);
   });
 });
