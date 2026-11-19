@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 
+import { BadRequestException } from '@nestjs/common';
+
 import {
   actionJobs,
   activityLog,
@@ -1046,6 +1048,26 @@ describe('SendersReadService', () => {
             limit: 25,
           }),
         ).rejects.toThrow(/Unsupported sort/);
+      });
+
+      it.each([
+        ['a cursor id that is not a sender id', { cursor: { key: '3', id: 'x' } }],
+        [
+          'a null character in the cursor',
+          { cursor: { key: '3\u0000', id: '00000000-0000-4000-8000-000000000001' } },
+        ],
+        ['a null character in the search', { q: 'shop\u0000' }],
+      ])('answers %s with a 400, not a database error', async (_label, input) => {
+        await expect(
+          svc.listSenders({
+            mailboxAccountId: mailboxId,
+            category: null,
+            sort: 'total',
+            cursor: null,
+            limit: 25,
+            ...input,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
       });
 
       it('getSenderListQueryMeta — totalMatching honors filter; globalMaxTotal mailbox-wide unfiltered', async () => {

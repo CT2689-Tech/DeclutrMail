@@ -54,6 +54,7 @@ export default meta;
 const PREVIEW: ActionPreviewView = {
   id: '0198d95f-a409-7000-8000-000000000001',
   verb: 'archive',
+  alsoVerb: null,
   state: 'pending',
   appName: 'Claude',
   mailboxEmail: 'ada@example.com',

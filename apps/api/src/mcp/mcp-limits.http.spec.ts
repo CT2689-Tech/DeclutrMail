@@ -275,7 +275,7 @@ describe('MCP connector — Gmail account disconnected', () => {
     const page = sessionBrowser(harness, ada);
     const pressed = await page.post(`/api/action-previews/${mine.data.preview_id}/confirm`);
     expect(pressed.status).toBe(409);
-    expect(pressed.json.error.code).toBe('NO_ACTIVE_MAILBOX');
+    expect(pressed.json.error.code).toBe('PREVIEW_MAILBOX_DISCONNECTED');
     expect(await harness.db.select().from(actionJobs)).toEqual([]);
     const [row] = await harness.db
       .select({ state: actionPreviews.state })

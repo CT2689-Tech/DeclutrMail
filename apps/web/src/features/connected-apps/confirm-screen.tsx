@@ -93,13 +93,15 @@ const FAILURE_COPY: Record<ConfirmFailure, string> = {
   mailbox: 'This Gmail account is not connected to DeclutrMail.',
   unsubscribe_off: 'Unsubscribe requests cannot be sent right now. Try again later.',
   not_started: 'DeclutrMail could not start this. Try again in a minute.',
-  unknown: 'That did not go through. Try again.',
+  // A failure after the press reached the server may follow a real start.
+  unknown: 'We couldn’t confirm that started, so check Activity before trying again.',
 };
 
 const FAILURE_LINK: Partial<Record<ConfirmFailure, { href: string; label: string }>> = {
   limit: { href: '/billing', label: 'See plans' },
   plan: { href: '/billing', label: 'See plans' },
   mailbox: { href: '/settings', label: 'Open Settings' },
+  unknown: { href: '/activity', label: 'Open Activity' },
 };
 
 const SKIP_REASON: Record<ActionPreviewSkipped['reason'], string> = {
@@ -122,7 +124,7 @@ const plural = (count: number, one: string, many: string): string =>
  */
 function requestLabel(preview: ActionPreviewView): string {
   const verb = verbById(preview.verb).label;
-  const also = preview.alsoVerb ?? null;
+  const also = preview.alsoVerb;
   // The web app's own unsubscribe dialog names it the same way.
   return also === null ? verb : `${verb} + ${verbById(also).label}`;
 }
@@ -294,7 +296,7 @@ function SenderList({ names, total }: { names: readonly string[]; total: number 
 function ReadyPreview({ state }: { state: Extract<ConfirmCardState, { kind: 'ready' }> }) {
   const { preview, confirming, failure } = state;
   const verb = verbById(preview.verb);
-  const alsoVerb = preview.alsoVerb ?? null;
+  const alsoVerb = preview.alsoVerb;
   const label = requestLabel(preview);
   const facts = actionPreviewFacts(preview.verb, alsoVerb);
   // A Delete in the request colours the button, whichever verb leads it.
@@ -411,7 +413,7 @@ function Receipt({
   }
   const { appliedSenders, requestedEmails, skipped } = outcome;
   const label = requestLabel(preview);
-  const alsoVerb = preview.alsoVerb ?? null;
+  const alsoVerb = preview.alsoVerb;
   const began = preview.verb === 'keep' ? 'recorded' : 'started';
   const summary =
     appliedSenders === 0
@@ -490,8 +492,10 @@ function failureOf(error: unknown): ConfirmFailure {
   const code = apiErrorCode(error);
   if (code === 'FREE_CAP_REACHED') return 'limit';
   if (code === 'ACTION_TIER_REQUIRED') return 'plan';
-  if (code === 'NO_ACTIVE_MAILBOX') return 'mailbox';
+  if (code === 'PREVIEW_MAILBOX_DISCONNECTED') return 'mailbox';
   if (code === 'UNSUB_SEND_DISABLED') return 'unsubscribe_off';
+  // Jobs were written before the queue refused them: they may run.
+  if (code === 'ENQUEUE_FAILED') return 'unknown';
   if (status(error) === 503) return 'not_started';
   return 'unknown';
 }

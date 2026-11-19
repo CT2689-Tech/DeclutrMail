@@ -64,10 +64,9 @@ export const ActionPreviewViewSchema = z.object({
   verb: ActionPreviewVerbSchema,
   /**
    * Unsubscribe only: also Archive or Delete the email these senders
-   * already sent, in the same confirmation. Optional on the wire, so a
-   * page served ahead of its API reads a missing value as "no".
+   * already sent, in the same confirmation; null otherwise.
    */
-  alsoVerb: ActionPreviewAlsoVerbSchema.nullable().optional(),
+  alsoVerb: ActionPreviewAlsoVerbSchema.nullable(),
   /**
    * `pending` — waiting for the person. `confirmed` — they pressed the
    * verb but the action did not start; pressing again retries.

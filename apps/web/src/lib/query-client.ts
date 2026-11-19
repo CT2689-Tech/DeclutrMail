@@ -95,8 +95,9 @@ export function makeQueryClient(): QueryClient {
     // routes them to the upgrade-gate store so every mutation surface
     // gets the UpgradeModal without per-hook wiring. Other errors pass
     // through to the caller's own onError untouched.
-    onError: (error) => {
-      reportUpgradeGateHit(error);
+    onError: (error, _variables, _onMutateResult, mutation) => {
+      // A screen that explains its own 402 opts out with `meta.upgradeGate: false`.
+      if (mutation.meta?.upgradeGate !== false) reportUpgradeGateHit(error);
       // A mutation that fails the mailbox guard proves the client's idea
       // of the active mailbox is wrong — disconnected in another tab,
       // switched, revoked. A MUTATION had no recovery: its caller toasted

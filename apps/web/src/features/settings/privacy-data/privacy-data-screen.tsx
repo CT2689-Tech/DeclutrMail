@@ -18,6 +18,8 @@ import { useAuth } from '@/features/auth/auth-provider';
 import type { MeMailbox } from '@/features/auth/api/use-me';
 import { track } from '@/lib/posthog';
 import { useBillingSubscription } from '@/features/billing/api/use-billing-subscription';
+import { useConnectedApps } from '@/features/connected-apps/api/use-connected-apps';
+import { ConnectorAvailableContext } from '@/features/connected-apps/connector-only';
 import { dataExportFailure, useDataExport, type DataExportFailure } from '../api/use-data-export';
 import { PageHeader, SettingsGroup, SettingsRow } from '../settings-list';
 import type { PrivacyDataExportCopy } from './privacy-data-content';
@@ -83,6 +85,8 @@ export function PrivacyDataRoute({
   const { me } = useAuth();
   const billing = useBillingSubscription();
   const exporter = useDataExport();
+  // Answered only where the connector is on for this person; a 404 means off.
+  const connector = useConnectedApps();
   // This page does not prefetch billing. The shell can still fill that
   // cache before the privacy screen hydrates, which swaps "at least 30
   // days on any plan" for the plan window and fails hydration. Keep the
@@ -94,18 +98,22 @@ export function PrivacyDataRoute({
   const undoDays = tier && tier in TIER_MANIFEST ? TIER_MANIFEST[tier].undoWindowDays : null;
 
   return (
-    <PrivacyDataView
-      privacyContent={privacyContent}
-      footerContent={footerContent}
-      exportCopy={exportCopy}
-      mailboxes={me.mailboxes}
-      undoDays={undoDays}
-      exportPendingFormat={exporter.isPending ? (exporter.variables ?? null) : null}
-      exportFailed={exporter.isError}
-      exportFailure={exporter.isError ? dataExportFailure(exporter.error) : null}
-      exportPreparedFormat={exporter.isSuccess ? (exporter.variables ?? null) : null}
-      onExport={(format) => exporter.mutate(format)}
-    />
+    // Connector copy in the server-rendered content shows only after mount
+    // and only where the connector answered (see ConnectorOnly).
+    <ConnectorAvailableContext.Provider value={mounted && connector.isSuccess}>
+      <PrivacyDataView
+        privacyContent={privacyContent}
+        footerContent={footerContent}
+        exportCopy={exportCopy}
+        mailboxes={me.mailboxes}
+        undoDays={undoDays}
+        exportPendingFormat={exporter.isPending ? (exporter.variables ?? null) : null}
+        exportFailed={exporter.isError}
+        exportFailure={exporter.isError ? dataExportFailure(exporter.error) : null}
+        exportPreparedFormat={exporter.isSuccess ? (exporter.variables ?? null) : null}
+        onExport={(format) => exporter.mutate(format)}
+      />
+    </ConnectorAvailableContext.Provider>
   );
 }
 

@@ -173,6 +173,25 @@ describe('MCP tools — transport and the read-only tools', () => {
     expect(bogus.error.code).toBe('INVALID_REQUEST');
   });
 
+  it.each([
+    ['the search', { q: 'shop\u0000' }],
+    ['the mailbox', { mailbox: 'ada\u0000@example.test' }],
+  ])('refuses a null character in %s before it reaches the database', async (_label, args) => {
+    const answer = await mcp.call('list_senders', args);
+    expect(answer.isError).toBe(true);
+    expect(answer.text).toMatch(/Input validation error/);
+  });
+
+  it.each([
+    ['whose id is not a sender id', { key: '3', id: 'x' }],
+    ['with a null character', { key: '3\u0000', id: '00000000-0000-4000-8000-000000000001' }],
+  ])('refuses a cursor %s as a bad request, not a server error', async (_label, cursor) => {
+    const answer = await mcp.call('list_senders', {
+      cursor: Buffer.from(JSON.stringify(cursor)).toString('base64url'),
+    });
+    expect(answer.error.code).toBe('INVALID_REQUEST');
+  });
+
   it('filters list_senders by Gmail tab, search and Protected', async () => {
     const social = await mcp.call('list_senders', { gmail_tab: 'social' });
     expect(social.data.senders.map((s: { address: string }) => s.address)).toEqual([

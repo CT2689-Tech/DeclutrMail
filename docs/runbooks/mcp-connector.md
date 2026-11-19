@@ -139,19 +139,23 @@ In this order. Each step is enough on its own for most incidents.
 1. Turn off (above).
 2. Roll the API back to the previous image
    (`gcloud run services update declutrmail-api --region us-central1 --image=<sha>`).
-3. Only if the tables themselves must go: `0101_mcp_connector.rollback`,
-   through the same CI path as a migration. It drops the seven connector
-   tables (every connection, every waiting request) and must run **after**
-   step 2: account deletion and the retention worker touch these tables
-   whatever `MCP_ENABLED` says. `product_events` keeps the connector event
-   names and the wider CHECK; Postgres cannot drop an enum label.
+3. Only if the tables themselves must go: `0102_activity_origins.rollback`,
+   then `0101_mcp_connector.rollback`, through the same CI path as a
+   migration (0102's foreign keys point at 0101's tables). Together they
+   drop the eight connector tables (every connection, every waiting
+   request, every "via <app>" in Activity) and must run **after** step 2:
+   account deletion and the retention worker touch these tables whatever
+   `MCP_ENABLED` says. `product_events` keeps the connector event names
+   and the wider CHECK; Postgres cannot drop an enum label.
 
 ## Local development
 
 `.env.local`: `MCP_ENABLED=true`, `API_URL=http://localhost:4000`. The
 MCP URL is `http://localhost:4000/mcp`. A dev database that applied an
-earlier draft of 0101 keeps that draft (Atlas tracks the version, not
-the content): run `psql -f packages/db/migrations/0101_mcp_connector.rollback`
-against it, remove the `0101` row from `atlas_schema_revisions`, and
-migrate again — or rebuild it with `./scripts/dev-auth.sh` (drops the dev
-database).
+earlier draft of 0101 or 0102 keeps that draft (Atlas tracks the version,
+not the content). Rebuild it with `./scripts/dev-auth.sh` (drops the dev
+database), or keep its other data: run
+`psql -f packages/db/migrations/0102_activity_origins.rollback`, then
+`psql -f packages/db/migrations/0101_mcp_connector.rollback` (both skip a
+table a draft never made), delete the `0101` and `0102` rows from
+`atlas_schema_revisions`, and migrate again.

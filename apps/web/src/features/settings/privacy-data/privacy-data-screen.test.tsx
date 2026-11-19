@@ -25,6 +25,7 @@ import {
 import { WS2_COPY } from '@declutrmail/shared/copy/launch';
 import { UNIFORM_UNDO_WINDOW_DAYS } from '@declutrmail/shared/entitlements/undo-window';
 import type { Me } from '@/features/auth/api/use-me';
+import { ConnectorAvailableContext } from '@/features/connected-apps/connector-only';
 import { PrivacyDataView } from './privacy-data-screen';
 import {
   PrivacyDataContent,
@@ -49,19 +50,24 @@ afterEach(() => {
   window.location.hash = '';
 });
 
-function renderView(overrides: Partial<Parameters<typeof PrivacyDataView>[0]> = {}) {
+function renderView(
+  overrides: Partial<Parameters<typeof PrivacyDataView>[0]> = {},
+  { connector = false }: { connector?: boolean } = {},
+) {
   return render(
-    <PrivacyDataView
-      privacyContent={<PrivacyDataContent />}
-      footerContent={<PrivacyDataFooter />}
-      exportCopy={PRIVACY_DATA_EXPORT_COPY}
-      mailboxes={TWO_MAILBOXES}
-      undoDays={30}
-      exportPendingFormat={null}
-      exportFailed={false}
-      onExport={() => undefined}
-      {...overrides}
-    />,
+    <ConnectorAvailableContext.Provider value={connector}>
+      <PrivacyDataView
+        privacyContent={<PrivacyDataContent />}
+        footerContent={<PrivacyDataFooter />}
+        exportCopy={PRIVACY_DATA_EXPORT_COPY}
+        mailboxes={TWO_MAILBOXES}
+        undoDays={30}
+        exportPendingFormat={null}
+        exportFailed={false}
+        onExport={() => undefined}
+        {...overrides}
+      />
+    </ConnectorAvailableContext.Provider>,
   );
 }
 
@@ -246,7 +252,7 @@ describe('PrivacyDataView', () => {
   });
 
   it('says in words what a connected app can read, and never prints the internal channel name', () => {
-    const { container } = renderView();
+    const { container } = renderView({}, { connector: true });
     const text = (container.textContent ?? '').replace(/\s+/g, ' ');
     // The registry marks these with an internal id; a person reads a sentence.
     expect(text).not.toContain('ai-assistant');
@@ -268,6 +274,15 @@ describe('PrivacyDataView', () => {
       .closest('div');
     expect(requestsRow).toHaveTextContent('deleted within two days of expiring');
     expect(requestsRow).toHaveTextContent('Not currently included in a data export.');
+  });
+
+  it('says nothing about connected apps where the connector is not available', () => {
+    const { container } = renderView();
+    const text = (container.textContent ?? '').replace(/\s+/g, ' ');
+    expect(text).not.toContain('An app you connect');
+    expect(text).not.toContain('Cleanup requests from a connected app');
+    // The rest of each marked row still reads as before.
+    expect(text).toContain('Included in: json, csv.');
   });
 
   it('describes the actual mailbox datasets without promising a full account export', () => {

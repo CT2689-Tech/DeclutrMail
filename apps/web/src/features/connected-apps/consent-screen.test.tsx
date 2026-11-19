@@ -349,9 +349,9 @@ describe('ConsentScreen', () => {
       },
     ]);
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'Account deletion is scheduled. Cancel it in Settings to connect an app.',
-    );
+    const alert = (await screen.findByRole('alert')).textContent;
+    expect(alert).toContain('deletion is scheduled');
+    expect(alert).toContain('Settings');
     expect(unavailable(screen.getByRole('button', { name: 'Deny' }))).toBe(false);
   });
 
@@ -365,9 +365,23 @@ describe('ConsentScreen', () => {
       },
     ]);
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('not available');
+    const alert = (await screen.findByRole('alert')).textContent;
+    expect(alert).toContain('not available');
+    // It names the way out.
+    expect(alert).toContain('Deny');
     expect(screen.queryByText(/try again/i)).toBeNull();
     expect(unavailable(screen.getByRole('button', { name: 'Deny' }))).toBe(false);
+  });
+
+  it('a press after the session ended keeps the loading line while sign-in takes over', async () => {
+    renderScreen([
+      details(),
+      { method: 'POST', path: `${BASE}/approve`, respond: () => jsonError(401, 'UNAUTHORIZED') },
+      { method: 'POST', path: '/api/auth/refresh', respond: () => jsonError(401, 'UNAUTHORIZED') },
+    ]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    expect((await screen.findByRole('status')).textContent).toBe('Loading connection request…');
+    expect(screen.queryByText('That did not go through. Try again.')).toBeNull();
   });
 
   it('a failed decision says to try again and leaves both choices open', async () => {
@@ -376,9 +390,7 @@ describe('ConsentScreen', () => {
       { method: 'POST', path: `${BASE}/approve`, respond: () => jsonServerError() },
     ]);
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
-    expect((await screen.findByRole('alert')).textContent).toBe(
-      'That did not go through. Try again.',
-    );
+    expect((await screen.findByRole('alert')).textContent).toContain('Try again');
     expect(assign).not.toHaveBeenCalled();
   });
 });

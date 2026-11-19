@@ -43,9 +43,14 @@ const iso = (): z.ZodString => z.string();
 
 /* ─────────────────────────────── inputs ─────────────────────────────── */
 
-const mailboxArg = z
-  .string()
-  .max(320)
+/** Free text from the model. Postgres refuses a null character in text. */
+const text = (max: number): z.ZodString =>
+  z
+    .string()
+    .max(max)
+    .refine((value) => !value.includes('\u0000'), 'must not contain a null character');
+
+const mailboxArg = text(320)
   .optional()
   .describe(
     'Gmail address to act on. Omit to use the active one. See list_mailboxes for the addresses.',
@@ -66,11 +71,11 @@ const inputs = {
     .object({
       mailbox: mailboxArg,
       sort: z.enum(['total', 'last_seen']).optional().describe('Default: total.'),
-      q: z.string().max(200).optional().describe('Match on sender name or address.'),
+      q: text(200).optional().describe('Match on sender name or address.'),
       gmail_tab: z.enum(MCP_GMAIL_TABS).optional(),
       protected_only: z.boolean().optional(),
       limit: z.number().int().min(1).max(100).optional().describe('Default: 25.'),
-      cursor: z.string().max(512).optional().describe('next_cursor from the previous page.'),
+      cursor: text(512).optional().describe('next_cursor from the previous page.'),
     })
     .strict(),
   get_sender: z.object({ mailbox: mailboxArg, sender_id: uuid() }).strict(),

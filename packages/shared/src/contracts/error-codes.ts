@@ -445,6 +445,15 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'This request expired. Ask your assistant to prepare it again.',
   },
+  // The Gmail account the request was made for is no longer connected.
+  // Not NO_ACTIVE_MAILBOX: that one makes the web app reset its mailbox
+  // scope, and one request's account says nothing about the active one.
+  PREVIEW_MAILBOX_DISCONNECTED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This Gmail account is no longer connected to DeclutrMail. Reconnect it in Settings.',
+  },
   DELETION_ALREADY_PENDING: {
     status: 409,
     severityTier: 'inline_recoverable',

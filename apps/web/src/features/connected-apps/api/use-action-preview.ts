@@ -44,16 +44,29 @@ export function useActionPreview(previewId: string | null) {
 /**
  * The person pressed the verb. Never retried on its own: a confirmation
  * is sent because someone pressed, once per press. The answer replaces
- * the cached preview, so the page shows what the server recorded.
+ * the cached preview, so the page shows what the server recorded. A
+ * press that failed may still have been recorded (it started, then a
+ * later step failed), so the page reads the request again rather than
+ * keep what it held at load.
  */
 export function useConfirmActionPreview(previewId: string | null) {
   const queryClient = useQueryClient();
+  const { queryKey } = actionPreviewQueryOptions(previewId ?? '');
   return useMutation({
     retry: false,
+    // This page says why a plan or limit stopped the press, and it sits
+    // outside the app; the app's upgrade dialog would open later, out of
+    // context, on whatever page the person visits next.
+    meta: { upgradeGate: false },
     mutationFn: async (): Promise<ActionPreviewView> =>
       readView((await apiPost<unknown>(`${previewPath(previewId ?? '')}/confirm`, {})).data),
     onSuccess: (view) => {
-      queryClient.setQueryData(actionPreviewQueryOptions(previewId ?? '').queryKey, view);
+      queryClient.setQueryData(queryKey, view);
+    },
+    onError: (error) => {
+      // Signed out: the API client is already on its way to sign-in.
+      if (error instanceof ApiError && error.status === 401) return;
+      void queryClient.invalidateQueries({ queryKey });
     },
   });
 }

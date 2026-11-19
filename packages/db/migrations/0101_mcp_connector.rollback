@@ -21,13 +21,16 @@
 -- mailbox_accounts and action_jobs, which needs a brief exclusive lock on
 -- each: bound the wait so a long reader fails this rollback instead of
 -- queueing every query behind it.
+--
+-- IF EXISTS: a dev database that applied an earlier draft of 0101 lacks
+-- some of these tables, and this is how it is repaired.
 BEGIN;
 SET LOCAL lock_timeout = '3s';
-DROP TABLE action_origins;
-DROP TABLE action_previews;
-DROP TABLE oauth_interactions;
-DROP TABLE oauth_auth_codes;
-DROP TABLE oauth_tokens;
-DROP TABLE oauth_grants;
-DROP TABLE oauth_clients;
+DROP TABLE IF EXISTS action_origins;
+DROP TABLE IF EXISTS action_previews;
+DROP TABLE IF EXISTS oauth_interactions;
+DROP TABLE IF EXISTS oauth_auth_codes;
+DROP TABLE IF EXISTS oauth_tokens;
+DROP TABLE IF EXISTS oauth_grants;
+DROP TABLE IF EXISTS oauth_clients;
 COMMIT;

@@ -133,7 +133,7 @@ function asHttpError(error: unknown): unknown {
     case 'PREVIEW_EXPIRED':
       return new AppException({ code: 'PREVIEW_EXPIRED' });
     case 'MAILBOX_RECONNECT_REQUIRED':
-      return new AppException({ code: 'NO_ACTIVE_MAILBOX', message: error.message });
+      return new AppException({ code: 'PREVIEW_MAILBOX_DISCONNECTED' });
     default:
       return error;
   }

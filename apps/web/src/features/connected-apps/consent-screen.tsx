@@ -166,7 +166,7 @@ function decisionErrorCopy(error: unknown): string {
     return 'Account deletion is scheduled. Cancel it in Settings to connect an app.';
   }
   if (apiErrorCode(error) === 'CONNECT_NOT_AVAILABLE') {
-    return 'Connecting apps is not available for your account yet.';
+    return 'Connecting apps is not available for your account yet. Choose Deny to go back to the app.';
   }
   return 'That did not go through. Try again.';
 }
@@ -243,6 +243,9 @@ export function ConsentScreen() {
       : { kind: 'error', onRetry: () => void consent.refetch() };
   } else if (returning) {
     state = { kind: 'returning', redirectHost: consent.data.redirectHost };
+  } else if (decide.isError && isSignedOut(decide.error)) {
+    // Signed out between load and press: sign-in is taking over.
+    state = { kind: 'loading' };
   } else if (decide.isError && isGone(decide.error)) {
     state = { kind: 'gone' };
   } else {

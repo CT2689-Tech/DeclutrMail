@@ -42,10 +42,9 @@ export const ConnectedAppSchema = z.object({
   appName: z.string().nullable(),
   /**
    * Hosts the app registered to send people back to — what tells two
-   * apps with the same name apart. Defaulted so an API that predates
-   * the field still parses.
+   * apps with the same name apart.
    */
-  redirectHosts: z.array(z.string()).default([]),
+  redirectHosts: z.array(z.string()),
   scopes: z.array(ConnectorScopeSchema),
   connectedAt: z.string(),
   lastUsedAt: z.string().nullable(),

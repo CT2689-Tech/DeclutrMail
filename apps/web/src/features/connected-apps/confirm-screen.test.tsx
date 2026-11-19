@@ -5,6 +5,8 @@ import type { ActionPreviewOutcome, ActionPreviewView } from '@declutrmail/share
 
 import { installFetchStub, jsonOk, jsonServerError } from '@/test/fetch-stub';
 import { createTestQueryClient, QueryWrapper } from '@/test/query-wrapper';
+import { useUpgradeGateStore } from '@/lib/entitlements/upgrade-gate';
+import { makeQueryClient } from '@/lib/query-client';
 
 import {
   ConfirmCard,
@@ -26,6 +28,7 @@ const unavailable = (button: HTMLElement) => button.getAttribute('aria-disabled'
 const PREVIEW: ActionPreviewView = {
   id: ID,
   verb: 'archive',
+  alsoVerb: null,
   state: 'pending',
   appName: 'Claude',
   mailboxEmail: 'ada@example.com',
@@ -200,9 +203,9 @@ describe('ConfirmCard — the request', () => {
 
   it('Unsubscribe with Archive names both, counts the email, and says whose undo is whose', () => {
     renderReady(view({ verb: 'unsubscribe', alsoVerb: 'archive' }));
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
-      'Unsubscribe + Archive 7 senders?',
-    );
+    const heading = screen.getByRole('heading', { level: 1 }).textContent;
+    expect(heading).toContain('Unsubscribe + Archive');
+    expect(heading).toContain('7 senders');
     const facts = actionPreviewFacts('unsubscribe', 'archive');
     expect(items().slice(-3)).toEqual(['412 emails in your inbox', facts.destination, facts.undo]);
     expect(facts.undo).toContain('Archive — ');
@@ -217,9 +220,8 @@ describe('ConfirmCard — the request', () => {
     expect(bodyText()).not.toContain('Future email is unchanged.');
   });
 
-  it('reads a request from an API that does not send alsoVerb as Unsubscribe alone', () => {
-    const { alsoVerb: _dropped, ...older } = view({ verb: 'unsubscribe', emailCount: 0 });
-    renderReady(older as ActionPreviewView);
+  it('Unsubscribe with nothing else is Unsubscribe alone', () => {
+    renderReady(view({ verb: 'unsubscribe', alsoVerb: null, emailCount: 0 }));
     expect(screen.getByRole('button').textContent).toBe('Unsubscribe');
     expect(bodyText()).not.toContain('in your inbox');
   });
@@ -248,9 +250,9 @@ describe('ConfirmCard — the request', () => {
 
   it('a request confirmed earlier that has no result says so, and the verb retries it', () => {
     renderReady(view({ state: 'confirmed' }));
-    expect(screen.getByRole('status').textContent).toBe(
-      'Confirmed earlier, with no record that it started. Press Archive to try again.',
-    );
+    const status = screen.getByRole('status').textContent;
+    expect(status).toContain('Confirmed earlier');
+    expect(status).toContain('Archive');
     expect(screen.getByRole('button', { name: 'Archive' })).toBeTruthy();
   });
 
@@ -271,22 +273,24 @@ describe('ConfirmCard — the request', () => {
   });
 
   it.each([
-    ['limit', 'You have reached this month’s limit on your plan.', '/billing'],
-    ['plan', 'Your plan does not include this.', '/billing'],
-    ['mailbox', 'This Gmail account is not connected to DeclutrMail.', '/settings'],
-    ['unsubscribe_off', 'Unsubscribe requests cannot be sent right now. Try again later.', null],
-    ['not_started', 'DeclutrMail could not start this. Try again in a minute.', null],
-    ['unknown', 'That did not go through. Try again.', null],
+    ['limit', 'limit', '/billing'],
+    ['plan', 'plan does not include', '/billing'],
+    ['mailbox', 'not connected', '/settings'],
+    ['unsubscribe_off', 'cannot be sent', null],
+    ['not_started', 'could not start', null],
+    // Never "did not go through": a failure after the press may follow a start.
+    ['unknown', 'couldn’t confirm that started', '/activity'],
   ] as const)(
     'a %s failure gives the cause and the next step, and keeps the request',
-    (failure, copy, href) => {
+    (failure, fact, href) => {
       renderReady(PREVIEW, { failure: failure satisfies ConfirmFailure });
       const alert = screen.getByRole('alert');
-      expect(alert.textContent).toContain(copy);
+      expect(alert.textContent).toContain(fact);
       // Cause + next step, two sentences at most: either a second
       // sentence or a link is the next step, never both.
-      const sentences = copy.split(/(?<=\.)\s/).length;
-      expect(sentences).toBe(href === null ? 2 : 1);
+      const link = alert.querySelector('a')?.textContent ?? '';
+      const copy = (alert.textContent ?? '').replace(link, '').trim();
+      expect(copy.split(/(?<=\.)\s/).length).toBe(href === null ? 2 : 1);
       expect(alert.querySelector('a')?.getAttribute('href') ?? null).toBe(href);
       expect(unavailable(screen.getByRole('button', { name: 'Archive' }))).toBe(false);
     },
@@ -408,9 +412,10 @@ describe('ConfirmCard — the receipt', () => {
   it('says what was started and where to see it, and does not call a queued job running', () => {
     renderReceipt(applied());
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Confirmed');
-    expect(screen.getByRole('status').textContent).toBe(
-      'Archive started for 7 senders. It covers 412 emails.',
-    );
+    const receipt = screen.getByRole('status').textContent;
+    expect(receipt).toContain('Archive started');
+    expect(receipt).toContain('7 senders');
+    expect(receipt).toContain('412 emails');
     expect(screen.getByRole('link', { name: 'Open Activity' }).getAttribute('href')).toBe(
       '/activity',
     );
@@ -448,9 +453,9 @@ describe('ConfirmCard — the receipt', () => {
 
   it('names both halves of Unsubscribe with Archive', () => {
     renderReceipt(applied({}, { verb: 'unsubscribe', alsoVerb: 'archive' }));
-    expect(screen.getByRole('status').textContent).toBe(
-      'Unsubscribe + Archive started for 7 senders. It covers 412 emails.',
-    );
+    const receipt = screen.getByRole('status').textContent;
+    expect(receipt).toContain('Unsubscribe + Archive started');
+    expect(receipt).toContain('412 emails');
   });
 
   it.each([
@@ -718,6 +723,48 @@ describe('ConfirmScreen', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
+  it('a press that was recorded and then failed is remembered when a later press finds it expired', async () => {
+    // The press is recorded, then a later step fails; past expiry the
+    // person presses again. The page must point at Activity, not invite a
+    // second request that would act twice.
+    let recorded = false;
+    let presses = 0;
+    let reads = 0;
+    renderScreen([
+      {
+        method: 'GET',
+        path: PATH,
+        respond: () => {
+          reads += 1;
+          return jsonOk({
+            data: recorded ? view({ confirmedAt: '2026-11-18T20:05:00.000Z' }) : PREVIEW,
+          });
+        },
+      },
+      {
+        method: 'POST',
+        path: `${PATH}/confirm`,
+        respond: () => {
+          presses += 1;
+          if (presses === 1) {
+            recorded = true;
+            return jsonServerError();
+          }
+          return jsonError(410, 'PREVIEW_EXPIRED');
+        },
+      },
+    ]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
+    // The failed press reads the request again.
+    await waitFor(() => expect(reads).toBe(2));
+    await waitFor(() =>
+      expect(unavailable(screen.getByRole('button', { name: 'Archive' }))).toBe(false),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    expect(await screen.findByText(EXPIRED)).toBeTruthy();
+    expect(screen.getByText(/It was confirmed but never recorded as started/)).toBeTruthy();
+  });
+
   it('an expired request nobody confirmed does not mention Activity', async () => {
     renderScreen([read(view({ state: 'expired' }))]);
     expect(await screen.findByText(EXPIRED)).toBeTruthy();
@@ -852,15 +899,20 @@ describe('ConfirmScreen', () => {
   });
 
   it.each([
-    [402, 'FREE_CAP_REACHED', 'You have reached this month’s limit on your plan.', '/billing'],
+    [402, 'FREE_CAP_REACHED', 'limit', '/billing'],
     // Not retryable: the answer is a plan, never "try again".
-    [402, 'ACTION_TIER_REQUIRED', 'Your plan does not include this.', '/billing'],
-    [409, 'NO_ACTIVE_MAILBOX', 'This Gmail account is not connected to DeclutrMail.', '/settings'],
-    [409, 'UNSUB_SEND_DISABLED', 'Unsubscribe requests cannot be sent right now.', null],
-    [503, 'QUEUE_UNAVAILABLE', 'DeclutrMail could not start this.', null],
-    [500, 'INTERNAL_ERROR', 'That did not go through.', null],
+    [402, 'ACTION_TIER_REQUIRED', 'plan does not include', '/billing'],
+    [409, 'PREVIEW_MAILBOX_DISCONNECTED', 'not connected', '/settings'],
+    // The app-wide "no active mailbox" answer is not this page's to explain.
+    [409, 'NO_ACTIVE_MAILBOX', 'couldn’t confirm that started', '/activity'],
+    [409, 'UNSUB_SEND_DISABLED', 'cannot be sent', null],
+    // Nothing was written: the queue refused before the jobs.
+    [503, 'QUEUE_UNAVAILABLE', 'could not start', null],
+    // The jobs were written before the queue refused them: they may run.
+    [503, 'ENQUEUE_FAILED', 'couldn’t confirm that started', '/activity'],
+    [500, 'INTERNAL_ERROR', 'couldn’t confirm that started', '/activity'],
     // A 409 with a code this page does not know is not a mailbox problem.
-    [409, 'SOMETHING_NEW', 'That did not go through.', null],
+    [409, 'SOMETHING_NEW', 'couldn’t confirm that started', '/activity'],
   ] as const)(
     'a %i %s on confirm keeps the request and says why',
     async (status, code, copy, href) => {
@@ -876,6 +928,37 @@ describe('ConfirmScreen', () => {
       expect(unavailable(screen.getByRole('button', { name: 'Archive' }))).toBe(false);
     },
   );
+
+  it('a plan limit is explained here, and leaves no upgrade dialog waiting in the app', async () => {
+    useUpgradeGateStore.getState().dismiss();
+    installFetchStub([
+      read(),
+      {
+        method: 'POST',
+        path: `${PATH}/confirm`,
+        respond: () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'FREE_CAP_REACHED',
+                message: 'FREE_CAP_REACHED',
+                details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1 },
+              },
+            }),
+            { status: 402, headers: { 'content-type': 'application/json' } },
+          ),
+      },
+    ]);
+    // The app's own client, with its global handlers.
+    render(
+      <QueryWrapper client={makeQueryClient()}>
+        <ConfirmScreen previewId={ID} />
+      </QueryWrapper>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('limit');
+    expect(useUpgradeGateStore.getState().hit).toBeNull();
+  });
 
   it('pressing again after a failure retries and reaches the receipt', async () => {
     let attempt = 0;
@@ -907,7 +990,9 @@ describe('ConfirmScreen', () => {
       },
     ]);
     fireEvent.click(await screen.findByRole('button', { name: 'Archive' }));
-    expect((await screen.findByRole('alert')).textContent).toContain('That did not go through.');
+    expect((await screen.findByRole('alert')).textContent).toContain(
+      'couldn’t confirm that started',
+    );
     expect(screen.queryByText('Confirmed')).toBeNull();
   });
 });

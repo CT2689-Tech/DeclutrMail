@@ -790,7 +790,8 @@ describe('MCP connector — previews, confirmation and apply', () => {
 
       const confirm = await s.page.post(confirmPath(preview.data.preview_id));
       expect(confirm.status).toBe(409);
-      expect(confirm.json.error.code).toBe('NO_ACTIVE_MAILBOX');
+      // Not NO_ACTIVE_MAILBOX, which would reset the web app's mailbox scope.
+      expect(confirm.json.error.code).toBe('PREVIEW_MAILBOX_DISCONNECTED');
       const tool = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
       expect(tool.error.code).toBe('MAILBOX_RECONNECT_REQUIRED');
       expect(await jobs(s.mailboxId)).toHaveLength(0);
