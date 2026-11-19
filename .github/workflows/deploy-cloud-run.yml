@@ -405,10 +405,15 @@ jobs:
           # This project's Gmail API console showed a 15,000-unit legacy
           # per-user-minute quota on 2026-09-23. Keep 20% headroom; see
           # docs/ops/sync-infra-setup.md before changing this override.
-          # Supavisor session-mode pool_size is 15. Main + advisory-lock +
-          # LISTEN clients are bounded to 3 + 3 + 1 = 7 per instance; two
-          # overlapping revisions fit (14), without sharing lock holders'
-          # inner-query pool. postgres.js must not use transaction pooling.
+          # Supavisor pool_size is 30 (Supabase → Database → Settings; the
+          # Micro default of 15 failed deploys with EMAXCONNSESSION, 2026-11-19).
+          # Main + advisory-lock + LISTEN clients are bounded to 3 + 3 + 1 = 7
+          # per instance, all session-mode and pinned. The pool is shared with
+          # the API (API_DB_POOL_MAX=10, transaction mode). A rollout runs two
+          # worker revisions, so the budget is 7 + 7 + 10 = 24 of 30. Raising
+          # any pool size above needs pool_size raised first, and Postgres
+          # max_connections (60) must stay above pool_size plus Supabase's own
+          # connections. postgres.js must not use transaction pooling.
           gcloud run deploy declutrmail-worker \
             --image="$IMAGE" \
             --region="$WORKER_REGION" \
