@@ -1,4 +1,4 @@
-h1:cBooxHxTwhipWa3aKXnew7Qh4zEg1UE4Zq7fjIPcZGU=
+h1:biGBKNftlpmkD/m9IKh/rmIXDKLFLOsBTFB1Mi5QjiU=
 0000_foundation_workspaces_users_mailboxes.sql h1:mvQjReZmzp+ne3ncQX3NsLph9Tlec0HLa4e0k636MV4=
 0001_messages_senders_schema.sql h1:1hE97u6u+JGGjHXjH50rrMA0K/i4UlPvqrkuN2Qs6Uk=
 0002_mailbox_oauth_tokens.sql h1:+w05bo7XzLJhpjftjhpIwna1kU+1MFYMWq6QJH0HZgg=
@@ -98,3 +98,5 @@ h1:cBooxHxTwhipWa3aKXnew7Qh4zEg1UE4Zq7fjIPcZGU=
 0098_billing_checkout_attempts.sql h1:S8bcJy1aNG1sMWYhul7GfznJRYGOBhR4EMKpOuvYL64=
 0099_signup_source_channels.sql h1:4TJf3T36VxezLgOSyFii85epY3Hjun4iPPAIz0EMhf8=
 0100_autopilot_converge_review_only_active.sql h1:3bYpZ3oqGL6bkpNTaI5p+OpmHap1sK9+xsTpwFGPy3k=
+0101_mcp_connector.sql h1:4RpaLtLGBZBYHu0rYOeFl2Tqa76/X8AugZEEdgYn1+4=
+0102_activity_origins.sql h1:sR55Hf8PTAsKWiKruIrZTQ1ITOpeosTzKsrJ72I4FBs=

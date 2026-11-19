@@ -48,13 +48,6 @@ export interface GmailActionScopeLinkInput {
   inboxOnly?: boolean;
 }
 
-export interface GmailComposeLinkInput {
-  mailboxEmail: string;
-  to: string;
-  subject?: string | null;
-  body?: string | null;
-}
-
 function nonEmpty(value: string | null | undefined): string | null {
   const trimmed = value?.trim() ?? '';
   return trimmed.length > 0 ? trimmed : null;
@@ -183,18 +176,5 @@ export const GmailOpenLinkService = {
       mailboxEmail: input.mailboxEmail,
       query: terms.join(' '),
     });
-  },
-
-  buildComposeLink(input: GmailComposeLinkInput): string | null {
-    const account = nonEmpty(input.mailboxEmail);
-    const to = nonEmpty(input.to);
-    if (!account || !to) return null;
-
-    const params = new URLSearchParams({ authuser: account, view: 'cm', fs: '1', to });
-    const subject = nonEmpty(input.subject);
-    const body = nonEmpty(input.body);
-    if (subject) params.set('su', subject);
-    if (body) params.set('body', body);
-    return `${GMAIL_BASE}?${params.toString()}`;
   },
 };

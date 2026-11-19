@@ -15,6 +15,7 @@ import { enqueueEmailSend, type EmailSendJobData } from '@declutrmail/workers';
 
 import { AppException } from '../common/app-exception.js';
 import { BillingDeletionGuard } from '../billing/billing-deletion-guard.js';
+import { revokeGrantsForUser } from '../oauth/oauth-store.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { deletionScheduledEmail } from '../notifications/templates/index.js';
 import { SecurityEventsService } from '../security-events/security-events.service.js';
@@ -52,6 +53,13 @@ export const DELETION_EMAIL_QUEUE_TOKEN = 'ACCOUNT_DELETION_EMAIL_QUEUE';
  * deletion-pause.ts` (worker guards) and the Gmail webhook's mailbox
  * resolution. This service only writes the request row those guards
  * read.
+ *
+ * Connected apps (ADR-0048, MCP connector spec §7): the transaction
+ * that inserts the request row ALSO revokes every OAuth grant, token
+ * and pending code the person holds — a database write only, through
+ * `revokeGrantsForUser`. An account on its way out stops taking actions
+ * from an assistant at once. `cancel` does not restore them; the person
+ * reconnects each app.
  *
  * The actual purge is the worker's job (`packages/workers/src/
  * deletion.worker.ts`), NOT this service — the API never deletes user
@@ -137,9 +145,10 @@ export class AccountDeletionOrchestrator {
     const effectiveAt = waived ? now : new Date(projection.projectedEffectiveAt);
 
     let inserted: AccountDeletionRequestRow | undefined;
+    let revokedConnectedApps = 0;
     try {
-      [inserted] = await this.billingGuard.withVerifiedStopped(principal.userId, (tx) =>
-        tx
+      [inserted] = await this.billingGuard.withVerifiedStopped(principal.userId, async (tx) => {
+        const rows = await tx
           .insert(accountDeletionRequests)
           .values({
             userId: principal.userId,
@@ -148,8 +157,15 @@ export class AccountDeletionOrchestrator {
             waiverConfirmed: waived,
             status: 'pending',
           })
-          .returning(),
-      );
+          .returning();
+        // Connected apps (ADR-0048, spec §7) lose access when deletion
+        // STARTS, not when its window ends, and in this same transaction:
+        // an account on its way out must not keep taking actions from an
+        // assistant, and a request row without the revoke would leave
+        // exactly that. Cancelling the deletion does not restore them.
+        revokedConnectedApps = (await revokeGrantsForUser(tx, principal.userId)).length;
+        return rows;
+      });
     } catch (err) {
       // The partial unique index (one in-flight request per user)
       // rejects a duplicate with 23505 — map to the domain 409.
@@ -172,6 +188,7 @@ export class AccountDeletionOrchestrator {
         waiverConfirmed: waived,
         effectiveAt: effectiveAt.toISOString(),
         activeUndoCount: projection.activeUndoCount,
+        revokedConnectedApps,
       },
     });
 

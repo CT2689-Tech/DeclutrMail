@@ -892,6 +892,12 @@ jobs:
       E2E_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
       E2E_BILLING_LOGIN_EMAIL: chintan.e2e.billing@synthetic.test
       NEXT_PUBLIC_API_URL: http://127.0.0.1:4104
+      # MCP connector journeys (connect-app.spec.ts, ADR-0048): every
+      # connector route is a 404 unless the flag is on, and the
+      # authorization server needs its own public origin. Production
+      # keeps the flag off. Mirrors packages/e2e/helpers/isolated-stack.mjs.
+      MCP_ENABLED: 'true'
+      API_URL: http://127.0.0.1:4104
       # Money-path spec (billing-upgrade.spec.ts) — synthetic provider
       # config; secrets are e2e-only literals, never real credentials.
       BILLING_ENABLED: 'true'

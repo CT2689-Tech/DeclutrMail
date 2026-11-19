@@ -98,7 +98,7 @@ describe('GmailOpenLinkService', () => {
     expect(url).toContain('from%3A%22news%40example.com%20OR%20is%3Astarred%22%20after%3A');
   });
 
-  it('builds mailbox-bound sender searches and compose drafts', () => {
+  it('builds mailbox-bound sender searches', () => {
     expect(
       GmailOpenLinkService.buildSearchLink({
         mailboxEmail: 'owner@example.com',
@@ -116,15 +116,6 @@ describe('GmailOpenLinkService', () => {
       'https://mail.google.com/mail/?authuser=owner%40example.com#search/' +
         'from%3A%22%40news.example.com%20OR%20is%3Astarred%22',
     );
-    expect(
-      GmailOpenLinkService.buildComposeLink({
-        mailboxEmail: 'owner@example.com',
-        to: 'unsubscribe+list@example.com',
-        subject: 'Remove me',
-      }),
-    ).toBe(
-      'https://mail.google.com/mail/?authuser=owner%40example.com&view=cm&fs=1&to=unsubscribe%2Blist%40example.com&su=Remove+me',
-    );
   });
 
   it('fails closed when account or destination data is missing', () => {
@@ -134,9 +125,6 @@ describe('GmailOpenLinkService', () => {
     expect(GmailOpenLinkService.buildOpenLink({ mailboxEmail: 'owner@example.com' })).toBeNull();
     expect(
       GmailOpenLinkService.buildSearchLink({ mailboxEmail: 'owner@example.com', query: ' ' }),
-    ).toBeNull();
-    expect(
-      GmailOpenLinkService.buildComposeLink({ mailboxEmail: 'owner@example.com', to: '' }),
     ).toBeNull();
   });
 });

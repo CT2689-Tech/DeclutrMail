@@ -1,6 +1,9 @@
 import type { ProductEventName } from './product-events.js';
 
-/** Keys the product_events.props CHECK allows. Keep in lockstep with migration 0085. */
+/**
+ * Keys the product_events.props CHECK allows. Keep in lockstep with the
+ * CHECK in packages/db/src/schema/product-events.ts (migrations 0086, 0101).
+ */
 export const PRODUCT_EVENT_PROP_KEYS = [
   'kind',
   'plan',
@@ -12,6 +15,12 @@ export const PRODUCT_EVENT_PROP_KEYS = [
   'error_class',
   'provider',
   'mailbox_id',
+  'client',
+  'tool',
+  'outcome',
+  'verb',
+  'reason',
+  'preview_id',
 ] as const;
 
 export type ProductEventPropKey = (typeof PRODUCT_EVENT_PROP_KEYS)[number];
@@ -34,6 +43,40 @@ export const EMAIL_LINK_TEMPLATES = [
 export type EmailLinkTemplate = (typeof EMAIL_LINK_TEMPLATES)[number];
 
 const EMAIL_TEMPLATES = new Set<string>(EMAIL_LINK_TEMPLATES);
+
+/**
+ * Which assistant a connected app is, from where its sign-in returns to.
+ * A family, never the app's own name: that is free text the app chose.
+ */
+export const CONNECTOR_CLIENTS = ['claude', 'chatgpt', 'local', 'other'] as const;
+export type ConnectorClient = (typeof CONNECTOR_CLIENTS)[number];
+/** The connector's tools. Pinned against the API's tool list by a test there. */
+export const CONNECTOR_TOOLS = [
+  'list_mailboxes',
+  'list_senders',
+  'get_sender',
+  'get_usage',
+  'preview_cleanup',
+  'apply_cleanup',
+  'get_action_status',
+  'list_recent_actions',
+  'undo',
+  'protect_sender',
+] as const;
+export const CONNECTOR_OUTCOMES = ['ok', 'error'] as const;
+export const CONNECTOR_VERBS = ['keep', 'archive', 'unsubscribe', 'later', 'delete'] as const;
+/** Why a confirmed request did not start. Pinned against the API's list by a test there. */
+export const CONNECTOR_REFUSAL_REASONS = [
+  'QUOTA_EXHAUSTED',
+  'UPGRADE_REQUIRED',
+  'UNSUBSCRIBE_UNAVAILABLE',
+] as const;
+
+const CLIENTS = new Set<string>(CONNECTOR_CLIENTS);
+const TOOLS = new Set<string>(CONNECTOR_TOOLS);
+const OUTCOMES = new Set<string>(CONNECTOR_OUTCOMES);
+const VERBS = new Set<string>(CONNECTOR_VERBS);
+const REASONS = new Set<string>(CONNECTOR_REFUSAL_REASONS);
 const REQUESTED_BUCKETS = new Set(['1', '2-10', '11-100', '101-1000', '1001+']);
 const DURATION_BUCKETS = new Set([0, 30, 60, 120, 300, 600, 1800, 3600, 7200]);
 const EMAIL_BUCKETS = new Set([0, 100, 1000, 10000, 50000, 100000]);
@@ -93,7 +136,18 @@ function acceptProp(
     case 'provider':
       return value === 'google' ? value : null;
     case 'mailbox_id':
+    case 'preview_id':
       return typeof value === 'string' && UUID.test(value) ? value : null;
+    case 'client':
+      return typeof value === 'string' && CLIENTS.has(value) ? value : null;
+    case 'tool':
+      return typeof value === 'string' && TOOLS.has(value) ? value : null;
+    case 'outcome':
+      return typeof value === 'string' && OUTCOMES.has(value) ? value : null;
+    case 'verb':
+      return typeof value === 'string' && VERBS.has(value) ? value : null;
+    case 'reason':
+      return typeof value === 'string' && REASONS.has(value) ? value : null;
     default: {
       const unreachable: never = key;
       return unreachable;

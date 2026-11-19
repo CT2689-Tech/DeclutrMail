@@ -18,10 +18,11 @@ import { SyncNowError } from '@/features/sync/api/use-sync-now';
 
 import { makeQueryClient } from './query-client';
 
-async function runFailingMutation(error: unknown): Promise<void> {
+async function runFailingMutation(error: unknown, meta?: Record<string, unknown>): Promise<void> {
   const client = makeQueryClient();
   const observerMutation = client.getMutationCache().build(client, {
     mutationFn: () => Promise.reject(error),
+    ...(meta ? { meta } : {}),
   });
   await observerMutation.execute(undefined).catch(() => undefined);
 }
@@ -102,6 +103,23 @@ describe('makeQueryClient — global entitlement-402 handler', () => {
       ),
     );
     expect(useUpgradeGateStore.getState().hit?.reason).toBe('action_tier');
+  });
+
+  it('leaves the store untouched for a screen that explains its own 402', async () => {
+    await runFailingMutation(
+      new ApiError(
+        402,
+        {
+          error: {
+            code: 'FREE_CAP_REACHED',
+            details: { remaining: 0, limit: 5, used: 5, requiredUnits: 1 },
+          },
+        },
+        'POST /api/action-previews/x/confirm failed: 402',
+      ),
+      { upgradeGate: false },
+    );
+    expect(useUpgradeGateStore.getState().hit).toBeNull();
   });
 
   it('leaves the store untouched for non-entitlement failures', async () => {

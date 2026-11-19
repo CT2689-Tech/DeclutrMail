@@ -269,6 +269,17 @@ describe('isAuthedAppPath — which subtree a request belongs to', () => {
     expect(isAuthedAppPath('/settings-guide')).toBe(false);
     expect(isAuthedAppPath('/billingx')).toBe(false);
   });
+
+  it('claims the consent page, and leaves `/connect` itself for a public page', () => {
+    expect(isAuthedAppPath('/connect/authorize')).toBe(true);
+    expect(isAuthedAppPath('/connect')).toBe(false);
+    expect(isAuthedAppPath('/connect/anything-else')).toBe(false);
+  });
+
+  it('claims the confirm page for any preview id', () => {
+    expect(isAuthedAppPath('/confirm/0198d95f-a409-7000-8000-000000000001')).toBe(true);
+    expect(isAuthedAppPath('/confirmation')).toBe(false);
+  });
 });
 
 describe('authed document session handling', () => {

@@ -433,6 +433,8 @@ function buildSenderSearchCondition(q: string | null | undefined): SQL | null {
 function buildSenderSearchPattern(q: string | null | undefined): string | null {
   const term = (q ?? '').trim();
   if (term.length === 0) return null;
+  // Postgres refuses a null character in text (22021): a client error.
+  if (term.includes('\u0000')) throw new BadRequestException('Invalid search.');
   const escaped = term.replace(/[\\%_]/g, (c) => `\\${c}`);
   return `%${escaped}%`;
 }
@@ -2338,12 +2340,19 @@ function buildSortOrderBy(sort: SenderListSort, direction: SenderListDirection):
  *   - `first_seen`  → ISO-8601 Date string
  *   - `name`        → opaque string (PG sorts lexicographically)
  */
+const CURSOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function buildCursorPredicate(
   sort: SenderListSort,
   direction: SenderListDirection,
   cursor: SenderListCursor,
 ): SQL {
   const op = direction === 'asc' ? gt : lt;
+  // The id meets a uuid column and the key may meet a text one: anything
+  // else is a client error, not a 500 from Postgres.
+  if (!CURSOR_ID.test(cursor.id) || cursor.key.includes('\u0000')) {
+    throw new BadRequestException('Invalid cursor.');
+  }
   switch (sort) {
     case 'total': {
       const sortVal = Number.parseInt(cursor.key, 10);

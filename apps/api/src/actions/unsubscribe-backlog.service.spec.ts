@@ -11,7 +11,7 @@ import {
 } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/pglite';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -334,6 +334,42 @@ describe('UnsubscribeBacklogService', () => {
       .from(actionJobs)
       .where(eq(actionJobs.mailboxAccountId, mailboxId));
     expect(jobs.some((job) => job.verb === 'unsubscribe')).toBe(false);
+  });
+
+  it('replays a same-key retry the limit already charged, instead of refusing it', async () => {
+    // Four emails left; the sender has four. The first request uses them.
+    const alreadyCleared = METER.free.limit - 4;
+    await db.insert(actionJobs).values({
+      mailboxAccountId: mailboxId,
+      verb: 'archive',
+      direction: 'forward',
+      selector: { type: 'sender', senderId, senderKey: SENDER_KEY },
+      requestedCount: alreadyCleared,
+      affectedCount: alreadyCleared,
+      quotaUnits: alreadyCleared,
+      status: 'done',
+      idempotencyKey: 'prior-emails',
+    });
+    await seedInbox(db, mailboxId, 4);
+    const input = {
+      mailboxAccountId: mailboxId,
+      idempotencyKey: 'retry-key-01',
+      mode: 'archive' as const,
+      senderIds: [senderId],
+    };
+    const first = await svc.confirm(input);
+    expect(first.backlog?.requestedCount).toBe(4);
+
+    // The same request again (a lost response, a retried press): the
+    // month is now full, and the retry still answers with the same action.
+    const again = await svc.confirm(input);
+    expect(again.backlog?.actionId).toBe(first.backlog?.actionId);
+    expect(labelQueue.count).toBe(1);
+    const archives = await db
+      .select({ id: actionJobs.id })
+      .from(actionJobs)
+      .where(and(eq(actionJobs.mailboxAccountId, mailboxId), eq(actionJobs.verb, 'archive')));
+    expect(archives).toHaveLength(2);
   });
 
   it('still archives when the unsubscribe send is refused', async () => {

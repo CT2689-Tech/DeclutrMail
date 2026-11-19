@@ -5,6 +5,7 @@
 
 export type { KmsProvider } from './kms-provider';
 export {
+  CONNECT_REQUEST_ID,
   isUserScopedAppPath,
   parseAppReturnTo,
   parseUpgradeReturnTo,
@@ -422,6 +423,42 @@ export type {
   AccountDeletionRequest,
   AccountDeletionStatus,
 } from './account-deletion';
+
+// MCP connector — OAuth consent + Settings → Connected apps (ADR-0048).
+export { gmailComposeUrlFromMailto } from './gmail-compose-link';
+export {
+  ACTION_PREVIEW_SKIP_REASONS,
+  ACTION_PREVIEW_VERBS,
+  ActionPreviewAlsoVerbSchema,
+  ActionPreviewOutcomeSchema,
+  ActionPreviewSkipReasonSchema,
+  ActionPreviewSkippedSchema,
+  ActionPreviewVerbSchema,
+  ActionPreviewViewSchema,
+} from './action-previews';
+export type {
+  ActionPreviewAlsoVerb,
+  ActionPreviewOutcome,
+  ActionPreviewSkipReason as ActionPreviewViewSkipReason,
+  ActionPreviewSkipped,
+  ActionPreviewVerb as ActionPreviewViewVerb,
+  ActionPreviewView,
+} from './action-previews';
+export {
+  CONNECTOR_SCOPES,
+  ConnectedAppSchema,
+  ConnectedAppsSchema,
+  ConnectorConsentResultSchema,
+  ConnectorConsentSchema,
+  ConnectorScopeSchema,
+} from './connected-apps';
+export type {
+  ConnectedApp,
+  ConnectedApps,
+  ConnectorConsent,
+  ConnectorConsentResult,
+  ConnectorScope,
+} from './connected-apps';
 
 // D245 mailbox-only indexed-data deletion — explicit disconnect vs purge.
 export {

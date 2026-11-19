@@ -65,6 +65,8 @@ export class UnsubscribeBacklogService {
 
     let backlog: UnsubscribeBacklogResult['backlog'] = null;
     let skippedByEnqueue = new Map<string, MoveSkipReason>();
+    // Senders whose existing email the enqueued Archive or Delete covers.
+    let moved = new Set<string>();
     const runBacklog = input.mode === 'archive' || input.mode === 'delete';
     if (runBacklog && actionable.length > 0) {
       const measured = await this.backlogMail(
@@ -74,9 +76,27 @@ export class UnsubscribeBacklogService {
         olderThanDays,
       );
       if (measured.count > 0) {
-        await this.entitlements.assertCleanupCapacity(input.mailboxAccountId, measured.count);
+        // A retry of a backlog already enqueued under this key was charged
+        // then; the enqueue below replays it. The limit is checked only for
+        // a fresh request (`assertCleanupCapacity`'s contract): checking a
+        // replay counts its own emails twice and refuses what already ran.
+        const verb = input.mode === 'delete' ? 'delete' : 'archive';
+        const replay = await this.backlogEnqueued(
+          input.mailboxAccountId,
+          verb,
+          input.idempotencyKey,
+          actionable.map((row) => row.id),
+        );
+        if (!replay) {
+          await this.entitlements.assertCleanupCapacity(input.mailboxAccountId, measured.count);
+        }
         const enqueued = await this.enqueueBacklog(input, actionable, reach, olderThanDays);
         backlog = enqueued.backlog;
+        if (replay && backlog && (await this.backlogFailed(input.mailboxAccountId, backlog))) {
+          // D233: a move that failed is reported, never run again, and the
+          // unsubscribes that ride on it are not sent without it.
+          return { mode: input.mode, backlog, senders: [] };
+        }
         if (
           backlog?.verb === 'delete' &&
           backlog.requestedCount === measured.count &&
@@ -89,6 +109,10 @@ export class UnsubscribeBacklogService {
           const reason = moveSkipReason(row.reason);
           if (reason) skippedByEnqueue.set(row.senderId, reason);
         }
+        // Every skip, including a busy sender (still unsubscribed below):
+        // none of them had its email moved.
+        const notMoved = new Set(enqueued.skipped.map((row) => row.senderId));
+        moved = new Set(actionable.filter((row) => !notMoved.has(row.id)).map((row) => row.id));
       }
     }
 
@@ -106,7 +130,10 @@ export class UnsubscribeBacklogService {
         sendersOut.push(skipped(row.id, refused));
         continue;
       }
-      sendersOut.push(await this.recordOne(input, row.id, backlog?.actionId ?? null));
+      sendersOut.push({
+        ...(await this.recordOne(input, row.id, backlog?.actionId ?? null)),
+        emailMoved: moved.has(row.id),
+      });
     }
     await invalidateInboxReportCache(this.db, input.mailboxAccountId);
     // A same-key retry may refer to a pre-deploy execution that was not
@@ -216,6 +243,45 @@ export class UnsubscribeBacklogService {
         reasonCode: reasonFromRecordError(err),
       };
     }
+  }
+
+  /**
+   * Whether this key already enqueued the backlog: the stored keys
+   * `ActionsService` derives from it, `<verb>-<key>` (one sender) or
+   * `<verb>-<key>-<sender id>` (several). Exact keys, so the unique index
+   * serves the lookup whatever the database's collation.
+   */
+  private async backlogEnqueued(
+    mailboxAccountId: string,
+    verb: 'archive' | 'delete',
+    idempotencyKey: string,
+    senderIds: readonly string[],
+  ): Promise<boolean> {
+    const stored = `${verb}-${idempotencyKey.replace(/:/g, '-')}`;
+    const keys = [stored, ...senderIds.map((id) => `${stored}-${id}`)];
+    const [row] = await this.db
+      .select({ id: actionJobs.id })
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          inArray(actionJobs.idempotencyKey, keys),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /** Whether the backlog a replay found has already failed. */
+  private async backlogFailed(
+    mailboxAccountId: string,
+    backlog: NonNullable<UnsubscribeBacklogResult['backlog']>,
+  ): Promise<boolean> {
+    const status =
+      backlog.handle === 'batch'
+        ? (await this.actions.getBatchStatus(backlog.actionId, mailboxAccountId)).status
+        : (await this.actions.getStatus(backlog.actionId, mailboxAccountId)).status;
+    return status === 'failed';
   }
 
   private async loadSenders(mailboxAccountId: string, senderIds: string[]) {

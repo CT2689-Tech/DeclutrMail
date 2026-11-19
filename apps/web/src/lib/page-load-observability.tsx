@@ -25,6 +25,7 @@ const EXACT_SURFACES: Record<string, WebVitalEvent['surface']> = {
   '/brief': 'brief',
   '/changelog': 'changelog',
   '/compare': 'compare',
+  '/connect/authorize': 'connect',
   '/contact': 'contact',
   '/cookies': 'cookies',
   '/demo': 'demo',
@@ -60,6 +61,8 @@ export function pageLoadSurface(pathname: string | null): WebVitalEvent['surface
   const exact = EXACT_SURFACES[normalized];
   if (exact) return exact;
   if (/^\/senders\/[^/]+$/.test(normalized)) return 'sender_detail';
+  // The connector's other page: same bounded family as `/connect/authorize`.
+  if (/^\/confirm\/[^/]+$/.test(normalized)) return 'connect';
   if (normalized === '/answers' || normalized.startsWith('/answers/')) return 'answer';
   if (normalized === '/blog' || normalized.startsWith('/blog/')) return 'blog';
   if (normalized === '/how-to' || normalized.startsWith('/how-to/')) return 'how_to';

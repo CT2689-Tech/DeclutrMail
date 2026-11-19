@@ -405,6 +405,55 @@ export const ERROR_CODES = {
     retryable: false,
     message: 'The confirmation phrase did not match. Type it exactly to continue.',
   },
+  // --- MCP connector: OAuth consent (ADR-0048 rule 4) ---
+  // The authorization request is gone: it expired (15 minutes), was
+  // already decided, or belongs to another browser. The server cannot
+  // tell which, so neither the name nor the message picks one.
+  CONNECT_REQUEST_GONE: {
+    status: 410,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message:
+      'This connection request is no longer available. Go back to your app and connect again.',
+  },
+  // The connector is in beta and this account is not on the list.
+  CONNECT_NOT_AVAILABLE: {
+    status: 403,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Connecting apps is not available for your account yet.',
+  },
+  // An account on its way out cannot hand an assistant new access.
+  CONNECT_DELETION_PENDING: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'Account deletion is scheduled. Cancel it in Settings to connect an app.',
+  },
+  // --- MCP connector: the confirm page (ADR-0048 rule 1) ---
+  // Another person's preview, a made-up id, and one whose app was
+  // disconnected are the same answer on purpose.
+  PREVIEW_NOT_FOUND: {
+    status: 404,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This request is not available. Ask your assistant to prepare it again.',
+  },
+  PREVIEW_EXPIRED: {
+    status: 410,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This request expired. Ask your assistant to prepare it again.',
+  },
+  // The Gmail account the request was made for is no longer connected.
+  // Not NO_ACTIVE_MAILBOX: that one makes the web app reset its mailbox
+  // scope, and one request's account says nothing about the active one.
+  PREVIEW_MAILBOX_DISCONNECTED: {
+    status: 409,
+    severityTier: 'inline_recoverable',
+    retryable: false,
+    message: 'This Gmail account is no longer connected to DeclutrMail. Reconnect it in Settings.',
+  },
   DELETION_ALREADY_PENDING: {
     status: 409,
     severityTier: 'inline_recoverable',

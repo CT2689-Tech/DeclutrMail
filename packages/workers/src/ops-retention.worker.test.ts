@@ -1,10 +1,28 @@
-import { cronRuns, deadLetterJobs, productEvents, users, workspaces } from '@declutrmail/db';
+import {
+  actionPreviews,
+  cronRuns,
+  deadLetterJobs,
+  mailboxAccounts,
+  oauthAuthCodes,
+  oauthClients,
+  oauthGrants,
+  oauthInteractions,
+  oauthTokens,
+  productEvents,
+  users,
+  workspaces,
+} from '@declutrmail/db';
 import type { schema } from '@declutrmail/db';
 import { freshTestDb } from '@declutrmail/db/testing';
+import { sql } from 'drizzle-orm';
 import type { drizzle } from 'drizzle-orm/pglite';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { OpsRetentionWorker } from './ops-retention.worker.js';
+import {
+  OAUTH_SWEEP_MAX_PASSES,
+  OpsRetentionWorker,
+  RETENTION_BATCH_LIMIT,
+} from './ops-retention.worker.js';
 import type { WorkerContext } from './worker-context.js';
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -167,6 +185,286 @@ describe('OpsRetentionWorker', () => {
     expect(result.productEventsDeleted).toBe(1);
     const left = await db.select({ event: productEvents.event }).from(productEvents);
     expect(left.map((row) => row.event)).toEqual(['gmail_connected']);
+  });
+
+  describe('OAuth retention (docs/spec/mcp-connector.md §7)', () => {
+    const hoursAgo = (n: number) => new Date(Date.now() - n * 3_600_000);
+
+    async function seedOwner() {
+      const [ws] = await db.insert(workspaces).values({ name: 'W', tier: 'free' }).returning();
+      const [user] = await db
+        .insert(users)
+        .values({ workspaceId: ws!.id, email: 'ada@example.com' })
+        .returning();
+      return { workspaceId: ws!.id, userId: user!.id };
+    }
+
+    async function seedClient(
+      clientId: string,
+      createdAt = new Date(),
+      lastGrantedAt: Date | null = null,
+    ) {
+      await db.insert(oauthClients).values({
+        clientId,
+        redirectUris: ['https://client.example/cb'],
+        registrationType: 'dynamic',
+        metadata: {},
+        createdAt,
+        lastGrantedAt,
+      });
+    }
+
+    async function seedGrant(
+      owner: { workspaceId: string; userId: string },
+      clientId: string,
+      at: { createdAt?: Date; revokedAt?: Date | null } = {},
+    ) {
+      const [grant] = await db
+        .insert(oauthGrants)
+        .values({
+          ...owner,
+          clientId,
+          scopes: ['read'],
+          resource: 'https://api.declutrmail.com/mcp',
+          createdAt: at.createdAt ?? new Date(),
+          revokedAt: at.revokedAt ?? null,
+        })
+        .returning();
+      return grant!.id;
+    }
+
+    const token = (grantId: string, tokenHash: string, expiresAt: Date) => ({
+      grantId,
+      kind: 'refresh' as const,
+      tokenHash,
+      expiresAt,
+      payload: {},
+    });
+    const code = (grantId: string, codeHash: string, expiresAt: Date) => ({
+      grantId,
+      codeHash,
+      codeChallenge: 'c',
+      codeChallengeMethod: 'S256',
+      redirectUri: 'https://client.example/cb',
+      expiresAt,
+      payload: {},
+    });
+
+    it('removes tokens 7 days past expiry, codes 1 day past, and expired requests', async () => {
+      const owner = await seedOwner();
+      await seedClient('c1');
+      const grantId = await seedGrant(owner, 'c1');
+      await db
+        .insert(oauthTokens)
+        .values([
+          token(grantId, 'expired-8d', daysAgo(8)),
+          token(grantId, 'expired-6d', daysAgo(6)),
+          token(grantId, 'live', new Date(Date.now() + 3_600_000)),
+        ]);
+      await db
+        .insert(oauthAuthCodes)
+        .values([
+          code(grantId, 'expired-25h', hoursAgo(25)),
+          code(grantId, 'expired-23h', hoursAgo(23)),
+        ]);
+      await db.insert(oauthInteractions).values([
+        { idHash: 'expired', payload: {}, expiresAt: hoursAgo(1) },
+        { idHash: 'pending', payload: {}, expiresAt: new Date(Date.now() + 600_000) },
+      ]);
+
+      const result = await run();
+
+      expect(result.connectorRowsDeleted).toBe(3);
+      const tokens = await db.select({ h: oauthTokens.tokenHash }).from(oauthTokens);
+      expect(tokens.map((r) => r.h).sort()).toEqual(['expired-6d', 'live']);
+      const codes = await db.select({ h: oauthAuthCodes.codeHash }).from(oauthAuthCodes);
+      expect(codes.map((r) => r.h)).toEqual(['expired-23h']);
+      const requests = await db.select({ h: oauthInteractions.idHash }).from(oauthInteractions);
+      expect(requests.map((r) => r.h)).toEqual(['pending']);
+    });
+
+    it('removes a stored preview a day after it expired, applied or not', async () => {
+      const owner = await seedOwner();
+      await seedClient('c1');
+      const grantId = await seedGrant(owner, 'c1');
+      const [mailbox] = await db
+        .insert(mailboxAccounts)
+        .values({ ...owner, provider: 'gmail', providerAccountId: 'ada@example.com' })
+        .returning();
+      const preview = (expiresAt: Date, applied = false) => ({
+        ...owner,
+        mailboxAccountId: mailbox!.id,
+        grantId,
+        verb: 'archive' as const,
+        senderIds: ['00000000-0000-4000-8000-000000000001'],
+        emailCount: 3,
+        // `expires_at > created_at` is a table rule.
+        createdAt: new Date(expiresAt.getTime() - 15 * 60_000),
+        expiresAt,
+        ...(applied
+          ? {
+              state: 'applied' as const,
+              confirmedAt: expiresAt,
+              appliedAt: expiresAt,
+              result: { handle: null, appliedSenders: 0, requestedEmails: 0, skipped: [] },
+            }
+          : {}),
+      });
+      await db
+        .insert(actionPreviews)
+        .values([
+          preview(hoursAgo(25)),
+          preview(hoursAgo(25), true),
+          preview(hoursAgo(23)),
+          preview(new Date(Date.now() + 600_000)),
+        ]);
+
+      const result = await run();
+
+      expect(result.connectorRowsDeleted).toBe(2);
+      const kept = await db.select({ at: actionPreviews.expiresAt }).from(actionPreviews);
+      expect(kept).toHaveLength(2);
+      for (const row of kept) expect(row.at.getTime()).toBeGreaterThan(hoursAgo(24).getTime());
+    });
+
+    it('removes a grant 30 days after it was revoked, with what it still owns', async () => {
+      const owner = await seedOwner();
+      await seedClient('c1');
+      const old = await seedGrant(owner, 'c1', { revokedAt: daysAgo(31) });
+      const recent = await seedGrant(owner, 'c1', { revokedAt: daysAgo(29) });
+      await db
+        .insert(oauthTokens)
+        .values([
+          token(old, 'old-token', new Date(Date.now() + 3_600_000)),
+          token(recent, 'recent-token', new Date(Date.now() + 3_600_000)),
+        ]);
+
+      await run();
+
+      const grants = await db.select({ id: oauthGrants.id }).from(oauthGrants);
+      expect(grants.map((r) => r.id)).toEqual([recent]);
+      const tokens = await db.select({ h: oauthTokens.tokenHash }).from(oauthTokens);
+      expect(tokens.map((r) => r.h)).toEqual(['recent-token']);
+    });
+
+    it('retires a grant that owns nothing, and leaves a live or brand-new one alone', async () => {
+      const owner = await seedOwner();
+      await seedClient('c1');
+      const dead = await seedGrant(owner, 'c1', { createdAt: daysAgo(40) });
+      const live = await seedGrant(owner, 'c1', { createdAt: daysAgo(40) });
+      const justApproved = await seedGrant(owner, 'c1');
+      await db.insert(oauthTokens).values(token(live, 'live', new Date(Date.now() + 3_600_000)));
+
+      const result = await run();
+
+      expect(result.oauthGrantsRetired).toBe(1);
+      const rows = await db
+        .select({ id: oauthGrants.id, revokedAt: oauthGrants.revokedAt })
+        .from(oauthGrants);
+      const revoked = (id: string) => rows.find((r) => r.id === id)!.revokedAt;
+      // Retired now; the 30-day rule removes it later, like any revoked grant.
+      expect(revoked(dead)).toBeInstanceOf(Date);
+      expect(revoked(live)).toBeNull();
+      expect(revoked(justApproved)).toBeNull();
+    });
+
+    it('removes a client nobody approved after 30 days, never one with a grant', async () => {
+      const owner = await seedOwner();
+      await seedClient('abandoned', daysAgo(31));
+      await seedClient('fresh', daysAgo(29));
+      await seedClient('in-use', daysAgo(400));
+      await seedGrant(owner, 'in-use');
+      await db
+        .insert(oauthTokens)
+        .values(token((await db.select().from(oauthGrants))[0]!.id, 't', new Date(Date.now() + 1)));
+
+      const result = await run();
+
+      expect(result.connectorRowsDeleted).toBe(1);
+      const clients = await db.select({ id: oauthClients.clientId }).from(oauthClients);
+      expect(clients.map((r) => r.id).sort()).toEqual(['fresh', 'in-use']);
+    });
+
+    it('keeps a registration that was approved once, even with no grant left', async () => {
+      // The app disconnected long ago and its grant is past retention —
+      // but it may come back with the client id it stored, and an
+      // unknown id is a dead end in the browser flow.
+      const owner = await seedOwner();
+      await seedClient('approved-once', daysAgo(100), daysAgo(90));
+      await seedGrant(owner, 'approved-once', { createdAt: daysAgo(90), revokedAt: daysAgo(31) });
+      await seedClient('never-approved', daysAgo(100));
+
+      const result = await run();
+
+      // The stale grant and the never-approved registration: two rows.
+      expect(result.connectorRowsDeleted).toBe(2);
+      expect(await db.select().from(oauthGrants)).toHaveLength(0);
+      const clients = await db.select({ id: oauthClients.clientId }).from(oauthClients);
+      expect(clients.map((r) => r.id)).toEqual(['approved-once']);
+    });
+
+    it('drains a backlog larger than one batch in a single run', async () => {
+      // Anyone can park an authorization request, so one batch a day
+      // could fall behind what a single address may write.
+      await db.execute(sql`
+        INSERT INTO oauth_interactions (id_hash, payload, expires_at)
+        SELECT 'expired-' || n, '{}'::jsonb, now() - interval '1 hour'
+        FROM generate_series(1, ${sql.raw(String(RETENTION_BATCH_LIMIT + 200))}) AS n
+      `);
+      await db
+        .insert(oauthInteractions)
+        .values({ idHash: 'pending', payload: {}, expiresAt: new Date(Date.now() + 600_000) });
+
+      const result = await run();
+
+      expect(result.connectorRowsDeleted).toBe(RETENTION_BATCH_LIMIT + 200);
+      expect(result.moreRemaining).toBe(false);
+      const left = await db.select({ h: oauthInteractions.idHash }).from(oauthInteractions);
+      expect(left.map((r) => r.h)).toEqual(['pending']);
+    });
+
+    it('stops at its pass ceiling and says more remains', async () => {
+      const ceiling = RETENTION_BATCH_LIMIT * OAUTH_SWEEP_MAX_PASSES;
+      await db.execute(sql`
+        INSERT INTO oauth_interactions (id_hash, payload, expires_at)
+        SELECT 'expired-' || n, '{}'::jsonb, now() - interval '1 hour'
+        FROM generate_series(1, ${sql.raw(String(ceiling + 1))}) AS n
+      `);
+
+      const result = await run();
+
+      expect(result.connectorRowsDeleted).toBe(ceiling);
+      expect(result.moreRemaining).toBe(true);
+      expect(await db.select().from(oauthInteractions)).toHaveLength(1);
+    }, 60_000);
+
+    it('reports the OAuth count on the ops line', async () => {
+      await seedClient('abandoned', daysAgo(31));
+      const lines: string[] = [];
+      const spy = vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
+        lines.push(String(line));
+      });
+      try {
+        await new OpsRetentionWorker({ db: db as never }).run({
+          id: 'ret-oauth',
+          data: PAYLOAD,
+          attemptsMade: 0,
+        } as never);
+      } finally {
+        spy.mockRestore();
+      }
+      const succeeded = lines
+        .map((line) => {
+          try {
+            return JSON.parse(line) as { kind?: string; result?: Record<string, unknown> };
+          } catch {
+            return null;
+          }
+        })
+        .find((line) => line?.kind === 'worker.succeeded');
+      expect(succeeded?.result).toHaveProperty('connectorRowsDeleted', 1);
+      expect(succeeded?.result).toHaveProperty('oauthGrantsRetired', 0);
+    });
   });
 
   it('flags a backlog instead of silently truncating it', async () => {

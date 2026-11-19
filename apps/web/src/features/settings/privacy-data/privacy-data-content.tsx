@@ -16,6 +16,9 @@ import {
 import type { DataExportFormat } from '@declutrmail/shared/contracts';
 import { fillWs3, WS2_COPY, WS6_COPY } from '@declutrmail/shared/copy/launch';
 
+import type { ReactNode } from 'react';
+
+import { ConnectorOnly } from '@/features/connected-apps/connector-only';
 import { CookiePreferences } from '@/features/consent/cookie-preferences';
 import { DrillRow, SettingsGroup, SettingsRow } from '../settings-list';
 
@@ -126,9 +129,14 @@ function inventoryDisplayItem(item: {
   transmittedTo: readonly GmailDataProcessor[];
   removalTrigger: 'disconnect' | 'delete-indexed-data' | 'delete-account' | 'retention-policy';
 }) {
+  // `ai-assistant` is not a download: it marks what an app connected
+  // through Settings → Connected apps can read, so it gets a sentence of
+  // its own instead of appearing in the list of export formats. The
+  // sentence shows only where the person can connect an app.
+  const downloads = item.exportedIn.filter((format) => format !== 'ai-assistant');
   const exportDetail =
-    item.exportedIn.length > 0
-      ? `Included in: ${item.exportedIn.join(', ')}.`
+    downloads.length > 0
+      ? `Included in: ${downloads.join(', ')}.`
       : 'Not currently included in a data export.';
   const processorDetail = item.transmittedTo
     .map((processor) => PROCESSOR_SENTENCE[processor])
@@ -137,9 +145,21 @@ function inventoryDisplayItem(item: {
   return {
     id: item.id,
     label: item.label,
-    detail: `${item.purpose} ${retentionCopy} ${exportDetail}${processorDetail}`,
+    detail: (
+      <>
+        {`${item.purpose} ${retentionCopy} ${exportDetail}`}
+        {item.exportedIn.includes('ai-assistant') ? (
+          <ConnectorOnly>{' An app you connect can read it.'}</ConnectorOnly>
+        ) : null}
+        {processorDetail}
+      </>
+    ),
+    connectorOnly: CONNECTOR_ONLY_DATASETS.has(item.id),
   };
 }
+
+/** Datasets that exist only for the connector: listed where it is available. */
+const CONNECTOR_ONLY_DATASETS: ReadonlySet<string> = new Set(['action-previews']);
 
 /** Logo and audit rows carry their own retention sentence. Other rows keep the registry text. */
 function inventoryRetentionCopy(
@@ -195,7 +215,7 @@ function InventoryGroup({
   items,
 }: {
   title: string;
-  items: ReadonlyArray<{ id: string; label: string; detail: string }>;
+  items: ReadonlyArray<{ id: string; label: string; detail: ReactNode; connectorOnly?: boolean }>;
 }) {
   return (
     <details className="dm-settings-row dm-inventory">
@@ -238,14 +258,17 @@ function InventoryGroup({
         </span>
       </summary>
       <dl style={{ margin: 0, padding: '0 16px 12px' }}>
-        {items.map((item) => (
-          <div key={item.id} className="dm-inventory-item">
-            <dt style={{ fontSize: text.sm, fontWeight: 600, color: color.fg }}>{item.label}</dt>
-            <dd style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
-              {item.detail}
-            </dd>
-          </div>
-        ))}
+        {items.map((item) => {
+          const row = (
+            <div key={item.id} className="dm-inventory-item">
+              <dt style={{ fontSize: text.sm, fontWeight: 600, color: color.fg }}>{item.label}</dt>
+              <dd style={{ margin: 0, fontSize: text.sm, color: color.fgMuted, lineHeight: 1.5 }}>
+                {item.detail}
+              </dd>
+            </div>
+          );
+          return item.connectorOnly ? <ConnectorOnly key={item.id}>{row}</ConnectorOnly> : row;
+        })}
       </dl>
     </details>
   );

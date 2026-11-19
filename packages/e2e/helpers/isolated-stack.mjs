@@ -40,6 +40,10 @@ export function stackEnvironment(input) {
     WEB_URL: web.origin,
     CORS_ORIGIN: web.origin,
     NEXT_PUBLIC_API_URL: api.origin,
+    // MCP connector (ADR-0048): on here so its OAuth flow, consent page and
+    // Settings section are exercised; production keeps it off.
+    MCP_ENABLED: 'true',
+    API_URL: api.origin,
     // No provider API/client credentials: signed synthetic webhook tests still work.
     BILLING_ENABLED: 'true',
     PADDLE_ENV: 'sandbox',

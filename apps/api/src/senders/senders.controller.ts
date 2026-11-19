@@ -641,7 +641,7 @@ export class SendersController {
  * Returning `nextCursor = null` when there's no sentinel signals
  * `hasMore = false` through the envelope helper.
  */
-function takePage<T>(
+export function takePage<T>(
   rows: T[],
   limit: number,
   buildCursor: (row: T) => string,
@@ -708,7 +708,7 @@ function parseDirection(raw: string | undefined): SenderListDirection | null {
  * The service's `buildCursorPredicate` decodes the same per-sort shape
  * on the next request — keep both in lockstep when adding new sorts.
  */
-function encodeCursorKey(sort: SenderListSort, row: SenderFacts): string {
+export function encodeCursorKey(sort: SenderListSort, row: SenderFacts): string {
   switch (sort) {
     case 'total':
       return String(row.totalReceived);

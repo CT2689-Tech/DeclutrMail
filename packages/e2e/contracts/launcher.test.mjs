@@ -38,6 +38,29 @@ test('launcher cannot carry real credentials or Node/env preloads into either se
     assert.equal(command.env.HTTP_PROXY, undefined);
     assert.equal(command.env.PADDLE_API_KEY, undefined);
     assert.equal(command.env.NEXT_PUBLIC_POSTHOG_KEY, '');
+    // The connector is on in this stack, and its issuer is the isolated API.
+    assert.equal(command.env.MCP_ENABLED, 'true');
+    assert.equal(command.env.API_URL, 'http://127.0.0.1:4104');
+  }
+});
+
+test('CI runs the connector the way this launcher does', () => {
+  // CI sets its browser-lane environment in the workflow, not through this
+  // launcher, so the two can drift apart. The connector journeys passed
+  // here and failed their first CI run: the workflow lacked the flag, and
+  // every connector route was a 404.
+  const workflow = readFileSync(
+    new URL('../../../.github/workflows/ci.yml', import.meta.url),
+    'utf8',
+  );
+  const env = stackEnvironment(safe);
+  const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const key of ['MCP_ENABLED', 'API_URL']) {
+    assert.match(
+      workflow,
+      new RegExp(`^ +${key}: '?${escape(env[key])}'?$`, 'm'),
+      `ci.yml must set ${key} to ${env[key]} for the browser lanes`,
+    );
   }
 });
 

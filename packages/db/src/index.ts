@@ -19,6 +19,26 @@ export type {
   ActionRecoveryPreviewStatus,
   NewActionRecoveryPreview,
 } from './schema/action-recovery-previews';
+export { actionOrigins } from './schema/action-origins';
+export type { ActionOrigin } from './schema/action-origins';
+export { activityOrigins } from './schema/activity-origins';
+export type { ActivityOrigin } from './schema/activity-origins';
+export {
+  ACTION_PREVIEW_ALSO_VERBS,
+  ACTION_PREVIEW_SKIP_REASONS,
+  ACTION_PREVIEW_STATES,
+  ACTION_PREVIEW_VERBS,
+  actionPreviews,
+} from './schema/action-previews';
+export type {
+  ActionPreview,
+  ActionPreviewAlsoVerb,
+  ActionPreviewResult,
+  ActionPreviewSkipReason,
+  ActionPreviewState,
+  ActionPreviewVerb,
+  NewActionPreview,
+} from './schema/action-previews';
 export { actionDirection, actionJobStatus, actionJobs, actionVerb } from './schema/action-jobs';
 export type { ActionJob, LabelActionSelector, NewActionJob } from './schema/action-jobs';
 // Closed enums derived from the canonical pg_enum — adding a value to
@@ -182,6 +202,16 @@ export { gmailCategory, gmailUnsubscribeMethod, senders } from './schema/senders
 export type { NewSender, Sender } from './schema/senders';
 import type { gmailCategory as _gmailCategory } from './schema/senders';
 export type GmailCategory = (typeof _gmailCategory.enumValues)[number];
+export { oauthAuthCodes } from './schema/oauth-auth-codes';
+export type { NewOAuthAuthCode, OAuthAuthCode } from './schema/oauth-auth-codes';
+export { oauthClients } from './schema/oauth-clients';
+export type { NewOAuthClient, OAuthClient } from './schema/oauth-clients';
+export { oauthGrants } from './schema/oauth-grants';
+export type { NewOAuthGrant, OAuthGrant } from './schema/oauth-grants';
+export { oauthInteractions } from './schema/oauth-interactions';
+export type { OAuthInteraction } from './schema/oauth-interactions';
+export { oauthTokens } from './schema/oauth-tokens';
+export type { NewOAuthToken, OAuthToken } from './schema/oauth-tokens';
 export * from './schema/pending-checkouts';
 export { subscriptionEvents } from './schema/subscription-events';
 export type { NewSubscriptionEvent, SubscriptionEvent } from './schema/subscription-events';

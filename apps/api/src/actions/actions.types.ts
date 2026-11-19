@@ -96,6 +96,8 @@ export interface UnsubscribeBacklogSenderResult {
   /** requested = a send was queued or a mailto draft is the user's step. */
   unsubStatus: 'requested' | 'manual' | 'failed' | 'skipped';
   reasonCode: UnsubscribeBacklogReasonCode | null;
+  /** True when the enqueued Archive or Delete covers this sender's existing email. */
+  emailMoved?: boolean;
 }
 
 export interface UnsubscribeBacklogResult {

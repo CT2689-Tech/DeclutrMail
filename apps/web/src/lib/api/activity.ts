@@ -125,6 +125,23 @@ export interface ActivityRowWire {
    * still exists; renders as "by Autopilot · <rule name>".
    */
   rule: ActivityRuleRef | null;
+  /**
+   * The connected app an action was prepared in (MCP connector) — the
+   * row then reads "By you, via <app>". Absent from an older API and on
+   * rows no app started; `name` is null when the app has none.
+   */
+  connectedApp?: { name: string | null } | null;
+  /**
+   * The connected app that made this change on its own, with no
+   * confirmation (a Protect): the row reads "By <app>". Absent from an
+   * older API and on every other row.
+   */
+  actingApp?: { name: string | null } | null;
+  /**
+   * The connected app whose undo put this action back: the pill reads
+   * "Undone via <app>". Absent from an older API and on every other row.
+   */
+  undoneByApp?: { name: string | null } | null;
   feedbackRating: 'expected' | 'surprising' | null;
   undoState: ActivityUndoStateWire;
   /** Null for confirmed append-only Activity rows. */

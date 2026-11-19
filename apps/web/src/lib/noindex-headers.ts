@@ -27,6 +27,8 @@ export const NOINDEX_SOURCES = [
   '/admin/:path*',
   '/onboarding',
   '/onboarding/:path*',
+  '/connect/authorize',
+  '/confirm/:path*',
 ] as const;
 
 export function noindexHeaderRules(): Array<{

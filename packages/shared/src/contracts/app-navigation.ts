@@ -19,7 +19,18 @@ const APP_PATHS = [
   '/onboarding',
   '/admin/security',
   '/admin/acquisition',
+  // MCP connector consent page (ADR-0048): sign-in returns to the pending request.
+  '/connect/authorize',
 ];
+
+/** The authorization server's request ids are URL-safe random strings. */
+export const CONNECT_REQUEST_ID = /^[A-Za-z0-9_-]{16,64}$/;
+
+/**
+ * A stored preview's id (ADR-0048 rule 1). The confirm page is
+ * `/confirm/<id>`: the id is the whole destination.
+ */
+export const CONFIRM_PREVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export { isUserScopedAppPath } from './account-navigation.js';
 
@@ -51,6 +62,13 @@ export function parseAppReturnTo(value: unknown): string | undefined {
   }
   const rawPath = value.split(/[?#]/, 1)[0];
   if (url.origin !== 'https://declutrmail.invalid' || url.pathname !== rawPath) return undefined;
+  const [, previewId] = /^\/confirm\/([^/]+)$/.exec(url.pathname) ?? [];
+  if (previewId !== undefined) {
+    // Exactly the id: no query and no fragment rides through sign-in
+    // beside a request to change someone's email.
+    if (!CONFIRM_PREVIEW_ID.test(previewId) || url.search || url.hash) return undefined;
+    return `/confirm/${previewId}`;
+  }
   if (!APP_PATHS.includes(url.pathname) && !/^\/senders\/[a-zA-Z0-9_-]+$/.test(url.pathname))
     return undefined;
   if (
@@ -85,6 +103,14 @@ export function parseAppReturnTo(value: unknown): string | undefined {
     if (offer !== null) query.set('offer', offer);
     if (from !== null) query.set('from', from);
     return query.size ? `/billing?${query}` : '/billing';
+  }
+  if (url.pathname === '/connect/authorize') {
+    // Exactly one well-formed request id, nothing else: the page reads
+    // only that, so nothing else may ride through sign-in beside it.
+    const request = url.searchParams.get('request');
+    if (keys.length !== 1 || request === null || !CONNECT_REQUEST_ID.test(request))
+      return undefined;
+    return `/connect/authorize?request=${request}`;
   }
   return `${url.pathname}${url.search}${url.hash}`;
 }

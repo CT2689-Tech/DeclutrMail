@@ -84,6 +84,6 @@ import { SNOOZE_LABEL_MAP_TOKEN, SNOOZE_WAKE_QUEUE_TOKEN } from './snoozed.token
       },
     },
   ],
-  exports: [SendersReadService],
+  exports: [SendersReadService, SendersPolicyService],
 })
 export class SendersModule {}

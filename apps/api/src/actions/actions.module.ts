@@ -82,6 +82,6 @@ import { ACTION_QUEUE_TOKEN, ActionsService, UNSUB_QUEUE_TOKEN } from './actions
     ActionRecoveryService,
     UnsubscribeBacklogService,
   ],
-  exports: [ActionsService],
+  exports: [ActionsService, UnsubscribeBacklogService],
 })
 export class ActionsModule {}

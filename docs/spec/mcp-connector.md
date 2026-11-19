@@ -33,12 +33,12 @@ has logic of its own beyond validation and shaping.
 | `list_mailboxes`      | read-only                                    | `MailboxAccountsService` list                                                                             | address, status, sync state, which one is active                                                                           |
 | `list_senders`        | read-only                                    | senders list (`sort` = `total` \| `last_seen`, `q`, Gmail tab, `protected_only`, `limit` ≤ 100, `cursor`) | one row per sender (fields in §5)                                                                                          |
 | `get_sender`          | read-only                                    | `ActionsService.previewComposite` + sender detail                                                         | counts by window (all / 30 / 90 / 180 / 365 days), 5 most recent subjects with dates, Protected state, unsubscribe method  |
-| `get_usage`           | read-only                                    | `EntitlementsService`                                                                                     | tier, cleanup actions used / limit, reset date                                                                             |
+| `get_usage`           | read-only                                    | `EntitlementsService`                                                                                     | tier, emails used / limit, reset date                                                                                      |
 | `preview_cleanup`     | read-only (writes a preview row, never mail) | `previewComposite` (one sender) / `previewBulkComposite` (2+), then inserts `action_previews`             | `preview_id`, expiry, sender count, email count, where the email goes, how to undo, senders skipped and why, `confirm_url` |
 | `apply_cleanup`       | destructive, idempotent                      | confirmation (§3), then the route the web app uses for that verb and sender count (table below)           | action or batch id + status, or `needs_confirmation`                                                                       |
 | `get_action_status`   | read-only                                    | `getStatus` / `getBatchStatus`                                                                            | queued / running / done / failed, counts, undo availability                                                                |
-| `list_recent_actions` | read-only                                    | `UndoService.listActiveDecisions`                                                                         | undoable decisions, newest first, with expiry                                                                              |
-| `undo`                | write, idempotent                            | `UndoService` revert by decision                                                                          | reverse action id + status                                                                                                 |
+| `list_recent_actions` | read-only                                    | `UndoService.listActiveDecisions`                                                                         | undoable decisions this app started, newest first, with expiry                                                             |
+| `undo`                | write, idempotent; only this app's own       | `UndoService` revert by decision                                                                          | reverse action id + status                                                                                                 |
 | `protect_sender`      | write, idempotent                            | `SendersPolicyService.setPolicy` with `{ isProtected: true }`                                             | new Protected state                                                                                                        |
 
 **Which existing method `apply_cleanup` calls** (all on `ActionsService`;
@@ -182,8 +182,8 @@ instructions or tool descriptions.
   keyed by user as today. Add a per-grant ceiling on
   `preview_cleanup` (60 / minute) so a looping assistant cannot fill
   the previews table.
-- Quota: Free's 50 cleanup actions a month (`pricing.config.ts`) apply
-  exactly as in the web app. `QUOTA_EXHAUSTED` returns the reset date
+- Quota: Free's monthly email limit (`METER` in `pricing.config.ts`)
+  applies exactly as in the web app. `QUOTA_EXHAUSTED` returns the reset date
   and an upgrade link; nothing is applied.
 - Tier: every tier. All ten tools sit on Free capabilities (`senders`,
   `sender-detail`, `activity`, `cleanup-actions`). Founder decision 3.
@@ -211,27 +211,27 @@ finds mail moved deserves to know who moved it.
 
 ## 8. States
 
-| State / transition             | Tool returns                                  | Person sees                  | Test        |
-| ------------------------------ | --------------------------------------------- | ---------------------------- | ----------- |
-| Not signed in at authorize     | —                                             | Google sign-in, then consent | e2e         |
-| Consent denied                 | `access_denied` to client                     | client's error               | unit        |
-| Access token expired           | 401 + `WWW-Authenticate`                      | nothing; client refreshes    | unit        |
-| Grant disconnected in Settings | 401 `invalid_token`                           | client asks to reconnect     | integration |
-| Refresh token reused           | 401; family revoked                           | reconnect                    | unit        |
-| Zero mailboxes / none active   | `NO_ACTIVE_MAILBOX` + Settings link           | link                         | integration |
-| Mailbox needs Gmail reconnect  | `MAILBOX_RECONNECT_REQUIRED` + link           | link                         | integration |
-| Sync still running             | results carry sync state and "as of" time     | counts labelled as partial   | unit        |
-| Preview expired                | `PREVIEW_EXPIRED`                             | assistant re-previews        | unit        |
-| Elicitation cancelled          | `NOT_APPLIED`                                 | nothing moved                | unit        |
-| No elicitation support         | `needs_confirmation` + link                   | DeclutrMail preview page     | e2e         |
-| Confirm page, other user       | 404                                           | not found                    | e2e         |
-| Sender protected after preview | applied minus that sender, named in `skipped` | named                        | integration |
-| Quota exhausted                | `QUOTA_EXHAUSTED` + reset date                | upgrade link                 | integration |
-| Unsubscribe, mailto sender     | `action_required` + Gmail compose link        | sends it themself            | integration |
-| Unsubscribe, no method         | `unavailable`, named                          | told why                     | integration |
-| Queue down                     | `QUEUE_UNAVAILABLE`; preview stays pending    | retry later                  | integration |
-| Undo after window              | `UNDO_EXPIRED`                                | told so                      | unit        |
-| Account deletion started       | 401 on every token                            | —                            | integration |
+| State / transition             | Tool returns                                                                                              | Person sees                  | Test        |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------- | ---------------------------- | ----------- |
+| Not signed in at authorize     | —                                                                                                         | Google sign-in, then consent | e2e         |
+| Consent denied                 | `access_denied` to client                                                                                 | client's error               | unit        |
+| Access token expired           | 401 + `WWW-Authenticate`                                                                                  | nothing; client refreshes    | unit        |
+| Grant disconnected in Settings | 401 `invalid_token`                                                                                       | client asks to reconnect     | integration |
+| Refresh token reused           | 401; family revoked                                                                                       | reconnect                    | unit        |
+| Zero mailboxes / none active   | `NO_ACTIVE_MAILBOX` + Settings link                                                                       | link                         | integration |
+| Mailbox needs Gmail reconnect  | `MAILBOX_RECONNECT_REQUIRED` + link                                                                       | link                         | integration |
+| Sync still running             | results carry sync state and "as of" time                                                                 | counts labelled as partial   | unit        |
+| Preview expired                | `PREVIEW_EXPIRED`                                                                                         | assistant re-previews        | unit        |
+| Elicitation cancelled          | `NOT_APPLIED`                                                                                             | nothing moved                | unit        |
+| No elicitation support         | `needs_confirmation` + link                                                                               | DeclutrMail preview page     | e2e         |
+| Confirm page, other user       | 404                                                                                                       | not found                    | e2e         |
+| Sender protected after preview | applied minus that sender, named in `skipped`                                                             | named                        | integration |
+| Quota exhausted                | `QUOTA_EXHAUSTED` + reset date                                                                            | upgrade link                 | integration |
+| Unsubscribe, mailto sender     | `action_required` + Gmail compose link                                                                    | sends it themself            | integration |
+| Unsubscribe, no method         | `unavailable`, named                                                                                      | told why                     | integration |
+| Queue down                     | `QUEUE_UNAVAILABLE`; nothing written → pending; jobs written → the next press reports them, never re-runs | press again later            | integration |
+| Undo after window              | `UNDO_EXPIRED`                                                                                            | told so                      | unit        |
+| Account deletion started       | 401 on every token                                                                                        | —                            | integration |
 
 ## 9. Test plan
 

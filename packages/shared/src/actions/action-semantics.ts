@@ -369,6 +369,58 @@ export function staticActionPreviewCopy(verb: ActionVerb): string {
 }
 
 /**
+ * What a stored preview owes a person beyond its count (CLAUDE.md §2.3):
+ * where the email goes, and how to undo — each once — plus the "what does
+ * not change" lines the registry marks for previews (`inPreview`), which
+ * exist only where a reader would plausibly fear the opposite: Delete
+ * does not stop future email; Keep is not Protect.
+ *
+ * Shared by the MCP connector's tool results and DeclutrMail's confirm
+ * page, so the assistant and the page describe one preview in the same
+ * words.
+ */
+export function actionPreviewFacts(
+  verb: ActionVerb,
+  /** Unsubscribe only: the Archive or Delete of existing email it comes with. */
+  alsoVerb: 'archive' | 'delete' | null = null,
+): {
+  destination: string;
+  undo: string;
+  alsoTrue: readonly string[];
+} {
+  if (verb === 'unsubscribe' && alsoVerb !== null) {
+    const move = actionPreviewFacts(alsoVerb);
+    const unsubscribe = actionPreviewFacts('unsubscribe');
+    return {
+      // What happens to the email already here, then to future email.
+      destination: `${move.destination} ${unsubscribe.destination}`,
+      // Two actions, so each recovery sentence says which one it is for
+      // (see `composeRecoveryFacts`, rule 2).
+      undo: `${ACTION_SEMANTICS[alsoVerb].label} — ${move.undo} ${ACTION_SEMANTICS.unsubscribe.label} — ${unsubscribe.undo}`,
+      // Delete's "Future email is unchanged." is not true next to Unsubscribe.
+      alsoTrue: [],
+    };
+  }
+  const semantics = ACTION_SEMANTICS[verb];
+  const actsOnFutureMail = semantics.currentMail.scope === 'none';
+  const destination = actsOnFutureMail
+    ? semantics.futureMail.summary
+    : semantics.currentMail.summary;
+  const undo = [
+    semantics.activityUndo.kind === 'none'
+      ? semantics.activityUndo.summary
+      : activityUndoSummary(UNIFORM_UNDO_WINDOW_DAYS, null, semantics.activityUndo.summary),
+    ...(semantics.providerRecovery.kind === 'none' ? [] : [semantics.providerRecovery.summary]),
+  ].join(' ');
+  const alsoTrue = [
+    // Already the destination line when the verb acts on future email.
+    ...(!actsOnFutureMail && semantics.futureMail.inPreview ? [semantics.futureMail.summary] : []),
+    ...semantics.unchanged.filter((fact) => fact.inPreview).map((fact) => fact.summary),
+  ];
+  return { destination, undo, alsoTrue };
+}
+
+/**
  * The recovery/finality sentences a confirm surface should show, in order.
  *
  * Two rules the surfaces kept getting wrong independently:

@@ -62,6 +62,25 @@ export interface ActivityRow {
    * FE falls back to plain "by Autopilot").
    */
   rule: ActivityRuleRef | null;
+  /**
+   * The connected app an action was prepared in (ADR-0048, spec §7) — a
+   * person who finds mail moved deserves to know who moved it. Set only on
+   * a completed row whose job the MCP connector started; `name` is null
+   * when the app registered without one. Optional on the wire: web and API
+   * deploy independently, and an older API sends no such key.
+   */
+  connectedApp?: { name: string | null } | null;
+  /**
+   * The connected app that made this change on its own, with no
+   * confirmation in DeclutrMail (a Protect through the connector): the row
+   * reads "By <app>". Optional on the wire, as `connectedApp`.
+   */
+  actingApp?: { name: string | null } | null;
+  /**
+   * The connected app whose `undo` put this action back: the Undone pill
+   * reads "Undone via <app>". Optional on the wire, as `connectedApp`.
+   */
+  undoneByApp?: { name: string | null } | null;
   /** The current user's closed-vocabulary rating for this Activity row. */
   feedbackRating: 'expected' | 'surprising' | null;
   /** D58 undo affordance state — see {@link UndoState}. */
