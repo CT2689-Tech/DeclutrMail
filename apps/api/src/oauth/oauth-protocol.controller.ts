@@ -33,14 +33,18 @@ export const MCP_ROOT_ROUTES: readonly string[] = [
  * ChatGPT) reach the discovery, registration and token endpoints from a
  * small set of addresses on behalf of everyone using them, so one
  * address's ceiling is shared by all of their users connecting at once.
- * Registration is still the tightest of those: each one writes a row for
- * a caller nobody has identified. What bounds that table is the row caps
- * and the 30-day removal of clients nobody approved, not this number; a
- * caller with many addresses was never held by a per-address limit. The
- * authorization endpoint is reached from a person's own browser, so it
- * stays at one person's scale.
+ *
+ * Registration is the tightest of those, because each one writes a row
+ * for a caller nobody has identified, and nothing caps the number of
+ * those rows: each row's size is capped (`oauth-client-policy.ts`) and a
+ * client nobody approved is removed after 30 days by the daily retention
+ * sweep, which removes at most 100,000 a day. 60 a minute is 86,400 a day
+ * from one address, so the sweep keeps up with any single address; a
+ * caller with many addresses is not held by a per-address limit at all.
+ * The authorization endpoint is reached from a person's own browser, so
+ * it stays at one person's scale.
  */
-const REGISTER_LIMIT = { bucket: 'default', limit: 120, windowSec: 60 } as const;
+const REGISTER_LIMIT = { bucket: 'default', limit: 60, windowSec: 60 } as const;
 const TOKEN_LIMIT = { bucket: 'default', limit: 600, windowSec: 60 } as const;
 const AUTHORIZE_LIMIT = { bucket: 'default', limit: 30, windowSec: 60 } as const;
 const DISCOVERY_LIMIT = { bucket: 'default', limit: 600, windowSec: 60 } as const;

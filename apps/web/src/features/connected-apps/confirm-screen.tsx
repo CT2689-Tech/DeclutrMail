@@ -116,14 +116,15 @@ const plural = (count: number, one: string, many: string): string =>
   `${count.toLocaleString('en-US')} ${count === 1 ? one : many}`;
 
 /**
- * The request in a verb or two: "Archive", or "Unsubscribe and archive"
+ * The request in a verb or two: "Archive", or "Unsubscribe + Archive"
  * when Unsubscribe also clears the senders' existing email. A missing
  * `alsoVerb` (an API older than this page) reads as none.
  */
 function requestLabel(preview: ActionPreviewView): string {
   const verb = verbById(preview.verb).label;
   const also = preview.alsoVerb ?? null;
-  return also === null ? verb : `${verb} and ${verbById(also).label.toLowerCase()}`;
+  // The web app's own unsubscribe dialog names it the same way.
+  return also === null ? verb : `${verb} + ${verbById(also).label}`;
 }
 
 /** The verbs that move email already in the inbox; the others have no count to show. */
@@ -410,6 +411,7 @@ function Receipt({
   }
   const { appliedSenders, requestedEmails, skipped } = outcome;
   const label = requestLabel(preview);
+  const alsoVerb = preview.alsoVerb ?? null;
   const began = preview.verb === 'keep' ? 'recorded' : 'started';
   const summary =
     appliedSenders === 0
@@ -430,7 +432,9 @@ function Receipt({
 
       {skipped.length > 0 && (
         <>
-          <h2 style={subheadingStyle}>Skipped</h2>
+          {/* With a paired move, these are the senders not unsubscribed;
+              their email may still have moved, and each line says so. */}
+          <h2 style={subheadingStyle}>{alsoVerb === null ? 'Skipped' : 'Not unsubscribed'}</h2>
           <ul style={listStyle}>
             {skipped.map((sender) => {
               const compose =
@@ -438,6 +442,8 @@ function Receipt({
               return (
                 <li key={sender.senderId}>
                   <strong>{sender.name ?? 'A sender no longer listed'}</strong>:{' '}
+                  {sender.emailMoved === true &&
+                    (alsoVerb === 'delete' ? 'Deleted. ' : 'Archived. ')}
                   {SKIP_REASON[sender.reason]}
                   {compose && (
                     <>
@@ -455,7 +461,7 @@ function Receipt({
       )}
 
       {/* The assistant learns the outcome only when it asks again. */}
-      <p style={{ margin: '20px 0 0' }}>
+      <p style={{ margin: '20px 0 0', overflowWrap: 'anywhere' }}>
         Go back to {preview.appName?.trim() || 'your assistant'} and tell it you confirmed.
       </p>
       <p style={{ margin: '12px 0 0' }}>

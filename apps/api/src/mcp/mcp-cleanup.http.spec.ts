@@ -210,7 +210,7 @@ describe('MCP connector — previews, confirmation and apply', () => {
       });
       expect(answer.data.sender_count).toBe(1);
       expect(answer.data.skipped).toEqual([
-        { sender_id: bank.id, reason: 'protected', compose_url: null },
+        { sender_id: bank.id, reason: 'protected', compose_url: null, email_moved: false },
       ]);
       expect((await previewRow(answer.data.preview_id))!.senderIds).toEqual([shop.id]);
     });
@@ -593,7 +593,7 @@ describe('MCP connector — previews, confirmation and apply', () => {
       });
       const applied = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
       expect(applied.data.skipped).toEqual([
-        { sender_id: bank.id, reason: 'protected', compose_url: null },
+        { sender_id: bank.id, reason: 'protected', compose_url: null, email_moved: false },
       ]);
       const rows = await jobs(s.mailboxId);
       expect(rows.map((row) => row.selector)).toEqual([
@@ -855,6 +855,7 @@ describe('MCP connector — previews, confirmation and apply', () => {
           sender_id: list.id,
           reason: 'mailto',
           compose_url: `https://mail.google.com/mail/?authuser=${encodeURIComponent(s.email)}&view=cm&fs=1&to=leave%40club.example&su=unsubscribe`,
+          email_moved: false,
         },
       ]);
       expect(harness.queued.unsubscribe.length).toBe(before);
@@ -977,19 +978,25 @@ describe('MCP connector — previews, confirmation and apply', () => {
       const applied = await s.mcp.call('apply_cleanup', { preview_id: id });
       expect(applied.data).toMatchObject({
         status: 'applied',
-        applied_senders: 1,
+        // Both were acted on: one unsubscribed and archived, one archived.
+        applied_senders: 2,
         requested_emails: 5,
         refused: null,
       });
       expect(applied.data.batch_id).toEqual(expect.any(String));
-      // The email-only sender: its email was archived; the unsubscribe is
-      // the person's to send.
+      // The email-only sender was not unsubscribed — that is the person's
+      // to send — but its email was archived, and the result says so.
       expect(applied.data.skipped).toEqual([
         {
           sender_id: club.id,
           reason: 'mailto',
           compose_url: expect.stringContaining('to=leave%40club.example'),
+          email_moved: true,
         },
+      ]);
+      const receipt = await s.page.get(`/api/action-previews/${id}`);
+      expect(receipt.json.data.outcome.skipped).toEqual([
+        expect.objectContaining({ senderId: club.id, reason: 'mailto', emailMoved: true }),
       ]);
       expect(harness.queued.label.length).toBeGreaterThan(labelBefore);
       expect(harness.queued.unsubscribe.length).toBe(unsubBefore + 1);
@@ -1134,6 +1141,93 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(applied.data.refused).toMatchObject({ code: 'UNSUBSCRIBE_UNAVAILABLE' });
     });
 
+    it('a fault after the move started keeps the press: the assistant’s retry finishes it once', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 3 });
+      // Five emails left this month; the request moves three.
+      const used = FREE_LIMIT - 5;
+      await harness.db.insert(actionJobs).values({
+        mailboxAccountId: s.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: shop.id, senderKey: shop.senderKey },
+        requestedCount: used,
+        affectedCount: used,
+        quotaUnits: used,
+        status: 'done',
+        idempotencyKey: `archive-fill-${s.mailboxId}`,
+      });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_ids: [shop.id],
+      });
+      const id = preview.data.preview_id;
+      // The database refuses one write after the move and the unsubscribe
+      // were enqueued.
+      const service = harness.app.get(ActionPreviewsService);
+      const blip = vi
+        .spyOn(service as unknown as { recordOrigin: () => Promise<void> }, 'recordOrigin')
+        .mockRejectedValueOnce(new Error('connection reset'));
+      try {
+        expect((await s.page.post(confirmPath(id))).status).toBe(500);
+      } finally {
+        blip.mockRestore();
+      }
+      // Not a refusal: the press stands.
+      expect(await previewRow(id)).toMatchObject({ state: 'confirmed', refusedCode: null });
+
+      // The retry replays the same keys: the limit is not counted twice,
+      // and it ends applied, with one move and one unsubscribe.
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(applied.data).toMatchObject({ status: 'applied', requested_emails: 3, refused: null });
+      const mine = (await jobs(s.mailboxId)).filter((job) =>
+        (job.idempotencyKey ?? '').includes(id),
+      );
+      expect(mine.filter((job) => job.verb === 'archive')).toHaveLength(1);
+      // The retry hands the queue the same job again under the same job id,
+      // which the real queue ignores; what matters is that it is one action.
+      const unsubscribes = harness.queued.unsubscribe.filter((job) =>
+        JSON.stringify(job).includes(id),
+      ) as Array<{ actionId: string }>;
+      expect(new Set(unsubscribes.map((job) => job.actionId)).size).toBe(1);
+      expect(
+        mine.filter((job) => (job.idempotencyKey ?? '').startsWith('unsubexec-')),
+      ).toHaveLength(1);
+    });
+
+    it('a sender busy with another action is skipped, and nothing is unsubscribed', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 2 });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_ids: [shop.id],
+      });
+      await harness.db.insert(actionJobs).values({
+        mailboxAccountId: s.mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: shop.id, senderKey: shop.senderKey },
+        requestedCount: 2,
+        affectedCount: 0,
+        status: 'queued',
+        idempotencyKey: `busy-${s.mailboxId}`,
+      });
+      const unsubBefore = harness.queued.unsubscribe.length;
+      expect((await s.page.post(confirmPath(preview.data.preview_id))).status).toBe(200);
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
+      expect(applied.data).toMatchObject({
+        status: 'applied',
+        applied_senders: 0,
+        requested_emails: 0,
+      });
+      expect(applied.data.skipped).toEqual([
+        { sender_id: shop.id, reason: 'in_progress', compose_url: null, email_moved: false },
+      ]);
+      expect(harness.queued.unsubscribe.length).toBe(unsubBefore);
+    });
+
     it('skips a sender that became Protected after the preview, and leaves its email alone', async () => {
       const s = await scene();
       const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 2 });
@@ -1152,7 +1246,7 @@ describe('MCP connector — previews, confirmation and apply', () => {
       const applied = await s.mcp.call('apply_cleanup', { preview_id: preview.data.preview_id });
       expect(applied.data).toMatchObject({ applied_senders: 1, requested_emails: 2 });
       expect(applied.data.skipped).toEqual([
-        { sender_id: bank.id, reason: 'protected', compose_url: null },
+        { sender_id: bank.id, reason: 'protected', compose_url: null, email_moved: false },
       ]);
     });
   });

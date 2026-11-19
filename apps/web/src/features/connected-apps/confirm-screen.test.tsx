@@ -201,18 +201,18 @@ describe('ConfirmCard — the request', () => {
   it('Unsubscribe with Archive names both, counts the email, and says whose undo is whose', () => {
     renderReady(view({ verb: 'unsubscribe', alsoVerb: 'archive' }));
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe(
-      'Unsubscribe and archive 7 senders?',
+      'Unsubscribe + Archive 7 senders?',
     );
     const facts = actionPreviewFacts('unsubscribe', 'archive');
     expect(items().slice(-3)).toEqual(['412 emails in your inbox', facts.destination, facts.undo]);
     expect(facts.undo).toContain('Archive — ');
     expect(facts.undo).toContain('Unsubscribe — ');
-    expect(screen.getByRole('button').textContent).toBe('Unsubscribe and archive');
+    expect(screen.getByRole('button').textContent).toBe('Unsubscribe + Archive');
   });
 
   it('Unsubscribe with Delete does not say future email is unchanged', () => {
     renderReady(view({ verb: 'unsubscribe', alsoVerb: 'delete' }));
-    expect(screen.getByRole('button').textContent).toBe('Unsubscribe and delete');
+    expect(screen.getByRole('button').textContent).toBe('Unsubscribe + Delete');
     expect(bodyText()).toContain('Gmail Trash');
     expect(bodyText()).not.toContain('Future email is unchanged.');
   });
@@ -449,9 +449,47 @@ describe('ConfirmCard — the receipt', () => {
   it('names both halves of Unsubscribe with Archive', () => {
     renderReceipt(applied({}, { verb: 'unsubscribe', alsoVerb: 'archive' }));
     expect(screen.getByRole('status').textContent).toBe(
-      'Unsubscribe and archive started for 7 senders. It covers 412 emails.',
+      'Unsubscribe + Archive started for 7 senders. It covers 412 emails.',
     );
   });
+
+  it.each([
+    ['archive', 'Archived.'],
+    ['delete', 'Deleted.'],
+  ] as const)(
+    'with %s, lists who was not unsubscribed and says their email still moved',
+    (alsoVerb, moved) => {
+      renderReceipt(
+        applied(
+          {
+            skipped: [
+              {
+                senderId: 's1',
+                name: 'The Club',
+                reason: 'mailto',
+                composeUrl: null,
+                emailMoved: true,
+              },
+              {
+                senderId: 's2',
+                name: 'My Bank',
+                reason: 'protected',
+                composeUrl: null,
+                emailMoved: false,
+              },
+            ],
+          },
+          { verb: 'unsubscribe', alsoVerb },
+        ),
+      );
+      expect(screen.getByRole('heading', { level: 2 }).textContent).toBe('Not unsubscribed');
+      expect(bodyText()).not.toContain('Skipped');
+      expect(items()).toEqual([
+        `The Club: ${moved} Unsubscribes by email. Send the draft from Gmail.`,
+        'My Bank: Protected, so it was skipped.',
+      ]);
+    },
+  );
 
   it('Keep records a decision: no email count and no progress line', () => {
     renderReceipt(

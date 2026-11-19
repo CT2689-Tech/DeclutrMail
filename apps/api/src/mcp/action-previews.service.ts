@@ -41,6 +41,8 @@ const KEEP_CONCURRENCY = 8;
 export interface PreviewSkip {
   senderId: string;
   reason: ActionPreviewSkipReason;
+  /** Unsubscribe with Archive or Delete: not unsubscribed, but its email was moved. */
+  emailMoved?: boolean;
 }
 
 /** Who is asking: the person and the connected app acting for them. */
@@ -352,11 +354,15 @@ export class ActionPreviewsService {
           .set({ state: 'pending', confirmedAt: null, claimedAt: null, refusedCode: refusal })
           .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
           .catch((cause: unknown) => {
-            // The original refusal is what the caller needs; this one is
-            // logged. The lease still lapses, and the next start meets
-            // the same refusal while the reason holds.
-            this.logger.error(
-              `action_preview.refusal_not_recorded id=${preview.id} code=${refusal}: ${String(cause)}`,
+            // The original refusal is what the caller needs, so it is the
+            // one thrown. Unrecorded, the press is not spent: once the
+            // lease lapses, a start after an upgrade would need no new
+            // press. Rare (the database refused one UPDATE), and reported.
+            this.reportUnrecorded(
+              'action_preview.refusal_not_recorded',
+              preview.id,
+              cause,
+              refusal,
             );
           });
       } else {
@@ -368,7 +374,9 @@ export class ActionPreviewsService {
           .update(actionPreviews)
           .set({ claimedAt: null })
           .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
-          .catch(() => undefined);
+          .catch((cause: unknown) => {
+            this.reportUnrecorded('action_preview.claim_not_released', preview.id, cause);
+          });
       }
       throw error;
     }
@@ -463,6 +471,23 @@ export class ActionPreviewsService {
 
   /* ───────────────────────────── internals ───────────────────────────── */
 
+  /** A write after a failed start did not land: logged, and sent to Sentry as a warning. */
+  private reportUnrecorded(kind: string, previewId: string, cause: unknown, code?: string): void {
+    const error = cause instanceof Error ? cause.name : 'unknown error';
+    this.logger.error(JSON.stringify({ kind, previewId, code: code ?? null, error }));
+    void import('@sentry/node')
+      .then((Sentry) => {
+        Sentry.withScope((scope) => {
+          scope.setLevel('warning');
+          scope.setTag('mcp_preview_write', kind);
+          Sentry.captureException(cause);
+        });
+      })
+      .catch(() => {
+        // Sentry is unavailable; the log line above is the record.
+      });
+  }
+
   /** Send the verb to the method the web app uses for it (spec §2). */
   private async execute(preview: ActionPreview): Promise<{
     result: ActionPreviewResult;
@@ -522,19 +547,35 @@ export class ActionPreviewsService {
       // The web app's own one-confirmation path: the Archive or Delete is
       // enqueued first (a plan limit refuses it before any unsubscribe is
       // recorded), then one unsubscribe per sender, linked to it.
-      const done = await this.unsubscribeBacklog.confirm({
-        mailboxAccountId,
-        idempotencyKey,
-        mode: preview.alsoVerb,
-        senderIds: [...ids],
-        olderThanDays: preview.olderThanDays,
-        // ADR-0048 rule 2: the connector never reaches past the inbox.
-        reach: 'inbox_only',
-        override: false,
-      });
+      let done: Awaited<ReturnType<UnsubscribeBacklogService['confirm']>>;
+      try {
+        done = await this.unsubscribeBacklog.confirm({
+          mailboxAccountId,
+          idempotencyKey,
+          mode: preview.alsoVerb,
+          senderIds: [...ids],
+          olderThanDays: preview.olderThanDays,
+          // ADR-0048 rule 2: the connector never reaches past the inbox.
+          reach: 'inbox_only',
+          override: false,
+        });
+      } catch (error) {
+        // The move was refused before any unsubscribe was recorded. A busy
+        // sender is a skip, as in the other branches, not an error.
+        if (exceptionCode(error) === 'NO_ACTIONABLE_SENDERS') return nothing();
+        const reason =
+          ids.length === 1 ? SINGLE_SENDER_SKIP[exceptionCode(error) ?? ''] : undefined;
+        if (!reason) throw error;
+        return skipOne(ids[0]!, reason);
+      }
+      // Two halves per sender: `skipped` lists who was not unsubscribed,
+      // and says whether their email was moved all the same.
       const skipped = done.senders.flatMap((sender) => {
         const reason = backlogSkip(sender);
-        return reason ? [{ senderId: sender.senderId, reason }] : [];
+        if (!reason) return [];
+        return [
+          { senderId: sender.senderId, reason, emailMoved: sender.unsubStatus !== 'skipped' },
+        ];
       });
       return {
         actionId: done.backlog?.actionId ?? null,
@@ -543,7 +584,8 @@ export class ActionPreviewsService {
         ),
         result: {
           handle: done.backlog?.handle ?? null,
-          appliedSenders: ids.length - skipped.length,
+          // Acted on: unsubscribed, or their email moved, or both.
+          appliedSenders: done.senders.filter((sender) => sender.unsubStatus !== 'skipped').length,
           requestedEmails: done.backlog?.requestedCount ?? 0,
           skipped,
         },
@@ -883,14 +925,24 @@ function mailboxDisconnected(): McpToolError {
 
 /**
  * A start refused for a reason the person has to act on, as the tool
- * error code that names it; null for a fault (the queue was down, an
- * unexpected error), where the press stands and a retry continues.
+ * error code that names it; null for anything else (the queue was down,
+ * an unexpected error), where the press stands and a retry continues.
  */
-function refusalOf(error: unknown): string | null {
+export function refusalOf(error: unknown): string | null {
   const tool = toToolError(error);
-  if (!tool || tool.code === 'QUEUE_UNAVAILABLE') return null;
-  return tool.code;
+  return tool && REFUSALS.has(tool.code) ? tool.code : null;
 }
+
+/**
+ * The reasons that spend a press: each names something the person has to
+ * change before the same request could start, and none is raised after
+ * anything was started. Every other failure keeps the press.
+ */
+const REFUSALS: ReadonlySet<string> = new Set([
+  'QUOTA_EXHAUSTED',
+  'UPGRADE_REQUIRED',
+  'UNSUBSCRIBE_UNAVAILABLE',
+]);
 
 /** Why one sender of an Unsubscribe-with-Archive/Delete was not unsubscribed. */
 function backlogSkip(sender: UnsubscribeBacklogSenderResult): ActionPreviewSkipReason | null {

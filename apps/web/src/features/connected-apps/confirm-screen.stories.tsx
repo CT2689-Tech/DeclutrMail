@@ -4,8 +4,9 @@
 // presentational.
 //
 //   • Archive · Delete90Days · Later · Unsubscribe · Keep — one per verb
-//   • UnsubscribeAndArchive · UnsubscribeAndDelete — Unsubscribe that also
-//     clears the senders' existing email, in one confirmation
+//   • UnsubscribeAndArchive · UnsubscribeAndDelete · ConfirmedEarlierUnsubscribeAndArchive
+//                                      — Unsubscribe that also clears the
+//                                        senders' existing email, in one confirmation
 //   • OneSender · UnnamedAppLongNames  — singular copy; text that wraps
 //   • ManySenders                      — five listed, the rest behind a disclosure
 //   • ConfirmedEarlier                 — pressed before, no result on record
@@ -13,8 +14,8 @@
 //   • MonthlyLimit · MailboxDisconnected · UnsubscribeOff · NotStarted ·
 //     ConfirmFailed                    — the press did not go through
 //   • Receipt · ReceiptFinished · ReceiptKeep · ReceiptPartial ·
-//     ReceiptNothingStarted · ReceiptMailto · ReceiptUnsubscribeAndArchive
-//                                      — what confirming did
+//     ReceiptNothingStarted · ReceiptMailto · ReceiptUnsubscribeAndArchive ·
+//     ReceiptUnsubscribeAndDelete      — what confirming did
 //   • DidNotComplete                   — the job failed: never a receipt
 //   • Loading · Unavailable · Expired · LoadFailed
 
@@ -117,6 +118,11 @@ export const Later = ready({
 export const Unsubscribe = ready({ verb: 'unsubscribe', emailCount: 0 });
 export const Keep = ready({ verb: 'keep', emailCount: 0 });
 export const UnsubscribeAndArchive = ready({ verb: 'unsubscribe', alsoVerb: 'archive' });
+export const ConfirmedEarlierUnsubscribeAndArchive = ready({
+  verb: 'unsubscribe',
+  alsoVerb: 'archive',
+  state: 'confirmed',
+});
 export const UnsubscribeAndDelete = ready({
   verb: 'unsubscribe',
   alsoVerb: 'delete',
@@ -198,18 +204,36 @@ export const ReceiptMailto = receipt(
 );
 export const ReceiptUnsubscribeAndArchive = receipt(
   {
-    appliedSenders: 6,
+    appliedSenders: 7,
     skipped: [
       {
         senderId: 's1',
         name: 'The Club',
         reason: 'mailto',
+        emailMoved: true,
         composeUrl:
           'https://mail.google.com/mail/?authuser=ada%40example.com&view=cm&fs=1&to=leave%40club.example&su=unsubscribe',
       },
     ],
   },
   { verb: 'unsubscribe', alsoVerb: 'archive' },
+);
+export const ReceiptUnsubscribeAndDelete = receipt(
+  {
+    appliedSenders: 6,
+    requestedEmails: 380,
+    skipped: [
+      {
+        senderId: 's1',
+        name: 'Plain Corp',
+        reason: 'no_channel',
+        emailMoved: true,
+        composeUrl: null,
+      },
+      { senderId: 's2', name: 'My Bank', reason: 'protected', emailMoved: false, composeUrl: null },
+    ],
+  },
+  { verb: 'unsubscribe', alsoVerb: 'delete' },
 );
 export const DidNotComplete = receipt({ actionStatus: 'failed' });
 

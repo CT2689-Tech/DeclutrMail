@@ -6,6 +6,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AppException } from '../common/app-exception.js';
+import { refusalOf } from './action-previews.service.js';
 import { McpToolError, toToolError } from './mcp-tool-errors.js';
 
 afterEach(() => {
@@ -73,5 +74,33 @@ describe('toToolError — what a service threw, as the assistant is told it', ()
   it('leaves a tool error as it is', () => {
     const error = new McpToolError('PREVIEW_EXPIRED', 'expired');
     expect(toToolError(error)).toBe(error);
+  });
+});
+
+describe('refusalOf — which failed starts spend the person’s press', () => {
+  it.each([
+    ['the monthly limit', new AppException({ code: 'FREE_CAP_REACHED' }), 'QUOTA_EXHAUSTED'],
+    [
+      'a plan that lacks it',
+      new AppException({ code: 'ACTION_TIER_REQUIRED' }),
+      'UPGRADE_REQUIRED',
+    ],
+    [
+      'sending switched off',
+      new ConflictException({ code: 'UNSUB_SEND_DISABLED', message: 'off' }),
+      'UNSUBSCRIBE_UNAVAILABLE',
+    ],
+  ])('%s does: the person has to change something first', (_label, error, code) => {
+    expect(refusalOf(error)).toBe(code);
+  });
+
+  it.each([
+    ['the queue being down', new ServiceUnavailableException({ code: 'ACTION_QUEUE_UNAVAILABLE' })],
+    ['no sender left to act on', new McpToolError('NO_ACTIONABLE_SENDERS', 'none')],
+    ['a sender gone missing', new McpToolError('SENDER_NOT_FOUND', 'gone')],
+    ['a bad request', new BadRequestException({ code: 'BAD_REQUEST', message: 'no' })],
+    ['anything unexpected', new Error('connection reset')],
+  ])('%s does not: the press stands and a retry continues', (_label, error) => {
+    expect(refusalOf(error)).toBeNull();
   });
 });

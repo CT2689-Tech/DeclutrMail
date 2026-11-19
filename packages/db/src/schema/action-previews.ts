@@ -41,7 +41,15 @@ export interface ActionPreviewResult {
   appliedSenders: number;
   /** Emails the started action was asked to move, as counted at enqueue. */
   requestedEmails: number;
-  skipped: Array<{ senderId: string; reason: ActionPreviewSkipReason }>;
+  skipped: Array<{
+    senderId: string;
+    reason: ActionPreviewSkipReason;
+    /**
+     * Unsubscribe with Archive or Delete only: the sender was not
+     * unsubscribed, but their existing email was still moved.
+     */
+    emailMoved?: boolean;
+  }>;
 }
 
 /**

@@ -216,6 +216,7 @@ export class McpToolsService {
           sender_id: skip.senderId,
           reason: skip.reason,
           compose_url: null,
+          email_moved: false,
         })),
       };
     },
@@ -363,6 +364,7 @@ export class McpToolsService {
         sender_id: skip.senderId,
         reason: skip.reason,
         compose_url: skip.composeUrl,
+        email_moved: skip.emailMoved === true,
       })),
       refused:
         preview.state === 'pending' && preview.refusedCode !== null

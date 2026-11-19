@@ -33,6 +33,11 @@ export const ActionPreviewSkippedSchema = z.object({
   reason: ActionPreviewSkipReasonSchema,
   /** `mailto` only: a Gmail compose link the person sends themself. */
   composeUrl: z.string().nullable(),
+  /**
+   * Unsubscribe with Archive or Delete: the sender was not unsubscribed,
+   * but their existing email was still moved.
+   */
+  emailMoved: z.boolean().optional(),
 });
 export type ActionPreviewSkipped = z.infer<typeof ActionPreviewSkippedSchema>;
 

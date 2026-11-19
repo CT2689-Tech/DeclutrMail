@@ -1,5 +1,5 @@
 import { HttpException, Inject, Injectable } from '@nestjs/common';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 
 import {
   actionJobs,
@@ -74,7 +74,14 @@ export class UnsubscribeBacklogService {
         olderThanDays,
       );
       if (measured.count > 0) {
-        await this.entitlements.assertCleanupCapacity(input.mailboxAccountId, measured.count);
+        // A retry of a backlog already enqueued under this key was charged
+        // then; the enqueue below replays it. The limit is checked only for
+        // a fresh request (`assertCleanupCapacity`'s contract): checking a
+        // replay counts its own emails twice and refuses what already ran.
+        const verb = input.mode === 'delete' ? 'delete' : 'archive';
+        if (!(await this.backlogEnqueued(input.mailboxAccountId, verb, input.idempotencyKey))) {
+          await this.entitlements.assertCleanupCapacity(input.mailboxAccountId, measured.count);
+        }
         const enqueued = await this.enqueueBacklog(input, actionable, reach, olderThanDays);
         backlog = enqueued.backlog;
         if (
@@ -216,6 +223,33 @@ export class UnsubscribeBacklogService {
         reasonCode: reasonFromRecordError(err),
       };
     }
+  }
+
+  /**
+   * Whether this key already enqueued the backlog: the stored keys
+   * `ActionsService` derives from it, `<verb>-<key>` (one sender) or
+   * `<verb>-<key>-<sender id>` (several).
+   */
+  private async backlogEnqueued(
+    mailboxAccountId: string,
+    verb: 'archive' | 'delete',
+    idempotencyKey: string,
+  ): Promise<boolean> {
+    const stored = `${verb}-${idempotencyKey.replace(/:/g, '-')}`;
+    const [row] = await this.db
+      .select({ id: actionJobs.id })
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, mailboxAccountId),
+          or(
+            eq(actionJobs.idempotencyKey, stored),
+            sql`starts_with(${actionJobs.idempotencyKey}, ${`${stored}-`})`,
+          ),
+        ),
+      )
+      .limit(1);
+    return row !== undefined;
   }
 
   private async loadSenders(mailboxAccountId: string, senderIds: string[]) {

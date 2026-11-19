@@ -164,6 +164,11 @@ const skipped = z.array(
      * returns as `mailbox`.
      */
     compose_url: tag(z.string().nullable(), 'unsubscribe-channels'),
+    /**
+     * Unsubscribe with existing_email only: the sender was not
+     * unsubscribed, but their existing email was still archived or deleted.
+     */
+    email_moved: tag(z.boolean(), 'action-previews'),
   }),
 );
 

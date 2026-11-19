@@ -1,4 +1,5 @@
-import { and, eq, isNull, or, sql } from 'drizzle-orm';
+import { Logger } from '@nestjs/common';
+import { and, eq, isNull, ne, or, sql } from 'drizzle-orm';
 import { type Adapter, type AdapterPayload, errors, Provider } from 'oidc-provider';
 
 import { oauthAuthCodes, oauthClients, oauthInteractions, oauthTokens } from '@declutrmail/db';
@@ -39,13 +40,20 @@ import {
  *
  * REFRESH GRACE. A refresh token presented again within
  * `REFRESH_REUSE_GRACE_SEC` of its first use is honoured once more: a
- * client that lost the response, or refreshed twice at once, gets new
- * tokens instead of being disconnected. After the grace, reuse revokes
- * the grant as above. Authorization codes get no grace. The trade-off:
- * someone holding a stolen refresh token who uses it inside that window
- * gets working tokens without the grant being revoked — the same
- * allowance the web session makes (F034).
+ * client that lost the response gets new tokens instead of being
+ * disconnected. After the grace, reuse revokes the grant as above.
+ * Authorization codes get no grace.
+ *
+ * ONE LIVE REFRESH TOKEN PER FAMILY. Every rotation retires the family's
+ * other unused refresh tokens, so a use inside the grace leaves only the
+ * newest one working. Whoever still holds a retired token — the client
+ * whose answer was superseded, or someone who replayed a stolen token —
+ * is caught as reuse at their next refresh after the grace, and the
+ * grant is revoked. Of two refreshes sent at once, the one answered last
+ * holds the live token. Every use inside the grace is logged.
  */
+
+const graceLog = new Logger('OAuthRefreshGrace');
 
 /** Seconds after its first use that a refresh token may be used again. */
 export const REFRESH_REUSE_GRACE_SEC = 30;
@@ -247,23 +255,43 @@ class TokenStore extends BaseStore {
     // token being rotated on the request context (documented `Provider.ctx`).
     const rotated = Provider.ctx?.oidc.entities.RotatedRefreshToken;
     const rotatedHash = rotated?.jti ? hashOAuthSecret(rotated.jti) : undefined;
-    const [predecessor] = rotatedHash
-      ? await this.db
-          .select({ familyId: oauthTokens.familyId })
-          .from(oauthTokens)
-          .where(eq(oauthTokens.tokenHash, rotatedHash))
-          .limit(1)
-      : [];
-    const [inserted] = await this.db
-      .insert(oauthTokens)
-      .values({ ...values, familyId: predecessor?.familyId ?? crypto.randomUUID() })
-      .returning({ id: oauthTokens.id });
-    if (rotatedHash && inserted) {
-      await this.db
+    if (!rotatedHash) {
+      await this.db.insert(oauthTokens).values({ ...values, familyId: crypto.randomUUID() });
+      return;
+    }
+    // Database statements only. The predecessor's row lock makes two
+    // rotations of one token take turns, so exactly one successor is left
+    // live (ONE LIVE REFRESH TOKEN PER FAMILY).
+    await this.db.transaction(async (tx) => {
+      const [predecessor] = await tx
+        .select({ id: oauthTokens.id, familyId: oauthTokens.familyId })
+        .from(oauthTokens)
+        .where(eq(oauthTokens.tokenHash, rotatedHash))
+        .limit(1)
+        .for('update');
+      const familyId = predecessor?.familyId ?? crypto.randomUUID();
+      const [inserted] = await tx
+        .insert(oauthTokens)
+        .values({ ...values, familyId })
+        .returning({ id: oauthTokens.id });
+      if (!predecessor || !inserted) return;
+      await tx
         .update(oauthTokens)
         .set({ replacedBy: inserted.id })
-        .where(eq(oauthTokens.tokenHash, rotatedHash));
-    }
+        .where(eq(oauthTokens.id, predecessor.id));
+      await tx
+        .update(oauthTokens)
+        .set({ consumedAt: sql`now()` })
+        .where(
+          and(
+            eq(oauthTokens.familyId, familyId),
+            eq(oauthTokens.kind, 'refresh'),
+            ne(oauthTokens.id, inserted.id),
+            isNull(oauthTokens.consumedAt),
+            isNull(oauthTokens.revokedAt),
+          ),
+        );
+    });
   }
 
   /**
@@ -293,6 +321,14 @@ class TokenStore extends BaseStore {
     // Inside the grace a used refresh token reads as unused, so the
     // library rotates it again instead of revoking (see REFRESH GRACE).
     const reusable = this.kind === 'refresh' && row.inGrace === true;
+    if (reusable) {
+      graceLog.warn(
+        JSON.stringify({
+          kind: 'oauth.refresh_grace_used',
+          grantId: typeof row.payload.grantId === 'string' ? row.payload.grantId : null,
+        }),
+      );
+    }
     return {
       ...row.payload,
       jti: id,
