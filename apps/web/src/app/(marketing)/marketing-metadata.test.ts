@@ -64,6 +64,14 @@ import { metadata as howToStorage } from './how-to/gmail-storage-full/page';
 import { metadata as howToArchive } from './how-to/auto-archive-future-emails-in-gmail/page';
 import { metadata as howToPromo } from './how-to/stop-promotional-emails-gmail/page';
 import { metadata as howToUnsub } from './how-to/unsubscribe-from-emails-gmail/page';
+import { metadata as howToMassDelete } from './how-to/mass-delete-emails-gmail/page';
+import { metadata as howToPromotionsDelete } from './how-to/delete-all-promotions-emails-gmail/page';
+import { metadata as howToOverFifty } from './how-to/delete-more-than-50-emails-gmail/page';
+import { metadata as howToByDate } from './how-to/delete-old-emails-gmail-by-date/page';
+import { metadata as howToUnread } from './how-to/delete-all-unread-emails-gmail/page';
+import { metadata as howToCleanUp } from './how-to/clean-up-gmail-inbox/page';
+import { metadata as howToArchived } from './how-to/where-do-archived-emails-go-gmail/page';
+import { metadata as howToRecover } from './how-to/recover-deleted-emails-gmail/page';
 import { metadata as answerSafe } from './answers/is-it-safe-to-connect-gmail-app/page';
 import { metadata as answerMeta } from './answers/what-is-metadata-only-email-analysis/page';
 import { metadata as answerUndo } from './answers/how-undo-works-for-gmail-cleanup/page';
@@ -229,6 +237,14 @@ const STATIC_METADATA = new Map<string, Metadata>([
   ['/how-to/auto-archive-future-emails-in-gmail', howToArchive],
   ['/how-to/stop-promotional-emails-gmail', howToPromo],
   ['/how-to/unsubscribe-from-emails-gmail', howToUnsub],
+  ['/how-to/mass-delete-emails-gmail', howToMassDelete],
+  ['/how-to/delete-all-promotions-emails-gmail', howToPromotionsDelete],
+  ['/how-to/delete-more-than-50-emails-gmail', howToOverFifty],
+  ['/how-to/delete-old-emails-gmail-by-date', howToByDate],
+  ['/how-to/delete-all-unread-emails-gmail', howToUnread],
+  ['/how-to/clean-up-gmail-inbox', howToCleanUp],
+  ['/how-to/where-do-archived-emails-go-gmail', howToArchived],
+  ['/how-to/recover-deleted-emails-gmail', howToRecover],
   ['/answers/is-it-safe-to-connect-gmail-app', answerSafe],
   ['/answers/what-is-metadata-only-email-analysis', answerMeta],
   ['/answers/how-undo-works-for-gmail-cleanup', answerUndo],
