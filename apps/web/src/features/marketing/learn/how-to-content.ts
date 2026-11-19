@@ -12,6 +12,14 @@ export const HOW_TO_SLUGS = [
   'auto-archive-future-emails-in-gmail',
   'stop-promotional-emails-gmail',
   'unsubscribe-from-emails-gmail',
+  'mass-delete-emails-gmail',
+  'delete-all-promotions-emails-gmail',
+  'delete-more-than-50-emails-gmail',
+  'delete-old-emails-gmail-by-date',
+  'delete-all-unread-emails-gmail',
+  'clean-up-gmail-inbox',
+  'where-do-archived-emails-go-gmail',
+  'recover-deleted-emails-gmail',
 ] as const;
 
 export type HowToSlug = (typeof HOW_TO_SLUGS)[number];
@@ -21,11 +29,11 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     slug: 'clean-gmail-by-sender',
     path: '/how-to/clean-gmail-by-sender',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-09-22',
+    updatedAt: '2026-11-18',
     kind: 'How-to guide',
     title: 'How to clean Gmail by sender',
     description:
-      'A precise sender-first Gmail cleanup workflow, with native Gmail steps and an honest explanation of what DeclutrMail changes.',
+      'A precise sender-first Gmail cleanup workflow, with native Gmail steps and a plain explanation of what DeclutrMail changes.',
     intro:
       'An inbox may contain 20,000 emails but only a few dozen recurring senders. Grouping by sender turns an endless email list into a smaller set of decisions you can reason about.',
     readingMinutes: 7,
@@ -44,7 +52,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           sender: 'Project Digest',
           detail: '12 inbox messages · marked read often',
           action: 'Later',
-          result: 'Current email moves to DeclutrMail/Later.',
+          result: 'Waits under DeclutrMail/Later, then returns to the inbox at the time you pick.',
         },
         {
           sender: 'Coupon Parade',
@@ -86,7 +94,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Choose which email to change',
-            text: 'Select the visible page or use Gmail’s “select all conversations that match this search” option only after checking the query. The second option can affect years of email.',
+            text: 'Select the visible page, or click the link in Gmail’s notification that selects all conversations, only after checking the query. The second option can affect years of email.',
           },
           {
             name: 'Apply one clear outcome',
@@ -161,11 +169,11 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     slug: 'bulk-delete-emails-from-one-sender',
     path: '/how-to/bulk-delete-emails-from-one-sender',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-10-13',
+    updatedAt: '2026-11-18',
     kind: 'How-to guide',
-    title: 'How to delete all emails from one sender in Gmail',
+    title: 'Delete all emails from one sender in Gmail',
     quickAnswer:
-      'In Gmail on the web, search from:(sender@example.com), check a few results, select them, and choose “Select all conversations that match this search” before clicking Delete. Email moves to Trash; emptying Trash ends recovery. This does not unsubscribe you or delete future email.',
+      'In Gmail on the web, search from:(sender@example.com), check a few results, check the Select box, then click the link in the notification that selects all conversations before clicking Delete. Email moves to Trash; emptying Trash ends recovery. This does not unsubscribe you or delete future email.',
     description:
       'Delete all emails from one sender in Gmail using a verified search, with clear Trash and future-mail boundaries.',
     intro:
@@ -215,11 +223,11 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
           },
           {
             name: 'Select the intended email',
-            text: 'Select the current page first. If Gmail offers “select all conversations that match,” use it only when the query and count match your intention.',
+            text: 'Check the Select box to select the current page. Gmail then shows a notification with a link that selects all conversations; use it only when the query and count match your intention.',
           },
           {
             name: 'Move to Trash and verify',
-            text: 'Click Delete, then open Trash and confirm a few messages. Undo immediately if the selection was wrong; otherwise Gmail keeps the messages in Trash temporarily.',
+            text: 'Click Delete, then open Trash and confirm a few messages. If the selection was wrong, check those messages in Trash, click Move to, and choose Inbox. Gmail keeps deleted messages in Trash for up to 30 days.',
           },
         ],
       },
@@ -398,7 +406,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
       },
       {
         id: 'prune-or-pay',
-        title: 'Decide honestly between pruning and paying',
+        title: 'Decide between pruning and paying',
         paragraphs: [
           'If a mailbox is mostly years of attachments you genuinely may need, extra storage through Google One is the cheaper answer than an afternoon of risky bulk deletion. Pruning wins when the weight is concentrated in email you can name and would never open again — old reports, expired offers, superseded drafts.',
           'A useful test: run has:attachment larger:10M and older_than:2y has:attachment, and look at what comes back. If the results are mostly things you would delete without hesitation, prune. If you hesitate on most of them, buy the storage and spend the effort on future volume instead.',
@@ -689,7 +697,7 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
     slug: 'unsubscribe-from-emails-gmail',
     path: '/how-to/unsubscribe-from-emails-gmail',
     publishedAt: '2026-07-14',
-    updatedAt: '2026-10-03',
+    updatedAt: '2026-11-18',
     kind: 'How-to guide',
     title: 'How to unsubscribe from emails in Gmail',
     description:
@@ -791,9 +799,9 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
       },
       {
         id: 'bulk',
-        title: 'Use bulk unsubscribe as a review queue, not a blind sweep',
+        title: 'Mass unsubscribe in Gmail: a review queue, not a blind sweep',
         paragraphs: [
-          'Multi-sender cleanup works on every plan (Free counts it against the monthly quota). Each sender still has its own method and outcome: one-click requests queue separately, mailto requests stay in a visible Gmail-draft checklist until you send them, and senders without a published channel are excluded so Archive can be chosen instead.',
+          'Multi-sender cleanup works on every plan. Each sender still has its own method and outcome: one-click requests queue separately, mailto requests stay in a visible Gmail-draft checklist until you send them, and senders without a published channel are excluded so Archive can be chosen instead.',
           'Start with a small batch of obvious lists. Verify outcomes before selecting hundreds. Bulk speed is useful only when per-sender failures and one-way effects remain visible.',
         ],
       },
@@ -811,6 +819,1151 @@ const HOW_TO_BODIES: Record<HowToSlug, Omit<LearnArticle, 'related'>> = {
       },
     ],
   },
+
+  'mass-delete-emails-gmail': {
+    slug: 'mass-delete-emails-gmail',
+    path: '/how-to/mass-delete-emails-gmail',
+    publishedAt: '2026-11-18',
+    updatedAt: '2026-11-18',
+    kind: 'How-to guide',
+    title: 'How to mass delete emails in Gmail',
+    quickAnswer:
+      'On a computer, open Gmail and choose a view on the left or enter a search. Check the Select box above your messages, click the link in the notification to select every conversation, then click Delete. Deleted email stays in Trash for up to 30 days. This does not unsubscribe you or stop future email.',
+    description:
+      'Mass delete emails in Gmail: select a whole view or search with the select-all link, narrow it first with search operators, and recover from Trash.',
+    intro:
+      'Gmail can delete a whole view or a whole search in one pass. The selection takes two clicks, so the real work is deciding which email belongs in the set before you make it.',
+    readingMinutes: 6,
+    example: {
+      label: 'Made-up example',
+      caption:
+        'Invented senders and counts showing one decision per sender. Not a screenshot and not a claim about your inbox.',
+      rows: [
+        {
+          sender: 'Flash Sale Daily',
+          detail: '412 inbox messages · 1% marked read',
+          action: 'Delete',
+          result: '412 move to Gmail Trash; future email can still arrive.',
+        },
+        {
+          sender: 'Forum Digest',
+          detail: '230 inbox messages · 4% marked read',
+          action: 'Archive',
+          result: 'Leaves the inbox and stays searchable in All Mail.',
+        },
+        {
+          sender: 'Bank Statements',
+          detail: '36 inbox messages · marked read often',
+          action: 'Keep',
+          result: 'Nothing moves.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'what-mass-delete-changes',
+        title: 'What a mass delete changes',
+        paragraphs: [
+          'Deleting in Gmail moves messages to Trash. Google says a message stays there for up to 30 days, during which you can move it back, and is permanently deleted after that. Emptying Trash yourself ends recovery sooner.',
+          'If you only want a clear inbox, archiving the same selection keeps the email under All Mail.',
+        ],
+        callout: {
+          title: 'Select all means all',
+          body: 'The select-all link covers every conversation in the view or search, including ones you have not scrolled to. Narrow the set until you would delete every result in it.',
+          tone: 'warning',
+        },
+      },
+      {
+        id: 'gmail-steps',
+        title: 'Mass delete in Gmail',
+        paragraphs: ['Google documents these steps for Gmail on a computer.'],
+        steps: [
+          {
+            name: 'Choose what to delete from',
+            text: 'On the left, select a view such as Inbox, Promotions, or All Mail. To delete specific email instead, enter a search operator in the search bar.',
+          },
+          {
+            name: 'Select the current page',
+            text: 'Above your messages, at the top left, check the Select box. This selects the messages on the current page only.',
+          },
+          {
+            name: 'Select every conversation',
+            text: 'A notification above your messages shows how many conversations are selected on the page and links to the rest. Click the link in that notification to select all conversations.',
+          },
+          {
+            name: 'Delete and check Trash',
+            text: 'At the top, click Delete. Then open Trash and look through a few messages to confirm the set was the one you intended.',
+          },
+        ],
+      },
+      {
+        id: 'narrow-with-search',
+        title: 'Narrow the set with search first',
+        paragraphs: [
+          'A search turns “everything” into a set you can read. Gmail’s operators can be combined, and the minus sign excludes a condition.',
+        ],
+        bullets: [
+          'from:amy@example.com finds email from one address.',
+          'category:promotions finds email under an inbox category, if you use categories.',
+          'is:unread finds email by read status.',
+          'older_than:1y finds email older than a period, using d, m, or y.',
+          'before:2020/01/01 finds email received before a date.',
+          'has:attachment and larger:10M find email by attachment and size.',
+        ],
+        callout: {
+          title: 'Exclusions work on messages, not conversations',
+          body: 'Google notes that with a negative operator such as -is:starred, a whole conversation can still appear if any one message in it matches. Read the results before selecting them all.',
+          tone: 'info',
+        },
+      },
+      {
+        id: 'by-sender',
+        title: 'When the pile comes from a few senders',
+        paragraphs: [
+          'Search needs you to know what to type. If the clutter is recurring senders you cannot name from memory, DeclutrMail groups the saved Gmail details by sender and lists each sender with its volume and how much is marked read.',
+          'Delete there is a decision per sender with a preview. It moves the matching email to Gmail Trash and does not create a rule for future email.',
+        ],
+        steps: [
+          {
+            name: WS3_COPY['ws3.liveFix.learn.firstScanStep'],
+            text: 'Senders appear with their volume and how much is marked read once the first Gmail scan finishes.',
+          },
+          {
+            name: 'Check a sender before deciding',
+            text: 'Open the sender in Clean up and read its recent subjects. Open Gmail when a subject line is not enough.',
+          },
+          {
+            name: 'Read the preview',
+            text: WS3_COPY['ws3.howTo.preview.checklist'],
+          },
+          {
+            name: 'Confirm, then look at Activity',
+            text: 'Activity records what moved.',
+          },
+        ],
+      },
+      {
+        id: 'after-the-delete',
+        title: 'Recover a mistake, then deal with future email',
+        paragraphs: [
+          'To recover, open Trash, check the box beside each message, click Move to, and choose where it should go. Trash also offers Delete forever and Empty Trash now; both are permanent.',
+          'Future email is a separate decision. Unsubscribe from lists you no longer want, or create a Gmail filter for a sender that offers no way to unsubscribe.',
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete messages in Gmail',
+        description:
+          'Official select-all steps, the notification link, Trash retention, and recovery.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description:
+          'Official reference for from:, category:, is:unread, older_than:, before:, and the minus operator.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/9259770?hl=en',
+        label: 'Google: Organize and archive email',
+        description: 'Official Archive and All Mail behavior.',
+      },
+    ],
+  },
+
+  'delete-all-promotions-emails-gmail': {
+    slug: 'delete-all-promotions-emails-gmail',
+    path: '/how-to/delete-all-promotions-emails-gmail',
+    publishedAt: '2026-11-18',
+    updatedAt: '2026-11-18',
+    kind: 'How-to guide',
+    title: 'How to delete all Promotions emails in Gmail',
+    quickAnswer:
+      'On a computer, select Promotions on the left in Gmail, check the Select box, click the link in the notification to select all conversations in Promotions, then click Delete. To add a date or sender condition, search category:promotions instead. Deleted email stays in Trash for up to 30 days.',
+    description:
+      'Delete all Promotions emails in Gmail at once from the Promotions tab or a category:promotions search, with what Trash keeps and what refills the tab.',
+    intro:
+      'Promotions is a category Gmail assigns, so Gmail is the tool that can select all of it. Deleting the tab takes a minute. Keeping it from refilling is a separate job, done sender by sender.',
+    readingMinutes: 6,
+    example: {
+      label: 'Made-up example',
+      caption:
+        'Invented senders showing why the Promotions tab is worth sampling before deleting all of it.',
+      rows: [
+        {
+          sender: 'Daily Deals Wire',
+          detail: 'Legitimate list · no longer wanted',
+          action: 'Unsubscribe',
+          result: 'Asks the sender to stop; older email stays unless you also delete it.',
+        },
+        {
+          sender: 'Corner Bookshop',
+          detail: 'Monthly newsletter · marked read often',
+          action: 'Keep',
+          result: 'Nothing moves.',
+        },
+        {
+          sender: 'Travel Offers Weekly',
+          detail: '96 inbox messages · 2% marked read',
+          action: 'Delete',
+          result: '96 move to Gmail Trash; future email can still arrive.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'what-promotions-is',
+        title: 'What the Promotions tab is',
+        paragraphs: [
+          'With the Default inbox type, Gmail automatically sorts email into categories. Google describes Promotions as deals, offers, and other promotional emails. Gmail decides what lands there; you can drag an email to another tab when it is in the wrong one.',
+          'That is a reason to sample the tab before deleting all of it. Google also notes that archived email does not appear in categories, so the tab shows only what is still in your inbox.',
+        ],
+      },
+      {
+        id: 'gmail-steps',
+        title: 'Delete everything in Promotions',
+        paragraphs: ['Google documents these steps for Gmail on a computer.'],
+        steps: [
+          {
+            name: 'Open Promotions',
+            text: 'On the left, select Promotions. Scroll through a page or two and move anything you want to keep to another tab.',
+          },
+          {
+            name: 'Select the current page',
+            text: 'Above your messages, at the top left, check the Select box. This selects the messages on the current page only.',
+          },
+          {
+            name: 'Select all of Promotions',
+            text: 'A notification above your messages shows how many conversations are selected on the page. Click the link in that notification to select all conversations in the category.',
+          },
+          {
+            name: 'Delete',
+            text: 'At the top, click Delete. The email moves to Trash, where Gmail keeps it for up to 30 days before deleting it permanently.',
+          },
+        ],
+      },
+      {
+        id: 'search-route',
+        title: 'Use category:promotions when you need a condition',
+        paragraphs: [
+          'The tab is all or nothing. A search lets you delete part of it. Enter category:promotions in the search bar, add a condition, read the results, then select and delete them the same way.',
+        ],
+        bullets: [
+          'category:promotions older_than:1y limits the set to email more than a year old.',
+          'category:promotions from:offers@example.com limits it to one address.',
+          'category:promotions is:unread limits it to email not marked read.',
+        ],
+      },
+      {
+        id: 'declutrmail-boundary',
+        title: 'Where DeclutrMail fits, and where it does not',
+        paragraphs: [
+          'DeclutrMail does not select email by Gmail category or tab, and it does not predict categories. For “everything in Promotions”, Gmail’s own tab and search are the right tool.',
+          'It works by sender. That fits when the tab is filled by the same lists every week: you decide once per sender, and the decision can cover that sender’s older email too.',
+          WS3_COPY['ws3.howTo.unsubscribe.olderEmail'],
+        ],
+        steps: [
+          {
+            name: 'Find the senders that repeat',
+            text: 'Senders are listed with volume and how much is marked read. Little marked read is evidence, not proof, that a list is unwanted; read recent subjects first.',
+          },
+          {
+            name: 'Choose Unsubscribe or Delete per sender',
+            text: 'Unsubscribe asks the sender to stop future email. Delete moves that sender’s matching email to Gmail Trash. Each shows a preview before anything changes.',
+          },
+          {
+            name: 'Check Activity',
+            text: `Archive, Later, and Delete can be undone from Activity ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while their undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. A sent unsubscribe request cannot be taken back.`,
+          },
+        ],
+      },
+      {
+        id: 'stop-the-refill',
+        title: 'Stop the tab refilling',
+        paragraphs: [
+          'Deleting changes the email that exists now. The same senders will write again unless you unsubscribe or add a filter.',
+          'In Gmail, open an email from the list and click Unsubscribe next to the sender’s name. Google says it may take a few days for the email to stop, and that some senders send you to their website instead. A Gmail filter can archive or delete future email that matches a search you define.',
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete messages in Gmail',
+        description:
+          'Official steps to select a category such as Promotions, select all conversations, and delete; Trash retention.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/3094499?hl=en',
+        label: 'Google: Organize your emails into categories',
+        description:
+          'Official category definitions, automatic sorting, moving email between tabs, and category: search.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description: 'Official reference for category:, older_than:, from:, and is:unread.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/15433283?hl=en',
+        label: 'Google: Unsubscribe from an email',
+        description: 'Official unsubscribe steps and processing time.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/6579?hl=en',
+        label: 'Google: Create rules to filter your emails',
+        description: 'Official filter creation and what a filter can do.',
+      },
+    ],
+  },
+
+  'delete-more-than-50-emails-gmail': {
+    slug: 'delete-more-than-50-emails-gmail',
+    path: '/how-to/delete-more-than-50-emails-gmail',
+    publishedAt: '2026-11-18',
+    updatedAt: '2026-11-18',
+    kind: 'How-to guide',
+    title: 'Delete more than 50 emails at once in Gmail',
+    quickAnswer:
+      'The Select box in Gmail selects only the conversations on the current page. After you check it, a notification above your messages links to all conversations in that view or search. Click that link, then click Delete. Google documents these steps for Gmail on a computer.',
+    description:
+      'Gmail’s Select box only covers one page. Use the select-all link in the notification to delete more than 50 emails at once, then check Trash.',
+    intro:
+      'You check the box, press Delete, and Gmail removes one page. The rest is still there. The step that is easy to miss is a link in the notification that appears after you select the page.',
+    readingMinutes: 5,
+    example: {
+      label: 'Made-up example',
+      caption:
+        'An invented sender showing one decision covering more email than a Gmail page holds.',
+      rows: [
+        {
+          sender: 'Price Drop Alerts',
+          detail: '640 inbox messages · 1% marked read',
+          action: 'Delete',
+          result: '640 move to Gmail Trash in one confirmed step.',
+        },
+        {
+          sender: 'Team Calendar',
+          detail: '58 inbox messages · marked read often',
+          action: 'Keep',
+          result: 'Nothing moves.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'why-one-page',
+        title: 'Why the selection stops at one page',
+        paragraphs: [
+          'Google’s instructions say the Select box selects all messages on the current page.',
+          'A bigger page is not the fix; the link in the notification is what reaches the rest.',
+        ],
+      },
+      {
+        id: 'gmail-steps',
+        title: 'Select and delete more than one page',
+        paragraphs: ['Google documents these steps for Gmail on a computer.'],
+        steps: [
+          {
+            name: 'Open the view or run the search',
+            text: 'On the left, select a view such as Inbox, Promotions, or All Mail. To delete specific email, enter a search operator in the search bar instead.',
+          },
+          {
+            name: 'Check the Select box',
+            text: 'It is above your messages, at the top left. The messages on the current page are now selected.',
+          },
+          {
+            name: 'Click the link in the notification',
+            text: 'A notification above your messages shows the number of selected conversations on the page. Click its link to select all conversations.',
+          },
+          {
+            name: 'Click Delete',
+            text: 'The whole selection moves to Trash. Open Trash and check a few messages before moving on.',
+          },
+        ],
+      },
+      {
+        id: 'make-the-set-exact',
+        title: 'Make the set exact before selecting all of it',
+        paragraphs: [
+          'Once the link is clicked, the selection includes conversations you never saw. Search first so that every result is one you would delete.',
+        ],
+        bullets: [
+          'from:offers@example.com for one sender’s address.',
+          'older_than:1y for email older than a period; use d, m, or y.',
+          'is:unread for email not marked read.',
+          'category:promotions for an inbox category, if you use categories.',
+        ],
+        callout: {
+          title: 'Read a sample from both ends',
+          body: 'Open a few recent results and a few old ones. An address that sends offers may also send receipts or account notices.',
+          tone: 'warning',
+        },
+      },
+      {
+        id: 'by-sender',
+        title: 'Delete by sender instead of by page',
+        paragraphs: [
+          'DeclutrMail groups the saved Gmail details by sender. One Delete decision applies to the matching email from that sender, however many pages it would fill in Gmail.',
+          `${WS3_COPY['ws3.liveFix.learn.deletePreview']} The final number can change before the action runs. The email moves to Gmail Trash, and no rule is created for future email.`,
+        ],
+        steps: [
+          {
+            name: 'Open the sender',
+            text: 'In Clean up, open the sender and read its recent subjects and current inbox count.',
+          },
+          {
+            name: 'Choose Delete and read the preview',
+            text: WS3_COPY['ws3.howTo.preview.checklist'],
+          },
+          {
+            name: 'Confirm and check Activity',
+            text: 'Activity records what moved.',
+          },
+        ],
+      },
+      {
+        id: 'recovery',
+        title: 'What happens to the deleted email',
+        paragraphs: [
+          'Google says deleted messages stay in Trash for up to 30 days and are permanently deleted after that. To recover one, open Trash, check its box, click Move to, and choose a destination.',
+          'Delete forever and Empty Trash now are permanent. Deleting also leaves future email alone: the sender can still write to you until you unsubscribe or add a filter.',
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete messages in Gmail',
+        description:
+          'Official Select box behavior, the notification link that selects all conversations, and Trash retention.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description: 'Official reference for from:, older_than:, is:unread, and category:.',
+      },
+    ],
+  },
+
+  'delete-old-emails-gmail-by-date': {
+    slug: 'delete-old-emails-gmail-by-date',
+    path: '/how-to/delete-old-emails-gmail-by-date',
+    publishedAt: '2026-11-18',
+    updatedAt: '2026-11-18',
+    kind: 'How-to guide',
+    title: 'How to delete old emails in Gmail by date',
+    quickAnswer:
+      'Search older_than:1y for email older than a period (use d, m, or y), or before:2020/01/01 for email received before a date. Read the results, check the Select box, click the link in the notification to select all conversations, then click Delete. Deleted email stays in Trash for up to 30 days.',
+    description:
+      'Delete old emails in Gmail in bulk by date with older_than: and before: searches, checks to run before selecting all, and what Trash keeps.',
+    intro:
+      'Gmail search can select by age exactly. The operators are short; the judgment is in deciding what old email you still need before you select all of it.',
+    readingMinutes: 6,
+    example: {
+      label: 'Made-up example',
+      caption:
+        'Invented senders showing that the age of email does not settle whether to delete it.',
+      rows: [
+        {
+          sender: 'Conference Updates',
+          detail: '140 inbox messages · event ended years ago',
+          action: 'Delete',
+          result: '140 move to Gmail Trash.',
+        },
+        {
+          sender: 'Insurance Documents',
+          detail: '22 inbox messages · policy records',
+          action: 'Keep',
+          result: 'Nothing moves.',
+        },
+        {
+          sender: 'Old Project List',
+          detail: '310 inbox messages · may be needed for reference',
+          action: 'Archive',
+          result: 'Leaves the inbox and stays searchable in All Mail.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'date-operators',
+        title: 'The two ways Gmail searches by date',
+        paragraphs: [
+          'Gmail has a relative form and an absolute form. Both go in the search bar and both combine with other operators.',
+        ],
+        bullets: [
+          'older_than:1y finds email older than a period. Use d for days, m for months, and y for years, as in older_than:6m.',
+          'before:2020/01/01 finds email received before a date. Google’s examples write the date as year/month/day.',
+          'after:2019/01/01 before:2020/01/01 finds email inside a date range.',
+          'newer_than:2d is the opposite of older_than: and is useful for checking what a search leaves out.',
+        ],
+      },
+      {
+        id: 'gmail-steps',
+        title: 'Delete old email in bulk',
+        paragraphs: ['Google documents these steps for Gmail on a computer.'],
+        steps: [
+          {
+            name: 'Run the date search',
+            text: 'Enter older_than:2y, or a before: date, in the search bar. Start with an older cutoff than you think you need.',
+          },
+          {
+            name: 'Read the results',
+            text: 'Open several results from different years. Look for documents, receipts, and conversations with people.',
+          },
+          {
+            name: 'Select all conversations',
+            text: 'Check the Select box above your messages to select the current page, then click the link in the notification to select all conversations.',
+          },
+          {
+            name: 'Delete and check Trash',
+            text: 'Click Delete, then open Trash and check a few messages.',
+          },
+        ],
+      },
+      {
+        id: 'keep-what-age-cannot-judge',
+        title: 'Keep what age alone cannot judge',
+        paragraphs: [
+          'Old is not the same as unwanted. Add a second condition so the search describes the email you mean, not just when it arrived.',
+        ],
+        bullets: [
+          'older_than:2y category:promotions limits the set to an inbox category.',
+          'older_than:2y from:updates@example.com limits it to one address.',
+          'older_than:2y -is:starred leaves out email you starred.',
+          'older_than:2y has:attachment shows old email with attachments, which is worth reading before deleting.',
+        ],
+        callout: {
+          title: 'Exclusions work on messages, not conversations',
+          body: 'Google notes that with a negative operator such as -is:starred, a whole conversation can still appear if any one message in it matches. Check the results before selecting them all.',
+          tone: 'info',
+        },
+      },
+      {
+        id: 'declutrmail-boundary',
+        title: 'Where DeclutrMail fits, and where it does not',
+        paragraphs: [
+          'DeclutrMail does not select email across your mailbox by date. For “everything older than two years”, Gmail’s search is the right tool.',
+          'It works by sender. When the old email comes from a few recurring senders, you decide per sender, and the preview has a How far back control for limiting that sender’s cleanup to older email.',
+        ],
+        steps: [
+          {
+            name: 'Open a sender with a long history',
+            text: 'In Clean up, open the sender and read its recent subjects, volume, and how much is marked read.',
+          },
+          {
+            name: 'Choose Archive or Delete and set How far back',
+            text: WS3_COPY['ws3.howTo.preview.reach'],
+          },
+          {
+            name: 'Confirm and check Activity',
+            text: `Archive, Later, and Delete can be undone from Activity ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while their undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. Deleted email is also in Gmail Trash.`,
+          },
+        ],
+      },
+      {
+        id: 'archive-instead',
+        title: 'Archive when you are not sure',
+        paragraphs: [
+          'If the goal is a clear inbox, archive the same search results instead of deleting them. Google says archived messages can still be found under All Mail, and that a reply to an archived message brings it back to your inbox.',
+          'To recover deleted email, open Trash, check the box beside each message, click Move to, and choose a destination. Delete forever and Empty Trash now are permanent.',
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description:
+          'Official reference for older_than:, newer_than:, before:, after:, and the minus operator.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete messages in Gmail',
+        description:
+          'Official select-all steps, date-range search example, Trash retention, and recovery.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/9259770?hl=en',
+        label: 'Google: Organize and archive email',
+        description: 'Official Archive and All Mail behavior.',
+      },
+    ],
+  },
+
+  'delete-all-unread-emails-gmail': {
+    slug: 'delete-all-unread-emails-gmail',
+    path: '/how-to/delete-all-unread-emails-gmail',
+    publishedAt: '2026-11-18',
+    updatedAt: '2026-11-18',
+    kind: 'How-to guide',
+    title: 'How to delete all unread emails in Gmail',
+    quickAnswer:
+      'On a computer, search is:unread in Gmail, read the results, check the Select box, click the link in the notification to select all conversations, then click Delete. Unread is not the same as unwanted, so narrow the search first. Deleted email stays in Trash for up to 30 days.',
+    description:
+      'Delete all unread emails in Gmail with an is:unread search and the select-all link, plus ways to narrow it so unread email you want survives.',
+    intro:
+      'A large unread count can mix two things: email you never wanted and email you meant to get back to. Gmail can select all of it at once, which is why the search deserves a minute before the delete.',
+    readingMinutes: 5,
+    example: {
+      label: 'Made-up example',
+      caption: 'Invented senders showing unread email that deserves different decisions.',
+      rows: [
+        {
+          sender: 'Coupon Parade',
+          detail: '520 inbox messages · 0% marked read',
+          action: 'Delete',
+          result: '520 move to Gmail Trash; future email can still arrive.',
+        },
+        {
+          sender: 'School Office',
+          detail: '14 inbox messages · some not marked read yet',
+          action: 'Keep',
+          result: 'Nothing moves.',
+        },
+        {
+          sender: 'Weekly Reading List',
+          detail: '45 inbox messages · 10% marked read',
+          action: 'Later',
+          result: 'Waits under DeclutrMail/Later, then returns to the inbox at the time you pick.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'unread-is-not-unwanted',
+        title: 'Unread is not the same as unwanted',
+        paragraphs: [
+          'Gmail’s is:unread operator finds email by its read status. That status says nothing about who sent the message or whether you still need it. A bill that arrived this morning and a newsletter from three years ago are both unread.',
+          'So treat is:unread as a starting point and add a condition that describes the email you actually want gone.',
+        ],
+      },
+      {
+        id: 'gmail-steps',
+        title: 'Delete unread email in bulk',
+        paragraphs: ['Google documents these steps for Gmail on a computer.'],
+        steps: [
+          {
+            name: 'Search is:unread',
+            text: 'Enter is:unread in the search bar, with any extra condition from the next section.',
+          },
+          {
+            name: 'Read the results',
+            text: 'Scroll the first pages and open anything from a person, a bank, or an account you use.',
+          },
+          {
+            name: 'Select all conversations',
+            text: 'Check the Select box above your messages to select the current page, then click the link in the notification to select all conversations.',
+          },
+          {
+            name: 'Delete and check Trash',
+            text: 'Click Delete, then open Trash and check a few messages.',
+          },
+        ],
+      },
+      {
+        id: 'narrow-the-search',
+        title: 'Narrow the search so wanted email survives',
+        paragraphs: ['Each of these combines is:unread with one more operator.'],
+        bullets: [
+          'is:unread older_than:6m limits the set to unread email more than six months old.',
+          'is:unread category:promotions limits it to an inbox category, if you use categories.',
+          'is:unread from:offers@example.com limits it to one address.',
+          'is:unread -is:starred leaves out email you starred.',
+        ],
+        callout: {
+          title: 'Exclusions work on messages, not conversations',
+          body: 'Google notes that with a negative operator such as -is:starred, a whole conversation can still appear if any one message in it matches. Check the results before selecting them all.',
+          tone: 'info',
+        },
+      },
+      {
+        id: 'declutrmail-boundary',
+        title: 'Where DeclutrMail fits, and where it does not',
+        paragraphs: [
+          'DeclutrMail does not select email by unread state. For “every unread message”, Gmail’s search is the right tool.',
+          'It works by sender and shows how much of each sender’s email from the last 90 days is marked read. That answers a different question: which senders keep sending email you never get to. Little of it marked read is evidence, not proof, that a sender is unwanted.',
+        ],
+        steps: [
+          {
+            name: 'Find senders you rarely read',
+            text: 'Turn on Mostly unread (90 days), then sort by Most received. Read recent subjects before deciding.',
+          },
+          {
+            name: 'Decide once per sender',
+            text: 'Keep, Archive, Unsubscribe, Later, or Delete. Archive, Later, and Delete show a preview with the count before anything moves.',
+          },
+          {
+            name: 'Mark what must stay as Protected',
+            text: 'Protected senders stay out of bulk and automatic cleanup.',
+          },
+        ],
+      },
+      {
+        id: 'after-the-delete',
+        title: 'Recover a mistake, then stop the next pile',
+        paragraphs: [
+          'To recover, open Trash, check the box beside each message, click Move to, and choose a destination. Delete forever and Empty Trash now are permanent.',
+          'Deleting unread email does not stop more arriving. Unsubscribe from the lists behind it; in Gmail, the Unsubscribe link sits next to the sender’s name in an open email.',
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description:
+          'Official reference for is:unread, older_than:, category:, from:, and the minus operator.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete messages in Gmail',
+        description: 'Official select-all steps, Trash retention, and recovery.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/15433283?hl=en',
+        label: 'Google: Unsubscribe from an email',
+        description: 'Official location of the Unsubscribe link.',
+      },
+    ],
+  },
+
+  'clean-up-gmail-inbox': {
+    slug: 'clean-up-gmail-inbox',
+    path: '/how-to/clean-up-gmail-inbox',
+    publishedAt: '2026-11-18',
+    updatedAt: '2026-11-18',
+    kind: 'How-to guide',
+    title: 'How to clean up a Gmail inbox',
+    quickAnswer:
+      'Decide per kind of email whether to delete, archive, or unsubscribe. Use Gmail search with the select-all link to clear old, unread, or Promotions email in bulk, unsubscribe from lists you no longer want, and add filters for future email. Then go sender by sender for what is left.',
+    description:
+      'Clean up a Gmail inbox step by step: bulk delete or archive with search, unsubscribe from lists, add filters, then work through recurring senders.',
+    intro:
+      'A full inbox is several problems in one pile: old email, unread email, lists you no longer want, and senders that keep writing. Each has a different fix, and Gmail already has most of them.',
+    readingMinutes: 7,
+    example: {
+      label: 'Made-up example',
+      caption:
+        'Invented senders showing the five decisions. Not a screenshot and not a claim about your inbox.',
+      rows: [
+        {
+          sender: 'Shipping Notices',
+          detail: '180 inbox messages · orders long delivered',
+          action: 'Archive',
+          result: 'Leaves the inbox and stays searchable in All Mail.',
+        },
+        {
+          sender: 'Daily Deals Wire',
+          detail: '300 inbox messages · 1% marked read',
+          action: 'Unsubscribe',
+          result: 'Asks the sender to stop; the sender controls delivery.',
+        },
+        {
+          sender: 'Long Reads Weekly',
+          detail: '24 inbox messages · wanted, not urgent',
+          action: 'Later',
+          result: 'Waits under DeclutrMail/Later, then returns to the inbox at the time you pick.',
+        },
+        {
+          sender: 'Expired Event Invites',
+          detail: '75 inbox messages · events have passed',
+          action: 'Delete',
+          result: '75 move to Gmail Trash.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'three-outcomes',
+        title: 'Know the three outcomes before you start',
+        paragraphs: ['Three outcomes are easy to confuse:'],
+        bullets: [
+          'Delete moves email to Trash. Google keeps it there for up to 30 days, then deletes it permanently.',
+          'Archive takes email out of the inbox. It can still be found under All Mail, and a reply brings the conversation back.',
+          'Unsubscribe asks a sender to stop future email. It does not remove what has already arrived.',
+        ],
+      },
+      {
+        id: 'gmail-first-pass',
+        title: 'A first pass with Gmail’s own tools',
+        paragraphs: [
+          'Work from the largest, least risky sets to the smallest. Google documents the selection steps for Gmail on a computer: check the Select box, then click the link in the notification to select all conversations.',
+        ],
+        steps: [
+          {
+            name: 'Clear Promotions',
+            text: 'Select Promotions on the left, sample a page, select all conversations, and delete or archive them.',
+          },
+          {
+            name: 'Clear old email by date',
+            text: 'Search older_than:2y, read the results, and delete or archive the set. Add from: or category: to keep it narrow.',
+          },
+          {
+            name: 'Review unread email',
+            text: 'Search is:unread older_than:6m. Unread is not the same as unwanted, so read before selecting everything.',
+          },
+          {
+            name: 'Unsubscribe from lists',
+            text: 'Open an email from a list you no longer want and click Unsubscribe next to the sender’s name. Google says it may take a few days to stop.',
+          },
+          {
+            name: 'Add filters for future email',
+            text: 'From the search options, create a filter that archives, labels, or deletes future email matching a search you define.',
+          },
+        ],
+      },
+      {
+        id: 'by-sender',
+        title: 'Then go sender by sender',
+        paragraphs: [
+          'After the broad passes, what remains is easier to sort by who is sending it.',
+          'DeclutrMail groups the saved Gmail details by sender and shows each sender’s volume and how much is marked read. You make one decision per sender: Keep, Archive, Unsubscribe, Later, or Delete. It does not select by Gmail category, unread state, or date across the mailbox; the Gmail steps above cover those.',
+        ],
+        steps: [
+          {
+            name: WS3_COPY['ws3.liveFix.learn.firstScanStep'],
+            text: 'Senders appear with their volume and how much is marked read once the first Gmail scan finishes.',
+          },
+          {
+            name: 'Start with the senders that send the most',
+            text: 'Open each one and read recent subjects. Open Gmail when you need the full message.',
+          },
+          {
+            name: 'Read the preview before confirming',
+            text: WS3_COPY['ws3.howTo.preview.reach'],
+          },
+          {
+            name: 'Check Activity',
+            text: `Archive, Later, and Delete can be undone from Activity ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while their undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. A sent unsubscribe request cannot be taken back.`,
+          },
+        ],
+      },
+      {
+        id: 'what-to-leave-alone',
+        title: 'Decide what to leave alone',
+        paragraphs: [
+          'Some email should survive any bulk pass: people you write to, financial notices, account security, and anything you are unsure about. In Gmail, star those messages and add -is:starred to a search before selecting all of it.',
+          'In DeclutrMail, mark those senders Protected. Protected senders stay out of bulk and automatic cleanup.',
+        ],
+        callout: {
+          title: 'Manual cleanup does not create rules',
+          body: 'A delete or archive, in Gmail or in DeclutrMail, changes the email that exists now. New email from the same sender still arrives until you unsubscribe or add a filter.',
+          tone: 'truth',
+        },
+      },
+      {
+        id: 'keep-it-clean',
+        title: 'Keep it from filling up again',
+        paragraphs: [
+          'Repeat a short version each month: one search for old Promotions email, one look at the senders that grew, and a few unsubscribes. Gmail’s Manage subscriptions page, under More on the left, lists active subscriptions in one place; Google says it is still rolling out and may not be available to you yet.',
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete messages in Gmail',
+        description: 'Official select-all steps, Trash retention, and recovery.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description: 'Official reference for older_than:, is:unread, category:, and from:.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/9259770?hl=en',
+        label: 'Google: Organize and archive email',
+        description: 'Official Archive and All Mail behavior.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/15433283?hl=en',
+        label: 'Google: Unsubscribe from an email',
+        description: 'Official unsubscribe steps and processing time.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/15621070?hl=en',
+        label: 'Google: Manage subscriptions in Gmail',
+        description: 'Official Manage subscriptions location and rollout note.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/6579?hl=en',
+        label: 'Google: Create rules to filter your emails',
+        description: 'Official filter creation and what a filter can do.',
+      },
+    ],
+  },
+  'where-do-archived-emails-go-gmail': {
+    slug: 'where-do-archived-emails-go-gmail',
+    path: '/how-to/where-do-archived-emails-go-gmail',
+    publishedAt: '2026-11-18',
+    updatedAt: '2026-11-18',
+    kind: 'How-to guide',
+    title: 'Where do archived emails go in Gmail?',
+    quickAnswer:
+      'Archived Gmail email goes to All Mail. Archive takes a message out of your inbox without deleting it. To find it, click More, then All Mail, or search in:archive. To bring it back, check the message and click Move to Inbox. If someone replies, the conversation returns to your inbox.',
+    description:
+      'Archived Gmail email stays in All Mail. Find it with an in:archive search, move it back with Move to Inbox, and see why a reply brings it back.',
+    intro:
+      'Archive is easy to press and easy to lose track of. Nothing archived is gone: Gmail takes the email out of the inbox and keeps it, so it is one search away.',
+    readingMinutes: 5,
+    example: {
+      label: 'Made-up example',
+      caption: 'Invented senders showing where archived email ends up.',
+      rows: [
+        {
+          sender: 'Shipping Notices',
+          detail: '180 inbox messages · orders long delivered',
+          action: 'Archive',
+          result: 'Leaves the inbox; still in All Mail and in:archive.',
+        },
+        {
+          sender: 'Team Thread',
+          detail: '1 archived conversation · someone replies',
+          action: 'Archive',
+          result: 'The reply brings the conversation back to the inbox.',
+        },
+        {
+          sender: 'Long Reads Weekly',
+          detail: '24 inbox messages · wanted, not urgent',
+          action: 'Later',
+          result: 'Waits under DeclutrMail/Later, then returns to the inbox at the time you pick.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'what-archive-does',
+        title: 'What Archive does, and what it does not',
+        paragraphs: [
+          'Google describes Archive as moving email out of your inbox while keeping it. The message is not deleted and does not go to Trash. After you archive it, you can still find it under the All Mail label, and an in:archive search finds it.',
+          'Delete is the one to be careful with. It moves email to Trash, where Gmail keeps it for up to 30 days before deleting it permanently. Archive does not send anything to Trash.',
+        ],
+      },
+      {
+        id: 'find-archived',
+        title: 'How to find archived emails',
+        paragraphs: ['Google documents two routes for Gmail on a computer, plus a wider search.'],
+        steps: [
+          {
+            name: 'Open All Mail',
+            text: 'On the left, click More, then All Mail.',
+          },
+          {
+            name: 'Search in:archive',
+            text: 'Enter in:archive in the search bar. Google lists it as the search for archived messages.',
+          },
+          {
+            name: 'Narrow the search',
+            text: 'Add other operators, such as in:archive from:receipts@example.com or in:archive older_than:1y. Google’s own example is in:archive payment reminder.',
+          },
+          {
+            name: 'Search everywhere if it is still missing',
+            text: 'in:anywhere searches all of Gmail, including Spam and Trash. Use it when you are not sure whether a message was archived or deleted.',
+          },
+        ],
+      },
+      {
+        id: 'move-back',
+        title: 'How to move archived email back to the inbox',
+        paragraphs: [
+          'Moving an email back undoes the archive. Google writes these steps for Gmail on a computer.',
+        ],
+        steps: [
+          {
+            name: 'Find the message',
+            text: 'Use All Mail or an in:archive search.',
+          },
+          {
+            name: 'Check the box',
+            text: 'Check the box next to each message you want back in the inbox.',
+          },
+          {
+            name: 'Click Move to Inbox',
+            text: 'At the top, click Move to Inbox. The message is in your inbox again.',
+          },
+        ],
+      },
+      {
+        id: 'replies',
+        title: 'Why archived email comes back',
+        paragraphs: [
+          'Google states that if someone replies to a message you archived, it returns to your inbox. Archive moves the email that exists now; it does not hide the conversation from future replies.',
+          'If you want email from a sender archived automatically, that takes a Gmail filter, which can archive email matching a search you define. It is a separate decision; the auto-archive guide covers how to set one up and how to tell it apart from a one-time archive.',
+        ],
+      },
+      {
+        id: 'declutrmail-boundary',
+        title: 'Where DeclutrMail fits',
+        paragraphs: [
+          'DeclutrMail’s Archive works per sender. That sender’s inbox email ends up in the same All Mail and in:archive results described above, and nothing is deleted.',
+          `Each Archive is recorded in Activity, where it can be undone ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while its undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. Later also takes that email out of the inbox; it waits in Gmail under the DeclutrMail/Later label, then comes back to the inbox at the time you pick.`,
+        ],
+        steps: [
+          {
+            name: 'Read the preview before confirming',
+            text: WS3_COPY['ws3.howTo.preview.reach'],
+          },
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/mail/answer/9259770?hl=en',
+        label: 'Google: Organize and archive email',
+        description:
+          'Official All Mail location, in:archive search, Move to Inbox steps, and reply behavior.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description: 'Official reference for in:archive, in:anywhere, from:, and older_than:.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete messages in Gmail',
+        description: 'Official Trash retention, for comparison with Archive.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/6579?hl=en',
+        label: 'Google: Create rules to filter your emails',
+        description: 'Official filter creation and its archive action.',
+      },
+    ],
+  },
+
+  'recover-deleted-emails-gmail': {
+    slug: 'recover-deleted-emails-gmail',
+    path: '/how-to/recover-deleted-emails-gmail',
+    publishedAt: '2026-11-18',
+    updatedAt: '2026-11-18',
+    kind: 'How-to guide',
+    title: 'How to recover deleted emails in Gmail',
+    quickAnswer:
+      'Open Trash in Gmail (click More on the left, then Trash), check the messages you want, click Move to, and choose Inbox. Gmail keeps deleted email in Trash for up to 30 days, then deletes it permanently. Email removed with Delete forever or Empty Trash now is permanently deleted.',
+    description:
+      'Recover deleted Gmail email from Trash within 30 days using Move to, and see which steps, like Empty Trash now, delete your email permanently.',
+    intro:
+      'Deleting in Gmail is not final at first. Email goes to Trash first, and for up to 30 days getting it back takes a few clicks. The steps that make it final are worth knowing before a bulk cleanup.',
+    readingMinutes: 5,
+    example: {
+      label: 'Made-up example',
+      caption: 'Invented senders showing when deleted email can come back.',
+      rows: [
+        {
+          sender: 'Coupon Parade',
+          detail: '520 messages deleted last week',
+          action: 'Delete',
+          result: 'In Trash; Move to brings them back.',
+        },
+        {
+          sender: 'Statement Delivery',
+          detail: '40 messages deleted, then Trash emptied',
+          action: 'Delete',
+          result: 'Permanently deleted; Trash cannot return them.',
+        },
+      ],
+    },
+    sections: [
+      {
+        id: 'check-first',
+        title: 'First, check it was really deleted',
+        paragraphs: [
+          'Missing email is not always deleted. Archived email leaves the inbox but stays in All Mail. Search in:anywhere to look across all of Gmail, including Spam and Trash, before assuming the worst.',
+          'If the search finds the message outside Trash, it was never deleted. Archived email goes back with Move to Inbox; the archive guide covers that.',
+        ],
+      },
+      {
+        id: 'restore-from-trash',
+        title: 'Restore email from Trash',
+        paragraphs: ['Google documents these steps for Gmail on a computer.'],
+        steps: [
+          {
+            name: 'Open Trash',
+            text: 'On the left, click More, then Trash.',
+          },
+          {
+            name: 'Check the messages',
+            text: 'Check the box next to each message you want to recover.',
+          },
+          {
+            name: 'Click Move to',
+            text: 'At the top, click Move to.',
+          },
+          {
+            name: 'Choose a destination',
+            text: 'Choose where the messages should go, such as Inbox.',
+          },
+        ],
+      },
+      {
+        id: 'thirty-days',
+        title: 'The 30-day limit',
+        paragraphs: [
+          'Gmail keeps deleted email in Trash for up to 30 days. After that, Google deletes it permanently and it can’t be recovered.',
+          'Treat Trash as a short grace period, not storage. If you might need something you deleted, move it out of Trash now.',
+        ],
+      },
+      {
+        id: 'permanent',
+        title: 'What cannot be recovered from Trash',
+        paragraphs: ['Some steps skip the grace period or end it early.'],
+        bullets: [
+          'Delete forever: messages you check in Trash and delete this way are removed permanently.',
+          'Empty Trash now: removes everything in Trash permanently.',
+          'Deleted drafts: Google says a deleted draft can’t be recovered from Trash.',
+          'Email left in Trash past 30 days: deleted permanently.',
+        ],
+        callout: {
+          title: 'Check Trash before you empty it',
+          body: 'Once Gmail permanently deletes a message, Trash cannot return it. Look through Trash before clicking Empty Trash now.',
+          tone: 'warning',
+        },
+      },
+      {
+        id: 'declutrmail-boundary',
+        title: 'Where DeclutrMail fits',
+        paragraphs: [
+          'DeclutrMail’s Delete works per sender and moves that sender’s matching email to Gmail Trash. Everything above still applies: the email sits in Gmail Trash, and Move to brings it back.',
+          `Each Delete is also recorded in Activity, where it can be undone ${UNIFORM_UNDO_WINDOW_DAYS === null ? 'while its undo window is open' : `for ${UNIFORM_UNDO_WINDOW_DAYS} days`}. Emptying Gmail Trash still deletes the email permanently.`,
+        ],
+        steps: [
+          {
+            name: 'Read the Delete preview',
+            text: WS3_COPY['ws3.howTo.preview.checklist'],
+          },
+        ],
+      },
+      {
+        id: 'next-time',
+        title: 'Make the next cleanup easier to reverse',
+        paragraphs: [
+          'Archive first when you are unsure. Archived email does not go to Trash, so the 30-day Trash limit does not apply to it.',
+          'Before a bulk delete, open a few results from the search and narrow it with from:, older_than:, or -is:starred. A smaller, checked set is easier to recover than a large one.',
+        ],
+      },
+    ],
+    sources: [
+      {
+        href: 'https://support.google.com/mail/answer/7401?hl=en',
+        label: 'Google: Delete messages in Gmail',
+        description:
+          'Official Trash recovery steps, the 30-day limit, Delete forever, Empty Trash now, and drafts.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/7190?hl=en',
+        label: 'Google: Refine searches in Gmail',
+        description: 'Official reference for in:anywhere and the other operators used here.',
+      },
+      {
+        href: 'https://support.google.com/mail/answer/9259770?hl=en',
+        label: 'Google: Organize and archive email',
+        description: 'Official All Mail and Move to Inbox behavior for archived email.',
+      },
+    ],
+  },
 };
 
 const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
@@ -819,6 +1972,8 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/bulk-delete-emails-from-one-sender',
     '/how-to/auto-archive-future-emails-in-gmail',
     '/how-to/unsubscribe-from-emails-gmail',
+    '/how-to/clean-up-gmail-inbox',
+    '/how-to/where-do-archived-emails-go-gmail',
     '/vs/gmail',
     '/compare',
     '/answers/sender-level-vs-message-level-cleanup',
@@ -829,6 +1984,9 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/gmail-storage-full',
     '/how-to/auto-archive-future-emails-in-gmail',
     '/how-to/unsubscribe-from-emails-gmail',
+    '/how-to/mass-delete-emails-gmail',
+    '/how-to/delete-more-than-50-emails-gmail',
+    '/how-to/recover-deleted-emails-gmail',
     '/vs/gmail',
     '/answers/how-undo-works-for-gmail-cleanup',
   ],
@@ -836,6 +1994,8 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/bulk-delete-emails-from-one-sender',
     '/how-to/clean-gmail-by-sender',
     '/how-to/stop-promotional-emails-gmail',
+    '/how-to/delete-old-emails-gmail-by-date',
+    '/how-to/mass-delete-emails-gmail',
     '/vs/clean-email',
     '/answers/how-undo-works-for-gmail-cleanup',
     '/answers/best-way-to-clean-gmail-2026',
@@ -845,6 +2005,8 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/bulk-delete-emails-from-one-sender',
     '/how-to/stop-promotional-emails-gmail',
     '/how-to/clean-gmail-by-sender',
+    '/how-to/where-do-archived-emails-go-gmail',
+    '/how-to/clean-up-gmail-inbox',
     '/vs/gmail-filters',
     '/vs/sanebox',
     '/answers/how-undo-works-for-gmail-cleanup',
@@ -853,6 +2015,8 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/unsubscribe-from-emails-gmail',
     '/how-to/auto-archive-future-emails-in-gmail',
     '/how-to/clean-gmail-by-sender',
+    '/how-to/delete-all-promotions-emails-gmail',
+    '/how-to/clean-up-gmail-inbox',
     '/vs/unroll-me',
     '/vs/leave-me-alone',
     '/answers/is-it-safe-to-connect-gmail-app',
@@ -862,8 +2026,81 @@ const HOW_TO_RELATED_HREFS: Record<HowToSlug, readonly string[]> = {
     '/how-to/stop-promotional-emails-gmail',
     '/how-to/bulk-delete-emails-from-one-sender',
     '/how-to/auto-archive-future-emails-in-gmail',
+    '/how-to/delete-all-promotions-emails-gmail',
+    '/how-to/clean-up-gmail-inbox',
     '/vs/unroll-me',
     '/vs/trimbox',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'mass-delete-emails-gmail': [
+    '/how-to/delete-more-than-50-emails-gmail',
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/delete-all-promotions-emails-gmail',
+    '/how-to/delete-old-emails-gmail-by-date',
+    '/how-to/recover-deleted-emails-gmail',
+    '/vs/gmail',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'delete-all-promotions-emails-gmail': [
+    '/how-to/stop-promotional-emails-gmail',
+    '/how-to/unsubscribe-from-emails-gmail',
+    '/how-to/mass-delete-emails-gmail',
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/recover-deleted-emails-gmail',
+    '/vs/gmail',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'delete-more-than-50-emails-gmail': [
+    '/how-to/mass-delete-emails-gmail',
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/delete-all-unread-emails-gmail',
+    '/how-to/recover-deleted-emails-gmail',
+    '/vs/gmail',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'delete-old-emails-gmail-by-date': [
+    '/how-to/mass-delete-emails-gmail',
+    '/how-to/gmail-storage-full',
+    '/how-to/delete-all-unread-emails-gmail',
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/recover-deleted-emails-gmail',
+    '/vs/gmail',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'delete-all-unread-emails-gmail': [
+    '/how-to/mass-delete-emails-gmail',
+    '/how-to/delete-old-emails-gmail-by-date',
+    '/how-to/clean-gmail-by-sender',
+    '/how-to/delete-more-than-50-emails-gmail',
+    '/how-to/recover-deleted-emails-gmail',
+    '/vs/gmail',
+    '/answers/sender-level-vs-message-level-cleanup',
+  ],
+  'clean-up-gmail-inbox': [
+    '/how-to/clean-gmail-by-sender',
+    '/how-to/mass-delete-emails-gmail',
+    '/how-to/unsubscribe-from-emails-gmail',
+    '/how-to/auto-archive-future-emails-in-gmail',
+    '/how-to/gmail-storage-full',
+    '/how-to/where-do-archived-emails-go-gmail',
+    '/how-to/recover-deleted-emails-gmail',
+    '/vs/gmail',
+    '/answers/best-way-to-clean-gmail-2026',
+  ],
+  'where-do-archived-emails-go-gmail': [
+    '/how-to/auto-archive-future-emails-in-gmail',
+    '/how-to/clean-gmail-by-sender',
+    '/how-to/recover-deleted-emails-gmail',
+    '/how-to/clean-up-gmail-inbox',
+    '/vs/gmail',
+    '/answers/how-undo-works-for-gmail-cleanup',
+  ],
+  'recover-deleted-emails-gmail': [
+    '/how-to/bulk-delete-emails-from-one-sender',
+    '/how-to/mass-delete-emails-gmail',
+    '/how-to/where-do-archived-emails-go-gmail',
+    '/how-to/gmail-storage-full',
+    '/vs/gmail',
     '/answers/how-undo-works-for-gmail-cleanup',
   ],
 };
@@ -911,4 +2148,12 @@ export const HOW_TO_ARTICLES: Record<HowToSlug, LearnArticle> = {
   'auto-archive-future-emails-in-gmail': withRelated('auto-archive-future-emails-in-gmail'),
   'stop-promotional-emails-gmail': withRelated('stop-promotional-emails-gmail'),
   'unsubscribe-from-emails-gmail': withRelated('unsubscribe-from-emails-gmail'),
+  'mass-delete-emails-gmail': withRelated('mass-delete-emails-gmail'),
+  'delete-all-promotions-emails-gmail': withRelated('delete-all-promotions-emails-gmail'),
+  'delete-more-than-50-emails-gmail': withRelated('delete-more-than-50-emails-gmail'),
+  'delete-old-emails-gmail-by-date': withRelated('delete-old-emails-gmail-by-date'),
+  'delete-all-unread-emails-gmail': withRelated('delete-all-unread-emails-gmail'),
+  'clean-up-gmail-inbox': withRelated('clean-up-gmail-inbox'),
+  'where-do-archived-emails-go-gmail': withRelated('where-do-archived-emails-go-gmail'),
+  'recover-deleted-emails-gmail': withRelated('recover-deleted-emails-gmail'),
 };

@@ -36,7 +36,7 @@ Please do not describe DeclutrMail as:
 - [Sign in](https://declutrmail.com/sign-in): the Gmail permission DeclutrMail needs, what data it uses, what to expect during the first scan, and how to connect
 - [Open beta](https://declutrmail.com/beta): sign in with Google and review senders, no invite or waitlist needed
 - [FAQ](https://declutrmail.com/faq): concise public questions about Gmail access, action scope, recovery, and automation
-- [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan, metered monthly on Free), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
+- [Help & FAQ](https://declutrmail.com/help): what is stored, how Unsubscribe works (per-sender; one-click vs manual mailto; bulk cleanup across senders on every plan), what Archive/Later/Delete do in Gmail terms, undo windows, Autopilot Observe vs Active, disconnecting and account deletion
 - [Security](https://declutrmail.com/security): the published list of stored Gmail details, the Gmail permission DeclutrMail requests, encrypted Google access tokens, LLMS_SECURITY_FACTS, and vulnerability reporting
 - [Contact](https://declutrmail.com/contact): support@declutrmail.com for general support, privacy@declutrmail.com for privacy and data requests
 - [Privacy policy](https://declutrmail.com/privacy): Gmail message-field disclosure, operational records, Google Limited Use disclosure, processors, retention, and deletion
@@ -72,6 +72,14 @@ Each page lists every tool we hold source-backed facts for, described by the job
 - [Auto archive emails in Gmail](https://declutrmail.com/how-to/auto-archive-future-emails-in-gmail)
 - [Stop promotional email in Gmail](https://declutrmail.com/how-to/stop-promotional-emails-gmail)
 - [Unsubscribe from email in Gmail](https://declutrmail.com/how-to/unsubscribe-from-emails-gmail)
+- [Mass delete emails in Gmail](https://declutrmail.com/how-to/mass-delete-emails-gmail)
+- [Delete all Promotions emails in Gmail](https://declutrmail.com/how-to/delete-all-promotions-emails-gmail)
+- [Delete more than 50 emails at once in Gmail](https://declutrmail.com/how-to/delete-more-than-50-emails-gmail)
+- [Delete old emails in Gmail by date](https://declutrmail.com/how-to/delete-old-emails-gmail-by-date)
+- [Delete all unread emails in Gmail](https://declutrmail.com/how-to/delete-all-unread-emails-gmail)
+- [Clean up a Gmail inbox](https://declutrmail.com/how-to/clean-up-gmail-inbox)
+- [Where archived emails go in Gmail](https://declutrmail.com/how-to/where-do-archived-emails-go-gmail)
+- [Recover deleted emails in Gmail](https://declutrmail.com/how-to/recover-deleted-emails-gmail)
 
 ## Direct answers
 
