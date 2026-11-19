@@ -20,6 +20,16 @@ Only you can clear these. Each one holds back a channel.
 3. **Official profiles for the site's structured data** (`ORGANIZATION_SAME_AS`),
    once the handles exist. SEO audit §1, decision 2.
 
+Smaller founder steps that make marketing measurable or findable, each with its
+steps in `docs/log/founder-followups/`:
+
+- `2026-08-26-exclude-google-oauth-posthog-referrers.md` — so sign-ups stop showing Google as their source
+- `2026-09-18-enable-vercel-web-analytics.md` — page traffic numbers
+- `2026-08-13-verify-search-console-and-submit-sitemap.md` and
+  `2026-08-13-submit-sitemap-to-bing-and-brave.md` — search and AI-answer coverage
+- `2026-09-24-add-return-path-dns-records-for-spf.md` — email deliverability
+- `2026-08-14-recertify-google-casa-before-apr-2027.md` — keeps the "Google approved a verification" claim true
+
 ## Where the truth lives
 
 | What                                        | Source of truth                                                                                  |

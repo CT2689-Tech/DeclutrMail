@@ -21,33 +21,33 @@ _why_, _which tier_, and _where the credential lives_.
 
 ### Anthropic (Claude API)
 
-| Field                | Value                                                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **Status**           | ✅ Active                                                                                                                      |
-| **Purpose**          | Powers the 8-agent gate network in CI (`subagent-gate.yml`)                                                                    |
-| **Account email**    | Personal Gmail                                                                                                                 |
-| **Plan / tier**      | Pay-as-you-go (no committed spend yet)                                                                                         |
-| **Approximate cost** | $0 so far                                                                                                                      |
-| **Key name**         | `ANTHROPIC_API_KEY`                                                                                                            |
-| **Key location**     | 1Password → _Anthropic_ item + GitHub repo secret                                                                              |
-| **D-reference**      | CLAUDE.md §7 gate network                                                                                                      |
-| **Notes**            | Key added to GitHub secrets unblocks real agent invocations in CI. See `FOUNDER-FOLLOWUPS.md` → "Configure ANTHROPIC_API_KEY". |
+| Field                | Value                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Status**           | ✅ Active                                                                                                                                        |
+| **Purpose**          | Powers the 8-agent gate network in CI (`subagent-gate.yml`)                                                                                      |
+| **Account email**    | Personal Gmail                                                                                                                                   |
+| **Plan / tier**      | Pay-as-you-go (no committed spend yet)                                                                                                           |
+| **Approximate cost** | $0 so far                                                                                                                                        |
+| **Key name**         | `ANTHROPIC_API_KEY`                                                                                                                              |
+| **Key location**     | 1Password → _Anthropic_ item + GitHub repo secret                                                                                                |
+| **D-reference**      | CLAUDE.md §7 gate network                                                                                                                        |
+| **Notes**            | Key added to GitHub secrets unblocks real agent invocations in CI. See `git show cb785809:FOUNDER-FOLLOWUPS.md` → "Configure ANTHROPIC_API_KEY". |
 
 ---
 
 ### GitHub
 
-| Field                | Value                                                                                                      |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- |
-| **Status**           | ✅ Active                                                                                                  |
-| **Purpose**          | Source control, CI/CD (GitHub Actions), PR gate network                                                    |
-| **Account**          | Personal account → `CT2689-Tech` org                                                                       |
-| **Plan / tier**      | Free (public repo)                                                                                         |
-| **Approximate cost** | $0                                                                                                         |
-| **Key / secret**     | Personal access token or SSH key for pushes                                                                |
-| **Key location**     | 1Password → _GitHub_ item                                                                                  |
-| **D-reference**      | D158, D160                                                                                                 |
-| **Notes**            | Code Security (CodeQL) must be enabled for the repo — see `FOUNDER-FOLLOWUPS.md` → "Enable Code Security". |
+| Field                | Value                                                                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Status**           | ✅ Active                                                                                                                    |
+| **Purpose**          | Source control, CI/CD (GitHub Actions), PR gate network                                                                      |
+| **Account**          | Personal account → `CT2689-Tech` org                                                                                         |
+| **Plan / tier**      | Free (public repo)                                                                                                           |
+| **Approximate cost** | $0                                                                                                                           |
+| **Key / secret**     | Personal access token or SSH key for pushes                                                                                  |
+| **Key location**     | 1Password → _GitHub_ item                                                                                                    |
+| **D-reference**      | D158, D160                                                                                                                   |
+| **Notes**            | Code Security (CodeQL) must be enabled for the repo — see `git show cb785809:FOUNDER-FOLLOWUPS.md` → "Enable Code Security". |
 
 ---
 

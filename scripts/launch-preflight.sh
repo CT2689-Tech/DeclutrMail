@@ -801,7 +801,7 @@ EOF
              --format='value(spec.template.spec.serviceAccountName)' 2>/dev/null)
 
   # WARN, not FAIL. Both IAM findings are long-standing posture with a
-  # documented remediation (FOUNDER-FOLLOWUPS.md), not launch blockers and
+  # documented remediation (docs/log/founder-followups/), not launch blockers and
   # not regressions. A check that can never go green teaches you to ignore
   # the whole run — which costs more than the finding is worth. A red run
   # should mean something broke.
@@ -809,7 +809,7 @@ EOF
     bad 'could not resolve the Cloud Run runtime service accounts' 'IAM exposure was NOT checked'
   elif [ "$api_sa" = "$worker_sa" ]; then
     warn "both services run as ${api_sa}" \
-        'the worker-only / api-only secret split is a convention, not a boundary: the public API can read the mail-sending key. See FOUNDER-FOLLOWUPS.md'
+        'the worker-only / api-only secret split is a convention, not a boundary: the public API can read the mail-sending key. See docs/log/founder-followups/2026-07-10-give-worker-own-service-account.md'
   else
     ok 'declutrmail-api and declutrmail-worker run as distinct service accounts'
   fi
@@ -864,7 +864,7 @@ EOF
     if [ -n "$sa_wide" ]; then
       PROJECT_WIDE_SA_READ=1
       warn "project IAM: service account(s) can read EVERY secret: ${sa_wide%% }" \
-          'inherited project-wide secret read makes per-secret grants (and any api/worker SA split) decorative — see FOUNDER-FOLLOWUPS.md'
+          'inherited project-wide secret read makes per-secret grants (and any api/worker SA split) decorative — see docs/log/founder-followups/2026-07-10-give-worker-own-service-account.md'
     else
       PROJECT_WIDE_SA_READ=0
       ok 'project IAM: no service account has project-wide secret read'

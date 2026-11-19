@@ -87,7 +87,7 @@ is checked in the Storybook story and the component. Record it as read-not-drive
 
 Lifting this needs a mechanism, not a firmer sentence — the same conclusion six
 earlier drafts reached. The open question is with the founder in
-`FOUNDER-FOLLOWUPS.md`: the candidate is a dev-only target allowlist, so a press
+`docs/log/founder-followups/2026-08-28-decide-safe-qa-for-unsubscribe-press.md`: the candidate is a dev-only target allowlist, so a press
 cannot reach a real sender's host even when every flag is wrong.
 
 ## The jobs, in the order they should be QA'd
