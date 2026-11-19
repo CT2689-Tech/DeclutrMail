@@ -1,7 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { actionJobs, actionPreviews, activityLog, senderPolicies } from '@declutrmail/db';
+import {
+  actionJobs,
+  actionPreviews,
+  activityLog,
+  senderPolicies,
+  undoJournal,
+} from '@declutrmail/db';
 
 import {
   Browser,
@@ -46,6 +52,8 @@ describe('MCP connector — a model that obeys an attacker’s subject line', ()
   let attacker: SeededSender;
   let bank: SeededSender;
   let shop: SeededSender;
+  /** A cleanup the person made in DeclutrMail itself, still undoable. */
+  let webDecision: { token: string; jobId: string };
 
   beforeAll(async () => {
     harness = await createOAuthTestApp();
@@ -61,6 +69,33 @@ describe('MCP connector — a model that obeys an attacker’s subject line', ()
     bank = await seedSender(harness, mailboxId, { email: 'alerts@bank.example', mail: 5 });
     shop = await seedSender(harness, mailboxId, { email: 'news@shop.example', mail: 4 });
     await protectSender(harness, mailboxId, bank.id);
+    // The person archived the shop in the web app yesterday: a decision
+    // still inside its undo window, which no app started.
+    const [journal] = await harness.db
+      .insert(undoJournal)
+      .values({
+        mailboxAccountId: mailboxId,
+        actionKind: 'archive',
+        payload: {},
+        expiresAt: new Date(Date.now() + 29 * 24 * 60 * 60 * 1000),
+      })
+      .returning({ token: undoJournal.token });
+    const [job] = await harness.db
+      .insert(actionJobs)
+      .values({
+        mailboxAccountId: mailboxId,
+        verb: 'archive',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: shop.id, senderKey: shop.senderKey },
+        resolvedMessageIds: ['m-1', 'm-2'],
+        requestedCount: 2,
+        affectedCount: 2,
+        status: 'done',
+        undoToken: journal!.token,
+        idempotencyKey: `web-archive-${mailboxId}`,
+      })
+      .returning({ id: actionJobs.id });
+    webDecision = { token: journal!.token, jobId: job!.id };
     mcp = await connectedClient(harness, ada);
   }, 60_000);
 
@@ -133,10 +168,20 @@ describe('MCP connector — a model that obeys an attacker’s subject line', ()
       expect((await new Browser(harness.base).post(path)).status).toBe(401);
     }
 
-    // What changed: nothing.
-    expect(
-      await harness.db.select().from(actionJobs).where(eq(actionJobs.mailboxAccountId, mailboxId)),
-    ).toEqual([]);
+    // 5. Undo what the person did: the attacker asks the model to list
+    // recent actions and undo every one. The app cannot see the person's
+    // own decision, and cannot undo it by its token either.
+    const recent = await mcp.call('list_recent_actions');
+    expect(recent.data.actions).toEqual([]);
+    const undo = await mcp.call('undo', { undo_token: webDecision.token });
+    expect(undo.error.code).toBe('UNDO_NOT_FOUND');
+
+    // What changed: nothing. The only job is the person's own archive.
+    const jobsNow = await harness.db
+      .select({ id: actionJobs.id, direction: actionJobs.direction })
+      .from(actionJobs)
+      .where(eq(actionJobs.mailboxAccountId, mailboxId));
+    expect(jobsNow).toEqual([{ id: webDecision.jobId, direction: 'forward' }]);
     expect(harness.queued.label).toEqual([]);
     expect(harness.queued.unsubscribe).toEqual([]);
     expect(

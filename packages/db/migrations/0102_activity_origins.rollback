@@ -1,0 +1,8 @@
+-- Activity stops naming the app on a Protect a connected app made; the
+-- activity rows themselves stay and read "By you". No Gmail data lives
+-- here. Roll this back before 0101: its foreign keys point at 0101's
+-- OAuth tables.
+BEGIN;
+SET LOCAL lock_timeout = '3s';
+DROP TABLE IF EXISTS activity_origins;
+COMMIT;

@@ -133,6 +133,8 @@ function row(partial: Partial<ActivityRowWire>): ActivityRowWire {
     reviewOutcome: partial.reviewOutcome ?? null,
     ...(partial.combinedUnsubscribe ? { combinedUnsubscribe: true } : {}),
     ...(partial.connectedApp ? { connectedApp: partial.connectedApp } : {}),
+    ...(partial.actingApp ? { actingApp: partial.actingApp } : {}),
+    ...(partial.undoneByApp ? { undoneByApp: partial.undoneByApp } : {}),
   };
 }
 
@@ -3445,6 +3447,45 @@ describe('ActivityScreen — D57 rule attribution', () => {
     const { container } = renderScreen();
     await waitFor(() => expect(screen.getByText(`By you, via ${name}`)).toBeInTheDocument());
     expect(container.querySelector('img[src="x"]')).toBeNull();
+  });
+  it('names the app, not the person, for a change the app made with no confirmation', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({ source: 'manual', action: 'marked_protected', actingApp: { name: 'Claude' } }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('By Claude')).toBeInTheDocument());
+    expect(screen.queryByText('By you')).not.toBeInTheDocument();
+  });
+
+  it('says which app undid an action', async () => {
+    installFetchStub([
+      {
+        method: 'GET',
+        path: '/api/activity',
+        respond: () =>
+          jsonOk({
+            data: [
+              row({
+                undoState: { kind: 'executed', executedAt: new Date(NOW).toISOString() },
+                undoneByApp: { name: 'Claude' },
+              }),
+            ],
+            meta: META_BASE,
+          }),
+      },
+    ]);
+    renderScreen();
+    await waitFor(() => expect(screen.getByText('Undone via Claude')).toBeInTheDocument());
   });
 });
 

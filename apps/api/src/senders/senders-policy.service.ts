@@ -9,6 +9,9 @@ import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { isPostgresLockTimeout } from '../db/postgres-lock-timeout.js';
 import type { SenderPolicyPatch, SenderPolicyResult } from './senders.types.js';
 
+/** The transaction `setPolicy` writes in, as `afterAudit` receives it. */
+export type PolicyTx = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
+
 /**
  * SendersPolicyService — the standing-policy WRITE surface for the
  * Senders feature (D40, D42, D43).
@@ -59,6 +62,12 @@ export class SendersPolicyService {
     mailboxAccountId: string;
     senderId: string;
     patch: SenderPolicyPatch;
+    /**
+     * Runs in the same transaction, after the audit rows are written, with
+     * their ids: how a caller records who made the change (the connector
+     * names the app that protected a sender, ADR-0048 spec §7).
+     */
+    afterAudit?: (tx: PolicyTx, activityLogIds: readonly string[]) => Promise<void>;
   }): Promise<SenderPolicyResult> {
     const { mailboxAccountId, senderId, patch } = input;
 
@@ -168,7 +177,16 @@ export class SendersPolicyService {
           action: patch.isProtected ? 'marked_protected' : 'unmarked_protected',
         });
       }
-      await tx.insert(activityLog).values(auditValues);
+      const audited = await tx
+        .insert(activityLog)
+        .values(auditValues)
+        .returning({ id: activityLog.id });
+      if (input.afterAudit) {
+        await input.afterAudit(
+          tx,
+          audited.map((entry) => entry.id),
+        );
+      }
 
       return projectResult(senderId, row, true);
     });

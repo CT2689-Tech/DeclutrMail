@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -113,6 +115,23 @@ describe('MCP connector — rate ceilings', () => {
   }, 60_000);
   afterAll(async () => {
     await harness.close();
+  });
+
+  it('holds undo to the web undo route’s 30 a minute', async () => {
+    const eve = await harness.person('eve@example.com');
+    const mailboxId = await mailboxIdOf(harness, 'eve@example.com');
+    await setSyncState(harness, mailboxId, 'ready');
+    const looping = await connectedClient(harness, eve);
+    let refused: Awaited<ReturnType<typeof looping.call>> | undefined;
+    let answered = 0;
+    for (let call = 0; call < 70 && !refused; call += 1) {
+      const answer = await looping.call('undo', { undo_token: randomUUID() });
+      if (answer.error?.code === 'RATE_LIMITED') refused = answer;
+      else answered += 1;
+    }
+    // The bucket refills one every two seconds while this runs.
+    expect(refused?.error.code).toBe('RATE_LIMITED');
+    expect(answered).toBeLessThanOrEqual(32);
   });
 
   it('stops one app at 60 previews a minute, and counts each app on its own', async () => {

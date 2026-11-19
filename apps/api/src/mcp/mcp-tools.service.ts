@@ -31,6 +31,7 @@ import { revertDecision } from '../undo/revert-decision.js';
 import { UndoService } from '../undo/undo.service.js';
 import {
   ActionPreviewsService,
+  CLAIM_LEASE_MS,
   type DescribedSkip,
   type PreviewDetail,
   type PreviewOwner,
@@ -47,6 +48,14 @@ import type { McpPrincipal } from './mcp-token.guard.js';
 
 /** A looping assistant cannot fill the previews table (spec §6). */
 const PREVIEWS_PER_GRANT: ResolvedRateLimit = { bucket: 'default', limit: 60, windowSec: 60 };
+
+/**
+ * The web undo route's own ceiling (`UndoController.revert`: 30 a minute),
+ * spent from the same key, so a person and their app together get the one
+ * allowance the web route gives (ADR-0048: the same limits).
+ */
+const UNDO_ROUTE_LIMIT: ResolvedRateLimit = { bucket: 'gmail-action', limit: 30, windowSec: 60 };
+const UNDO_ROUTE_KEY = 'gmail-action:route:UndoController.revert';
 
 interface ResolvedMailbox {
   id: string;
@@ -92,6 +101,9 @@ export class McpToolsService {
     // use, keyed by user, so one person has one allowance (spec §6).
     const bucket = MCP_TOOLS[name].budget === 'write' ? 'gmail-action' : 'triage-load';
     await this.spend(`${bucket}:user:${principal.userId}`, { bucket, ...BUCKET_DEFAULTS[bucket] });
+    if (name === 'undo') {
+      await this.spend(`${UNDO_ROUTE_KEY}:user:${principal.userId}`, UNDO_ROUTE_LIMIT);
+    }
     return this.handlers[name](principal, args);
   }
 
@@ -288,7 +300,11 @@ export class McpToolsService {
 
     list_recent_actions: async (principal, args) => {
       const mailbox = await this.resolveMailbox(principal, args.mailbox);
-      const decisions = await this.undo.listActiveDecisions(mailbox.id, args.limit ?? 20);
+      // Only what this app started: the person's own changes, and other
+      // apps', are undone in DeclutrMail (ADR-0048 rule 1).
+      const decisions = await this.undo.listActiveDecisions(mailbox.id, args.limit ?? 20, {
+        originClientId: principal.clientId,
+      });
       return {
         mailbox: mailbox.email,
         actions: decisions.map((decision) => ({
@@ -307,12 +323,34 @@ export class McpToolsService {
 
     undo: async (principal, args) => {
       const mailbox = await this.resolveMailbox(principal, args.mailbox, { forCleanup: true });
+      // An app puts back only what it moved. Anything else — the person's
+      // own cleanups, Autopilot's, another app's — is undone by the person
+      // in DeclutrMail, so an instruction planted in a subject line cannot
+      // reverse them (ADR-0048 rule 1). Not found, alike, for both.
+      if (!(await this.previews.startedByClient(mailbox.id, args.undo_token, principal.clientId))) {
+        throw new McpToolError(
+          'UNDO_NOT_FOUND',
+          'No action this app started has that undo_token. Changes made in DeclutrMail itself are undone there, in Activity.',
+        );
+      }
       try {
         const result = await revertDecision(
           { undo: this.undo, actions: this.actions },
           mailbox.id,
           args.undo_token,
         );
+        // So Activity says which app put it back (spec §7). After the
+        // enqueue; a failure here loses the label, never the undo.
+        await this.previews
+          .recordUndoOrigin(principal.grantId, mailbox.id, result.actionIds ?? [])
+          .catch((cause: unknown) => {
+            this.logger.error(
+              JSON.stringify({
+                kind: 'mcp.undo_origin_not_recorded',
+                error: cause instanceof Error ? cause.name : 'unknown error',
+              }),
+            );
+          });
         return {
           mailbox: mailbox.email,
           undo_token: result.token,
@@ -344,6 +382,9 @@ export class McpToolsService {
         senderId: args.sender_id,
         // The literal `true`: this tool cannot unprotect (ADR-0048 rule 2).
         patch: { isProtected: true },
+        // No confirmation in DeclutrMail, so Activity names the app, not
+        // the person (spec §7).
+        afterAudit: (tx, ids) => this.previews.recordActivityOrigin(tx, principal.grantId, ids),
       });
       return {
         mailbox: mailbox.email,
@@ -364,15 +405,18 @@ export class McpToolsService {
           this.previews.actionStatus(preview),
         ])
       : [[], null];
+    // Confirmed and being started right now (the claim's lease is live):
+    // in progress. Confirmed with no live claim: a start that failed,
+    // which only the person's next press continues.
+    const starting =
+      preview.state === 'confirmed' &&
+      preview.claimedAt !== null &&
+      Date.now() - preview.claimedAt.getTime() < CLAIM_LEASE_MS;
     return {
       mailbox: mailboxEmail,
       preview_id: preview.id,
-      status: result
-        ? 'applied'
-        : preview.state === 'confirmed'
-          ? 'in_progress'
-          : 'needs_confirmation',
-      confirm_url: preview.state === 'pending' ? confirmUrl(preview.id) : null,
+      status: result ? 'applied' : starting ? 'in_progress' : 'needs_confirmation',
+      confirm_url: result || starting ? null : confirmUrl(preview.id),
       expires_at: preview.expiresAt.toISOString(),
       action_id: result?.handle === 'action' ? preview.actionId : null,
       batch_id: result?.handle === 'batch' ? preview.actionId : null,

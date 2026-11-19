@@ -429,7 +429,8 @@ export const MCP_TOOLS = {
   list_recent_actions: spec('list_recent_actions', {
     title: 'List actions that can be undone',
     ask: 'List recent changes that can still be undone.',
-    description: 'Recent cleanups that can still be undone, newest first, with when Undo expires.',
+    description:
+      'Recent cleanups this app started that can still be undone, newest first, with when Undo expires. Changes made in DeclutrMail itself are undone there.',
     scope: 'read',
     budget: 'read',
     annotations: READ_ONLY,
@@ -438,7 +439,7 @@ export const MCP_TOOLS = {
     title: 'Undo a cleanup',
     ask: 'Undo an Archive, Later or Delete.',
     description:
-      'Put back the email an Archive, Later or Delete moved, using its undo_token. An unsubscribe request cannot be undone.',
+      'Put back the email an Archive, Later or Delete that this app started moved, using its undo_token. It takes effect at once. An unsubscribe request cannot be undone.',
     scope: 'cleanup',
     budget: 'write',
     annotations: {

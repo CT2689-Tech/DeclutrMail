@@ -1,8 +1,9 @@
 import { ConflictException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { and, eq, gt, inArray, isNull, lt, notExists, or, sql } from 'drizzle-orm';
+import { and, eq, gt, gte, inArray, isNull, lt, notExists, or, sql } from 'drizzle-orm';
 
 import {
   accountDeletionRequests,
+  actionJobs,
   actionPreviews,
   mailboxAccounts,
   oauthClients,
@@ -36,6 +37,8 @@ export const PREVIEW_TTL_MS = 15 * 60 * 1000;
  * waits for the winner before answering "still starting".
  */
 const CLAIM_WAIT_MS = 3_000;
+/** How long one request's claim on a confirmed preview holds (the UPDATE below). */
+export const CLAIM_LEASE_MS = 2 * 60 * 1000;
 const CLAIM_POLL_MS = 150;
 /** Keep writes one decision per sender; this many at a time. */
 const KEEP_CONCURRENCY = 8;
@@ -94,6 +97,9 @@ const SINGLE_SENDER_SKIP: Record<string, ActionPreviewSkipReason> = {
   PROTECTED_SENDER: 'protected',
   SENDER_NOT_FOUND: 'not_found',
   SENDER_ACTION_IN_PROGRESS: 'in_progress',
+  // Another unsubscribe to this sender is still being sent: the same
+  // "busy" the bulk and existing-email paths report, not a failure.
+  UNSUBSCRIBE_IN_FLIGHT: 'in_progress',
   UNSUBSCRIBE_CHANNEL_UNKNOWN: 'unknown',
 };
 
@@ -107,10 +113,10 @@ const SINGLE_SENDER_SKIP: Record<string, ActionPreviewSkipReason> = {
  *   apply_cleanup   → `apply`    reports the row's state; never confirms
  *
  * `confirm` is reachable only from a cookie-authenticated, CSRF-checked
- * route. `apply` is what the bearer-token tool calls: on a `pending` row
- * it changes nothing. The one thing `apply` can start is a preview the
- * person already confirmed whose enqueue did not finish (queue down);
- * that is the same confirmed preview, not a new decision.
+ * route, and it is the only thing that starts an action. `apply` is what
+ * the bearer-token tool calls: it reports the row and starts nothing, in
+ * any state. A start that failed is continued by the person's next
+ * press, never by the app (CLAUDE.md §2.6, D233; spec §8).
  *
  * Every enqueue uses the idempotency key `mcp-preview:<id>`, so a double
  * click, a retried tool call and both arriving together are one action.
@@ -143,8 +149,10 @@ export class ActionPreviewsService {
     wakeAt: Date | null;
   }): Promise<{ preview: ActionPreview; skipped: PreviewSkip[] }> {
     const { owner, mailboxAccountId, verb, alsoVerb, olderThanDays, wakeAt } = input;
-    const expiresAt = new Date(Date.now() + PREVIEW_TTL_MS);
-    assertVerbArguments(verb, alsoVerb, olderThanDays, wakeAt, expiresAt);
+    // Only to check the arguments: the stored expiry is set by the
+    // database's clock, the one every later UPDATE judges it by.
+    const earliestExpiry = new Date(Date.now() + PREVIEW_TTL_MS);
+    assertVerbArguments(verb, alsoVerb, olderThanDays, wakeAt, earliestExpiry);
 
     const ids = [...new Set(input.senderIds.map((id) => id.toLowerCase()))];
     const facts = await this.senderFacts(mailboxAccountId, ids);
@@ -183,7 +191,7 @@ export class ActionPreviewsService {
         wakeAt,
         senderIds: frozen,
         emailCount,
-        expiresAt,
+        expiresAt: sql`now() + make_interval(secs => ${PREVIEW_TTL_MS / 1000})`,
       })
       .returning();
     return { preview: preview!, skipped };
@@ -215,6 +223,13 @@ export class ActionPreviewsService {
         and(
           eq(actionPreviews.id, previewId),
           eq(actionPreviews.userId, userId),
+          // Spec §7: a disconnect ends the mailbox's previews. Reconnecting
+          // reuses the same mailbox row, so a preview made before the
+          // current connection began belongs to a connection that ended.
+          or(
+            isNull(mailboxAccounts.connectedAt),
+            gte(actionPreviews.createdAt, mailboxAccounts.connectedAt),
+          ),
           // The same second line the token lookup has: an account on its
           // way out confirms nothing, even if its grant were never revoked.
           notExists(
@@ -273,9 +288,10 @@ export class ActionPreviewsService {
   }
 
   /**
-   * `apply_cleanup`. Reports the preview; starts nothing the person has
-   * not confirmed. `grantId` must be the app that made the preview, and
-   * `mailboxAccountId`, when the tool named a mailbox, the preview's own.
+   * `apply_cleanup`. Reports the preview and starts nothing, in any state:
+   * only the person's press does (ADR-0048 rule 1). `grantId` must be the
+   * app that made the preview, and `mailboxAccountId`, when the tool named
+   * a mailbox, the preview's own.
    */
   async apply(
     previewId: string,
@@ -294,8 +310,7 @@ export class ActionPreviewsService {
     if (found.expired) throw expired(found.preview);
     // Said now, not after the person has gone to the page and pressed.
     if (!found.mailboxConnected) throw mailboxDisconnected();
-    if (found.preview.state === 'pending') return found;
-    return this.applyConfirmed(previewId, owner.userId);
+    return found;
   }
 
   /**
@@ -312,9 +327,14 @@ export class ActionPreviewsService {
     if (!found) throw notFound();
     const { preview } = found;
     if (preview.state === 'applied') return found;
-    // Lost the race for the last second of the window, or never confirmed.
-    if (preview.state !== 'confirmed') throw expired(preview);
     if (found.expired) throw expired(preview);
+    if (preview.state === 'pending') {
+      // Another press was refused and put the row back in the meantime:
+      // what the person needs is that refusal, not "expired".
+      if (preview.refusedCode !== null) return found;
+      // Never confirmed: the press lost the race with the window's end.
+      throw expired(preview);
+    }
     // A cleanup prepared for a Gmail account must not outlive its
     // connection (spec §7). The rows themselves go with the data purge
     // or the retention sweep; this is what makes them unusable at once.
@@ -381,20 +401,22 @@ export class ActionPreviewsService {
           );
         }
       } else {
-        // A fault, not a decision (the queue was down, say): the press
-        // stands and a retry continues the same attempt. Give the claim
-        // back so that retry does not wait out the lease; a failure to do
-        // so only delays it.
-        await this.db
-          .update(actionPreviews)
-          .set({ claimedAt: null })
-          .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')))
-          .catch((cause: unknown) => {
-            this.reportUnrecorded('action_preview.claim_not_released', preview.id, cause);
-          });
+        // A fault, not a decision (a database error, the queue down).
+        await this.afterFault(preview).catch((cause: unknown) => {
+          // Unrecorded, the claim lapses with its lease and the row stays
+          // confirmed: only a press continues it either way.
+          this.reportUnrecorded('action_preview.fault_not_recorded', preview.id, cause);
+        });
       }
       throw error;
     }
+    // A replay of a start whose jobs already failed: reported as it is,
+    // and not counted as a request that started.
+    const startFailed =
+      outcome.actionId !== null &&
+      (await this.actionStatus({ ...preview, actionId: outcome.actionId, result: outcome.result })
+        .then((status) => status === 'failed')
+        .catch(() => false));
     const [marked] = await this.db
       .update(actionPreviews)
       .set({
@@ -407,7 +429,7 @@ export class ActionPreviewsService {
       .returning({ id: actionPreviews.id });
     // Counted when this request applied it to at least one sender; a
     // request that found every sender skipped started nothing.
-    if (marked && outcome.result.appliedSenders > 0) {
+    if (marked && outcome.result.appliedSenders > 0 && !startFailed) {
       recordProductEvent(
         this.productEvents,
         'connector_request_started',
@@ -418,6 +440,57 @@ export class ActionPreviewsService {
     const applied = await this.findOwned(previewId, userId);
     if (!applied) throw notFound();
     return applied;
+  }
+
+  /**
+   * After a start failed for a reason that is not a refusal. Nothing the
+   * press wrote: the press is spent and the row waits for a new one, as a
+   * refusal does (spec §8). Jobs written: the row stays confirmed, so the
+   * person's next press replays exactly those jobs and reports what they
+   * did; a failed job is reported, never run again (D233).
+   */
+  private async afterFault(preview: ActionPreview): Promise<void> {
+    const written = (await this.previewJobs(preview)).length > 0;
+    await this.db
+      .update(actionPreviews)
+      .set(
+        written
+          ? { claimedAt: null }
+          : { state: 'pending', confirmedAt: null, claimedAt: null, refusedCode: null },
+      )
+      .where(and(eq(actionPreviews.id, preview.id), eq(actionPreviews.state, 'confirmed')));
+  }
+
+  /**
+   * The jobs this preview's press wrote, found by the exact keys the
+   * action services store under its idempotency key (one sender:
+   * `<verb>-<key>`; several: `<verb>-<key>-<sender id>`; `-sec` for a
+   * composite's second verb; one-click sends: `unsubexec-<key>…`). Exact
+   * keys, so the unique index serves the lookup under any collation.
+   */
+  private async previewJobs(
+    preview: Pick<ActionPreview, 'id' | 'mailboxAccountId' | 'verb' | 'alsoVerb' | 'senderIds'>,
+  ): Promise<Array<{ status: ActionJobStatus }>> {
+    const safeKey = `mcp-preview-${preview.id}`;
+    const prefixes = [...new Set([preview.verb, preview.alsoVerb, 'unsubexec'])].filter(
+      (prefix): prefix is string => prefix !== null && prefix !== 'keep',
+    );
+    const suffixes = ['', ...preview.senderIds.map((id) => `-${id}`)];
+    const keys = prefixes.flatMap((prefix) =>
+      suffixes.flatMap((suffix) => [
+        `${prefix}-${safeKey}${suffix}`,
+        `${prefix}-${safeKey}${suffix}-sec`,
+      ]),
+    );
+    return this.db
+      .select({ status: actionJobs.status })
+      .from(actionJobs)
+      .where(
+        and(
+          eq(actionJobs.mailboxAccountId, preview.mailboxAccountId),
+          inArray(actionJobs.idempotencyKey, keys),
+        ),
+      );
   }
 
   /**
@@ -537,7 +610,10 @@ export class ActionPreviewsService {
     if (verb === 'keep') {
       const limit = createLimiter(KEEP_CONCURRENCY);
       const skipped: PreviewSkip[] = [];
-      await Promise.all(
+      // Every write settles before a failure is reported: the claim is
+      // released only once nothing of this attempt is still running, so a
+      // retry cannot write the same decision alongside it.
+      const settled = await Promise.allSettled(
         ids.map((senderId) =>
           limit(async () => {
             try {
@@ -549,6 +625,8 @@ export class ActionPreviewsService {
           }),
         ),
       );
+      const failure = settled.find((result) => result.status === 'rejected');
+      if (failure) throw failure.reason;
       return {
         actionId: null,
         result: {
@@ -599,9 +677,7 @@ export class ActionPreviewsService {
       const skipped = done.senders.flatMap((sender) => {
         const reason = backlogSkip(sender);
         if (!reason) return [];
-        return [
-          { senderId: sender.senderId, reason, emailMoved: sender.unsubStatus !== 'skipped' },
-        ];
+        return [{ senderId: sender.senderId, reason, emailMoved: sender.emailMoved === true }];
       });
       return {
         actionId: done.backlog?.actionId ?? null,
@@ -610,8 +686,10 @@ export class ActionPreviewsService {
         ),
         result: {
           handle: done.backlog?.handle ?? null,
-          // Acted on: unsubscribed, or their email moved, or both.
-          appliedSenders: done.senders.filter((sender) => sender.unsubStatus !== 'skipped').length,
+          // Acted on: an unsubscribe was sent, or their email was moved.
+          appliedSenders: done.senders.filter(
+            (sender) => sender.unsubStatus === 'requested' || sender.emailMoved === true,
+          ).length,
           requestedEmails: done.backlog?.requestedCount ?? 0,
           skipped,
         },
@@ -839,6 +917,72 @@ export class ActionPreviewsService {
    * row per job of the action or batch; a repeat changes nothing.
    */
   private async recordOrigin(preview: ActionPreview, actionIds: readonly string[]): Promise<void> {
+    await this.recordOriginFor(preview.grantId, preview.mailboxAccountId, actionIds);
+  }
+
+  /**
+   * The activity rows a change the app made on its own wrote (a Protect:
+   * no job, no confirmation), so Activity says "By <app>". Called inside
+   * the policy write's transaction, so the row and its origin land together.
+   */
+  async recordActivityOrigin(
+    tx: { execute: DrizzleDb['execute'] },
+    grantId: string,
+    activityLogIds: readonly string[],
+  ): Promise<void> {
+    if (activityLogIds.length === 0) return;
+    const ids = sql.join(
+      activityLogIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    await tx.execute(sql`
+      INSERT INTO activity_origins (activity_log_id, grant_id, client_id)
+      SELECT a.id, g.id, g.client_id
+      FROM activity_log a
+      JOIN oauth_grants g ON g.id = ${grantId}::uuid
+      WHERE a.id IN (${ids})
+      ON CONFLICT (activity_log_id) DO NOTHING
+    `);
+  }
+
+  /** The reverse jobs an app's `undo` queued, so Activity can say "Undone via <app>". */
+  async recordUndoOrigin(
+    grantId: string,
+    mailboxAccountId: string,
+    reverseActionIds: readonly string[],
+  ): Promise<void> {
+    if (reverseActionIds.length === 0) return;
+    await this.recordOriginFor(grantId, mailboxAccountId, reverseActionIds);
+  }
+
+  /**
+   * Whether this app started the decision behind an undo token: one of
+   * its forward jobs carries an origin from the same app. An app undoes
+   * only what it did; the person undoes everything else in DeclutrMail.
+   */
+  async startedByClient(
+    mailboxAccountId: string,
+    undoToken: string,
+    clientId: string,
+  ): Promise<boolean> {
+    const result = await this.db.execute(sql`
+      SELECT 1
+      FROM action_jobs j
+      JOIN action_origins o ON o.action_job_id = j.id
+      WHERE j.mailbox_account_id = ${mailboxAccountId}::uuid
+        AND j.undo_token = ${undoToken}::uuid
+        AND j.direction = 'forward'
+        AND o.client_id = ${clientId}
+      LIMIT 1
+    `);
+    return rowsOf(result).length > 0;
+  }
+
+  private async recordOriginFor(
+    grantId: string,
+    mailboxAccountId: string,
+    actionIds: readonly string[],
+  ): Promise<void> {
     const ids = sql.join(
       actionIds.map((id) => sql`${id}::uuid`),
       sql`, `,
@@ -849,12 +993,19 @@ export class ActionPreviewsService {
       INSERT INTO action_origins (action_job_id, grant_id, client_id)
       SELECT j.id, g.id, g.client_id
       FROM action_jobs j
-      JOIN oauth_grants g ON g.id = ${preview.grantId}::uuid
-      WHERE j.mailbox_account_id = ${preview.mailboxAccountId}::uuid
+      JOIN oauth_grants g ON g.id = ${grantId}::uuid
+      WHERE j.mailbox_account_id = ${mailboxAccountId}::uuid
         AND (j.id IN (${ids}) OR j.composite_id IN (${ids}))
       ON CONFLICT (action_job_id) DO NOTHING
     `);
   }
+}
+
+/** Rows from `db.execute`, whichever driver ran it (postgres.js: an array; PGlite: `{ rows }`). */
+function rowsOf(result: unknown): unknown[] {
+  if (Array.isArray(result)) return result;
+  const rows = (result as { rows?: unknown[] } | null)?.rows;
+  return Array.isArray(rows) ? rows : [];
 }
 
 function skipOne(

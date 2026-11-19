@@ -197,13 +197,21 @@ describe('MCP connector — one confirmation, one action', () => {
     });
     expect(await jobsOf(s.mailboxId)).toEqual([]);
 
-    // A request that died holding the claim does not strand the preview:
-    // the lease lapses and the next call starts the action.
+    // A request that died holding the claim does not strand the preview,
+    // and does not hand it to the app: once the lease lapses the app is
+    // told the person must press, and starts nothing (ADR-0048 rule 1).
     await harness.db.execute(sql`
       UPDATE action_previews SET claimed_at = now() - interval '3 minutes' WHERE id = ${id}::uuid
     `);
     const later = await s.mcp.call('apply_cleanup', { preview_id: id });
-    expect(later.data.status).toBe('applied');
+    expect(later.data).toMatchObject({
+      status: 'needs_confirmation',
+      confirm_url: `http://localhost:3000/confirm/${id}`,
+    });
+    expect(await jobsOf(s.mailboxId)).toEqual([]);
+    // The person's press starts it, once.
+    expect((await s.page.post(confirmPath(id))).status).toBe(200);
+    expect((await s.mcp.call('apply_cleanup', { preview_id: id })).data.status).toBe('applied');
     expect(await jobsOf(s.mailboxId)).toHaveLength(1);
   }, 60_000);
 

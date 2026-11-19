@@ -52,6 +52,7 @@ import { CANONICAL_SHORTCUTS, type CanonicalVerb } from '@declutrmail/shared/con
 import {
   actionJobs,
   actionOrigins,
+  activityOrigins,
   activityLog,
   automationRules,
   AUTOPILOT_CLAIM_KEY_PREFIXES,
@@ -76,6 +77,9 @@ import type {
   UndoState,
 } from './activity.types.js';
 import type { ActivityLogEntry, LabelActionSelector } from '@declutrmail/db';
+
+/** The app that made a change on its own (a Protect), apart from the one a cleanup came from. */
+const actingClients = alias(oauthClients, 'acting_clients');
 
 /** D55 — number of days each window covers; `'all'` returns `null`. */
 const WINDOW_DAYS: Record<Exclude<ActivityWindow, 'all'>, number> = {
@@ -637,6 +641,27 @@ export class ActivityReadService {
         ruleName: automationRules.name,
         originActionJobId: actionOrigins.actionJobId,
         connectedAppName: oauthClients.clientName,
+        // A change the app made on its own (a Protect): no confirmation.
+        actingActivityId: activityOrigins.activityLogId,
+        actingAppName: actingClients.clientName,
+        // The app whose `undo` put this back, from the reverse job's origin.
+        undoneByClientId: sql<string | null>`(
+          SELECT o.client_id FROM action_jobs r
+          JOIN action_origins o ON o.action_job_id = r.id
+          WHERE r.undo_token = ${activityLog.undoToken}
+            AND r.direction = 'reverse'
+            AND r.mailbox_account_id = ${activityLog.mailboxAccountId}
+          LIMIT 1
+        )`,
+        undoneByName: sql<string | null>`(
+          SELECT c.client_name FROM action_jobs r
+          JOIN action_origins o ON o.action_job_id = r.id
+          JOIN oauth_clients c ON c.client_id = o.client_id
+          WHERE r.undo_token = ${activityLog.undoToken}
+            AND r.direction = 'reverse'
+            AND r.mailbox_account_id = ${activityLog.mailboxAccountId}
+          LIMIT 1
+        )`,
         senderDisplayName: senders.displayName,
         senderEmail: senders.email,
         undoExpiresAt: undoJournal.expiresAt,
@@ -676,6 +701,8 @@ export class ActivityReadService {
       // (read-only; `action_origins` has one row per job at most).
       .leftJoin(actionOrigins, eq(actionOrigins.actionJobId, activityLog.actionJobId))
       .leftJoin(oauthClients, eq(oauthClients.clientId, actionOrigins.clientId))
+      .leftJoin(activityOrigins, eq(activityOrigins.activityLogId, activityLog.id))
+      .leftJoin(actingClients, eq(actingClients.clientId, activityOrigins.clientId))
       .where(and(...whereParts))
       .orderBy(desc(feedTime(activityLog.occurredAt)), desc(activityLog.id))
       .limit(limit + 1);
@@ -708,6 +735,8 @@ export class ActivityReadService {
         sender,
         rule: row.ruleId && row.ruleName !== null ? { id: row.ruleId, name: row.ruleName } : null,
         ...(row.originActionJobId ? { connectedApp: { name: row.connectedAppName } } : {}),
+        ...(row.actingActivityId ? { actingApp: { name: row.actingAppName } } : {}),
+        ...(row.undoneByClientId ? { undoneByApp: { name: row.undoneByName } } : {}),
         feedbackRating:
           row.feedbackRating === 'expected' || row.feedbackRating === 'surprising'
             ? row.feedbackRating

@@ -11,6 +11,7 @@ import {
   senderPolicies,
   undoJournal,
   workspaces,
+  productEvents,
 } from '@declutrmail/db';
 import { actionPreviewFacts } from '@declutrmail/shared/actions';
 import { METER } from '@declutrmail/shared/entitlements';
@@ -24,6 +25,7 @@ import {
   type WorkerContext,
 } from '@declutrmail/workers';
 
+import { ActionsService } from '../actions/actions.service.js';
 import { ActivityReadService } from '../activity/activity.read-service.js';
 import {
   Browser,
@@ -689,7 +691,7 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(harness.queued.label.length).toBe(before + 1);
     });
 
-    it('survives a queue outage: the confirmation stands and a retry starts the action', async () => {
+    it('a failed start that wrote nothing spends the press: only a new press starts it', async () => {
       const s = await scene();
       const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
       const preview = await s.mcp.call('preview_cleanup', { verb: 'keep', sender_ids: [shop.id] });
@@ -699,15 +701,22 @@ describe('MCP connector — previews, confirmation and apply', () => {
       try {
         const failed = await s.page.post(confirmPath(id));
         expect(failed.status).toBe(500);
-        expect((await previewRow(id))!.state).toBe('confirmed');
-        const tool = await s.mcp.call('apply_cleanup', { preview_id: id });
-        expect(tool.error.code).toBe('INTERNAL_ERROR');
-        expect(tool.text).not.toMatch(/activity_log/);
       } finally {
         await harness.db.execute(sql`ALTER TABLE activity_log_away RENAME TO activity_log`);
       }
-      const retried = await s.mcp.call('apply_cleanup', { preview_id: id });
-      expect(retried.data).toMatchObject({ status: 'applied', applied_senders: 1 });
+      // Spec §8: back to pending, as a refusal leaves it.
+      expect(await previewRow(id)).toMatchObject({ state: 'pending', confirmedAt: null });
+      // The app cannot start it on its own once the database is back.
+      const tool = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(tool.data).toMatchObject({
+        status: 'needs_confirmation',
+        confirm_url: `http://localhost:3000/confirm/${id}`,
+      });
+      expect(await previewRow(id)).toMatchObject({ state: 'pending' });
+      // The person's new press does.
+      expect((await s.page.post(confirmPath(id))).status).toBe(200);
+      const done = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(done.data).toMatchObject({ status: 'applied', applied_senders: 1 });
     });
 
     it('says so when the queue refused the job: applied, with an action that failed', async () => {
@@ -726,13 +735,28 @@ describe('MCP connector — previews, confirmation and apply', () => {
       } finally {
         harness.queueDown(false);
       }
-      // The refused job is the one behind this preview's key: a retry
-      // finds it, and reports what it is rather than a clean "applied".
+      // The app cannot continue it: it is told the person must press.
       const tool = await s.mcp.call('apply_cleanup', { preview_id: id });
-      expect(tool.data).toMatchObject({ status: 'applied', action_status: 'failed' });
+      expect(tool.data).toMatchObject({
+        status: 'needs_confirmation',
+        confirm_url: `http://localhost:3000/confirm/${id}`,
+      });
+      const labelBefore = harness.queued.label.length;
+      // The refused job is the one behind this preview's key: the person's
+      // next press finds it and reports what it is, without running it
+      // again (D233), and it is not counted as a request that started.
+      expect((await s.page.post(confirmPath(id))).status).toBe(200);
+      const after = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(after.data).toMatchObject({ status: 'applied', action_status: 'failed' });
       const page = await s.page.get(`/api/action-previews/${id}`);
       expect(page.json.data.outcome.actionStatus).toBe('failed');
       expect(await jobs(s.mailboxId)).toHaveLength(1);
+      expect(harness.queued.label.length).toBe(labelBefore);
+      const started = await harness.db
+        .select({ props: productEvents.props })
+        .from(productEvents)
+        .where(eq(productEvents.event, 'connector_request_started'));
+      expect(started.filter((event) => event.props.preview_id === id)).toEqual([]);
     });
 
     it('stops honouring a preview once its app is disconnected', async () => {
@@ -1141,7 +1165,7 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(applied.data.refused).toMatchObject({ code: 'UNSUBSCRIBE_UNAVAILABLE' });
     });
 
-    it('a fault after the move started keeps the press: the assistant’s retry finishes it once', async () => {
+    it('a fault after the move started keeps the press: the person’s next press finishes it once', async () => {
       const s = await scene();
       const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 3 });
       // Five emails left this month; the request moves three.
@@ -1174,11 +1198,15 @@ describe('MCP connector — previews, confirmation and apply', () => {
       } finally {
         blip.mockRestore();
       }
-      // Not a refusal: the press stands.
+      // Not a refusal, and jobs were written: the press stands.
       expect(await previewRow(id)).toMatchObject({ state: 'confirmed', refusedCode: null });
+      // The app cannot finish it on its own.
+      const waiting = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(waiting.data.status).toBe('needs_confirmation');
 
-      // The retry replays the same keys: the limit is not counted twice,
-      // and it ends applied, with one move and one unsubscribe.
+      // The person's press replays the same keys: the limit is not counted
+      // twice, and it ends applied, with one move and one unsubscribe.
+      expect((await s.page.post(confirmPath(id))).status).toBe(200);
       const applied = await s.mcp.call('apply_cleanup', { preview_id: id });
       expect(applied.data).toMatchObject({ status: 'applied', requested_emails: 3, refused: null });
       const mine = (await jobs(s.mailboxId)).filter((job) =>
@@ -1374,6 +1402,45 @@ describe('MCP connector — previews, confirmation and apply', () => {
       expect(again.isError).toBe(false);
       const reverse = (await jobs(s.mailboxId)).filter((row) => row.direction === 'reverse');
       expect(reverse).toHaveLength(1);
+      // Activity says which app put it back.
+      const afterUndo = await new ActivityReadService(harness.db).listActivity({
+        mailboxAccountId: s.mailboxId,
+        window: 'all',
+        source: null,
+        nowMs: Date.now(),
+        cursor: null,
+        limit: 20,
+      });
+      const undoneRow = afterUndo.rows.find((row) => row.action === 'archive');
+      expect(undoneRow?.undoneByApp).toEqual({ name: 'Test Assistant' });
+    });
+
+    it('cannot list or undo a change the person made in DeclutrMail itself', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 2 });
+      // The person archives the sender in the web app.
+      const since = harness.queued.label.length;
+      const action = await harness.app.get(ActionsService).enqueueComposite({
+        mailboxAccountId: s.mailboxId,
+        selector: { type: 'sender', senderId: shop.id },
+        primary: { type: 'archive', olderThanDays: null, wakeAt: null, reach: 'inbox_only' },
+        idempotencyKey: `web-${s.mailboxId}`,
+        override: false,
+      });
+      await runLabelJobs(since);
+      const [forward] = await harness.db
+        .select({ undoToken: actionJobs.undoToken })
+        .from(actionJobs)
+        .where(eq(actionJobs.id, action.actionId));
+      const token = forward!.undoToken!;
+      expect(token).toEqual(expect.any(String));
+
+      const recent = await s.mcp.call('list_recent_actions');
+      expect(recent.data.actions).toEqual([]);
+      const undone = await s.mcp.call('undo', { undo_token: token });
+      expect(undone.error).toMatchObject({ code: 'UNDO_NOT_FOUND' });
+      expect(undone.error.message).toContain('in DeclutrMail');
+      expect((await jobs(s.mailboxId)).filter((row) => row.direction === 'reverse')).toEqual([]);
     });
 
     it('answers UNDO_EXPIRED after the window and UNDO_NOT_FOUND for an unknown token', async () => {
@@ -1427,6 +1494,18 @@ describe('MCP connector — previews, confirmation and apply', () => {
 
       const first = await s.mcp.call('protect_sender', { sender_id: bank.id });
       expect(first.data).toMatchObject({ sender_id: bank.id, protected: true, changed: true });
+      // No confirmation in DeclutrMail: Activity names the app, not the person.
+      const activity = await new ActivityReadService(harness.db).listActivity({
+        mailboxAccountId: s.mailboxId,
+        window: 'all',
+        source: null,
+        nowMs: Date.now(),
+        cursor: null,
+        limit: 20,
+      });
+      const protectedRow = activity.rows.find((row) => row.action === 'marked_protected');
+      expect(protectedRow?.actingApp).toEqual({ name: 'Test Assistant' });
+      expect(protectedRow?.connectedApp).toBeUndefined();
       const second = await s.mcp.call('protect_sender', { sender_id: bank.id });
       expect(second.data).toMatchObject({ protected: true, changed: false });
 
@@ -1496,6 +1575,199 @@ describe('MCP connector — previews, confirmation and apply', () => {
       await setSyncState(harness, s.mailboxId, 'syncing');
       const answer = await s.mcp.call('list_senders');
       expect(answer.data).toMatchObject({ sync_state: 'syncing', partial: true, as_of: null });
+    });
+  });
+
+  describe('review fixes, 2026-11-19', () => {
+    it('a reconnect ends the previews made before it (spec §7)', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'archive',
+        sender_ids: [shop.id],
+      });
+      const id = preview.data.preview_id;
+      // Disconnect, then connect the same Gmail again: the same row comes
+      // back active, with a new connection time.
+      await harness.db
+        .update(mailboxAccounts)
+        .set({ status: 'disconnected' })
+        .where(eq(mailboxAccounts.id, s.mailboxId));
+      await harness.db.execute(sql`
+        UPDATE mailbox_accounts SET status = 'active', connected_at = now() + interval '1 second'
+        WHERE id = ${s.mailboxId}::uuid
+      `);
+      expect((await s.page.post(confirmPath(id))).status).toBe(404);
+      const tool = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(tool.error.code).toBe('PREVIEW_NOT_FOUND');
+      expect(await jobs(s.mailboxId)).toEqual([]);
+    });
+
+    it('Unsubscribe for a sender whose unsubscribe is already on its way is a skip, not a failure', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        sender_ids: [shop.id],
+      });
+      const id = preview.data.preview_id;
+      // Another one-click send to this sender is still queued.
+      await harness.db.insert(actionJobs).values({
+        mailboxAccountId: s.mailboxId,
+        verb: 'unsubscribe',
+        direction: 'forward',
+        selector: { type: 'sender', senderId: shop.id, senderKey: shop.senderKey },
+        requestedCount: 0,
+        affectedCount: 0,
+        status: 'queued',
+        idempotencyKey: `unsubexec-elsewhere-${s.mailboxId}`,
+      });
+      expect((await s.page.post(confirmPath(id))).status).toBe(200);
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(applied.data).toMatchObject({ status: 'applied', applied_senders: 0 });
+      expect(applied.data.skipped).toEqual([
+        { sender_id: shop.id, reason: 'in_progress', compose_url: null, email_moved: false },
+      ]);
+    });
+
+    it('Unsubscribe + Archive says email moved only for senders whose email the move covered', async () => {
+      const s = await scene();
+      // Mailto: not unsubscribed by DeclutrMail. Nothing older than a year.
+      const shop = await seedSender(harness, s.mailboxId, {
+        email: 'news@shop.example',
+        mail: 2,
+        unsubscribe: 'mailto',
+      });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        older_than_days: 365,
+        sender_ids: [shop.id],
+      });
+      const id = preview.data.preview_id;
+      const labelBefore = harness.queued.label.length;
+      expect((await s.page.post(confirmPath(id))).status).toBe(200);
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(harness.queued.label.length).toBe(labelBefore);
+      expect(applied.data).toMatchObject({ status: 'applied', applied_senders: 0 });
+      expect(applied.data.skipped).toEqual([
+        expect.objectContaining({ sender_id: shop.id, reason: 'mailto', email_moved: false }),
+      ]);
+    });
+
+    it('a retry of Unsubscribe + Archive whose move failed sends no unsubscribe and reports the failure', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example', mail: 2 });
+      const bank = await seedSender(harness, s.mailboxId, { email: 'news@bank.example', mail: 3 });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'unsubscribe',
+        existing_email: 'archive',
+        sender_ids: [shop.id, bank.id],
+      });
+      const id = preview.data.preview_id;
+      harness.queueDown(true);
+      try {
+        expect((await s.page.post(confirmPath(id))).status).toBe(503);
+      } finally {
+        harness.queueDown(false);
+      }
+      const unsubBefore = harness.queued.unsubscribe.length;
+      expect((await s.page.post(confirmPath(id))).status).toBe(200);
+      expect(harness.queued.unsubscribe.length).toBe(unsubBefore);
+      const mine = (await jobs(s.mailboxId)).filter((job) =>
+        (job.idempotencyKey ?? '').includes(id),
+      );
+      expect(mine.filter((job) => job.verb === 'unsubscribe')).toEqual([]);
+      const applied = await s.mcp.call('apply_cleanup', { preview_id: id });
+      expect(applied.data).toMatchObject({
+        status: 'applied',
+        action_status: 'failed',
+        applied_senders: 0,
+      });
+    });
+
+    it('a press refused while another was starting answers with the refusal, not "expired"', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
+      const preview = await s.mcp.call('preview_cleanup', {
+        verb: 'archive',
+        sender_ids: [shop.id],
+      });
+      const id = preview.data.preview_id;
+      // The other press was refused and put the row back.
+      await harness.db
+        .update(actionPreviews)
+        .set({ refusedCode: 'QUOTA_EXHAUSTED' })
+        .where(eq(actionPreviews.id, id));
+      // This press read the row while the other one still held it confirmed.
+      const previews = harness.app.get(ActionPreviewsService);
+      const findOwned = previews.findOwned.bind(previews);
+      const spy = vi
+        .spyOn(previews, 'findOwned')
+        .mockImplementationOnce(async (previewId, userId) => {
+          const detail = await findOwned(previewId, userId);
+          return detail
+            ? { ...detail, preview: { ...detail.preview, state: 'confirmed', refusedCode: null } }
+            : detail;
+        });
+      try {
+        const answer = await previews.confirm(id, s.person.userId);
+        expect(answer.preview).toMatchObject({ state: 'pending', refusedCode: 'QUOTA_EXHAUSTED' });
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await jobs(s.mailboxId)).toEqual([]);
+    });
+
+    it('a Keep that fails reports only after every write has settled', async () => {
+      const s = await scene();
+      const senderIds: string[] = [];
+      for (let index = 0; index < 12; index += 1) {
+        senderIds.push(
+          (await seedSender(harness, s.mailboxId, { email: `n${index}@keep.example`, mail: 1 })).id,
+        );
+      }
+      const preview = await s.mcp.call('preview_cleanup', { verb: 'keep', sender_ids: senderIds });
+      const id = preview.data.preview_id;
+      const actions = harness.app.get(ActionsService);
+      let settled = 0;
+      const spy = vi.spyOn(actions, 'recordKeepIntent').mockImplementation(async (input) => {
+        if (input.senderId === senderIds[0]) throw new Error('connection reset');
+        await new Promise((resolve) => setTimeout(resolve, 40));
+        settled += 1;
+        return undefined as never;
+      });
+      try {
+        expect((await s.page.post(confirmPath(id))).status).toBe(500);
+        // Every other write had finished before the failure was answered.
+        expect(settled).toBe(11);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    it('the expiry is set by the database clock, in the same statement as the row', async () => {
+      const s = await scene();
+      const shop = await seedSender(harness, s.mailboxId, { email: 'news@shop.example' });
+      // Counting takes a while before the row is written; an expiry taken
+      // from this server's clock before that would start the 15 minutes
+      // early. (The test database shares this process's clock, so a
+      // skewed clock cannot tell the two apart; the gap can.)
+      const actions = harness.app.get(ActionsService);
+      const original = actions.previewComposite.bind(actions);
+      const slow = vi.spyOn(actions, 'previewComposite').mockImplementation(async (input) => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return original(input);
+      });
+      let id: string;
+      try {
+        id = (await s.mcp.call('preview_cleanup', { verb: 'archive', sender_ids: [shop.id] })).data
+          .preview_id;
+      } finally {
+        slow.mockRestore();
+      }
+      const row = (await previewRow(id))!;
+      expect(row.expiresAt.getTime() - row.createdAt.getTime()).toBe(15 * 60 * 1000);
     });
   });
 });

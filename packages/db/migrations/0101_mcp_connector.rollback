@@ -9,6 +9,9 @@
 -- the table accepts, and code without the connector writes none of them.
 -- Connector rows already recorded stay until the 13-month retention.
 --
+-- Roll back 0102 (activity_origins) before this one: its foreign keys
+-- point at the OAuth tables dropped here.
+--
 -- ROLL THE CODE BACK FIRST. Account deletion and the daily retention worker
 -- run statements against these tables whether or not MCP_ENABLED is on, so
 -- dropping them under the code that shipped with this migration breaks both.

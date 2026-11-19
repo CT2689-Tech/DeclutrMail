@@ -1,6 +1,7 @@
 export * from './_custom-types';
 export * from './account-deletion-requests';
 export * from './action-origins';
+export * from './activity-origins';
 export * from './action-previews';
 export * from './action-recovery-previews';
 export * from './action-jobs';

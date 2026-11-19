@@ -2009,13 +2009,17 @@ function ActivityRow({
   // A connected app prepared it and the person confirmed it in
   // DeclutrMail, so both are named. The app's name is its own claim:
   // rendered as text, and "a connected app" when it gave none.
+  // An app that changed something with no confirmation (a Protect) is
+  // named on its own: the person did not make that change.
   const sourceAttribution =
     row.source === 'autopilot'
       ? `By Autopilot${row.rule ? ` · ${row.rule.name}` : ''}`
       : row.source === 'manual'
-        ? row.connectedApp
-          ? `By you, via ${row.connectedApp.name?.trim() || 'a connected app'}`
-          : 'By you'
+        ? row.actingApp
+          ? `By ${appLabel(row.actingApp.name)}`
+          : row.connectedApp
+            ? `By you, via ${appLabel(row.connectedApp.name)}`
+            : 'By you'
         : `Via ${SOURCE_LABEL[row.source]}`;
 
   const showFeedback =
@@ -2678,7 +2682,7 @@ function UndoCell({
   if (undo.kind === 'executed') {
     return (
       <span role="status" style={{ display: 'inline-flex', alignItems: 'center', height: 30 }}>
-        <Pill>Undone</Pill>
+        <Pill>{row.undoneByApp ? `Undone via ${appLabel(row.undoneByApp.name)}` : 'Undone'}</Pill>
       </span>
     );
   }
@@ -2931,6 +2935,11 @@ function activityRowActionLabel(row: ActivityRowWire): string {
     }
   }
   return sharedActivityActionLabel(row.action, row.executionState);
+}
+
+/** A connected app's own name is its claim: shown as text, or "a connected app" without one. */
+function appLabel(name: string | null): string {
+  return name?.trim() || 'a connected app';
 }
 
 const SOURCE_LABEL: Record<ActivityRowWire['source'], string> = {

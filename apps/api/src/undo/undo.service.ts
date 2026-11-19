@@ -289,7 +289,15 @@ export class UndoService {
    * Raw `sql` interpolates only the mailbox id (string) and two integers
    * — never a JS `Date`/`BigInt` (CLAUDE.md §2.6).
    */
-  async listActiveDecisions(mailboxAccountId: string, limit = 50): Promise<UndoDecision[]> {
+  async listActiveDecisions(
+    mailboxAccountId: string,
+    limit = 50,
+    opts: {
+      /** Only decisions whose jobs this connected app started (ADR-0048). */
+      originClientId?: string;
+    } = {},
+  ): Promise<UndoDecision[]> {
+    const originClientId = opts.originClientId ?? null;
     const result = await this.db.execute(sql`
       with active as (
         select
@@ -311,6 +319,13 @@ export class UndoService {
         where uj.mailbox_account_id = ${mailboxAccountId}
           and uj.reverted_at is null
           and uj.expires_at > now()
+          and (
+            ${originClientId}::text is null
+            or exists (
+              select 1 from action_origins o
+              where o.action_job_id = aj.id and o.client_id = ${originClientId}::text
+            )
+          )
       ),
       grouped as (
         select

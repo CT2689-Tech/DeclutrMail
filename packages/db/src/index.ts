@@ -21,6 +21,8 @@ export type {
 } from './schema/action-recovery-previews';
 export { actionOrigins } from './schema/action-origins';
 export type { ActionOrigin } from './schema/action-origins';
+export { activityOrigins } from './schema/activity-origins';
+export type { ActivityOrigin } from './schema/activity-origins';
 export {
   ACTION_PREVIEW_ALSO_VERBS,
   ACTION_PREVIEW_SKIP_REASONS,
