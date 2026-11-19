@@ -19,6 +19,8 @@ Only you can clear these. Each one holds back a channel.
    without them.
 3. **Official profiles for the site's structured data** (`ORGANIZATION_SAME_AS`),
    once the handles exist. SEO audit §1, decision 2.
+4. **The public name** that signs pitches and voices videos (`[PUBLIC NAME]` in
+   `drafts-2026-11/`). Every outreach email waits on it.
 
 Smaller founder steps that make marketing measurable or findable, each with its
 steps in `docs/log/founder-followups/`:
@@ -42,6 +44,7 @@ steps in `docs/log/founder-followups/`:
 | Voice, audience, competitors, objections    | `.agents/product-marketing.md` (marketing skills read this exact path)                           |
 | Copy truth constraints (T1–T7)              | `repositioning-copy-spec-2026-08-01.md` §1; `.claude/hooks/check-microcopy.sh` enforces part     |
 | Directory listing copy and tracker          | `directory-submissions.md`                                                                       |
+| Outreach drafts: videos, Reddit, pitches    | `drafts-2026-11/README.md` (drafts only; each goes out by the founder's hand)                     |
 | Blog publication (approval-gated)           | `content-pipeline.md`                                                                            |
 | Search monitoring                           | `seo-engine.md`                                                                                  |
 | Latest SEO audit and open opportunities     | `seo-skills-audit-2026-11-17.md` (raw evidence: `seo-skills-audit-2026-11-17-research.md`)       |
@@ -99,7 +102,8 @@ Agents draft; you post.
 1. **Reddit (≤ 2 replies a day).** Watch (F5Bot or saved search): `unroll.me alternative`,
    `clean email safe`, `trimbox`, `mailstrom`, `sanebox`, `leave me alone app`,
    `gmail storage full`, `mass delete gmail`, `bulk unsubscribe`, `delete emails by sender`.
-   Ask an agent: "Draft a Reddit comment for <url> with the ct-reddit skill." Rewrite
+   Ten answers are drafted in `drafts-2026-11/reddit-answers.md`. For a new thread, ask
+   an agent: "Draft a Reddit comment for <url> with the ct-reddit skill." Rewrite
    anything that reads like a template. Test: is it still the best answer if
    DeclutrMail did not exist?
 2. **X.** Replies to people stuck on Gmail storage or newsletters, useful first. At most
@@ -143,6 +147,8 @@ production (launch gate G4).
 - [ ] One real 50-sender unsubscribe session, then a 30-day "who actually stopped" follow-up
 - [ ] Film a real 20–30 s preview → confirm → undo clip (the X pin and Product Hunt lead).
       No generated Gmail screens.
+- [ ] Record the three how-to videos in `drafts-2026-11/video-scripts.md`
+- [ ] Send the pitches marked "Send" in `drafts-2026-11/outreach-emails.md` (after blocker 4)
 
 ### E. Directories — after B is confirmed on production
 
@@ -189,8 +195,10 @@ Under 10 points on HN: one retitled retry after 1–2 weeks, then stop.
 
 ### Search opportunities (from the 2026-11-17 SEO audit)
 
-- [ ] New guides: sort Gmail by sender, Gmail storage full, delete Gmail by date, apply a
-      filter to existing mail, why Gmail unsubscribe does not work
+- [x] Eight new how-to guides (mass delete, by date, Promotions, unread, more than 50,
+      clean up, archived, recover), shipped 2026-11-19 in #1212
+- [ ] Still missing: sort Gmail by sender, Gmail storage full, apply a filter to existing
+      mail, why Gmail unsubscribe does not work
 - [ ] "Is [tool] safe?" answered on each comparison page
 - [ ] Phone (iPhone, Android, Gmail app) steps in the existing guides
 
