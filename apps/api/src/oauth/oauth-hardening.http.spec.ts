@@ -1,7 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import { createServer, type Server } from 'node:net';
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { errors } from 'oidc-provider';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +15,7 @@ import {
   oauthTokens,
 } from '@declutrmail/db';
 
+import { hashOAuthSecret } from './oauth-hash.js';
 import { OAuthProviderService } from './oauth-provider.service.js';
 import {
   Browser,
@@ -367,6 +368,18 @@ describe('OAuth authorization server — hardening', () => {
       expect(path).toMatch(/^\/api\/oauth\/interactions\//);
     });
 
+    it('checks a HEAD request as it checks a GET', async () => {
+      // Both routers serve HEAD as GET, so it reaches the same handler.
+      const clientId = await registerClient(harness.base);
+      const before = (await parked()).length;
+      const response = await new Browser(harness.base, ada).request(
+        authorizeUrl(clientId, pkce().challenge, { response_mode: 'form_post' }),
+        { method: 'HEAD' },
+      );
+      expect(response.status).toBe(400);
+      expect(await parked()).toHaveLength(before);
+    });
+
     it('takes expired requests out as new ones arrive', async () => {
       await harness.db.delete(oauthInteractions);
       await harness.db.insert(oauthInteractions).values(
@@ -612,6 +625,65 @@ describe('OAuth authorization server — hardening', () => {
       expect(approve.json.error.code).toBe('CONNECT_REQUEST_GONE');
     });
 
+    it('two Approve presses at once leave one live grant and one record', async () => {
+      const clientId = await registerClient(harness.base);
+      const proof = pkce();
+      const browser = new Browser(harness.base, ada);
+      const { path } = await reachConsent(browser, authorizeUrl(clientId, proof.challenge));
+      harness.securityEvents.record.mockClear();
+      // Both presses read the request before either writes, and both
+      // writes land before either press reads it again.
+      const provider = harness.app.get(OAuthProviderService).provider;
+      const write = provider.interactionResult.bind(provider);
+      const barrier = () => {
+        let open!: () => void;
+        let count = 0;
+        const opened = new Promise<void>((resolve) => (open = resolve));
+        return () => (++count === 2 && open(), opened);
+      };
+      const bothRead = barrier();
+      const bothWritten = barrier();
+      const spy = vi
+        .spyOn(provider, 'interactionResult')
+        .mockImplementation(async (...args: Parameters<typeof write>) => {
+          await bothRead();
+          const redirectTo = await write(...args);
+          await bothWritten();
+          return redirectTo;
+        });
+      let presses: Awaited<ReturnType<typeof browser.post>>[];
+      try {
+        presses = await Promise.all([
+          browser.post(`${path}/approve`),
+          browser.post(`${path}/approve`),
+        ]);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(presses.map((press) => press.status)).toEqual([200, 200]);
+
+      const live = (
+        await harness.db.select().from(oauthGrants).where(eq(oauthGrants.clientId, clientId))
+      ).filter((grant) => grant.revokedAt === null);
+      expect(live).toHaveLength(1);
+      const connected = harness.securityEvents.record.mock.calls.filter(
+        ([event]) => event.eventType === 'connected_app.connected',
+      );
+      expect(connected).toHaveLength(1);
+      expect(connected[0]![0].payload).toMatchObject({ grantId: live[0]!.id });
+
+      // The code the request releases belongs to that grant.
+      const resumed = await browser.get(presses[1]!.json.data.redirectTo);
+      const exchanged = await api.form('/oauth/token', {
+        grant_type: 'authorization_code',
+        code: outcome(resumed.location).code!,
+        code_verifier: proof.verifier,
+        client_id: clientId,
+        redirect_uri: REDIRECT_URI,
+      });
+      expect(exchanged.status).toBe(200);
+    });
+
     it('stamps the registration as approved, which is what retention keeps', async () => {
       const clientId = await registerClient(harness.base);
       const stamp = async () =>
@@ -731,6 +803,55 @@ describe('OAuth authorization server — hardening', () => {
       expect(stale.location).not.toContain('code=');
     });
 
+    it('keeps the working connection when the new exchange fails after the code checks out', async () => {
+      const clientId = await registerClient(harness.base);
+      const working = await connect(harness, ada, { clientId });
+      const again = await approved(ada, clientId);
+      const resumed = await again.browser.get(again.resumeUrl);
+      harness.securityEvents.record.mockClear();
+      // Code, client, redirect and verifier are right; the resource is not,
+      // which the library checks only after it has used up the code.
+      const refused = await api.form('/oauth/token', {
+        grant_type: 'authorization_code',
+        code: outcome(resumed.location).code!,
+        code_verifier: again.proof.verifier,
+        client_id: clientId,
+        redirect_uri: REDIRECT_URI,
+        resource: 'https://elsewhere.example/mcp',
+      });
+      expect(refused.status).toBe(400);
+      expect(refused.json.error).toBe('invalid_target');
+
+      expect((await api.bearer('/mcp', working.tokens.access_token)).status).toBe(200);
+      expect(harness.securityEvents.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'connected_app.disconnected' }),
+      );
+    });
+
+    it('refreshing the working connection leaves a new approval of the same app alone', async () => {
+      // Only a code exchange replaces a connection, never a refresh.
+      const clientId = await registerClient(harness.base);
+      const working = await connect(harness, ada, { clientId });
+      const again = await approved(ada, clientId);
+      const refreshed = await api.form('/oauth/token', {
+        grant_type: 'refresh_token',
+        refresh_token: working.tokens.refresh_token,
+        client_id: clientId,
+      });
+      expect(refreshed.status).toBe(200);
+
+      const resumed = await again.browser.get(again.resumeUrl);
+      const exchanged = await api.form('/oauth/token', {
+        grant_type: 'authorization_code',
+        code: outcome(resumed.location).code!,
+        code_verifier: again.proof.verifier,
+        client_id: clientId,
+        redirect_uri: REDIRECT_URI,
+      });
+      expect(exchanged.status).toBe(200);
+      expect((await api.bearer('/mcp', exchanged.json.access_token)).status).toBe(200);
+    });
+
     it('leaves another person’s connection to the same app alone', async () => {
       const clientId = await registerClient(harness.base);
       const theirs = await connect(harness, grace, { clientId });
@@ -744,6 +865,88 @@ describe('OAuth authorization server — hardening', () => {
       expect((await api.bearer('/mcp', other.tokens.access_token)).status).toBe(200);
       const list = await new Browser(harness.base, ada).get('/api/oauth/grants');
       expect(list.json.data.apps).toHaveLength(2);
+    });
+  });
+
+  describe('refresh and revocation', () => {
+    const refresh = (clientId: string, token: string) =>
+      api.form('/oauth/token', {
+        grant_type: 'refresh_token',
+        refresh_token: token,
+        client_id: clientId,
+      });
+
+    it('a refresh token retired by a newer rotation is reuse at once, grace or not', async () => {
+      const { tokens, clientId } = await connect(harness, ada);
+      const app = await refresh(clientId, tokens.refresh_token);
+      // Seconds later someone replays the token the app just used: inside
+      // the grace that rotates again, and retires the app's new token.
+      const replay = await refresh(clientId, tokens.refresh_token);
+      expect([app.status, replay.status]).toEqual([200, 200]);
+
+      // The retired token was never presented, so no grace covers it.
+      const caught = await refresh(clientId, app.json.refresh_token);
+      expect(caught.status).toBe(400);
+      expect(caught.json.error).toBe('invalid_grant');
+      expect((await api.bearer('/mcp', replay.json.access_token)).status).toBe(401);
+      expect(harness.securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'connected_app.token_reuse_revoked',
+          userId: ada.userId,
+        }),
+      );
+    });
+
+    it('an app that revokes its access token ends its connection, on the record', async () => {
+      const { tokens, clientId } = await connect(harness, ada);
+      harness.securityEvents.record.mockClear();
+      const revoked = await api.form('/oauth/revoke', {
+        token: tokens.access_token,
+        client_id: clientId,
+      });
+      expect(revoked.status).toBe(200);
+      // The grant itself goes, so nothing it asked for can still be confirmed.
+      const [grant] = await harness.db
+        .select()
+        .from(oauthGrants)
+        .where(eq(oauthGrants.clientId, clientId));
+      expect(grant!.revokedAt).toBeInstanceOf(Date);
+      expect(harness.securityEvents.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'connected_app.disconnected',
+          userId: ada.userId,
+          payload: { grantId: grant!.id, reason: 'app_revoked' },
+        }),
+      );
+    });
+
+    it('a refresh that races the app’s own revocation is refused, not reported as theft', async () => {
+      const { tokens, clientId } = await connect(harness, ada);
+      harness.securityEvents.record.mockClear();
+      const provider = harness.app.get(OAuthProviderService).provider;
+      const adapter = (
+        provider.RefreshToken as unknown as { adapter: { consume(id: string): Promise<void> } }
+      ).adapter;
+      const consume = adapter.consume.bind(adapter);
+      // The revocation endpoint stamps the token between the refresh's
+      // read and its write.
+      const spy = vi.spyOn(adapter, 'consume').mockImplementationOnce(async (id) => {
+        await harness.db
+          .update(oauthTokens)
+          .set({ revokedAt: sql`now()` })
+          .where(eq(oauthTokens.tokenHash, hashOAuthSecret(tokens.refresh_token)));
+        return consume(id);
+      });
+      try {
+        const refused = await refresh(clientId, tokens.refresh_token);
+        expect(refused.status).toBe(400);
+        expect(refused.json.error).toBe('invalid_grant');
+      } finally {
+        spy.mockRestore();
+      }
+      expect(harness.securityEvents.record).not.toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'connected_app.token_reuse_revoked' }),
+      );
     });
   });
 

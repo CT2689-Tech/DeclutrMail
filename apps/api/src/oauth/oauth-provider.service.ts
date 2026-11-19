@@ -195,7 +195,22 @@ export class OAuthProviderService implements OnModuleInit {
             },
           });
         },
+        (revoked) => {
+          // The app disconnected itself at the revocation endpoint.
+          void this.securityEvents.record({
+            eventType: 'connected_app.disconnected',
+            severity: 'info',
+            userId: revoked.userId,
+            workspaceId: revoked.workspaceId,
+            payload: { grantId: revoked.grantId, reason: 'app_revoked' },
+          });
+        },
       ),
+      // An app that revokes any of its tokens ends its connection: the
+      // grant goes too, as with Settings → Disconnect. (The library's
+      // default keeps the grant when an access token is revoked, which
+      // would leave its pending cleanup requests confirmable.)
+      revokeGrantPolicy: () => true,
 
       // --- what is offered -------------------------------------------
       responseTypes: ['code'],
@@ -335,8 +350,9 @@ export class OAuthProviderService implements OnModuleInit {
     provider.use(async (ctx, next) => {
       // The library's router ignores case and a trailing slash; so does
       // this, or those spellings would skip what follows.
+      // HEAD is served as GET by both routers, so it is checked the same.
       if (
-        ctx.method === 'GET' &&
+        (ctx.method === 'GET' || ctx.method === 'HEAD') &&
         ctx.path.replace(/\/+$/, '').toLowerCase() === OAUTH_ROUTES.authorization
       ) {
         // Anyone can call this endpoint, and the library stores what it

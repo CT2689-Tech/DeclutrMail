@@ -46,11 +46,18 @@ import {
  *
  * ONE LIVE REFRESH TOKEN PER FAMILY. Every rotation retires the family's
  * other unused refresh tokens, so a use inside the grace leaves only the
- * newest one working. Whoever still holds a retired token — the client
- * whose answer was superseded, or someone who replayed a stolen token —
- * is caught as reuse at their next refresh after the grace, and the
- * grant is revoked. Of two refreshes sent at once, the one answered last
- * holds the live token. Every use inside the grace is logged.
+ * newest one working. A retired token was never presented, so it gets no
+ * grace: its use is reuse at once, and the grant is revoked. Whoever
+ * still holds one — the client whose answer was superseded, or someone
+ * who replayed a stolen token — is caught at their next refresh. Of two
+ * refreshes of one token sent at once, the rotation that commits last
+ * holds the live token; that is usually, not always, the one answered
+ * last. Every use inside the grace is logged.
+ *
+ * A REPLACED CONNECTION ENDS ONCE THE NEW ONE WORKS. Connecting the same
+ * app again retires the earlier grant when the new grant's first access
+ * token is stored: after the code, the account and the resource have all
+ * checked out, so a failed exchange never costs the working connection.
  */
 
 const graceLog = new Logger('OAuthRefreshGrace');
@@ -59,6 +66,8 @@ const graceLog = new Logger('OAuthRefreshGrace');
 export const REFRESH_REUSE_GRACE_SEC = 30;
 /** The same window, judged by the database clock. */
 const IN_GRACE = sql<boolean>`${oauthTokens.consumedAt} > now() - make_interval(secs => ${sql.raw(String(REFRESH_REUSE_GRACE_SEC))})`;
+/** What a retired, never-presented sibling is stamped with: already outside the grace. */
+const RETIRED_AT = sql`now() - make_interval(secs => ${sql.raw(String(REFRESH_REUSE_GRACE_SEC + 1))})`;
 
 type Row = Record<string, unknown>;
 
@@ -73,6 +82,9 @@ export type ReuseReporter = (event: ReuseRevocation) => void;
 /** An earlier connection to the same app, retired because a newer one took its place. */
 export type ReplacedGrant = RevokedGrant & { replacedBy: string };
 export type ReplacedReporter = (event: ReplacedGrant) => void;
+
+/** The app revoked its own token at the revocation endpoint, which ends the connection. */
+export type AppRevokedReporter = (event: RevokedGrant) => void;
 
 /**
  * Expired requests removed each time one is stored. Anyone can park a
@@ -188,6 +200,7 @@ class GrantStore extends BaseStore {
     db: DrizzleDb,
     model: string,
     private readonly reportReuse: ReuseReporter,
+    private readonly reportAppRevoked: AppRevokedReporter,
   ) {
     super(db, model);
   }
@@ -222,6 +235,9 @@ class GrantStore extends BaseStore {
       const kind =
         oidc.params?.grant_type === 'authorization_code' ? 'authorization_code' : 'refresh_token';
       this.reportReuse({ ...revoked, kind });
+    } else if (revoked && oidc?.route === 'revocation') {
+      // The app disconnected itself (RFC 7009): as Settings → Disconnect.
+      this.reportAppRevoked(revoked);
     }
   }
 }
@@ -232,6 +248,7 @@ class TokenStore extends BaseStore {
     model: string,
     private readonly kind: 'access' | 'refresh',
     private readonly reportReuse: ReuseReporter,
+    private readonly reportReplaced: ReplacedReporter = () => undefined,
   ) {
     super(db, model);
   }
@@ -247,6 +264,14 @@ class TokenStore extends BaseStore {
     };
     if (this.kind === 'access') {
       await this.db.insert(oauthTokens).values(values);
+      // The first access token of a code exchange: the new connection now
+      // works, so it replaces any earlier one this person gave the same
+      // app (A REPLACED CONNECTION ENDS ONCE THE NEW ONE WORKS). Never
+      // fails the exchange: an earlier grant left live is retired by the
+      // next connection or by retention, which is the safe direction.
+      if (payload.gty === 'authorization_code') {
+        await this.retireReplaced(payload.grantId);
+      }
       return;
     }
 
@@ -279,11 +304,15 @@ class TokenStore extends BaseStore {
         .update(oauthTokens)
         .set({ replacedBy: inserted.id })
         .where(eq(oauthTokens.id, predecessor.id));
+      // Retired, never presented: stamped before the grace, so presenting
+      // one is reuse at once. A family never spans grants, so the grant's
+      // own index finds the family's rows.
       await tx
         .update(oauthTokens)
-        .set({ consumedAt: sql`now()` })
+        .set({ consumedAt: RETIRED_AT })
         .where(
           and(
+            eq(oauthTokens.grantId, values.grantId),
             eq(oauthTokens.familyId, familyId),
             eq(oauthTokens.kind, 'refresh'),
             ne(oauthTokens.id, inserted.id),
@@ -292,6 +321,21 @@ class TokenStore extends BaseStore {
           ),
         );
     });
+  }
+
+  private async retireReplaced(grantId: string): Promise<void> {
+    try {
+      const replaced = await revokeSupersededGrants(this.db, grantId);
+      for (const grant of replaced) this.reportReplaced({ ...grant, replacedBy: grantId });
+    } catch (error) {
+      graceLog.error(
+        JSON.stringify({
+          kind: 'oauth.replaced_grant_not_retired',
+          grantId,
+          error: error instanceof Error ? error.name : 'unknown error',
+        }),
+      );
+    }
   }
 
   /**
@@ -355,12 +399,15 @@ class TokenStore extends BaseStore {
       .returning({ id: oauthTokens.id });
     if (consumed.length > 0) return;
 
-    // Someone else used this token between our read and this write.
     const [row] = await this.db
-      .select({ grantId: oauthTokens.grantId })
+      .select({ grantId: oauthTokens.grantId, revokedAt: oauthTokens.revokedAt })
       .from(oauthTokens)
       .where(eq(oauthTokens.tokenHash, tokenHash))
       .limit(1);
+    // Revoked between our read and this write (the app or the person
+    // disconnected meanwhile): refused, and not a stolen token.
+    if (row?.revokedAt) throw new errors.InvalidGrant('refresh token revoked');
+    // Someone else used this token between our read and this write.
     const revoked = row ? await revokeGrant(this.db, row.grantId) : undefined;
     if (revoked) this.reportReuse({ ...revoked, kind: 'refresh_token' });
     throw new errors.InvalidGrant('refresh token already used');
@@ -398,7 +445,6 @@ class AuthorizationCodeStore extends BaseStore {
     db: DrizzleDb,
     model: string,
     private readonly reportReuse: ReuseReporter,
-    private readonly reportReplaced: ReplacedReporter,
   ) {
     super(db, model);
   }
@@ -443,17 +489,10 @@ class AuthorizationCodeStore extends BaseStore {
       .set({ usedAt: sql`now()` })
       .where(and(eq(oauthAuthCodes.codeHash, codeHash), isNull(oauthAuthCodes.usedAt)))
       .returning({ grantId: oauthAuthCodes.grantId });
-    const [exchanged] = consumed;
-    if (exchanged) {
-      // The library consumes a code only after the client, the redirect
-      // URI and the PKCE verifier all checked out, so this is the moment
-      // the new connection becomes real — and the moment it replaces any
-      // earlier one this person gave the same app.
-      const replaced = await revokeSupersededGrants(this.db, exchanged.grantId);
-      for (const grant of replaced)
-        this.reportReplaced({ ...grant, replacedBy: exchanged.grantId });
-      return;
-    }
+    // An earlier connection to the same app is retired later, once this
+    // exchange has stored a token (A REPLACED CONNECTION ENDS ONCE THE NEW
+    // ONE WORKS): the account and the resource are still to be checked.
+    if (consumed.length > 0) return;
 
     const [row] = await this.db
       .select({ grantId: oauthAuthCodes.grantId })
@@ -563,19 +602,20 @@ export function createOAuthStorageAdapter(
   db: DrizzleDb,
   reportReuse: ReuseReporter = () => undefined,
   reportReplaced: ReplacedReporter = () => undefined,
+  reportAppRevoked: AppRevokedReporter = () => undefined,
 ): (model: string) => Adapter {
   return (model) => {
     switch (model) {
       case 'Client':
         return new ClientStore(db, model);
       case 'Grant':
-        return new GrantStore(db, model, reportReuse);
+        return new GrantStore(db, model, reportReuse, reportAppRevoked);
       case 'AccessToken':
-        return new TokenStore(db, model, 'access', reportReuse);
+        return new TokenStore(db, model, 'access', reportReuse, reportReplaced);
       case 'RefreshToken':
         return new TokenStore(db, model, 'refresh', reportReuse);
       case 'AuthorizationCode':
-        return new AuthorizationCodeStore(db, model, reportReuse, reportReplaced);
+        return new AuthorizationCodeStore(db, model, reportReuse);
       case 'Interaction':
         return new InteractionStore(db, model);
       case 'Session':

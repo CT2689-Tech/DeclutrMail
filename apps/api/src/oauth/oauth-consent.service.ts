@@ -137,10 +137,24 @@ export class OAuthConsentService {
       throw this.asGone(error);
     }
 
+    // Two Approve presses for one request can each get this far (two tabs,
+    // a retried POST): the request keeps the last one written. The other
+    // grant will never get a token; retire it quietly and record nothing,
+    // so one approval reads as one connection. (A press that reads back
+    // before the other one writes still records; its grant is retired
+    // when the kept grant's code is exchanged.)
+    const kept = await this.load(req, res, requestId)
+      .then((after) => after.approvedGrantId)
+      .catch(() => grantId);
+    if (kept !== undefined && kept !== grantId) {
+      await revokeGrant(this.db, grantId);
+      return { redirectTo };
+    }
+
     // An earlier connection to the same app is NOT retired here. It is
-    // replaced when this approval's code is exchanged (see the storage
-    // adapter): an approval that never completes must not cost the
-    // person the connection they already have.
+    // replaced once this approval's first token is stored (see the
+    // storage adapter): an approval that never completes must not cost
+    // the person the connection they already have.
     await this.securityEvents.record({
       eventType: 'connected_app.connected',
       severity: 'info',
