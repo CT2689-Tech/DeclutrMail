@@ -27,6 +27,48 @@ import { AppException } from './app-exception.js';
 import type { ApiPoolDiagnostics } from '../db/api-database.js';
 import { API_POOL_DIAGNOSTICS } from '../db/db.module.js';
 
+/**
+ * What express's body parser rejects a request with, by its `type`.
+ * Those arrive as `http-errors` objects, not HttpExceptions, before any
+ * guard or limiter runs — so any caller could otherwise turn an
+ * oversized or oddly encoded body into a 500 and a Sentry event. Each is
+ * answered as the client error it is, with a fixed message. (Malformed
+ * JSON is not here: Nest itself turns that SyntaxError into a 400.)
+ */
+const BODY_PARSER_REJECTIONS: Readonly<Record<string, { status: number; message: string }>> = {
+  'entity.too.large': {
+    status: HttpStatus.PAYLOAD_TOO_LARGE,
+    message: 'Request body is too large.',
+  },
+  'parameters.too.many': {
+    status: HttpStatus.PAYLOAD_TOO_LARGE,
+    message: 'Request body is too large.',
+  },
+  'request.aborted': { status: HttpStatus.BAD_REQUEST, message: 'Request body could not be read.' },
+  'request.size.invalid': {
+    status: HttpStatus.BAD_REQUEST,
+    message: 'Request body could not be read.',
+  },
+  'encoding.unsupported': {
+    status: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+    message: 'Request body encoding is not supported.',
+  },
+  'charset.unsupported': {
+    status: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+    message: 'Request body encoding is not supported.',
+  },
+};
+
+function bodyParserRejection(exception: unknown): HttpException | null {
+  if (!(exception instanceof Error)) return null;
+  const type = (exception as { type?: unknown }).type;
+  const rejection =
+    typeof type === 'string' && Object.hasOwn(BODY_PARSER_REJECTIONS, type)
+      ? BODY_PARSER_REJECTIONS[type]
+      : undefined;
+  return rejection ? new HttpException(rejection.message, rejection.status) : null;
+}
+
 const SAFE_RUNTIME_ERROR_CODES: ReadonlySet<string> = new Set([
   'EAI_AGAIN',
   'ECONNREFUSED',
@@ -99,7 +141,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const displayId = req.displayId ?? deriveDisplayId(correlationId);
     const operation = this.requestOperation(req);
 
-    const { status, ...rest } = this.resolve(exception);
+    const { status, ...rest } = this.resolve(bodyParserRejection(exception) ?? exception);
 
     this.logger.error(
       `${operation.method} ${operation.route} -> ${status} ${this.errorName(exception)} cid=${correlationId}`,

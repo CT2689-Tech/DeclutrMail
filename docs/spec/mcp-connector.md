@@ -249,7 +249,9 @@ finds mail moved deserves to know who moved it.
   §8 that a local run can reach. Claude.ai custom connector against
   staging for the hosted OAuth callback.
 - **Review:** independent adversarial review (`/code-review ultra` or
-  equivalent) on the auth PR and the apply path before merge.
+  equivalent) on the auth PR and the apply path before merge. Pre-launch
+  review before `MCP_ENABLED=true`:
+  [2026-11-20, PASS WITH NOTES](../execution/mcp-connector-security-review-2026-11-20.md).
 
 ## 10. Build order
 
