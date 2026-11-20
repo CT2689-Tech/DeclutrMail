@@ -19,7 +19,31 @@ import {
   sessionBrowser,
   setSyncState,
 } from './mcp-test-kit.js';
+import { errorClassOf } from './mcp-client-profile.js';
 import { MCP_TOOL_NAMES } from './mcp-tool-contract.js';
+import type { McpToolErrorCode } from './mcp-tool-errors.js';
+
+/** Every tool error code. A Record, so a new code fails to compile until listed here. */
+const TOOL_ERROR_CODES: Record<McpToolErrorCode, true> = {
+  INVALID_REQUEST: true,
+  RATE_LIMITED: true,
+  NO_ACTIVE_MAILBOX: true,
+  MAILBOX_NOT_FOUND: true,
+  MAILBOX_RECONNECT_REQUIRED: true,
+  SENDER_NOT_FOUND: true,
+  NO_ACTIONABLE_SENDERS: true,
+  PREVIEW_NOT_FOUND: true,
+  PREVIEW_EXPIRED: true,
+  QUOTA_EXHAUSTED: true,
+  UPGRADE_REQUIRED: true,
+  QUEUE_UNAVAILABLE: true,
+  UNSUBSCRIBE_UNAVAILABLE: true,
+  ACTION_NOT_FOUND: true,
+  UNDO_NOT_FOUND: true,
+  UNDO_EXPIRED: true,
+  UNDO_UNSUPPORTED: true,
+  INTERNAL_ERROR: true,
+};
 
 /**
  * The connector's product funnel (product_events): connect, use, prepare,
@@ -75,7 +99,7 @@ describe('MCP connector — product funnel', () => {
     const calls = await landed(ada.userId, 'connector_tool_called', 2);
     expect(calls.map((row) => row.props)).toEqual([
       { client: 'other', tool: 'get_usage', outcome: 'ok' },
-      { client: 'other', tool: 'get_sender', outcome: 'error' },
+      { client: 'other', tool: 'get_sender', outcome: 'error', error_class: 'SenderNotFound' },
     ]);
 
     const asked = await app.call('preview_cleanup', { verb: 'archive', sender_ids: [shop.id] });
@@ -180,6 +204,35 @@ describe('MCP connector — product funnel', () => {
     );
   });
 
+  it('logs which protocol the client speaks and whether it can confirm in chat', async () => {
+    const ivo = await harness.person('ivo.profile@example.com');
+    await setSyncState(harness, await mailboxIdOf(harness, 'ivo.profile@example.com'), 'ready');
+    const app = await connectedClient(harness, ivo);
+    const log = vi.spyOn(console, 'log');
+    try {
+      await app.call('get_usage');
+      const profiles = log.mock.calls
+        .map(([line]) =>
+          typeof line === 'string' && line.startsWith('{') ? JSON.parse(line) : null,
+        )
+        .filter((entry) => entry?.kind === 'mcp.client_profile');
+      // The test client speaks 2025-06-18 by header, with no per-request
+      // envelope: its capabilities are unknown here, never a guessed "no".
+      expect(profiles).toEqual([
+        {
+          level: 'info',
+          kind: 'mcp.client_profile',
+          client: 'other',
+          tool: 'get_usage',
+          protocol: '2025-06-18',
+          elicitation: 'unknown',
+        },
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('every value the connector sends is one the sanitizer and the table accept', async () => {
     const accepted = async (props: Record<string, string>, name = 'connector_tool_called') => {
       expect(sanitizeProductEvent(name as never, props)).not.toBeNull();
@@ -189,6 +242,9 @@ describe('MCP connector — product funnel', () => {
     for (const client of CONNECTOR_CLIENTS) await accepted({ client });
     for (const verb of ACTION_PREVIEW_VERBS) await accepted({ verb }, 'connector_request_started');
     for (const reason of REFUSALS) await accepted({ reason }, 'connector_request_refused');
+    for (const code of Object.keys(TOOL_ERROR_CODES)) {
+      await accepted({ tool: 'apply_cleanup', outcome: 'error', error_class: errorClassOf(code) });
+    }
 
     // And the closed lists are closed, in both places.
     const outside = { tool: 'send_email', outcome: 'ok' };

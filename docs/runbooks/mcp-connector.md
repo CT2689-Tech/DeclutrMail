@@ -109,6 +109,7 @@ decision, not a step of this runbook.
 | `kind: "action_preview.claim_not_released"`   | API logs, Sentry  | A failed start held its claim; a retry waits up to 2 minutes              |
 | `connected_app.connected` / `.disconnected`   | `security_events` | Connect and disconnect, per grant                                         |
 | `connector_*` events                          | `product_events`  | The funnel (below)                                                        |
+| `kind: "mcp.client_profile"`                  | API logs          | Per tool call: client family, protocol, whether it can confirm in chat    |
 
 The funnel, last 7 days (read-only):
 
@@ -131,6 +132,34 @@ live connections (a connection replaced by a reconnect, a denial after
 Approve and account deletion write no disconnect): count
 `oauth_grants where revoked_at is null` for that.
 Event definitions: `docs/observability/event-taxonomy.md`.
+
+Why tool calls fail, last 7 days. `error_class` is the tool's error code
+in PascalCase (`PREVIEW_EXPIRED` → `PreviewExpired`); it is absent on
+calls that succeeded:
+
+```sql
+select props->>'tool' as tool, props->>'error_class' as error, count(*)
+from product_events
+where event = 'connector_tool_called' and props->>'outcome' = 'error'
+  and occurred_at > now() - interval '7 days'
+group by 1, 2 order by 3 desc;
+```
+
+Which clients could confirm a preview in the chat (MCP elicitation)
+instead of opening the confirm link. Logs Explorer, last 7 days:
+
+```
+resource.type="cloud_run_revision"
+resource.labels.service_name="declutrmail-api"
+jsonPayload.kind="mcp.client_profile"
+```
+
+Each line carries `jsonPayload.client`, `.protocol` and `.elicitation`. Only clients on
+protocol `2026-07-28` send their capabilities with every call, so only
+they read `yes` or `no`. A 2025-era client reads `unknown`: it declared
+them once, on a request this stateless server does not keep. In-chat
+confirmation could only reach clients on the 2026 protocol with
+`elicitation: yes`.
 
 ## Roll back
 
