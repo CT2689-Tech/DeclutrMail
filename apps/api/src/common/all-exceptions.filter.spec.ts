@@ -268,6 +268,55 @@ describe('AllExceptionsFilter — D168 envelope + D169 tiers', () => {
     });
   });
 
+  it('answers a body the parser refused as the 4xx it is, and does not report it', () => {
+    // What express's body parser hands on (an `http-errors` object, not
+    // an HttpException): before any guard, so any caller can send one.
+    const bodyParserError = (message: string, type: string, status: number) =>
+      Object.assign(new Error(message), { type, status, statusCode: status, expose: true });
+    const before = sentryHarness.captured.length;
+
+    const tooLarge = invoke(
+      new AllExceptionsFilter(),
+      bodyParserError('request entity too large', 'entity.too.large', 413),
+      REQ_WITH_CORRELATION,
+    );
+    expect(tooLarge.status).toBe(413);
+    expect(tooLarge.body.error).toMatchObject({
+      message: 'Request body is too large.',
+      retryable: false,
+    });
+
+    const encoding = invoke(
+      new AllExceptionsFilter(),
+      bodyParserError('unsupported content encoding "compress"', 'encoding.unsupported', 415),
+      REQ_WITH_CORRELATION,
+    );
+    expect(encoding.status).toBe(415);
+    expect(encoding.body.error).toMatchObject({
+      message: 'Request body encoding is not supported.',
+      retryable: false,
+    });
+
+    const aborted = invoke(
+      new AllExceptionsFilter(),
+      bodyParserError('request aborted', 'request.aborted', 400),
+      REQ_WITH_CORRELATION,
+    );
+    expect(aborted.status).toBe(400);
+    expect(aborted.body.error).toMatchObject({ code: 'BAD_REQUEST' });
+
+    // A 4xx is the caller's mistake, not an incident.
+    expect(sentryHarness.captured.length).toBe(before);
+
+    // Anything else carrying a `status` is still a server error.
+    const other = invoke(
+      new AllExceptionsFilter(),
+      Object.assign(new Error('boom'), { status: 400, type: 'not.body.parser' }),
+      REQ_WITH_CORRELATION,
+    );
+    expect(other.status).toBe(500);
+  });
+
   it('genericizes 5xx messages and marks them retryable (D7)', () => {
     const { status, body } = invoke(
       new AllExceptionsFilter(),
