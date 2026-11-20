@@ -34,7 +34,7 @@ and the discovery documents are public in `beta` exactly as in `true`: the
 list only decides who can approve and use. Beta needs the same security
 review as `true`.
 
-Production sets `MCP_ENABLED=false` in `.github/workflows/deploy-cloud-run.yml`
+Production sets `MCP_ENABLED=true` (since 2026-11-20) in `.github/workflows/deploy-cloud-run.yml`
 (`API_ENV_BASE`). That line is the only place to change it: the deploy's
 `--set-env-vars` is a full replace, so a `gcloud run services update`
 lasts until the next deploy.
@@ -47,11 +47,9 @@ lasts until the next deploy.
    `0101_mcp_connector` (CI applies it; never from a laptop).
 3. `API_URL=https://api.declutrmail.com` is in `API_ENV_BASE` (it is the
    OAuth issuer; the API refuses to boot with the connector on without it).
-4. The founder follow-up on Google's Limited Use policy
-   (`docs/log/founder-followups/2026-11-19-mcp-connector-google-limited-use.md`)
-   is decided. Until then `/privacy` §4 says Gmail data goes to no third
-   party but subprocessors, which a connected assistant is not: stay at
-   `false`, or `beta` with only your own id.
+4. `/privacy` §4 names apps the person connects among the parties Gmail
+   data may go to (done 2026-11-20, PR #1222). Without that sentence a
+   connected assistant contradicts the published policy.
 
 ## Turn on for yourself (beta)
 
