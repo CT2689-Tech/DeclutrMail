@@ -220,6 +220,7 @@ import { createKmsProvider } from './adapters/gcp-kms/kms-provider.factory.js';
 import { LlmCircuitBreaker } from './adapters/llm-circuit-breaker.js';
 import { TokenCryptoService } from './auth/token-crypto.service.js';
 import { TokenUnwrapCache } from './auth/token-unwrap-cache.js';
+import { POOL_FULL_RETRY_DELAYS_MS, retryWhilePoolFull } from './db/pool-full-retry.js';
 import { safeHostPort, toSessionPoolUrl } from './db/session-pool-url.js';
 import { createMailboxActionLock } from './db/mailbox-action-lock.js';
 import { GmailClientService } from './gmail/gmail-client.service.js';
@@ -3110,8 +3111,24 @@ async function bootstrap(): Promise<void> {
       // Dedicated connection for the LISTEN — the dispatcher's own
       // pg pool is shared with feature reads/writes. A LISTEN holds
       // the connection for the worker's full lifetime; we don't want
-      // that to starve the pool.
-      await outboxListenPg.listen(OUTBOX_NOTIFY_CHANNEL, () => handler());
+      // that to starve the pool. During a rollout the old revision still
+      // holds its session clients; wait for a slot rather than crash-loop.
+      await retryWhilePoolFull(
+        () => outboxListenPg.listen(OUTBOX_NOTIFY_CHANNEL, () => handler()),
+        {
+          delaysMs: POOL_FULL_RETRY_DELAYS_MS,
+          onRetry: (attempt, delayMs) =>
+            console.warn(
+              JSON.stringify({
+                level: 'warn',
+                kind: 'worker.boot.pool_full_retry',
+                step: 'outbox_listen',
+                attempt,
+                delayMs,
+              }),
+            ),
+        },
+      );
       // Return the unsubscribe — the dispatcher calls this on shutdown.
       return async () => {
         await outboxListenPg.end({ timeout: 5 });
