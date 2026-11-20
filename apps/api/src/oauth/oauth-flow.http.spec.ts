@@ -275,6 +275,8 @@ describe('OAuth authorization server', () => {
         redirectHost: 'client.example',
         scopes: ['read'],
         mailboxes: ['ada@example.test', 'ada.work@example.test'],
+        signedInAs: 'ada@example.test',
+        blocked: null,
       });
     });
 

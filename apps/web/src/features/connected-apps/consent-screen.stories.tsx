@@ -48,6 +48,8 @@ const CONSENT: ConnectorConsent = {
   redirectHost: 'claude.ai',
   scopes: ['read', 'cleanup'],
   mailboxes: ['ada@example.com', 'ada.work@example.com'],
+  signedInAs: 'ada@example.com',
+  blocked: null,
 };
 
 const ready = (
@@ -62,6 +64,8 @@ const ready = (
       decisionError: null,
       onApprove: () => {},
       onDeny: () => {},
+      onSwitchAccount: () => {},
+      switching: false,
       ...overrides,
     },
   },
@@ -77,9 +81,13 @@ export const UnnamedLongHost = ready({
 });
 export const Approving = ready(CONSENT, { deciding: 'approve' });
 export const Denying = ready(CONSENT, { deciding: 'deny' });
-export const DeletionPending = ready(CONSENT, {
-  decisionError: 'Account deletion is scheduled. Cancel it in Settings to connect an app.',
+export const DeletionPending = ready({ ...CONSENT, blocked: 'deletion_pending' });
+export const NotAvailable = ready({
+  ...CONSENT,
+  signedInAs: 'grace@example.com',
+  blocked: 'not_available',
 });
+export const Switching = ready(CONSENT, { switching: true });
 export const DecisionFailed = ready(CONSENT, {
   decisionError: 'That did not go through. Try again.',
 });

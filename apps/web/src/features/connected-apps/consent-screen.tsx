@@ -7,7 +7,11 @@ import { CONNECT_REQUEST_ID, type ConnectorConsent } from '@declutrmail/shared/c
 
 import { ApiError, apiErrorCode } from '@/lib/api/client';
 import { captureErrorBoundaryException } from '@/lib/error-capture';
-import { useConnectorConsent, useDecideConnectorConsent } from './api/use-connector-consent';
+import {
+  useConnectorConsent,
+  useDecideConnectorConsent,
+  useSwitchAccount,
+} from './api/use-connector-consent';
 import { SCOPE_LABEL, appDisplayName, orderedScopes } from './scope-copy';
 
 const { color, font, text } = tokens;
@@ -30,6 +34,9 @@ export type ConsentCardState =
       decisionError: string | null;
       onApprove: () => void;
       onDeny: () => void;
+      /** Sign out and back in as someone else, returning to this request. */
+      onSwitchAccount: () => void;
+      switching: boolean;
     }
   /** Decision recorded; the browser is on its way back to the app. */
   | { kind: 'returning'; redirectHost: string };
@@ -99,10 +106,20 @@ export function ConsentCard({ state }: { state: ConsentCardState }) {
   );
 }
 
+/** Why Approve cannot succeed for the signed-in account, as cause + next action. */
+const BLOCKED_COPY = {
+  not_available:
+    'Connecting apps is not available for this account yet. Switch account or choose Deny.',
+  deletion_pending: 'Account deletion is scheduled. Cancel it in Settings to connect an app.',
+} as const;
+
 function ReadyConsent({ state }: { state: Extract<ConsentCardState, { kind: 'ready' }> }) {
   const { consent, deciding } = state;
   const name = appDisplayName(consent.appName);
-  const busy = deciding !== null;
+  const busy = deciding !== null || state.switching;
+  // Known before the press: leave out a button that can only fail.
+  const blockedCopy = consent.blocked === null ? null : BLOCKED_COPY[consent.blocked];
+  const decisionError = blockedCopy ?? state.decisionError;
   return (
     <>
       <h1 style={{ margin: 0, fontSize: text.xl, overflowWrap: 'anywhere' }}>
@@ -130,18 +147,29 @@ function ReadyConsent({ state }: { state: Extract<ConsentCardState, { kind: 'rea
         </ul>
       )}
 
-      {state.decisionError != null && (
+      {consent.signedInAs !== null && (
+        <p style={{ ...mutedStyle, marginTop: 16, overflowWrap: 'anywhere' }}>
+          Signed in as <strong style={{ color: color.fg }}>{consent.signedInAs}</strong>
+        </p>
+      )}
+
+      {decisionError != null && (
         <p role="alert" style={{ margin: '16px 0 0', fontSize: text.sm, color: color.dangerText }}>
-          {state.decisionError}
+          {decisionError}
         </p>
       )}
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 24 }}>
-        <Button tone="primary" size="lg" inert={busy} onClick={state.onApprove}>
-          {deciding === 'approve' ? 'Approving…' : 'Approve'}
-        </Button>
+        {blockedCopy === null && (
+          <Button tone="primary" size="lg" inert={busy} onClick={state.onApprove}>
+            {deciding === 'approve' ? 'Approving…' : 'Approve'}
+          </Button>
+        )}
         <Button tone="default" size="lg" inert={busy} onClick={state.onDeny}>
           {deciding === 'deny' ? 'Denying…' : 'Deny'}
+        </Button>
+        <Button tone="default" size="lg" inert={busy} onClick={state.onSwitchAccount}>
+          {state.switching ? 'Switching…' : 'Switch account'}
         </Button>
       </div>
     </>
@@ -201,6 +229,7 @@ export function ConsentScreen() {
   const requestId = raw !== null && CONNECT_REQUEST_ID.test(raw) ? raw : null;
   const consent = useConnectorConsent(requestId);
   const decide = useDecideConnectorConsent(requestId);
+  const switchAccount = useSwitchAccount();
   const [returning, setReturning] = useState(false);
   // The decision was recorded but the API named a place this page will
   // not send anyone. Nothing the person can press here fixes that.
@@ -256,6 +285,8 @@ export function ConsentScreen() {
       decisionError: decide.isError ? decisionErrorCopy(decide.error) : null,
       onApprove: () => choose('approve'),
       onDeny: () => choose('deny'),
+      onSwitchAccount: () => switchAccount.mutate(),
+      switching: switchAccount.isPending || switchAccount.isSuccess,
     };
   }
   return <ConsentCard state={state} />;

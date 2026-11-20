@@ -1,8 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import { Inject, Injectable, Optional } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { errors } from 'oidc-provider';
 
+import { users } from '@declutrmail/db';
 import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
 import {
   ConnectorScopeSchema,
@@ -73,11 +75,25 @@ export class OAuthConsentService {
     const redirectHost = new URL(redirectUri).host;
 
     const mailboxes = await this.mailboxes.listByWorkspace(principal.workspaceId);
+    const [account] = await this.db
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, principal.userId))
+      .limit(1);
+    // The same checks Approve runs, in the same order, so the page never
+    // offers a button that can only fail.
+    const blocked = !mcpAllowedFor(principal.userId)
+      ? 'not_available'
+      : (await hasDeletionInFlight(this.db, principal.userId))
+        ? 'deletion_pending'
+        : null;
     return {
       appName: client.clientName ?? null,
       redirectHost,
       scopes: pending.scopes.map((scope) => ConnectorScopeSchema.parse(scope)),
       mailboxes: mailboxes.filter((m) => m.status === 'active').map((m) => m.email),
+      signedInAs: account?.email ?? null,
+      blocked,
     };
   }
 

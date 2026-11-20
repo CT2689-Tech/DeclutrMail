@@ -8,6 +8,8 @@ import {
 } from '@declutrmail/shared/contracts';
 
 import { ApiError, apiGet, apiPost } from '@/lib/api/client';
+import { returningSignInPath } from '@/lib/api/returning-sign-in';
+import { resetIdentity } from '@/lib/posthog';
 import { connectorConsentQueryOptions } from './query-options';
 
 /** Thrown when the API answered 200 with a body this client cannot read. */
@@ -51,6 +53,25 @@ export function useDecideConnectorConsent(requestId: string | null) {
       const parsed = ConnectorConsentResultSchema.safeParse(envelope.data);
       if (!parsed.success) throw new ConnectorConsentPayloadError();
       return parsed.data.redirectTo;
+    },
+  });
+}
+
+/**
+ * Sign out, then sign in again (Google asks which account) and come back
+ * to this same request. The pending request survives: it lives in the
+ * authorization server's own cookie, which sign-out does not touch.
+ * Signing in replaces the session even if the sign-out call failed, so
+ * the browser moves on either way.
+ */
+export function useSwitchAccount() {
+  return useMutation({
+    mutationFn: async () => {
+      await apiPost<unknown>('/api/auth/logout', undefined, { suppressAuthRedirect: true });
+    },
+    onSettled: () => {
+      void resetIdentity().catch(() => undefined);
+      window.location.assign(returningSignInPath());
     },
   });
 }
