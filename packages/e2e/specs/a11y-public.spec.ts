@@ -46,6 +46,7 @@ import { expectNoBlockingAxeViolations, expectNoViewportOverflow } from '../help
  *   how-it-works   ProductStoryShell renderer, shared with /methodology
  *   faq            FAQ surface
  *   contact        short support page (published addresses)
+ *   connect        DocPage column + the Copy-button client island
  */
 const PUBLIC_ROUTES = [
   '/',
@@ -60,6 +61,7 @@ const PUBLIC_ROUTES = [
   '/how-it-works',
   '/faq',
   '/contact',
+  '/connect',
 ] as const;
 
 /**

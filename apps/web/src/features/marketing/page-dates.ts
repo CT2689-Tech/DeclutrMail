@@ -13,6 +13,7 @@ export const PAGE_LAST_UPDATED = {
   '/refunds': '2026-10-10',
   '/terms': '2026-10-13',
   '/contact': '2026-07-07',
+  '/connect': '2026-11-20',
 } as const;
 
 export type DatedMarketingPath = keyof typeof PAGE_LAST_UPDATED;

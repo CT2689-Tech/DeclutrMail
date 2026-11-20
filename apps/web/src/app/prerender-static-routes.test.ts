@@ -35,6 +35,7 @@ const MUST_STAY_STATIC = [
   'src/app/(marketing)/security/page.tsx',
   'src/app/(marketing)/privacy/page.tsx',
   'src/app/(marketing)/how-it-works/page.tsx',
+  'src/app/(marketing)/connect/page.tsx',
   'src/app/(marketing)/changelog/page.tsx',
   'src/app/(marketing)/blog/[slug]/page.tsx',
   'src/app/(marketing)/how-to/clean-gmail-by-sender/page.tsx',

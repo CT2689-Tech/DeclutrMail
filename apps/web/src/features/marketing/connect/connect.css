@@ -1,0 +1,46 @@
+/* /connect — the server URL and setup commands, in the doc-page column. */
+
+.dm-connect-copy {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 68ch;
+  margin-top: 16px;
+  padding: 10px 10px 10px 16px;
+  border: 1px solid var(--dm-line);
+  border-radius: 12px;
+  background: var(--dm-paper);
+}
+
+.dm-connect-copy code {
+  font-family: var(--dm-font-mono);
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dm-fg);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.dm-connect-copy button {
+  flex: none;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--dm-line);
+  border-radius: 999px;
+  background: var(--dm-card);
+  color: var(--dm-fg);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dm-connect-copy button:focus-visible {
+  outline: 2px solid var(--dm-ring);
+  outline-offset: 2px;
+}
+
+.dm-doc-section .dm-connect-source {
+  font-size: 14px;
+}

@@ -113,6 +113,10 @@
       "measuredKb": 154.9,
       "budgetKb": 163
     },
+    "/(marketing)/connect/page": {
+      "measuredKb": 155.2,
+      "budgetKb": 163
+    },
     "/(marketing)/contact/page": {
       "measuredKb": 155.1,
       "budgetKb": 163

@@ -52,6 +52,7 @@ import { metadata as pricingChangelog } from './pricing/changelog/page';
 import { metadata as howItWorks } from './how-it-works/page';
 import { metadata as compare } from './compare/page';
 import { metadata as methodology } from './methodology/page';
+import { metadata as connect } from './connect/page';
 import { metadata as inboxSimulator } from './inbox-simulator/page';
 import { alt as simulatorCardAlt } from './inbox-simulator/opengraph-image';
 import { metadata as signIn } from './sign-in/page';
@@ -103,6 +104,7 @@ const PAGES: ReadonlyArray<{
   { name: 'how-it-works', metadata: howItWorks, path: '/how-it-works' },
   { name: 'compare', metadata: compare, path: '/compare' },
   { name: 'methodology', metadata: methodology, path: '/methodology' },
+  { name: 'connect', metadata: connect, path: '/connect' },
   {
     name: 'inbox-simulator',
     metadata: inboxSimulator,
