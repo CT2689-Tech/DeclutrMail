@@ -374,6 +374,12 @@ test('launch alerts page only past the stated thresholds and stay off the offlin
   assert.equal(oom.thresholdValue, 0);
   assert.equal(oom.comparison, 'COMPARISON_GT');
   assert.ok(!oom.filter.includes('declutrmail-api'));
+  const pool = find('DeclutrMail database pool exhausted').conditions[0].conditionThreshold;
+  assert.equal(pool.thresholdValue, 0);
+  assert.equal(pool.comparison, 'COMPARISON_GT');
+  assert.equal(pool.aggregations[0].alignmentPeriod, '600s');
+  assert.deepEqual(pool.aggregations[0].groupByFields, ['resource.label.service_name']);
+  assert.ok(pool.filter.includes('logging.googleapis.com/user/db_pool_exhausted'));
   const gmail = find('DeclutrMail Gmail rate limit above guardrail').conditions[0]
     .conditionThreshold;
   assert.equal(gmail.thresholdValue, 30);
@@ -487,6 +493,14 @@ test('launch log metrics keep OAuth on the API and Gmail quota on allowlisted wo
   assert.ok(oom.filter.includes('Container called exit'));
   assert.ok(oom.filter.includes('NOT textPayload:"Container called exit(0)"'));
   assert.ok(oom.filter.includes('NOT jsonPayload.message:"Container called exit(0)"'));
+  const pool = byName.db_pool_exhausted;
+  // Both services draw from the one Supavisor pool.
+  assert.ok(pool.filter.includes('service_name="declutrmail-api"'));
+  assert.ok(pool.filter.includes('service_name="declutrmail-worker"'));
+  assert.ok(pool.filter.includes('textPayload:"EMAXCONNSESSION"'));
+  assert.ok(pool.filter.includes('jsonPayload.message:"EMAXCONNSESSION"'));
+  // The worker's own wait line, so a near-miss is seen before a crash.
+  assert.ok(pool.filter.includes('jsonPayload.kind="worker.boot.pool_full_retry"'));
   const gmail = byName.gmail_rate_limit_events;
   assert.ok(gmail.filter.includes('jsonPayload.error="RateLimitError"'));
   assert.ok(gmail.filter.includes('jsonPayload.kind="worker.failed"'));

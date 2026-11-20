@@ -236,6 +236,11 @@ export const LAUNCH_LOG_METRICS = [
     `${WORKER} AND (textPayload:"Memory limit of" OR jsonPayload.message:"Memory limit of" OR ((textPayload:"Container called exit" OR jsonPayload.message:"Container called exit") AND NOT textPayload:"Container called exit(0)" AND NOT jsonPayload.message:"Container called exit(0)"))`,
   ),
   counter(
+    'db_pool_exhausted',
+    'Supavisor refused a session client because its pool was full (EMAXCONNSESSION), on the API or the worker, or the worker waited at boot for a slot. The Postgres max_connections alert does not see this: the pooler limit is lower. 2026-11-19: pool_size 15 failed four worker deploys.',
+    `resource.type="cloud_run_revision" AND (resource.labels.service_name="declutrmail-api" OR resource.labels.service_name="declutrmail-worker") AND (textPayload:"EMAXCONNSESSION" OR jsonPayload.message:"EMAXCONNSESSION" OR jsonPayload.kind="worker.boot.pool_full_retry")`,
+  ),
+  counter(
     'gmail_rate_limit_events',
     'RateLimitError on allowlisted Gmail workers. Initial guardrail, not a measured Gmail quota baseline. Domain icon lookups are excluded.',
     `${WORKER} AND jsonPayload.error="RateLimitError" AND jsonPayload.kind="worker.failed" AND (${GMAIL_QUOTA_WORKERS.map((worker) => `jsonPayload.worker="${worker}"`).join(' OR ')})`,

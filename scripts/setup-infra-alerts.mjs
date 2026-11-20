@@ -337,6 +337,16 @@ export function infrastructurePolicies({ runtime = false } = {}) {
     oom.documentation = documentation(
       'The worker container logged a memory limit or a non-zero container exit in a 10-minute window. A normal exit(0) does not page. This is separate from the 90% memory utilization alert and does not include the API service.',
     );
+    const poolExhausted = counted(
+      'DeclutrMail database pool exhausted',
+      'metric.type="logging.googleapis.com/user/db_pool_exhausted" AND resource.type="cloud_run_revision"',
+      0,
+      '600s',
+      ['resource.label.service_name'],
+    );
+    poolExhausted.documentation = documentation(
+      'Supavisor refused a session client because its pool was full (EMAXCONNSESSION) on the API or worker, or a worker waited at boot for a pool slot, in a 10-minute window. Postgres max_connections is a separate, higher limit and its alert does not fire for this. Check the pool size in Supabase (Database > Settings > Connection pooling) against the budget in deploy-cloud-run.yml: two worker revisions plus the API. A deploy during this window may fail its worker startup probe.',
+    );
     const gmail = counted(
       'DeclutrMail Gmail rate limit above guardrail',
       'metric.type="logging.googleapis.com/user/gmail_rate_limit_events" AND resource.type="cloud_run_revision" AND resource.labels.service_name="declutrmail-worker"',
@@ -362,7 +372,7 @@ export function infrastructurePolicies({ runtime = false } = {}) {
         },
       ],
     };
-    policies.push(initialSync, recovery, deadLetters, oom, gmail, callbackFailures);
+    policies.push(initialSync, recovery, deadLetters, oom, poolExhausted, gmail, callbackFailures);
   }
   return policies;
 }
