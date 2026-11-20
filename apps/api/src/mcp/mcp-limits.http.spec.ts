@@ -360,12 +360,20 @@ describe('MCP connector — beta (MCP_ENABLED=beta)', () => {
     ).toBe(404);
     expect((await gracePage.get('/api/oauth/grants')).status).toBe(404);
 
-    // ...and connecting again is refused at Approve, with a reason.
+    // ...and connecting again is refused at Approve, with a reason. The
+    // page knows before the press, so it can leave Approve out.
     const browser = new Browser(harness.base, grace);
     const { path } = await reachConsent(
       browser,
       authorizeUrl(await registerClient(harness.base), pkce().challenge),
     );
+    expect((await browser.get(`${path}/details`)).json.data.blocked).toBe('not_available');
+    const adaConsent = new Browser(harness.base, ada);
+    const { path: adaPath } = await reachConsent(
+      adaConsent,
+      authorizeUrl(await registerClient(harness.base), pkce().challenge),
+    );
+    expect((await adaConsent.get(`${adaPath}/details`)).json.data.blocked).toBeNull();
     const approve = await browser.post(`${path}/approve`);
     expect(approve.status).toBe(403);
     expect(approve.json.error.code).toBe('CONNECT_NOT_AVAILABLE');

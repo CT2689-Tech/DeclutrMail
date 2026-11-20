@@ -27,6 +27,8 @@ const CONSENT: ConnectorConsent = {
   redirectHost: 'claude.ai',
   scopes: ['cleanup', 'read'],
   mailboxes: ['ada@example.com', 'ada.work@example.com'],
+  signedInAs: 'ada@example.com',
+  blocked: null,
 };
 
 const jsonError = (status: number, code: string) =>
@@ -74,6 +76,8 @@ describe('ConsentCard', () => {
           decisionError: null,
           onApprove: () => {},
           onDeny: () => {},
+          onSwitchAccount: () => {},
+          switching: false,
         }}
       />,
     );
@@ -130,13 +134,15 @@ describe('ConsentCard', () => {
           decisionError: null,
           onApprove: () => {},
           onDeny: () => {},
+          onSwitchAccount: () => {},
+          switching: false,
         }}
       />,
     );
     const buttons = screen.getAllByRole('button') as HTMLButtonElement[];
-    expect(buttons.map(unavailable)).toEqual([true, true]);
+    expect(buttons.map(unavailable)).toEqual([true, true, true]);
     // Still focusable: a native `disabled` would throw focus to <body>.
-    expect(buttons.map((button) => button.disabled)).toEqual([false, false]);
+    expect(buttons.map((button) => button.disabled)).toEqual([false, false, false]);
     expect(buttons[0]!.textContent).toBe('Approving…');
   });
 
@@ -151,11 +157,35 @@ describe('ConsentCard', () => {
           decisionError: null,
           onApprove,
           onDeny: () => {},
+          onSwitchAccount: () => {},
+          switching: false,
         }}
       />,
     );
     fireEvent.click(screen.getAllByRole('button')[0]!);
     expect(onApprove).not.toHaveBeenCalled();
+  });
+
+  it('names the account deciding, beside a way to switch it', () => {
+    ready({ signedInAs: 'grace@example.com' });
+    expect(document.body.textContent).toContain('Signed in as grace@example.com');
+    expect(screen.getByRole('button', { name: 'Switch account' })).toBeTruthy();
+  });
+
+  it('an account outside the beta gets no Approve, and is told the way out', () => {
+    ready({ blocked: 'not_available' });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    const alert = screen.getByRole('alert').textContent ?? '';
+    expect(alert).toContain('not available for this account');
+    expect(alert).toContain('Switch account');
+    expect(screen.getByRole('button', { name: 'Deny' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Switch account' })).toBeTruthy();
+  });
+
+  it('an account with deletion scheduled gets no Approve, and is told why', () => {
+    ready({ blocked: 'deletion_pending' });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.getByRole('alert').textContent).toContain('deletion is scheduled');
   });
 
   it('a request that is gone names no cause, says what to do, and has no buttons', () => {
@@ -382,6 +412,44 @@ describe('ConsentScreen', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     expect((await screen.findByRole('status')).textContent).toBe('Loading connection request…');
     expect(screen.queryByText('That did not go through. Try again.')).toBeNull();
+  });
+
+  it('Switch account signs out, then signs in again and returns to this same request', async () => {
+    const calls: string[] = [];
+    renderScreen([
+      details(),
+      {
+        method: 'POST',
+        path: '/api/auth/logout',
+        respond: () => {
+          calls.push('logout');
+          return jsonOk({ data: { ok: true } });
+        },
+      },
+    ]);
+    vi.stubGlobal('location', {
+      ...window.location,
+      origin: 'http://localhost:3000',
+      pathname: '/connect/authorize',
+      search: `?request=${REQUEST}`,
+      hash: '',
+      assign,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch account' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledOnce());
+    expect(calls).toEqual(['logout']);
+    const target = new URL(assign.mock.calls[0]![0] as string, 'http://localhost:3000');
+    expect(target.pathname).toBe('/sign-in');
+    expect(target.searchParams.get('returnTo')).toBe(`/connect/authorize?request=${REQUEST}`);
+  });
+
+  it('Switch account still moves on when sign-out fails: signing in replaces the session', async () => {
+    renderScreen([
+      details(),
+      { method: 'POST', path: '/api/auth/logout', respond: () => jsonServerError() },
+    ]);
+    fireEvent.click(await screen.findByRole('button', { name: 'Switch account' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledOnce());
   });
 
   it('a failed decision says to try again and leaves both choices open', async () => {

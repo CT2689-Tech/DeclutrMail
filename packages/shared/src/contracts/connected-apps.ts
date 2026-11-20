@@ -25,6 +25,13 @@ export const ConnectorConsentSchema = z.object({
   scopes: z.array(ConnectorScopeSchema),
   /** Addresses of the Gmail accounts the app would reach. */
   mailboxes: z.array(z.string()),
+  /**
+   * The DeclutrMail account deciding, so a person signed in as someone
+   * else can tell before approving. Null from an API that predates it.
+   */
+  signedInAs: z.string().nullable().default(null),
+  /** Why Approve cannot succeed for this account; null when it can. */
+  blocked: z.enum(['not_available', 'deletion_pending']).nullable().default(null),
 });
 export type ConnectorConsent = z.infer<typeof ConnectorConsentSchema>;
 
