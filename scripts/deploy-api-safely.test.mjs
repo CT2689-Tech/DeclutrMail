@@ -318,11 +318,10 @@ test('API full-replacement env preserves required webhook, release, gate, and bi
     PADDLE_ENV: 'production',
     BILLING_CHECKOUT_ATTEMPTS_ENABLED: 'true',
     BILLING_CHECKOUT_CANCEL_ENABLED: 'true',
-    // MCP connector (ADR-0048): beta, for the founder's own user id only.
-    // The flag and the list are pinned so a deploy cannot silently drop
-    // either, and API_URL is the OAuth issuer the connector needs.
-    MCP_ENABLED: 'beta',
-    MCP_BETA_USER_IDS: '9d251cf3-86e4-4f3b-8aa6-218b52d4ef5f',
+    // MCP connector (ADR-0048): on for everyone since 2026-11-20, after
+    // the spec §9 security review passed. Pinned so a deploy cannot
+    // silently drop it, and API_URL is the OAuth issuer it needs.
+    MCP_ENABLED: 'true',
     API_URL: 'https://api.declutrmail.com',
   })) {
     assert.equal(env.get(name), value, `${name} must survive --set-env-vars`);
