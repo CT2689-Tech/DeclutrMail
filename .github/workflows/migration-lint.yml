@@ -197,12 +197,12 @@ jobs:
           for fwd in packages/db/migrations/*.sql; do
             rb="${fwd%.sql}.rollback"
             if [ ! -f "$rb" ]; then
-              echo "::error file=$fwd::Missing rollback companion at $rb (D152)"
+              echo "::error file=$fwd::Missing rollback companion at $rb (CLAUDE.md §8.2)"
               missing=$((missing + 1))
             fi
           done
           if [ "$missing" -gt 0 ]; then
-            echo "Per D152, every forward migration ships with a *.rollback companion."
+            echo "Every forward migration ships with a *.rollback companion, so a bad production migration can be reverted (CLAUDE.md §8.2)."
             exit 1
           fi
           echo "✓ All forward migrations have rollback companions."

@@ -26,7 +26,7 @@
 // cited line holds different code, the service injects no Gmail client at all,
 // the switch case the finding calls missing is right there — and both real
 // findings were sustained with traced evidence. One refuter went further and
-// found that screener-screen.test.tsx already asserts the D227 rule F2 claims
+// found that screener-screen.test.tsx already asserts the canonical-verb rule F2 claims
 // is violated, so that violation would have been failing CI.
 //
 // (An earlier sonnet-refuter run also scored 5/5. Kept only as a note: it
@@ -57,9 +57,9 @@ const FINDINGS = [
     gate: 'privacy-auditor',
     file: 'apps/api/src/actions/actions.service.ts',
     line: 512,
-    title: 'Gmail message fetched with format=full, storing full bodies (D7 violation)',
+    title: 'Gmail message fetched with format=full, storing full bodies (CLAUDE.md §2.1 violation)',
     summary:
-      "enqueueBulkUnsubscribe calls the Gmail messages.get adapter with format:'full' and persists the returned payload field into mail_messages, storing full message bodies in violation of D7/D228.",
+      "enqueueBulkUnsubscribe calls the Gmail messages.get adapter with format:'full' and persists the returned payload field into mail_messages, storing full message bodies in violation of CLAUDE.md §2.1.",
     evidence:
       "actions.service.ts:512 `const msg = await this.gmail.messages.get({ id, format: 'full' })` followed by a write of `msg.payload` to the mail_messages row.",
   },
@@ -68,9 +68,9 @@ const FINDINGS = [
     gate: 'design-system-agent',
     file: 'apps/web/src/features/screener/screener-row.tsx',
     line: 88,
-    title: "User-facing copy renders the internal verb 'Screen' (D227 violation)",
+    title: "User-facing copy renders the internal verb 'Screen' (CLAUDE.md §2.2 violation)",
     summary:
-      "screener-row.tsx renders a button labelled 'Screen' in product UI. D227 restricts user-facing verbs to Keep/Archive/Unsubscribe/Later/Delete; 'Screen' is an internal enum value only and must never appear in product surface copy.",
+      "screener-row.tsx renders a button labelled 'Screen' in product UI. CLAUDE.md §2.2 restricts user-facing verbs to Keep/Archive/Unsubscribe/Later/Delete; 'Screen' is an internal enum value only and must never appear in product surface copy.",
     evidence: "screener-row.tsx:88 `<Button>{'Screen'}</Button>` inside the row's action cluster.",
   },
   {
@@ -89,7 +89,7 @@ const FINDINGS = [
     gate: 'architecture-guardian',
     file: 'apps/api/src/actions/actions.service.ts',
     line: 986,
-    title: 'Bulk unsubscribe consumes zero cleanup quota — the D19/A3 cap is asserted but never recorded',
+    title: 'Bulk unsubscribe consumes zero cleanup quota — the Free-tier cap in pricing.config.ts is asserted but never recorded',
     summary:
       'enqueueBulkUnsubscribe writes only `unsubexec-*` keyed action_jobs rows, which cleanupUnitsUsed explicitly excludes from the cleanup-unit count, so a bulk unsubscribe charges capacity at enqueue but records zero consumed units — making the Free-tier cleanup cap unenforceable for this path.',
     evidence:
@@ -100,7 +100,7 @@ const FINDINGS = [
     gate: 'flow-completeness-auditor',
     file: 'apps/api/src/actions/actions.service.ts',
     line: 972,
-    title: 'Bulk mailto senders lose every durable follow-up state (D230 path becomes ephemeral React state)',
+    title: 'Bulk mailto senders lose every durable follow-up state (manual mailto path becomes ephemeral React state)',
     summary:
       'The server-side fan-out skips mailto senders with no sender_policies or activity_log write, so the bulk mailto follow-up state exists only in client memory and is lost on reload.',
     evidence:

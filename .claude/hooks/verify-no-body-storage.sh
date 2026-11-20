@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # verify-no-body-storage.sh — PostToolUse hook for Edit/Write/MultiEdit
 #
-# Fast regex tripwire for D7/D228 privacy violations. The full
+# Fast regex tripwire for CLAUDE.md §2.1 privacy violations (the published
+# "We never fetch or store full email contents" claim). The full
 # semantic data-flow review is privacy-auditor (subagent). This hook
 # catches obvious cases at edit-time; subtle ones require semantic
 # review.
@@ -86,7 +87,7 @@ if grep -niE "\bbod(y|ies)\s+read:?\s*0\b" "$file_path" >/dev/null 2>&1; then
   exit 2
 fi
 
-# Note on Message-ID detection (D231): a regex check produced too many
+# Note on Message-ID detection: a regex check produced too many
 # false positives because `messageId` is a generic identifier in many
 # contexts (Pub/Sub message IDs, internal UUIDs, queue IDs). Detection
 # of RFC822 Message-ID header storage requires semantic context, which

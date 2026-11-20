@@ -3,11 +3,13 @@
 #
 # Heuristic check: when a destructive action mutation is added in the
 # frontend, the file should also reference an ActionPreview / Preview
-# component so the user sees what will change before it does (per D226).
+# component so the user sees what will change before it does (CLAUDE.md
+# §2.3): mutations change the user's real Gmail, and the preview is the one
+# place they see the count, destination and undo first.
 #
-# D226: User intent → action sheet → action preview → mutation → undo.
-# The preview is MANDATORY (the sheet may be skipped via D34's
-# "remember preference"; preview never).
+# User intent → action sheet → action preview → mutation → undo.
+# The preview is MANDATORY (the sheet may be skipped via the
+# "remember preference" toggle; preview never).
 #
 # Soft warning — the full check is design-system-agent. Exit 0 always.
 
@@ -52,8 +54,8 @@ if grep -qE "(useMutation|mutateAsync|mutate\()" "$file_path" \
   if ! grep -qE "(ActionPreview|Preview\b|previewState|usePreview|<.*Preview\s|action[._-]?preview)" "$file_path"; then
     echo "⚠️  require-preview-before-mutation: destructive mutation in $file_path" >&2
     echo "   File mounts a destructive mutation but no Preview component / preview state visible." >&2
-    echo "   Per D226, the action preview is MANDATORY before any destructive mutation." >&2
-    echo "   The sheet may be skipped (D34); the preview never. design-system-agent runs the full check." >&2
+    echo "   Per CLAUDE.md §2.3, the action preview is MANDATORY before any destructive mutation." >&2
+    echo "   The sheet may be skipped; the preview never. design-system-agent runs the full check." >&2
   fi
 fi
 

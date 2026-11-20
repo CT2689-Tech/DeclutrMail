@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # block-category-prediction.sh — PostToolUse hook for Edit/Write/MultiEdit
 #
-# Enforces D222: ML-based email category prediction is PERMANENTLY BANNED.
+# Enforces CLAUDE.md §2.4: no ML-based email category prediction. This is
+# a product choice with no external backing; the founder decides whether
+# it stays. Until then it blocks exactly what it always has.
 # DeclutrMail does NOT predict newsletter / transactional / personal /
 # promotional / etc. categories to auto-protect or auto-route. Categories
 # are user-assigned or rule-matched only.
@@ -39,14 +41,14 @@ esac
 violations=0
 
 if grep -nEi "(predict|classify|infer|detect)[a-z_]*(category|categori[sz]ation|class|type)\s*\([^)]*(email|message|mail|msg)" "$file_path" >/dev/null 2>&1; then
-  echo "❌ block-category-prediction: looks like ML email category prediction (D222 — banned forever)" >&2
+  echo "❌ block-category-prediction: looks like ML email category prediction (CLAUDE.md §2.4)" >&2
   grep -nEi "(predict|classify|infer|detect)[a-z_]*(category|categori[sz]ation|class|type)\s*\([^)]*(email|message|mail|msg)" "$file_path" | sed 's/^/   /' >&2
   violations=$((violations + 1))
 fi
 
 # Common model/feature names that imply category prediction
 if grep -nEi "(email|message|mail)[a-z_]*categor[a-z]*(classifier|predictor|model)" "$file_path" >/dev/null 2>&1; then
-  echo "❌ block-category-prediction: ML model identifier suggests category prediction (D222)" >&2
+  echo "❌ block-category-prediction: ML model identifier suggests category prediction (CLAUDE.md §2.4)" >&2
   grep -nEi "(email|message|mail)[a-z_]*categor[a-z]*(classifier|predictor|model)" "$file_path" | sed 's/^/   /' >&2
   violations=$((violations + 1))
 fi
@@ -54,13 +56,13 @@ fi
 # NOTE: a third heuristic — co-occurrence of category vocabulary
 # (newsletter / transactional / etc.) AND any LLM call in the same file
 # — was removed after early review: it false-positived on legitimate
-# brief generation (D62 uses Haiku) and on per-category UI surfaces.
-# The semantic D222 check belongs in an agent (architecture-guardian),
+# brief generation (the Brief uses Haiku) and on per-category UI surfaces.
+# The semantic §2.4 check belongs in an agent (architecture-guardian),
 # not a hook.
 
 if [ "$violations" -gt 0 ]; then
   echo "" >&2
-  echo "   D222: ML-based email category prediction is permanently banned at all versions." >&2
+  echo "   CLAUDE.md §2.4: no ML-based email category prediction (a product choice — the founder's call)." >&2
   echo "   Categories are user-assigned or rule-matched only — never ML-predicted." >&2
   exit 2
 fi

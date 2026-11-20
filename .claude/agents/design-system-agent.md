@@ -55,7 +55,7 @@ If typecheck or lint fails, stop and report.
 
 ### Step 3: Structural checks
 
-#### Check A — Canonical verbs (D227)
+#### Check A — Canonical verbs (CLAUDE.md §2.2, ADR-0019)
 
 The product UI uses exactly five user-facing verbs: **Keep · Archive ·
 Unsubscribe · Later · Delete** with shortcuts **K / A / U / L / D**
@@ -86,11 +86,11 @@ For each touched component:
 **Allowed:** Internal TypeScript enum `verdict='screen'`, the page name
 "Screener", and references in this agent's own definition.
 
-#### Check B — Action lifecycle order (D226, D208)
+#### Check B — Action lifecycle order (CLAUDE.md §2.3)
 
 The mandatory order: **user intent → action sheet → action preview → mutation → undo**.
 
-The action sheet may be skipped (D34 "remember preference" toggle), but
+The action sheet may be skipped (the "remember preference" toggle), but
 the **preview is mandatory** in both paths.
 
 For each destructive action handler in the diff (Archive, Unsubscribe,
@@ -116,9 +116,9 @@ consumer, so a BLOCKING rule here only blocked work the code already does.
 Mention a clearly misplaced component as **[INFO]** at most; never BLOCK on
 placement or consumer count.
 
-#### Check D — Headless hooks vs render components (D198)
+#### Check D — Headless hooks vs render components
 
-D198 split: **behavior lives in headless hooks**, **rendering lives in feature-owned components**.
+The split: **behavior lives in headless hooks**, **rendering lives in feature-owned components**.
 
 For each new file:
 
@@ -131,7 +131,7 @@ For each new file:
 **Anti-pattern (WARNING):** component with inline `useMutation`,
 `fetch`, or complex effect logic. Extract to a hook.
 
-#### Check E — State management boundaries (D200)
+#### Check E — State management boundaries
 
 - Server state → TanStack Query (`useQuery`, `useMutation`)
 - Client state → Zustand stores
@@ -147,29 +147,32 @@ Storybook is not built in CI and most components have no story, so a missing
 story is never BLOCKING or a WARNING. Mention it as **[INFO]** when a new
 shared component would clearly benefit from one.
 
-#### Check G — Empty states first-class (D212)
+#### Check G — Empty states first-class
 
 For each list/table component in the diff:
 
 - Does the component render `<EmptyState>` when data is empty?
 - Is the empty state visually distinct from the loading state?
-- Does it use the D212 `<EmptyState>` component (not ad-hoc divs)?
+- Does it use the shared `<EmptyState>` component
+  (`packages/shared/src/components/empty-state/`), not ad-hoc divs?
 
 **Flag (WARNING)** list/table without an empty state branch.
 
-#### Check H — Edge state coverage (D211)
+#### Check H — Edge state coverage (CLAUDE.md §8, "Flow & state completeness")
 
 For each new screen/page (`app/**/page.tsx`):
 
-- Are the edge states from D211 covered? (sync-in-progress, sync-failed,
+- Are the edge states the screen can reach covered? (sync-in-progress, sync-failed,
   permission-expired, quota-exceeded, undo-expired, payment-failed, etc.)
-- Does each edge state route to its assigned component (per D211 table)?
+- Does each edge state render a real state with a route out of it, not a
+  blank or `null` screen?
 
 **Flag (WARNING)** new screen missing edge-state coverage.
 
-#### Check I — Motion discipline (D213)
+#### Check I — Motion discipline
 
-- Component animations use the project's motion tokens (durations, easings)
+- Component animations use the project's motion tokens (durations, easings —
+  `motion` in `packages/shared/src/tokens/tokens.ts`)
 - No inline `transition` strings with arbitrary values
 - Respects `prefers-reduced-motion`
 
@@ -187,7 +190,7 @@ For each new screen/page (`app/**/page.tsx`):
 **Check:** <A/B/C/D/E/F/G/H/I>
 **File:** <path>:<line>
 **Pattern:** <what was found>
-**Why it's a violation:** <reference D###>
+**Why it's a violation:** <cite the source: CLAUDE.md section, ADR, or the file that defines the convention>
 **Required fix:** <what to change>
 
 ### [WARNING] ...

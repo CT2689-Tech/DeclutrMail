@@ -21,7 +21,7 @@ their journey exposes, found and queued before the next user hits them.
 1. **Read-only.** SELECTs and log reads. A fix, a grant or a retry is a
    separate step the founder confirms.
 2. **Collect only what the report needs.** Never select subjects, snippets,
-   sender addresses, domains or `sender_key` values (D7),
+   sender addresses, domains or `sender_key` values (CLAUDE.md §2.1),
    `triage_decisions.reasoning`, or IP addresses. A user agent may be reduced
    to _mobile_ / _desktop_ in memory, never printed. Never write rows or log
    exports to disk — aggregate in the query or in memory. Mask every email

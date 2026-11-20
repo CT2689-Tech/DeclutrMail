@@ -1,6 +1,6 @@
 ---
 name: schema-migration-reviewer
-description: Migration safety + schema correctness reviewer for DeclutrMail. Verifies Drizzle schema definitions (D150) + Atlas migration plans (D152), no-body-column invariant (D7), required indexes for hot queries, and undo journal columns (D232). Use on PRs touching packages/db/migrations/** or packages/db/src/schema/**. Reports findings; never refactors.
+description: Migration safety + schema correctness reviewer for DeclutrMail. Verifies Drizzle schema definitions + Atlas migration plans, the no-body-column invariant (CLAUDE.md §2.1), required indexes for hot queries, and undo journal columns. Use on PRs touching packages/db/migrations/** or packages/db/src/schema/**. Reports findings; never refactors.
 tools: ["Read", "Grep", "Glob", "Bash"]
 model: opus
 ---
@@ -41,7 +41,7 @@ git diff --staged
 git diff
 ```
 
-### Step 2: Privacy column audit (D7, D228)
+### Step 2: Privacy column audit (CLAUDE.md §2.1)
 
 Search the diff for any newly added column that could hold body content:
 
@@ -49,8 +49,9 @@ Search the diff for any newly added column that could hold body content:
 git diff packages/db/src/schema/ | rg -nE "(body|html|text|content|mime|raw|payload)\b.*\b(text|varchar)\("
 ```
 
-**[BLOCKING]** Any column matching the above without explicit D-justification
-in the PR body. The privacy-auditor agent also runs — coordinate findings.
+**[BLOCKING]** Any column matching the above that has no matching entry in
+`packages/shared/src/contracts/gmail-data-inventory.ts` and no explicit
+justification in the PR body. The privacy-auditor agent also runs — coordinate findings.
 
 Allowed exceptions:
 - `snippet varchar(<=300)` — Gmail snippet preview, max 300 chars
@@ -69,7 +70,7 @@ For each new Atlas migration file (`packages/db/migrations/NNNN_*.sql`):
   applied vN, an in-place edit never reaches it. Ship vN+1 (CLAUDE.md §2.6;
   2026-07-15, PR #333/#335/#336).
 - `DROP COLUMN` / `DROP TABLE`: prelaunch, superseded columns are removed
-  directly (CLAUDE.md §2.6, D245) — no deprecation window. **[BLOCKING]**
+  directly (CLAUDE.md §2.6) — no deprecation window. **[BLOCKING]**
   only if any code in the same tree still reads or writes the dropped
   object (`rg` for the column and its camelCase Drizzle name).
 
@@ -92,8 +93,8 @@ For tables that may already have production data:
 For new tables / new columns referenced in hot queries:
 
 - Foreign key columns must have an index — **[BLOCKING]** if missing.
-- Columns used in `WHERE` of hot queries (per CLAUDE.md / D-plan) need
-  indexes. Flag missing indexes as **[WARNING]**.
+- Columns used in `WHERE` of hot queries (per CLAUDE.md or a measured slow
+  query) need indexes. Flag missing indexes as **[WARNING]**.
 - Composite indexes should match the leftmost-prefix usage pattern.
 
 #### Check D — Partitioning (retired 2026-11-17)
@@ -101,14 +102,14 @@ For new tables / new columns referenced in hot queries:
 There is no partitioning rule. Partition a table when measurements show it
 needs it; judge such a migration like any other production migration.
 
-### Step 4: Undo journal coverage (D232)
+### Step 4: Undo journal coverage (CLAUDE.md §2.6)
 
 When a new destructive action is added to the API surface and a column
 or table is touched here, verify the undo journal can record it:
 
 - Confirm `undo_journal` schema covers the action's payload shape
 - Confirm retention window math in any account-deletion path uses
-  `max(now+7d, latest_undo_expires_at)` (D232) — flag any deletion path
+  `max(now+7d, latest_undo_expires_at)` (CLAUDE.md §2.6) — flag any deletion path
   that ignores in-flight undo windows
 
 ### Step 5: Drizzle ↔ Atlas drift
@@ -138,7 +139,7 @@ If drift exists (schema files don't match the latest migration):
 ### [BLOCKING] <one-line title>
 **File:** <path>:<line>
 **Pattern:** <what was found>
-**Why it's a violation:** <reference Dxxx or production-safety rule>
+**Why it's a violation:** <cite the CLAUDE.md section, ADR, or production-safety rule>
 **Required fix:** <what the implementer must change>
 
 ### [WARNING] <one-line title>
@@ -152,7 +153,7 @@ If no findings: `## Schema Migration Review — PR #<NN>: no findings.`
 
 ## Severity rubric
 
-- **[BLOCKING]** — direct violation of D7/D228 privacy, irreversible
+- **[BLOCKING]** — direct violation of the §2.1 privacy rule, irreversible
   in-place edit of an applied migration, drop of an object still referenced,
   missing required index on FK, drizzle/atlas drift
 - **[WARNING]** — possibly-slow rewrite (default on huge table),
@@ -165,7 +166,7 @@ If no findings: `## Schema Migration Review — PR #<NN>: no findings.`
 Surface to founder immediately if the PR:
 
 - Drops a table or column that holds production data
-- Changes the encryption schema (DEK / KEK columns per D14)
+- Changes the token encryption schema (DEK / KEK columns)
 - Modifies the `undo_journal` table shape
 - Adds a column that could hold body content
 - Modifies CLAUDE.md §2.1 (privacy guardrail)

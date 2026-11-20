@@ -13,10 +13,10 @@ on:
   # on them — and a workflow that never fires on `merge_group` hangs
   # every entry silently, with no failure to read.
   #
-  # They are also the three that cannot meaningfully RUN there: each
-  # reads pull-request metadata (head ref, title, body), and a merge
-  # group has no pull request. So they fire, say they have nothing to
-  # check, and pass.
+  # The two live ones cannot meaningfully RUN there: each reads
+  # pull-request metadata (head ref, title), and a merge group has no
+  # pull request. So they fire, say they have nothing to check, and
+  # pass. (The third, pr-body, is a retired placeholder; see below.)
   #
   # That is not a hole. Every one was enforced on the PR before it was
   # allowed to queue, and none describes the merged RESULT — a branch
@@ -37,10 +37,8 @@ jobs:
     name: Branch follows CLAUDE.md §6 convention
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    # Dependabot picks its own branch names (`dependabot/<ecosystem>/...`).
-    # The §6 convention is about traceability between D-decisions and
-    # human-authored work — dependency bumps have no D-tie by design, so
-    # exempt the bot rather than rename its branches. The substantive
+    # Dependabot picks its own branch names (`dependabot/<ecosystem>/...`),
+    # so exempt the bot rather than rename its branches. The substantive
     # gates (Typecheck / Lint / Test) still run.
     # The head-ref check covers follow-up commits pushed by a human to a
     # bot branch (e.g. fixing a major-version migration) — that flips
@@ -56,28 +54,20 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          # Allowed:
-          #   <type>/d<NNN>-<kebab>      e.g. feat/d011-drizzle-orm-setup
-          #   chore/bootstrap-<topic>    e.g. chore/bootstrap-pr1b
-          #   chore/distill-<topic>      e.g. chore/distill-smoke-test-rule
-          #   codex/<kebab>              e.g. codex/d246-behavioral-activation-trust
-          # See CLAUDE.md §6 + §11; PR #58 added `distill-` to local hooks
-          # for founder-owned CLAUDE.md distillation PRs — this workflow
-          # mirrors that authoritatively.
-          # `codex/` sanctioned 2026-07-15 (founder call, FOUNDER-FOLLOWUPS):
-          # the Codex companion ships real PRs from codex/<slug> branches
-          # (#333 merged, #334). D-traceability is preserved by the still-
-          # enforced commit `(D###)` trailers and the pr-body D-citation
-          # check below — same reasoning as the dependabot exemption.
-          # `claude/` sanctioned 2026-08-11 (founder call, FOUNDER-FOLLOWUPS):
-          # Claude Code on the web assigns `claude/<slug>` and the session is
-          # forbidden from renaming it — identical position to codex/, so it
-          # gets the identical exemption and the identical obligations.
-          # `cursor/` is the same harness constraint for Cursor cloud agents
-          # (`cursor/<slug>-<id>`; the session cannot rename it).
-          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude|cursor)/[a-z0-9][a-z0-9-]*$)'; then
+          # Allowed — KEEP IN SYNC with .husky/pre-push and
+          # .claude/hooks/require-pr-template.sh:
+          #   <type>/<kebab>                 e.g. feat/sender-detail-undo
+          #   (codex|claude|cursor)/<kebab>  harness-assigned branches; the
+          #                                  session cannot rename them
+          #                                  (codex/ sanctioned 2026-07-15,
+          #                                  claude/ 2026-08-11, cursor/ after)
+          # The `d<NNN>-` segment, and the chore/bootstrap- and
+          # chore/distill- exemptions from it, were retired 2026-11-17 with
+          # the D-decision system (founder decision). Both old forms still
+          # match `<type>/<kebab>`.
+          if ! echo "$HEAD_REF" | grep -qE '^((feat|fix|chore|docs|refactor|test|perf|security)/[a-z0-9]|(codex|claude|cursor)/[a-z0-9][a-z0-9-]*$)'; then
             echo "::error::Branch '${HEAD_REF}' does not match the CLAUDE.md §6 naming convention."
-            echo "Expected: <type>/d<NNN>-<kebab>  OR  chore/bootstrap-<topic>  OR  chore/distill-<topic>"
+            echo "Expected: <type>/<kebab-description>  OR  (codex|claude|cursor)/<kebab>"
             echo "Allowed types: feat, fix, chore, docs, refactor, test, perf, security"
             exit 1
           fi
@@ -111,30 +101,23 @@ jobs:
             security
           requireScope: false
 
+  # RETIRED 2026-11-17 with the D-decision system (founder decision).
+  # This job used to require `Closes D###` in the PR body. It still RUNS
+  # only because branch protection on `main` requires a check with this
+  # exact name: deleting or renaming it would leave every queue entry
+  # waiting forever on a check that never reports. It checks nothing,
+  # and says so in its log rather than printing a green "✓ passed".
+  # Founder follow-up: docs/log/founder-followups/
+  # 2026-11-17-remove-retired-pr-body-required-check.md — drop the
+  # requirement first, then delete this job and its row in
+  # scripts/required-checks.json.
   pr-body:
     name: PR body references D-decisions or is bootstrap-exempt
     runs-on: ubuntu-latest
     timeout-minutes: 2
-    # Dependabot bodies are auto-generated changelog dumps with no
-    # `Closes D###` trailer — same reasoning as the branch-name job
-    # above: exempt the bot, not rename its convention (and keep the
-    # exemption when a human pushes follow-up commits to the bot branch).
-    if: github.actor != 'dependabot[bot]' && !startsWith(github.head_ref, 'dependabot/')
     steps:
-      - name: Nothing to check in a merge queue
-        if: github.event_name == 'merge_group'
-        run: echo "✓ No pull request in a merge group — enforced before queueing."
-      - uses: actions/checkout@v7
-        if: github.event_name != 'merge_group'
-      - name: Check body
-        if: github.event_name != 'merge_group'
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-          PR_BODY: ${{ github.event.pull_request.body }}
+      - name: Retired — required-check placeholder
         run: |
-          set -euo pipefail
-          # Logic lives in scripts/check-pr-body-d-ref.sh so the matcher
-          # can be starved in tests. `Closes D###` still flips the log;
-          # `Relates to D###` cites without flipping (MISTAKES.md).
-          node --test scripts/check-pr-body-d-ref.test.mjs
-          ./scripts/check-pr-body-d-ref.sh
+          echo "D-decision references were retired 2026-11-17. This job checks nothing."
+          echo "It exists only because branch protection requires its name;"
+          echo "see docs/log/founder-followups/2026-11-17-remove-retired-pr-body-required-check.md."

@@ -40,26 +40,16 @@ if [ -z "$branch" ]; then
   exit 2
 fi
 
-# Bootstrap/distill branches are exempt (CLAUDE.md §6/§11)
-if echo "$branch" | grep -qE "^chore/(bootstrap|distill)-"; then
-  exit 0
-fi
-
-# Branch name convention — KEEP THIS LIST IN SYNC with pre-push.sh and
+# Branch name convention — KEEP THIS LIST IN SYNC with .husky/pre-push and
 # .github/workflows/branch-name.yml (both authoritative; this is only the
-# local fail-fast copy). This list had drifted from both: codex/<kebab>
-# (sanctioned 2026-07-15) and claude/<kebab> (sanctioned 2026-08-11,
-# FOUNDER-FOLLOWUPS) — Claude Code on the web assigns the branch name and
-# the session cannot rename it — were allowed by both of those but not
-# here, so a `gh pr create` from a claude/ or codex/ branch was blocked by
-# this hook alone even though the PR itself would have passed CI (caught
-# 2026-09-01 while creating a PR from a claude/ branch).
-# Pattern: <type>/d<NNN>-<kebab>, chore/bootstrap-<topic>,
-# chore/distill-<topic>, or (codex|claude|cursor)/<kebab>.
-if ! echo "$branch" | grep -qE "^((feat|fix|chore|docs|refactor|test|perf|security)/d[0-9]{3}-|chore/(bootstrap|distill)-|(codex|claude|cursor)/[a-z0-9][a-z0-9-]*$)"; then
+# local fail-fast copy). This list once drifted from both and blocked
+# `gh pr create` from claude/ and codex/ branches that CI would have
+# accepted (caught 2026-09-01).
+# Pattern: <type>/<kebab> or (codex|claude|cursor)/<kebab>. The `d<NNN>-`
+# segment was retired 2026-11-17 with the D-decision system.
+if ! echo "$branch" | grep -qE "^((feat|fix|chore|docs|refactor|test|perf|security)/[a-z0-9]|(codex|claude|cursor)/[a-z0-9][a-z0-9-]*$)"; then
   echo "❌ require-pr-template: branch '$branch' does not match naming convention." >&2
-  echo "   Expected: <type>/d<NNN>-<kebab-description>, chore/bootstrap-<topic>," >&2
-  echo "   chore/distill-<topic>, or (codex|claude|cursor)/<kebab>" >&2
+  echo "   Expected: <type>/<kebab-description> or (codex|claude|cursor)/<kebab>" >&2
   echo "   Allowed types: feat, fix, chore, docs, refactor, test, perf, security" >&2
   echo "   See CLAUDE.md §6 for the full pattern." >&2
   exit 2

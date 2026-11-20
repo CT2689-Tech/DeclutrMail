@@ -131,7 +131,7 @@ jobs:
             echo "No staged change — nothing to publish."
             exit 0
           fi
-          git commit -m "chore(infra): snapshot ${DATE} drift detected (D38)"
+          git commit -m "chore(infra): snapshot ${DATE} drift detected"
           git push origin HEAD:infra-snapshots
 
           # The diff IS the alert — surface it in the run summary so drift

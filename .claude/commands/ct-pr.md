@@ -80,8 +80,6 @@ a red "Build — Web + bundle budget" still merges, then blocks every deploy.
 
 ## Step 5 — Logs after merge
 
-- `IMPLEMENTATION-LOG.md` is derived. Check the D-row moved after merge; do
-  not hand-edit the auto section.
 - Add one file per entry, never an append to the frozen root logs:
   - `docs/log/learnings/YYYY-MM-DD-<slug>.md` when something surprised us
   - `docs/log/mistakes/YYYY-MM-DD-<slug>.md` when a gate fired or a manual
@@ -113,7 +111,7 @@ every scoped surface.
 
 ### Triage
 - K/A/U/L/D fire the matching verb
-- Every verb goes action sheet → preview → mutation → undo (D226); the
+- Every verb goes action sheet → preview → mutation → undo (CLAUDE.md §2.3); the
   preview always renders, even when the sheet is skipped
 - Undo from the undo tray and from Activity restores the mail
 
@@ -132,14 +130,14 @@ every scoped surface.
 - Replay a signed payload from fixtures: Pub/Sub runs the OIDC path; Paddle,
   Razorpay and Resend run their HMAC check over the raw body
 - A repeat delivery is deduplicated
-- `x-goog-authenticated-user-email` is never read (D229)
+- `x-goog-authenticated-user-email` is never read (CLAUDE.md §2.5)
 
 ### Migration
 - Atlas dry-run output reviewed; the `.rollback` file applies cleanly
-- No column that could hold a message body (D7)
+- No column that could hold a message body (CLAUDE.md §2.1)
 
 ### Worker
-- Idempotency key and worker policy (D203/D225) stated in the PR body
+- Idempotency key and worker policy stated in the PR body
 - Force a retry and confirm the semantics match the stated policy
 
 ## Anti-patterns

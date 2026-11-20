@@ -69,7 +69,7 @@ the slower homepage runs alone; pricing, security and the how-to page run
 serially on the other runner. Every URL in `apps/web/lighthouserc.cjs` keeps
 three measurements and the same thresholds. The selector and contract tests
 reject a partition that disagrees with the configured URLs or leaves a URL
-without assertions or D160's performance floor. Each page keeps its own report
+without assertions or the ≥90 performance floor. Each page keeps its own report
 directory; an assertion failure or missing report fails the group while the
 remaining pages still collect evidence. API and worker tests
 run in three shards each and web tests in two. API shards split by the per-file
@@ -112,7 +112,7 @@ wall time. Revisit concurrency only if measured runner waits become material.
 
 `scripts/required-checks.json` records the intended repository-owned required
 checks. `CI required` includes path detection, typecheck, lint, formatting,
-implementation-log validation, every selected test suite, production web build
+every selected test suite, production web build
 and budgets, and accessibility/browser smoke. A PR can skip a suite only when
 path detection explicitly excludes it. Merge groups run all release suites.
 CodeQL security scanning remains a separately required check.
