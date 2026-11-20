@@ -355,7 +355,6 @@ Listed here so a missing row is a known gap, not an oversight.
 | Slot                                                                      | Status    | Trigger to wire                                |
 | ------------------------------------------------------------------------- | --------- | ---------------------------------------------- |
 | Paddle live API key + webhook secret                                      | Not wired | Billing go-live §9 (D117; runbook 2026-07-17)  |
-| Razorpay live key pair + webhook secret                                   | Not wired | Same go-live sequence (D117)                   |
 | Vercel deploy token (CI) — distinct from the billing-watchdog token above | Not wired | First Cloud Run + Vercel pairing PR (D160)     |
 | GCP service account JSON for Cloud Run deploy                             | Not wired | Same PR                                        |
 | Atlas Cloud token                                                         | Not wired | If Atlas Cloud is adopted post-migration count |
@@ -373,7 +372,7 @@ Quarterly review (track as a founder follow-up in `docs/log/founder-followups/`)
    at once.
 5. KMS KEK — defer to D14's rotation runbook (write before first prod
    data lands).
-6. Paddle / Razorpay keys — rotate annually; webhook secrets rotated
+6. Paddle keys — rotate annually; webhook secrets rotated
    separately (D117).
 
 After every rotation:

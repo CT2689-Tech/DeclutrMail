@@ -12,7 +12,6 @@ import {
 import {
   CAPABILITY_LABELS,
   currencyForPricePoint,
-  currencyForProvider,
   formatInr,
   formatMoney,
   formatUsd,
@@ -58,11 +57,6 @@ describe('CAPABILITY_LABELS — D227 verb language', () => {
 });
 
 describe('currency (D117)', () => {
-  it('the provider decides the currency — it is a charge fact, not a preference', () => {
-    expect(currencyForProvider('paddle')).toBe('USD');
-    expect(currencyForProvider('razorpay')).toBe('INR');
-  });
-
   it('formats INR with Indian digit grouping', () => {
     expect(formatInr(74_900)).toBe('₹749');
     // Past 1,00,000 paise-to-rupees, en-IN groups by lakh — ₹1,09,999,
@@ -92,23 +86,19 @@ describe('currency (D117)', () => {
 
   it('quotes INR only to an India visitor while India checkout is open', () => {
     const india = { country: 'IN', indiaCheckoutOpen: true } as const;
-    const free = { usdCents: 0, inrPaise: 0, razorpayPlanId: null };
-    expect(currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', india)).toBe('INR');
-    expect(currencyForPricePoint(free, 'paddle', india)).toBe('INR');
-    expect(
-      currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', { ...india, indiaCheckoutOpen: false }),
-    ).toBe('USD');
-    expect(currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle', { ...india, country: 'US' })).toBe(
+    const free = { usdCents: 0, inrPaise: 0 };
+    expect(currencyForPricePoint(PLUS_ANNUAL_2026_10, india)).toBe('INR');
+    expect(currencyForPricePoint(free, india)).toBe('INR');
+    expect(currencyForPricePoint(PLUS_ANNUAL_2026_10, { ...india, indiaCheckoutOpen: false })).toBe(
       'USD',
     );
-    expect(currencyForPricePoint(PLUS_ANNUAL_2026_10, 'paddle')).toBe('USD');
+    expect(currencyForPricePoint(PLUS_ANNUAL_2026_10, { ...india, country: 'US' })).toBe('USD');
+    expect(currencyForPricePoint(PLUS_ANNUAL_2026_10)).toBe('USD');
   });
 
   it('keeps a paid point with no INR amount in USD instead of quoting ₹0', () => {
-    const usdOnly = { usdCents: 900, inrPaise: 0, razorpayPlanId: null };
-    expect(
-      currencyForPricePoint(usdOnly, 'paddle', { country: 'IN', indiaCheckoutOpen: true }),
-    ).toBe('USD');
+    const usdOnly = { usdCents: 900, inrPaise: 0 };
+    expect(currencyForPricePoint(usdOnly, { country: 'IN', indiaCheckoutOpen: true })).toBe('USD');
   });
 });
 

@@ -2,21 +2,21 @@
 // price catalog.
 //
 // SOURCE OF TRUTH: the entitlements pricing config
-// (packages/shared/src/entitlements/pricing.config.ts). New checkouts
-// sell `PLUS_ANNUAL_2026_10`; retired price ids resolve through
+// (packages/shared/src/entitlements/pricing.config.ts), which carries the
+// production Paddle price ids, written by hand. New checkouts sell
+// `PLUS_ANNUAL_2026_10`; retired price ids resolve through
 // `LEGACY_PRICE_IDS` for subscribers who already have them.
 //
 // SANDBOX OVERRIDE: sandbox catalog ids are DIFFERENT objects from the
-// live ones (Paddle sandbox + Razorpay test mode have their own id
-// space), and the manifest can only hold one set. When
-// `PADDLE_ENV=sandbox`, the 2026-10 Plus annual and the Pass fall back
-// to `SANDBOX_PRICE_IDS`. `BILLING_CATALOG_JSON` still overlays provider
-// ids per plan code and wins over that map:
+// live ones (Paddle sandbox has its own id space), and the manifest can
+// only hold one set. When `PADDLE_ENV=sandbox`, the 2026-10 Plus annual
+// and the Pass fall back to `SANDBOX_PRICE_IDS`. `BILLING_CATALOG_JSON`
+// still overlays Paddle ids per plan code and wins over that map:
 //
-//   BILLING_CATALOG_JSON='{"paddle":{"plus_monthly":"pri_…"},"razorpay":{"pro_annual":"plan_…"}}'
+//   BILLING_CATALOG_JSON='{"paddle":{"plus_monthly":"pri_…"}}'
 //
-// Plan codes are D117's cross-provider vocabulary: `plus_monthly`,
-// `plus_annual`, `pro_monthly`, `pro_annual`, `pro_annual_founding`.
+// Plan codes: `plus_monthly`, `plus_annual`, `pro_monthly`,
+// `pro_annual`, `pro_annual_founding`.
 //
 // Resolution is fail-closed: an unprovisioned price resolves to null
 // and the checkout endpoint 503s (BILLING_NOT_PROVISIONED) — never a
@@ -43,7 +43,7 @@ import type {
  */
 export const FOUNDING_MAX_REDEMPTIONS = 250;
 
-/** D117 cross-provider plan codes. */
+/** D117 plan codes. */
 export const PLAN_CODES = [
   'plus_monthly',
   'plus_annual',
@@ -62,10 +62,9 @@ export interface CatalogEntry {
   founding: boolean;
   usdCents: number;
   paddlePriceId: string | null;
-  razorpayPlanId: string | null;
 }
 
-type Overrides = Partial<Record<BillingProviderId, Partial<Record<PlanCode, string>>>>;
+type Overrides = { paddle?: Partial<Record<PlanCode, string>> };
 
 function parseOverrides(raw: string | undefined): Overrides {
   if (!raw || raw.trim() === '') return {};
@@ -96,7 +95,6 @@ export function buildCatalog(env: NodeJS.ProcessEnv = process.env): CatalogEntry
         (env.PADDLE_ENV === 'sandbox'
           ? SANDBOX_PRICE_IDS.plus_annual
           : PLUS_ANNUAL_2026_10.paddlePriceId),
-      razorpayPlanId: null,
     },
   ];
 }
@@ -116,7 +114,7 @@ export function passPriceFromEnv(env: NodeJS.ProcessEnv = process.env): string |
   return usablePriceId(overlay ?? fallback);
 }
 
-function legacyEntry(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
+function legacyEntry(providerPriceId: string): CatalogEntry | null {
   const legacy = LEGACY_PRICE_IDS[providerPriceId];
   if (!legacy) return null;
   const tierId: PurchasableTier = legacy.plan.startsWith('plus') ? 'plus' : 'pro';
@@ -126,8 +124,7 @@ function legacyEntry(provider: BillingProviderId, providerPriceId: string): Cata
     cycle: legacy.cycle,
     founding: legacy.founding,
     usdCents: legacy.usdCents,
-    paddlePriceId: provider === 'paddle' ? providerPriceId : null,
-    razorpayPlanId: provider === 'razorpay' ? providerPriceId : null,
+    paddlePriceId: providerPriceId,
   };
 }
 
@@ -146,7 +143,7 @@ export class BillingCatalog {
       passPriceId === undefined ? passPriceFromEnv() : usablePriceId(passPriceId);
   }
 
-  /** Forward: (tier, cycle, founding?) → provider price id or null. */
+  /** Forward: (tier, cycle, founding?) → Paddle price id or null. Paddle is the only rail. */
   resolvePriceId(
     provider: BillingProviderId,
     tierId: PurchasableTier,
@@ -156,21 +153,16 @@ export class BillingCatalog {
     const entry = this.entries.find(
       (e) => e.tierId === tierId && e.cycle === cycle && e.founding === founding,
     );
-    if (!entry) return null;
-    const id = provider === 'paddle' ? entry.paddlePriceId : entry.razorpayPlanId;
-    return usablePriceId(id);
+    if (!entry || provider !== 'paddle') return null;
+    return usablePriceId(entry.paddlePriceId);
   }
 
   /** Reverse: webhook price id → catalog entry. Price custom_data is not an input. */
   resolveByPriceId(provider: BillingProviderId, providerPriceId: string): CatalogEntry | null {
-    const direct =
-      this.entries.find((e) =>
-        provider === 'paddle'
-          ? e.paddlePriceId === providerPriceId
-          : e.razorpayPlanId === providerPriceId,
-      ) ?? legacyEntry(provider, providerPriceId);
-    if (direct) return direct;
     if (provider !== 'paddle') return null;
+    const direct =
+      this.entries.find((e) => e.paddlePriceId === providerPriceId) ?? legacyEntry(providerPriceId);
+    if (direct) return direct;
     const indiaPlus = indiaPaddlePriceId(process.env, 'plus_annual');
     if (!indiaPlus || providerPriceId !== indiaPlus) return null;
     return (
@@ -186,7 +178,6 @@ export class BillingCatalog {
         founding: false,
         usdCents: PLUS_ANNUAL_2026_10.usdCents,
         paddlePriceId: indiaPlus,
-        razorpayPlanId: null,
       }
     );
   }

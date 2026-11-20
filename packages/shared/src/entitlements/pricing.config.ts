@@ -7,6 +7,11 @@
 // carries a dollar amount, a tier limit, a quota number or a plan name
 // as a literal.
 //
+// Live Paddle price ids are written into this file by hand. The catalog
+// provisioning workflow was deleted 2026-11-17; create new Paddle products
+// and prices in the Paddle dashboard.
+// India pays through Paddle in INR (`indiaPaddlePriceId` below).
+//
 // Ladder per the 2026-10 launch pricing (founder decision "4A",
 // 2026-11-17, retired the earlier monthly ladder, Founding Pro and the
 // 50-cleanup-action Free limit):
@@ -166,15 +171,6 @@ export const TIER_MANIFEST: TierManifest = {
 /** Catalog generation identifier. It is not a public launch or publication date. */
 export const PRICING_VERSION = '2026-10-27';
 
-/**
- * India rail switch. Hiding Razorpay does not null `razorpayPlanId`:
- * existing subscribers still resolve.
- */
-export const RAILS = {
-  paddle: { enabled: true },
-  razorpay: { enabled: false },
-} as const;
-
 export const POLICY = {
   refundWindowDays: 14,
   refundOncePerCustomer: true,
@@ -272,7 +268,6 @@ function launchPrice(usdCents: number, paise: number, paddlePriceId: string): Pr
     usdCents,
     inrPaise: paise,
     paddlePriceId,
-    razorpayPlanId: null,
     // Listed in search structured data once the price id is real
     // (founder decision 2026-11-17). A placeholder id stays unlisted.
     listed: paddlePriceId !== UNPROVISIONED_PRICE_ID,
@@ -303,16 +298,9 @@ export interface LegacyPrice {
   readonly usdCents: number;
 }
 
-/** Every previously-live Paddle and Razorpay id. Never archive these in Paddle. */
+/** Every previously-live Paddle id. Never archive these in Paddle. */
 export const LEGACY_PRICE_IDS: Readonly<Record<string, LegacyPrice>> = {
   pri_01ky15axxbeeyge87f9hehw37t: {
-    plan: 'plus_monthly',
-    cycle: 'monthly',
-    version: 'legacy',
-    founding: false,
-    usdCents: 900,
-  },
-  plan_THtwadiHmKTaze: {
     plan: 'plus_monthly',
     cycle: 'monthly',
     version: 'legacy',
@@ -326,21 +314,7 @@ export const LEGACY_PRICE_IDS: Readonly<Record<string, LegacyPrice>> = {
     founding: false,
     usdCents: 9000,
   },
-  plan_THtwb3iWLy7qyp: {
-    plan: 'plus_annual',
-    cycle: 'annual',
-    version: 'legacy',
-    founding: false,
-    usdCents: 9000,
-  },
   pri_01ky15ay15wqjaz0wjfnhe94vs: {
-    plan: 'pro_monthly',
-    cycle: 'monthly',
-    version: 'legacy',
-    founding: false,
-    usdCents: 1900,
-  },
-  plan_THtwbSxTZRClHX: {
     plan: 'pro_monthly',
     cycle: 'monthly',
     version: 'legacy',
@@ -354,21 +328,7 @@ export const LEGACY_PRICE_IDS: Readonly<Record<string, LegacyPrice>> = {
     founding: false,
     usdCents: 19000,
   },
-  plan_THtwbs4FAeqWlv: {
-    plan: 'pro_annual',
-    cycle: 'annual',
-    version: 'legacy',
-    founding: false,
-    usdCents: 19000,
-  },
   pri_01ky15ay4bj9t68bv158hwwfqw: {
-    plan: 'pro_annual_founding',
-    cycle: 'annual',
-    version: 'legacy',
-    founding: true,
-    usdCents: 12900,
-  },
-  plan_THtwcIa7pf9HzZ: {
     plan: 'pro_annual_founding',
     cycle: 'annual',
     version: 'legacy',

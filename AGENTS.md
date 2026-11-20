@@ -40,7 +40,7 @@ Follow explicit user limits on sessions, delegation, merging, and deployment.
   inspection first.
 - Required verification sequence: catalog read → notification destination
   read → sandbox purchase/webhook/refund rehearsal → live low-value purchase
-  and immediate refund at cutover. Razorpay remains a separate provider path.
+  and immediate refund at cutover.
 
 ## Observability
 

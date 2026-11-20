@@ -102,11 +102,6 @@ const FAQS: ReadonlyArray<{
     a: faqAnswer('billing-management'),
   },
   {
-    id: 'billing-currency',
-    q: 'Can I choose or switch billing currency?',
-    a: faqAnswer('billing-currency'),
-  },
-  {
     id: 'refunds',
     q: 'Is there a refund policy?',
     a: faqAnswer('refunds-support'),

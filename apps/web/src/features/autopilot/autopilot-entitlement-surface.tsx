@@ -10,7 +10,7 @@ import {
 } from '@declutrmail/shared/entitlements';
 
 import { useTier } from '@/features/auth/api/use-tier';
-import { useRegionProvider, useVisitorPriceLocale } from '@/features/billing/billing-currency';
+import { useVisitorPriceLocale } from '@/features/billing/billing-currency';
 import { billingIntentPath } from '@/features/billing/billing-intent';
 import { launchPlusQuote, MONEY_BACK_NOTE } from '@/features/billing/billing-model';
 
@@ -56,9 +56,8 @@ export function AutopilotObservePreview() {
   // Was a hardcoded `$` template — an India-bound user read "$19/mo"
   // here and was charged ₹1,599 at the checkout this nudge leads to.
   // Launch pricing sells Plus annual; Pro is not sold, so it has no quote.
-  const regionProvider = useRegionProvider();
   const visitorLocale = useVisitorPriceLocale();
-  const price = grantingPlan === 'plus' ? launchPlusQuote(regionProvider, visitorLocale) : null;
+  const price = grantingPlan === 'plus' ? launchPlusQuote(visitorLocale) : null;
 
   return (
     <div

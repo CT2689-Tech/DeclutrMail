@@ -30,7 +30,7 @@ async function subscription(provider: 'paddle' | 'razorpay' = 'paddle') {
     cancelSource: 'refund',
   });
 }
-async function attempt(provider: 'paddle' | 'razorpay' = 'paddle') {
+async function attempt(provider: 'paddle' = 'paddle') {
   await db.insert(subscriptionEvents).values({
     provider,
     providerEventId: 'attempt_1',
@@ -49,11 +49,7 @@ beforeEach(async () => {
     .returning();
   userId = user!.id;
   read = vi.fn().mockResolvedValue('stopped');
-  guard = new BillingDeletionGuard(
-    db as never,
-    { deletionBillingState: read } as never,
-    { deletionBillingState: read } as never,
-  );
+  guard = new BillingDeletionGuard(db as never, { deletionBillingState: read } as never);
 });
 describe('provider-confirmed deletion safety', () => {
   it('a stopped durable transaction cannot bypass the retained checkout capability review', async () => {
@@ -94,9 +90,9 @@ describe('provider-confirmed deletion safety', () => {
     await subscription();
     await db.insert(subscriptions).values({
       workspaceId,
-      provider: 'razorpay',
+      provider: 'paddle',
       providerSubscriptionId: 'sub_new',
-      providerPriceId: 'plan_plus',
+      providerPriceId: 'pri_plus',
       tier: 'plus',
       billingCycle: 'monthly',
       status: 'canceled',
@@ -111,10 +107,17 @@ describe('provider-confirmed deletion safety', () => {
       code: 'DELETION_BILLING_UNVERIFIED',
     });
   });
-  it('can verify a retained Razorpay artifact after the claim was released', async () => {
-    await attempt('razorpay');
+  it('blocks deletion on a subscription from a retired provider without reading it', async () => {
+    await subscription('razorpay');
+    await expect(guard.assertStopped(userId)).rejects.toMatchObject({
+      code: 'DELETION_BILLING_UNVERIFIED',
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+  it('can verify a retained checkout artifact after the claim was released', async () => {
+    await attempt();
     await db.insert(subscriptionEvents).values({
-      provider: 'razorpay',
+      provider: 'paddle',
       providerEventId: 'artifact_1',
       eventType: 'local.checkout_artifact',
       payload: { workspaceId, attemptId: 'attempt_1', providerRef: 'sub_orphan' },
@@ -157,17 +160,17 @@ describe('provider-confirmed deletion safety', () => {
   );
 
   it('support resolution cannot hide a known artifact or a later reviewed reference', async () => {
-    await attempt('razorpay');
+    await attempt();
     await db.insert(subscriptionEvents).values([
       {
-        provider: 'razorpay',
+        provider: 'paddle',
         providerEventId: 'artifact_1',
         eventType: 'local.checkout_artifact',
         payload: { workspaceId, attemptId: 'attempt_1', providerRef: 'sub_known' },
         processedAt: new Date(),
       },
       {
-        provider: 'razorpay',
+        provider: 'paddle',
         providerEventId: 'resolution_1',
         eventType: 'local.checkout_attempt_resolved',
         payload: {
@@ -181,7 +184,7 @@ describe('provider-confirmed deletion safety', () => {
         processedAt: new Date(),
       },
       {
-        provider: 'razorpay',
+        provider: 'paddle',
         providerEventId: 'resolution_2',
         eventType: 'local.checkout_attempt_resolved',
         payload: {

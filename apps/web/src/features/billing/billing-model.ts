@@ -13,7 +13,6 @@ import {
   passEndLabel,
   PLUS_ANNUAL_2026_10,
   plusAmount,
-  priceLine,
   refundLine,
   SANDBOX_PRICE_IDS,
   TIER_MANIFEST,
@@ -24,12 +23,10 @@ import type { BillingCycle, BillingSubscription } from '@declutrmail/shared/cont
 
 import {
   currencyForPricePoint,
-  currencyForProvider,
   formatMoney,
   formatUsd,
 } from '@/features/marketing/pricing/pricing-model';
 import { apiErrorCode } from '@/lib/api/client';
-import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
 import type { PendingCheckout } from './pending-checkout';
 import { BillingPayloadError } from './billing-payload-error';
@@ -40,14 +37,11 @@ export const STRIP_TIER_IDS = ['free', 'plus', 'pro'] as const;
 export type StripTierId = (typeof STRIP_TIER_IDS)[number];
 
 /**
- * "$59/yr" — the price of a plan someone MIGHT buy, on the rail they
- * would be routed to.
+ * "$59/yr" — the price of a plan someone MIGHT buy.
  *
- * CLAMPED to what that rail can actually charge: preferring Razorpay
- * does not make an unprovisioned price point purchasable on it; such
- * points fall back to Paddle/USD. A
- * quote naming a currency the checkout cannot take is a promise we
- * break one click later.
+ * CLAMPED to what checkout can actually charge. A quote naming a
+ * currency the checkout cannot take is a promise we break one click
+ * later.
  *
  * For a subscription that ALREADY EXISTS use `chargedPlanPrice` — these
  * answer different questions and must not be merged back together.
@@ -55,37 +49,26 @@ export type StripTierId = (typeof STRIP_TIER_IDS)[number];
  * Launch pricing sells only Plus annual at the 2026-10 price, so every
  * other plan and cycle has no quote.
  */
-export function quotedPlanPrice(
-  tier: TierId,
-  cycle: BillingCycle,
-  provider: BillingProviderId = 'paddle',
-): string | null {
+export function quotedPlanPrice(tier: TierId, cycle: BillingCycle): string | null {
   if (tier !== 'plus' || cycle !== 'annual') return null;
-  return `${formatMoney(PLUS_ANNUAL_2026_10, currencyForPricePoint(PLUS_ANNUAL_2026_10, provider))}/yr`;
+  return `${formatMoney(PLUS_ANNUAL_2026_10, currencyForPricePoint(PLUS_ANNUAL_2026_10))}/yr`;
 }
 
 /**
  * The only Plus price a new launch checkout sells. INR uses the launch
  * price line; USD is the annual amount. This is not the legacy $9 or $90.
  */
-export function launchPlusQuote(
-  provider: BillingProviderId = 'paddle',
-  locale: 'usd' | 'inr' = 'usd',
-): string {
-  if (locale === 'inr') return launchPriceDisplay('inr').plusLine;
-  if (provider === 'razorpay') return priceLine(PLUS_ANNUAL_2026_10, 'inr');
-  return launchPriceDisplay('usd').plusLine;
+export function launchPlusQuote(locale: 'usd' | 'inr' = 'usd'): string {
+  return launchPriceDisplay(locale).plusLine;
 }
 
 /**
  * Configured plan price for an existing subscription, not a provider
  * upcoming-invoice total. Taxes/adjustments are not available here.
  *
- * NOT clamped, deliberately. The subscription's own provider is settled
- * fact: it exists, so it was purchasable on that rail, whatever the
- * catalog says today. Clamping here would show a Razorpay subscriber
- * paying ₹15,999/yr a "$190/yr" headline — the original defect, wearing
- * the fix as a disguise.
+ * NOT clamped, deliberately. The subscription's own price is settled
+ * fact: it exists, so it was purchasable, whatever the catalog says
+ * today. An INR Paddle subscription reports `chargedCurrency`.
  *
  * Retired prices (the old monthly ladder, Founding Pro) are no longer in
  * the manifest. A legacy subscription is priced from the API's resolved
@@ -100,7 +83,6 @@ function isLaunchPlusAnnualPrice(providerPriceId: string): boolean {
 export function chargedPlanPrice(
   tier: TierId,
   cycle: BillingCycle,
-  provider: BillingProviderId,
   providerPriceId?: string,
   chargedUsdCents?: number,
   chargedCurrency?: 'USD' | 'INR',
@@ -108,14 +90,13 @@ export function chargedPlanPrice(
   if (chargedCurrency === 'INR' && tier === 'plus' && cycle === 'annual') {
     return `${plusAmount('inr')}/yr`;
   }
-  const currency = currencyForProvider(provider);
   // Catalog resolution wins: it carries the price this subscription was
   // actually sold at, including a retired one.
-  if (currency === 'USD' && typeof chargedUsdCents === 'number') {
+  if (typeof chargedUsdCents === 'number') {
     return `${formatUsd(chargedUsdCents)}${cycle === 'annual' ? '/yr' : '/mo'}`;
   }
   if (providerPriceId && isLaunchPlusAnnualPrice(providerPriceId)) {
-    return currency === 'INR' ? priceLine(PLUS_ANNUAL_2026_10, 'inr') : `${plusAmount('usd')}/yr`;
+    return `${plusAmount('usd')}/yr`;
   }
   return null;
 }
@@ -455,7 +436,6 @@ export function currentPlanPriceLabel(
       chargedPlanPrice(
         sub.tier,
         sub.cycle,
-        sub.provider,
         sub.providerPriceId,
         sub.chargedUsdCents,
         sub.chargedCurrency,
@@ -611,18 +591,10 @@ export function backingStatusNote(
     // wording — "update your payment method with the provider" — sent
     // the customer to a provider they had no link to, on the one status
     // where not acting ends the plan (ADR-0035).
-    //
-    // Provider-split because the affordance is: on Razorpay the payment
-    // section says the card CANNOT be changed self-serve, so "update your
-    // payment method" would point at a refusal (gate network
-    // 2026-08-16). The note promises only what its rail can deliver.
     // No direction: past due, that card comes right after this one.
     return {
       tone: 'warn',
-      text:
-        (backing.sub.provider === 'razorpay'
-          ? 'Payment past due — see Payment method; we’ll help you fix this.'
-          : 'Payment past due — update your payment method to keep your plan.') + deadlineNote,
+      text: 'Payment past due — update your payment method to keep your plan.' + deadlineNote,
     };
   }
   return null;

@@ -160,6 +160,10 @@ provisioning run needs an approval click.
 
 ## 5. Phase D — Provision the catalog (founder step "F3")
 
+> **Retired 2026-11-17.** The "Provision billing catalog" workflow and its script were deleted
+> with the Razorpay rail (decision 4A). Create Paddle products and prices in the Paddle
+> dashboard and paste their ids into `pricing.config.ts`. The steps below are history.
+
 The product/price objects live in the providers, not in code. Create them with
 the idempotent workflow (never from a laptop — it uses the live keys):
 

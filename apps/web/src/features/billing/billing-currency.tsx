@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * The currency every in-app price is quoted in (D117).
+ * The visitor's price locale for every in-app price quote (D117).
  *
  * WHY A CONTEXT: the surfaces that quote a price before sending someone
  * to checkout are scattered — the tier gate, the upgrade modal, the
@@ -16,49 +16,27 @@
  *
  * This is the DISPLAY default for surfaces that have no better
  * information. Anywhere a subscription record is in hand, its own
- * provider is authoritative and should be used instead: what a
+ * charged currency is authoritative and should be used instead: what a
  * subscriber is actually being charged is a fact, not a regional guess.
  */
 
 import { createContext, useContext, type ReactNode } from 'react';
 
-import type { BillingProviderId } from '@declutrmail/shared/contracts';
-
-const RegionProviderContext = createContext<BillingProviderId>('paddle');
 const VisitorPriceLocaleContext = createContext<'usd' | 'inr'>('usd');
 
 export function BillingCurrencyProvider({
-  provider,
   locale = 'usd',
   children,
 }: {
-  provider: BillingProviderId;
   /** Trusted visitor locale. Defaults to USD so tests and Storybook stay dollar-priced. */
   locale?: 'usd' | 'inr';
   children: ReactNode;
 }) {
   return (
-    <RegionProviderContext.Provider value={provider}>
-      <VisitorPriceLocaleContext.Provider value={locale}>
-        {children}
-      </VisitorPriceLocaleContext.Provider>
-    </RegionProviderContext.Provider>
+    <VisitorPriceLocaleContext.Provider value={locale}>
+      {children}
+    </VisitorPriceLocaleContext.Provider>
   );
-}
-
-/**
- * The region's PREFERRED rail — deliberately not a resolved currency.
- *
- * Callers pass it to `quotedPlanPrice` / `currencyForPricePoint`, which
- * clamp per PRICE POINT: preferring Razorpay does not mean a given plan
- * is purchasable on it; provisioning is specific to each price point. Quoting INR for a point that checkout will charge in
- * USD is the defect this indirection exists to prevent.
- *
- * Defaults to Paddle outside a provider — Storybook, tests, and any
- * non-Vercel host legitimately have no geo.
- */
-export function useRegionProvider(): BillingProviderId {
-  return useContext(RegionProviderContext);
 }
 
 /** Display locale after the server resolved country + India checkout. */

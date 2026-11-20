@@ -21,7 +21,7 @@ import { track } from '@/lib/posthog';
 
 import { billingIntentPath } from './billing-intent';
 import { formatBillingMonthDay, launchPlusQuote, MONEY_BACK_NOTE } from './billing-model';
-import { useRegionProvider, useVisitorPriceLocale } from './billing-currency';
+import { useVisitorPriceLocale } from './billing-currency';
 
 const { color, radius, shadow, space, text } = tokens;
 
@@ -75,10 +75,9 @@ export function UpgradeModal() {
   }, [hit, dismiss]);
 
   const trapRef = useFocusTrap<HTMLDivElement>(hit != null);
-  // Hooks before the early return — calling useRegionProvider below
+  // Hooks before the early return — calling a hook below
   // `if (!hit) return null` fired a hook-order violation the moment a
   // 402 flipped `hit` on a mounted modal (billing audit 2026-07-28).
-  const regionProvider = useRegionProvider();
   const visitorLocale = useVisitorPriceLocale();
 
   if (!hit) return null;
@@ -114,9 +113,7 @@ export function UpgradeModal() {
   const upgradeLabel = limitConfirmLabel ?? `Upgrade to ${TIER_MANIFEST[targetPlan].name}`;
   // Pro is waitlist only, so only Plus carries a quote.
   const targetQuote =
-    limitConfirmLabel === null && targetPlan === 'plus'
-      ? launchPlusQuote(regionProvider, visitorLocale)
-      : null;
+    limitConfirmLabel === null && targetPlan === 'plus' ? launchPlusQuote(visitorLocale) : null;
 
   return (
     <DialogFrame

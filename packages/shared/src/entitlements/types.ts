@@ -81,9 +81,8 @@ export const CAPABILITIES = [
 export type Capability = (typeof CAPABILITIES)[number];
 
 /**
- * One billing price point: canonical USD and INR amounts plus provider
- * catalog ids
- * (D117 — Paddle + Razorpay, no Stripe). Catalog ids per PRICE POINT,
+ * One billing price point: canonical USD and INR amounts plus the Paddle
+ * catalog id (no Stripe). Catalog ids per PRICE POINT,
  * not per tier, because each interval is its own provider SKU (e.g.
  * `plus_monthly` and `plus_annual` are distinct Paddle prices). Ids stay
  * `null` until catalog provisioning writes them; the Free $0 point keeps
@@ -96,8 +95,6 @@ export interface PricePoint {
   readonly inrPaise: number;
   /** Paddle catalog price id — null until catalog provisioning (D117). */
   readonly paddlePriceId: string | null;
-  /** Razorpay plan id — null until catalog provisioning (D117). */
-  readonly razorpayPlanId: string | null;
   /**
    * Shown on pricing, the plan picker, JSON-LD and pricing.md.
    * Omitted means listed (today's catalog). `false` stays resolvable.
@@ -108,7 +105,7 @@ export interface PricePoint {
    * `paddlePriceId`. Paddle price `custom_data` is not read.
    */
   readonly version?: string;
-  /** INR amount decoupled from the Razorpay rail. Tax-inclusive when set. */
+  /** Paddle INR amount. Tax-inclusive when set. */
   readonly inr?: { readonly paise: number; readonly taxInclusive: true };
 }
 

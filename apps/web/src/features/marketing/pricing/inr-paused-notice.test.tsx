@@ -10,7 +10,7 @@ import { PricingStory } from './pricing-story';
 
 const NOW = '2026-10-27T07:01:00.000Z';
 const NOTICE =
-  'Buying a plan in rupees is paused for now, so these prices are for reference. If you already pay in rupees, you can still manage your plan in Billing. Email support@declutrmail.com for help.';
+  'Buying a plan in rupees is paused for now, so these prices are for reference. Email support@declutrmail.com for help.';
 
 describe('INR pause copy on /pricing', () => {
   it('shows the notice and paused India answer to INR visitors while paused', () => {

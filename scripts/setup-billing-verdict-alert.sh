@@ -44,23 +44,19 @@ ALERT_EMAIL="${ALERT_EMAIL:-chintan.a.thakkar@gmail.com}"
 METRIC_NAME="billing_provider_read_blocked"
 POLICY_DISPLAY_NAME="Billing: provider read blocked or refund verdict frozen"
 
-# Deliberately PROVIDER-AGNOSTIC. Pinning `paddle` would make this a blind
-# guard for every Indian customer the day a Razorpay refund freezes — the
-# same mitigation-recreates-the-bug shape D253 rejected when it refused a
-# hardcoded `provider !== 'razorpay'` check.
+# Deliberately PROVIDER-AGNOSTIC: the tokens name the failure, not the
+# provider.
 #
-# Three tokens, one class — "we asked the provider and could not get an
+# Two tokens, one class — "we asked the provider and could not get an
 # answer":
 #   verdict_unreadable   the customer-impact signal, emitted by the
-#                        verdict pass for EITHER provider. One line per
-#                        frozen refund per tick.
+#                        verdict pass. One line per frozen refund per tick.
 #   api_read.failed      Paddle's cause line (any endpoint).
-#   reconcile_read.failed Razorpay's equivalent.
 #
 # Checkout and portal failures are deliberately NOT here: those surface to
 # the customer synchronously and have their own handling. This alert is
 # for the reads nobody is watching.
-LOG_FILTER='resource.type="cloud_run_revision" AND (textPayload:"verdict_unreadable" OR textPayload:"api_read.failed" OR textPayload:"reconcile_read.failed")'
+LOG_FILTER='resource.type="cloud_run_revision" AND (textPayload:"verdict_unreadable" OR textPayload:"api_read.failed")'
 
 if ! command -v gcloud >/dev/null 2>&1; then
   echo "::error::gcloud not on PATH" >&2
@@ -79,7 +75,7 @@ else
   echo "[1/3] Creating log metric ${METRIC_NAME}…"
   gcloud logging metrics create "$METRIC_NAME" \
     --project="$PROJECT_ID" \
-    --description="Billing provider read blocked: verdict_unreadable (refund frozen, either provider) or a Paddle/Razorpay reconciliation read failure" \
+    --description="Billing provider read blocked: verdict_unreadable (refund frozen) or a Paddle reconciliation read failure" \
     --log-filter="$LOG_FILTER"
 fi
 
@@ -160,7 +156,7 @@ else
   ],
   "documentation": {
     "mimeType": "text/markdown",
-    "content": "We cannot read a billing provider, so at least one refund verdict is frozen. A customer may be unable to repurchase.\n\n**Find it:** \`gcloud logging read 'resource.type=\"cloud_run_revision\" AND textPayload:\"verdict_unreadable\"' --project=declutrmail-ai-prod --freshness=1h\` — the line names the provider, subscription id and local verdict. The cause line sits beside it (\`paddle.api_read.failed\` / \`razorpay.reconcile_read.failed\`) and now carries the provider's own error body, which names the reason outright.\n\n**Most likely cause:** an API-key permission. Reproduce with the stored key:\n\n\`\`\`\ncurl -sS -w '\\\\nHTTP %{http_code}\\\\n' -H \"Authorization: Bearer \$(gcloud secrets versions access latest --secret=paddle-api-key-prod --project=declutrmail-ai-prod | tr -d '\\\\n')\" -H 'Paddle-Version: 1' 'https://api.paddle.com/adjustments?per_page=1'\n\`\`\`\n\n403 → fix permissions in Paddle > Developer Tools > Authentication > API keys > Edit. \`adjustment.read\` is the one the settlement read needs; it was missing for eleven days in Aug 2026 and nothing noticed. 401 → the key is wrong or expired.\n\n**Blast radius while it burns:** refunded customers keep their plan for up to REFUND_PENDING_GRACE_DAYS (7) and then lapse into a locked plan picker. Context: MISTAKES.md 2026-08-25."
+    "content": "We cannot read a billing provider, so at least one refund verdict is frozen. A customer may be unable to repurchase.\n\n**Find it:** \`gcloud logging read 'resource.type=\"cloud_run_revision\" AND textPayload:\"verdict_unreadable\"' --project=declutrmail-ai-prod --freshness=1h\` — the line names the provider, subscription id and local verdict. The cause line sits beside it (\`paddle.api_read.failed\`) and now carries the provider's own error body, which names the reason outright.\n\n**Most likely cause:** an API-key permission. Reproduce with the stored key:\n\n\`\`\`\ncurl -sS -w '\\\\nHTTP %{http_code}\\\\n' -H \"Authorization: Bearer \$(gcloud secrets versions access latest --secret=paddle-api-key-prod --project=declutrmail-ai-prod | tr -d '\\\\n')\" -H 'Paddle-Version: 1' 'https://api.paddle.com/adjustments?per_page=1'\n\`\`\`\n\n403 → fix permissions in Paddle > Developer Tools > Authentication > API keys > Edit. \`adjustment.read\` is the one the settlement read needs; it was missing for eleven days in Aug 2026 and nothing noticed. 401 → the key is wrong or expired.\n\n**Blast radius while it burns:** refunded customers keep their plan for up to REFUND_PENDING_GRACE_DAYS (7) and then lapse into a locked plan picker. Context: MISTAKES.md 2026-08-25."
   },
   "notificationChannels": ["${CHANNEL_NAME}"]
 }

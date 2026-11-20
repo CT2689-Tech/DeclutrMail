@@ -374,8 +374,8 @@ appropriate; message counts alone cannot establish time saved.
 ### `billing_event`
 
 **When fired.** Never as a PostHog capture. The API writes a structured
-log line (`billing_event kind=… provider=paddle|razorpay`) from the
-verified Paddle / Razorpay webhook handler. Server-side PostHog is
+log line (`billing_event kind=… provider=paddle`) from the
+verified Paddle webhook handler. Server-side PostHog is
 banned (consent lives in the browser; see Privacy contract above), so
 this name exists in the TypeScript union for the log shape only. A
 PostHog funnel that joins `checkout_started` to `billing_event` will
@@ -877,12 +877,12 @@ POST never claimed the row.
 
 **Payload.**
 
-| Field          | Type                     | Notes                                  |
-| -------------- | ------------------------ | -------------------------------------- |
-| `tier`         | `'plus' \| 'pro'`        | Purchasable target (D19)               |
-| `cycle`        | `'monthly' \| 'annual'`  | Billing interval                       |
-| `provider`     | `'paddle' \| 'razorpay'` | User's explicit provider choice (D117) |
-| `founding_pro` | `boolean`                | Founding Pro promo claimed (D126)      |
+| Field          | Type                    | Notes                             |
+| -------------- | ----------------------- | --------------------------------- |
+| `tier`         | `'plus' \| 'pro'`       | Purchasable target (D19)          |
+| `cycle`        | `'monthly' \| 'annual'` | Billing interval                  |
+| `provider`     | `'paddle'`              | The checkout rail (D117)          |
+| `founding_pro` | `boolean`               | Founding Pro promo claimed (D126) |
 
 **Retention / aggregation.** 2y raw. Pair with
 `checkout_session_created` (API wrote the claim) and
@@ -917,8 +917,7 @@ overlay abandonment.
 
 ### `checkout_overlay_completed`
 
-**When fired.** Paddle `checkout.completed` or Razorpay Checkout.js
-`handler`. Overlay-reported payment only — the tier still flips solely
+**When fired.** Paddle `checkout.completed`. Overlay-reported payment only — the tier still flips solely
 via the webhook.
 
 **Payload.** Same fields as `checkout_started`.

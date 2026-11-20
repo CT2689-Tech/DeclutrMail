@@ -77,7 +77,7 @@ export function ObserveWindowBanner({
   const actName = TIER_MANIFEST[actTier].name;
   const visitorLocale = useVisitorPriceLocale();
   const upgradeHref = billingIntentPath({ plan: actPlan, cycle: 'annual' });
-  const upgradePrice = actPlan === 'plus' ? launchPlusQuote('paddle', visitorLocale) : null;
+  const upgradePrice = actPlan === 'plus' ? launchPlusQuote(visitorLocale) : null;
   if (rules.length === 0) return null;
 
   return (

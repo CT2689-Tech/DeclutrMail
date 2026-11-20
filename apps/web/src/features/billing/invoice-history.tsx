@@ -8,16 +8,14 @@ import linkStyles from './billing-links.module.css';
  *
  * Every row is a provider-owned document; we generate none. Paddle's is
  * the legal tax document (it is the merchant of record), so its rows
- * mint a signed PDF per click; Razorpay exposes a stable hosted page, so
- * its rows link straight out.
+ * mint a signed PDF per click.
  *
  * Three honesty rules this component exists to keep:
  *
  *   - A failed read renders as a failed read. "You have no invoices" and
  *     "we could not ask your provider" are different sentences.
- *   - A PARTIAL list says so. A workspace can hold rows under both rails
- *     (a region switch creates a second customer row), and one rail
- *     being down must not silently shorten the history.
+ *   - A PARTIAL list says so. A provider read being down must not
+ *     silently shorten the history.
  *   - The section renders for a workspace that has CANCELLED, too. The
  *     tax need outlives the subscription, and the commonest reason to
  *     open this page after leaving is to fetch last year's receipts.

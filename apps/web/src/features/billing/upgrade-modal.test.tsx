@@ -116,7 +116,7 @@ describe('UpgradeModal', () => {
 
   it('opens on a 402 arriving AFTER mount without a hook-order violation', () => {
     // The real paywall moment: the modal is mounted (no hit) and a 402
-    // flips the store. useRegionProvider used to sit below the early
+    // flips the store. A price-locale hook used to sit below the early
     // return, so this exact transition fired React's hook-order error
     // (billing audit 2026-07-28). Assert the transition is silent.
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -181,7 +181,7 @@ describe('UpgradeModal', () => {
       details: { remaining: 0, limit: 1000, used: 1000, requiredUnits: 1, resetsAt: null },
     });
     render(
-      <BillingCurrencyProvider provider="paddle" locale="inr">
+      <BillingCurrencyProvider locale="inr">
         <UpgradeModal />
       </BillingCurrencyProvider>,
     );
@@ -379,14 +379,14 @@ describe('UpgradeModal', () => {
     expect(screen.queryByRole('link', { name: /compare plans/i })).not.toBeInTheDocument();
   });
 
-  it('pass_second_account quotes Plus in INR from the visitor locale, not Razorpay', () => {
+  it('pass_second_account quotes Plus in INR from the visitor locale', () => {
     mockTier = 'plus';
     useUpgradeGateStore.getState().report({
       reason: 'pass_second_account',
       details: { limit: 1, connected: 1, reason: 'pass' },
     });
     render(
-      <BillingCurrencyProvider provider="paddle" locale="inr">
+      <BillingCurrencyProvider locale="inr">
         <UpgradeModal />
       </BillingCurrencyProvider>,
     );

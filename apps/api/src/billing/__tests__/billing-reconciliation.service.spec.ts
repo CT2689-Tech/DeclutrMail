@@ -15,7 +15,6 @@ import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js'
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import {
-  CancellationFactsCache,
   CheckoutHold,
   FetchSubscriptionResult,
   ProviderCancellationFacts,
@@ -30,7 +29,6 @@ import {
 import { BillingWebhookService } from '../billing-webhook.service.js';
 import { runWithVerdictSignal } from '../provider-signal.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
-import type { RazorpayAdapter } from '../razorpay.adapter.js';
 import {
   TEST_PRICE_IDS,
   TEST_PADDLE_WEBHOOK_SECRET,
@@ -61,7 +59,6 @@ function testCatalog(): BillingCatalog {
       founding: false,
       usdCents: 900,
       paddlePriceId: TEST_PRICE_IDS.paddle.plus_monthly,
-      razorpayPlanId: TEST_PRICE_IDS.razorpay.plus_monthly,
     },
     {
       planCode: 'pro_annual',
@@ -70,7 +67,6 @@ function testCatalog(): BillingCatalog {
       founding: false,
       usdCents: 19000,
       paddlePriceId: TEST_PRICE_IDS.paddle.pro_annual,
-      razorpayPlanId: TEST_PRICE_IDS.razorpay.pro_annual,
     },
   ];
   return new BillingCatalog(entries, 250);
@@ -82,13 +78,10 @@ function fakeAdapter(overrides: {
   searchSubscriptions?: (query: SubscriptionSearchQuery) => Promise<SubscriptionSearchResult>;
   cancelSubscription?: (id: string) => Promise<void>;
   readPassRefund?: PaddleAdapter['readPassRefund'];
-  providerCancellationFacts?: (
-    id: string,
-    cache?: CancellationFactsCache,
-  ) => Promise<ProviderCancellationFacts | null>;
+  providerCancellationFacts?: (id: string) => Promise<ProviderCancellationFacts | null>;
   /** Absent by default: an adapter without the exact read is never exact. */
   fetchCheckoutHold?: (transactionId: string, workspaceId: string) => Promise<CheckoutHold>;
-}): PaddleAdapter & RazorpayAdapter {
+}): PaddleAdapter {
   return {
     readPassRefund: overrides.readPassRefund,
     ...(overrides.fetchCheckoutHold ? { fetchCheckoutHold: overrides.fetchCheckoutHold } : {}),
@@ -109,7 +102,7 @@ function fakeAdapter(overrides: {
     providerCancellationFacts:
       overrides.providerCancellationFacts ??
       (async () => ({ settled: null, refuted: { refund: false, chargeback: false } })),
-  } as unknown as PaddleAdapter & RazorpayAdapter;
+  } as unknown as PaddleAdapter;
 }
 
 function activePlusSub(id: string, createdAt: Date): NormalizedSubscription {
@@ -154,14 +147,13 @@ describe('BillingReconciliationService (D249)', () => {
     await db.insert(users).values({ workspaceId, email: 'owner@example.test' });
   });
 
-  function service(paddle: PaddleAdapter, razorpay?: RazorpayAdapter) {
+  function service(paddle: PaddleAdapter) {
     const catalog = testCatalog();
     return new BillingReconciliationService(
       db,
       catalog,
       new BillingWebhookService(db, catalog, new AutopilotReadService(db), ordinaryRefundPolicy),
       paddle,
-      razorpay ?? (fakeAdapter({}) as RazorpayAdapter),
     );
   }
 
@@ -180,39 +172,6 @@ describe('BillingReconciliationService (D249)', () => {
     const svc = service(fakeAdapter({}));
     expect(await svc.reconcilePendingCheckout(workspaceId)).toBe('no_pending');
     expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
-  });
-
-  it('provider_ref ladder: fetches THAT subscription, grants, clears the claim', async () => {
-    const razorpaySub: NormalizedSubscription = {
-      ...activePlusSub('sub_rzp_1', new Date()),
-      providerPriceId: TEST_PRICE_IDS.razorpay.plus_monthly,
-    };
-    await seedClaim({ provider: 'razorpay', providerRef: 'sub_rzp_1' });
-    const fetched: string[] = [];
-    const svc = service(
-      fakeAdapter({}),
-      fakeAdapter({
-        fetchSubscription: async (id) => {
-          fetched.push(id);
-          return { kind: 'found', subscription: razorpaySub };
-        },
-      }),
-    );
-
-    expect(await svc.reconcilePendingCheckout(workspaceId)).toBe('granted');
-    expect(fetched).toEqual(['sub_rzp_1']);
-
-    const [row] = await db.select().from(subscriptions);
-    expect(row).toMatchObject({ workspaceId, status: 'active', tier: 'plus' });
-    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('plus');
-    // The grant path clears the claim — same as a webhook grant.
-    expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
-    // Provenance is visible in the ledger.
-    const [event] = await db.select().from(subscriptionEvents);
-    expect(event!.eventType).toBe('reconciliation.subscription');
-    expect(event!.providerEventId.startsWith('recon:razorpay:sub_rzp_1:')).toBe(true);
-    expect(event!.processedAt).not.toBeNull();
   });
 
   it('email ladder: filters to the claim (tier/cycle, granting status, claim age), newest wins', async () => {
@@ -269,111 +228,6 @@ describe('BillingReconciliationService (D249)', () => {
     },
   );
 
-  it('Codex fix 1: a pre-grant provider artifact is payment_in_progress, never none_found', async () => {
-    // Razorpay `created`/`authenticated` — the 3DS window. Reporting
-    // "no payment found" here unlocks the release seconds before a
-    // charge settles: the exact double-charge the lock exists to stop.
-    await seedClaim({ provider: 'razorpay', providerRef: 'sub_3ds' });
-    const svc = service(
-      fakeAdapter({}),
-      fakeAdapter({
-        fetchSubscription: async () => ({
-          kind: 'found_unmapped',
-          providerStatus: 'authenticated',
-        }),
-      }),
-    );
-
-    expect(await svc.reconcilePendingCheckout(workspaceId)).toBe('payment_in_progress');
-    expect(await db.select().from(pendingCheckouts)).toHaveLength(1);
-    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
-  });
-
-  it('Codex fix 4: an inconclusive provider_ref falls back to the search — never concludes alone', async () => {
-    // Rotten ref (provider 404s our own id): the ref is a fast path,
-    // not the only witness. The search must still run and find the
-    // money.
-    const found: NormalizedSubscription = {
-      ...activePlusSub('sub_found_by_search', new Date()),
-      workspaceId,
-      providerPriceId: TEST_PRICE_IDS.razorpay.plus_monthly,
-    };
-    await seedClaim({ provider: 'razorpay', providerRef: 'sub_rotten' });
-    const svc = service(
-      fakeAdapter({}),
-      fakeAdapter({
-        fetchSubscription: async () => ({ kind: 'not_found' }),
-        searchSubscriptions: async () => ({ subscriptions: [found], inProgress: 0 }),
-      }),
-    );
-    expect(await svc.reconcilePendingCheckout(workspaceId)).toBe('granted');
-    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('plus');
-  });
-
-  it('Codex fix 4: a found-but-canceled ref (reclaimed claim) does not suppress the search', async () => {
-    // Reclaim shape: claim points at attempt #2 (canceled), while
-    // attempt #1 carried the payment. Concluding none_found from the
-    // ref alone released toward real money.
-    const attempt2Canceled: NormalizedSubscription = {
-      ...activePlusSub('sub_attempt2', new Date()),
-      providerPriceId: TEST_PRICE_IDS.razorpay.plus_monthly,
-      status: 'canceled',
-      currentPeriodEnd: null,
-    };
-    const attempt1Paid: NormalizedSubscription = {
-      ...activePlusSub('sub_attempt1', new Date()),
-      workspaceId,
-      providerPriceId: TEST_PRICE_IDS.razorpay.plus_monthly,
-    };
-    await seedClaim({ provider: 'razorpay', providerRef: 'sub_attempt2' });
-    const svc = service(
-      fakeAdapter({}),
-      fakeAdapter({
-        fetchSubscription: async () => ({ kind: 'found', subscription: attempt2Canceled }),
-        searchSubscriptions: async () => ({ subscriptions: [attempt1Paid], inProgress: 0 }),
-      }),
-    );
-    expect(await svc.reconcilePendingCheckout(workspaceId)).toBe('granted');
-    const rows = await db.select().from(subscriptions);
-    expect(rows.map((r) => r.providerSubscriptionId)).toEqual(['sub_attempt1']);
-  });
-
-  it('Codex fix 3: a stale RAZORPAY lock is found via plan_id + notes — Razorpay IS asked', async () => {
-    // No claim row (swept), no provider_ref — the first cut's "[]"
-    // Razorpay search meant none_found without asking Razorpay, while
-    // its orphan stayed payable from the provider's own email.
-    const rzpQueries: SubscriptionSearchQuery[] = [];
-    const rzpSub: NormalizedSubscription = {
-      ...activePlusSub('sub_rzp_stale', new Date()),
-      providerPriceId: TEST_PRICE_IDS.razorpay.plus_monthly,
-      workspaceId,
-    };
-    const svc = service(
-      fakeAdapter({}), // paddle finds nothing
-      fakeAdapter({
-        searchSubscriptions: async (query) => {
-          rzpQueries.push(query);
-          return { subscriptions: [rzpSub], inProgress: 0 };
-        },
-      }),
-    );
-
-    const outcome = await svc.reconcilePendingCheckout(workspaceId, {
-      tier: 'plus',
-      cycle: 'monthly',
-      startedAt: new Date(Date.now() - 40 * 60_000).toISOString(),
-    });
-    expect(outcome).toBe('granted');
-    // Razorpay was queried with ITS plan ids + the workspace to match
-    // notes against — the search key set that makes it answerable.
-    expect(rzpQueries).toHaveLength(1);
-    expect(rzpQueries[0]!.workspaceId).toBe(workspaceId);
-    expect(rzpQueries[0]!.providerPriceIds).toContain(TEST_PRICE_IDS.razorpay.plus_monthly);
-    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('plus');
-  });
-
   it('Codex fix 3: search-path pre-grant activity is payment_in_progress, not none_found', async () => {
     const svc = service(
       fakeAdapter({
@@ -423,6 +277,24 @@ describe('BillingReconciliationService (D249)', () => {
       'none_found',
     );
     expect(await empty.reconcilePendingCheckout(ws2!.id)).toBe('no_pending');
+  });
+
+  it('a claim from a retired provider → provider_unavailable; Paddle is not asked', async () => {
+    await seedClaim({ provider: 'razorpay', providerRef: 'sub_retired' });
+    let searched = 0;
+    const svc = service(
+      fakeAdapter({
+        searchSubscriptions: async () => {
+          searched += 1;
+          return { subscriptions: [], inProgress: 0 };
+        },
+      }),
+    );
+
+    expect(await svc.reconcilePendingCheckout(workspaceId)).toBe('provider_unavailable');
+    expect(searched).toBe(0);
+    expect(await db.select().from(pendingCheckouts)).toHaveLength(1);
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
   });
 
   it('provider answers empty → none_found; the claim SURVIVES (release stays a user decision)', async () => {
@@ -600,7 +472,6 @@ describe('BillingReconciliationService (D249)', () => {
       testCatalog(),
       projector,
       fakeAdapter({ readPassRefund: async () => ({ kind: 'refunded', adjustmentId: 'adj_full' }) }),
-      fakeAdapter({}),
     );
     expect(await svc.reconcilePassRefunds()).toMatchObject({ recovered: 0, failed: 1 });
     expect((await db.select().from(entitlementGrants))[0]!.revokedAt).toBeNull();
@@ -673,7 +544,6 @@ describe('BillingReconciliationService (D249)', () => {
         fakeAdapter({
           readPassRefund: async () => ({ kind: 'refunded', adjustmentId: 'adj_full' }),
         }),
-        fakeAdapter({}),
       );
       expect(await svc.reconcilePassRefunds()).toMatchObject({
         checked: 3,
@@ -824,61 +694,6 @@ describe('BillingReconciliationService (D249)', () => {
 
     // Stops asking once the breaker trips, rather than walking every row.
     expect(factsCalls).toBe(TRIP_AFTER);
-  });
-
-  // The adapter's own cache tests prove the memo works when a cache is
-  // HANDED to it; only this one proves the service hands it one. Without
-  // it, deleting the argument at the call site leaves every adapter test
-  // green while the account-wide read silently returns to once-per-row.
-  it('hands every row in a pass the same cache, and each pass a new one', async () => {
-    for (let i = 0; i < 3; i += 1) {
-      const [ws] = await db
-        .insert(workspaces)
-        .values({ name: `Cache WS ${i}` })
-        .returning({ id: workspaces.id });
-      await db.insert(subscriptions).values({
-        workspaceId: ws!.id,
-        provider: 'paddle',
-        providerSubscriptionId: `sub_cache_${i}`,
-        tier: 'plus',
-        status: 'active',
-        providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
-        billingCycle: 'monthly',
-        currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
-        cancelAtPeriodEnd: true,
-        cancelSource: 'refund',
-        entitlementEndsAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
-      });
-    }
-    const seen: Array<CancellationFactsCache | undefined> = [];
-    const svc = service(
-      fakeAdapter({
-        fetchSubscription: async (id) => ({
-          kind: 'found',
-          subscription: activePlusSub(id, new Date()),
-        }),
-        providerCancellationFacts: async (_id, cache) => {
-          seen.push(cache);
-          // Not settled and not refuted: the row is left alone, so the
-          // pass walks all three instead of stopping on the first write.
-          return { settled: null, refuted: { refund: false, chargeback: false } };
-        },
-      }),
-    );
-
-    await svc.enforceLocalVerdicts(0);
-    expect(seen).toHaveLength(3);
-    expect(seen[0]).toBeInstanceOf(CancellationFactsCache);
-    // Identity, not equality — a per-row cache would compare equal while
-    // deduplicating nothing.
-    expect(seen[1]).toBe(seen[0]);
-    expect(seen[2]).toBe(seen[0]);
-
-    const firstPass = seen[0];
-    seen.length = 0;
-    await svc.enforceLocalVerdicts(0);
-    // The invalidation boundary: pass two cannot read pass one's answers.
-    expect(seen[0]).not.toBe(firstPass);
   });
 
   // The customer cancels in-app, THEN asks for their money back, and
@@ -1192,25 +1007,16 @@ describe('BillingReconciliationService (D249)', () => {
     expect(events.filter((e) => e.eventType === 'reconciliation.refund_settled')).toHaveLength(1);
   });
 
-  it('an adapter that cannot answer never settles — the scope is the ADAPTER, not a provider check', async () => {
-    // No `provider !== 'razorpay'` check exists anywhere, deliberately.
-    // A hardcoded one would have become a permanent lockout for every
-    // Indian customer the moment Razorpay refunds were mapped — the
-    // exact bug this feature removes, re-created by the mitigation.
-    //
-    // So the rule is provider-agnostic: an adapter that answers `null`
-    // cannot settle, and one that answers settles. Razorpay's adapter
-    // now DOES answer (it reads invoices → refunds → disputes), so this
-    // test no longer describes Razorpay's production state — it pins the
-    // general property, which is what has to keep holding.
-
+  it('an adapter that cannot answer never settles', async () => {
+    // An adapter that answers `null` cannot settle, and one that
+    // answers settles.
     await db.insert(subscriptions).values({
       workspaceId,
-      provider: 'razorpay',
-      providerSubscriptionId: 'sub_rzp',
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_unanswered',
       tier: 'plus',
       status: 'active',
-      providerPriceId: TEST_PRICE_IDS.razorpay.plus_monthly,
+      providerPriceId: TEST_PRICE_IDS.paddle.plus_monthly,
       billingCycle: 'monthly',
       currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
       cancelAtPeriodEnd: true,
@@ -1218,14 +1024,13 @@ describe('BillingReconciliationService (D249)', () => {
       entitlementEndsAt: new Date(),
     });
     const svc = service(
-      fakeAdapter({}),
       fakeAdapter({
         fetchSubscription: async () => ({
           kind: 'found',
-          subscription: activePlusSub('sub_rzp', new Date()),
+          subscription: activePlusSub('sub_unanswered', new Date()),
         }),
         providerCancellationFacts: async () => null,
-      }) as RazorpayAdapter,
+      }),
     );
 
     const result = await svc.enforceLocalVerdicts(0);
@@ -1233,7 +1038,42 @@ describe('BillingReconciliationService (D249)', () => {
     const [row] = await db
       .select({ status: subscriptions.status })
       .from(subscriptions)
-      .where(eq(subscriptions.providerSubscriptionId, 'sub_rzp'));
+      .where(eq(subscriptions.providerSubscriptionId, 'sub_unanswered'));
+    expect(row?.status).toBe('active');
+  });
+
+  it('a row from a retired provider is never read, cancelled or settled', async () => {
+    await db.insert(subscriptions).values({
+      workspaceId,
+      provider: 'razorpay',
+      providerSubscriptionId: 'sub_retired',
+      tier: 'plus',
+      status: 'active',
+      providerPriceId: 'plan_retired',
+      billingCycle: 'monthly',
+      currentPeriodEnd: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      cancelAtPeriodEnd: false,
+      cancelSource: 'refund',
+      entitlementEndsAt: new Date(),
+    });
+    const read: string[] = [];
+    const svc = service(
+      fakeAdapter({
+        fetchSubscription: async (id) => {
+          read.push(id);
+          return { kind: 'found', subscription: activePlusSub(id, new Date()) };
+        },
+        providerCancellationFacts: async () => SETTLED_REFUND,
+        cancelSubscription: async (id) => {
+          read.push(`cancel:${id}`);
+        },
+      }),
+    );
+
+    const result = await svc.enforceLocalVerdicts(0);
+    expect(read).toEqual([]);
+    expect(result.settled).toBe(0);
+    const [row] = await db.select({ status: subscriptions.status }).from(subscriptions);
     expect(row?.status).toBe('active');
   });
 
@@ -1863,20 +1703,19 @@ describe('BillingReconciliationService — exact checkout hold (D249 follow-up)'
     await db.insert(users).values({ workspaceId, email: 'owner@example.test' });
   });
 
-  function service(paddle: PaddleAdapter, razorpay?: RazorpayAdapter) {
+  function service(paddle: PaddleAdapter) {
     const catalog = testCatalog();
     return new BillingReconciliationService(
       db,
       catalog,
       new BillingWebhookService(db, catalog, new AutopilotReadService(db), ordinaryRefundPolicy),
       paddle,
-      razorpay ?? (fakeAdapter({}) as RazorpayAdapter),
     );
   }
 
   async function seedClaim(
     input: {
-      provider?: 'paddle' | 'razorpay';
+      provider?: 'paddle';
       providerRef?: string | null;
       offer?: 'pass_onetime' | null;
     } = {},
@@ -2016,28 +1855,6 @@ describe('BillingReconciliationService — exact checkout hold (D249 follow-up)'
         outcome: 'none_found',
         exact: false,
       });
-    });
-
-    it('Razorpay is untouched: its ref still names a subscription and no exact read happens', async () => {
-      await seedClaim({ provider: 'razorpay', providerRef: 'sub_rzp_1' });
-      const fetched: string[] = [];
-      const holdCalls: string[] = [];
-      const rzp = fakeAdapter({
-        fetchSubscription: async (id) => {
-          fetched.push(id);
-          return { kind: 'not_found' };
-        },
-        fetchCheckoutHold: async (id) => {
-          holdCalls.push(id);
-          return 'unpaid';
-        },
-      });
-      const result = await service(fakeAdapter({}), rzp).reconcilePendingCheckoutDetailed(
-        workspaceId,
-      );
-      expect(result.exact).toBe(false);
-      expect(fetched).toEqual(['sub_rzp_1']);
-      expect(holdCalls).toEqual([]);
     });
 
     it('the plain method returns the same outcome string it always did', async () => {

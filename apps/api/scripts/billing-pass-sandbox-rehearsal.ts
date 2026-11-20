@@ -523,7 +523,6 @@ try {
         founding: false,
         usdCents: 5900,
         paddlePriceId: ANNUAL,
-        razorpayPlanId: null,
       },
     ],
     0,

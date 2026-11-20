@@ -23,7 +23,6 @@ const NAMES = [
   'PostHog',
   'GitHub Actions',
   'Paddle (webhooks)',
-  'Razorpay (webhooks)',
 ];
 
 /** Temporary compatibility for reports produced before structured snapshots ship. */

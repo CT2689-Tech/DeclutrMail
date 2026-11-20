@@ -51,8 +51,6 @@
   "src/billing/__tests__/founding-redemptions.spec.ts": 4400,
   "src/billing/__tests__/paddle.adapter.spec.ts": 100,
   "src/billing/__tests__/provider-error-body.spec.ts": 100,
-  "src/billing/__tests__/razorpay-reconcile-search.spec.ts": 100,
-  "src/billing/__tests__/razorpay.adapter.spec.ts": 200,
   "src/billing/__tests__/sandbox-checkout-cleanup.spec.ts": 100,
   "src/billing/__tests__/sandbox-checkout-proof.spec.ts": 100,
   "src/billing/__tests__/sandbox-checkout-revocation.spec.ts": 100,

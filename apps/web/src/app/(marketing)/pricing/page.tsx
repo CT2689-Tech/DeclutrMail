@@ -9,7 +9,6 @@ import type { Metadata } from 'next';
 import { headers } from 'next/headers';
 
 import { BillingCurrencyProvider } from '@/features/billing/billing-currency';
-import { defaultProviderForCountry } from '@/features/billing/billing-region';
 import { trustedVisitorCountry } from '@/features/billing/trusted-visitor-country';
 import {
   indiaCheckoutReady,
@@ -43,7 +42,7 @@ export default async function PricingPage() {
     geoSecret: process.env.BILLING_GEO_HMAC_SECRET,
   });
   return (
-    <BillingCurrencyProvider provider={defaultProviderForCountry(country)} locale={locale}>
+    <BillingCurrencyProvider locale={locale}>
       <PricingStory
         locale={locale}
         now={new Date().toISOString()}

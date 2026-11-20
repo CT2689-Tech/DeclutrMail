@@ -38,7 +38,7 @@ Each PR fits one archetype. The manual steps follow the archetype:
 | **FE visual change** | typecheck, lint, Storybook | the actual look, mobile reflow, truncation, dark mode |
 | **FE state / data flow change** | unit and integration specs | loading flicker, the in-flight state, undo, mailbox switch |
 | **Migration** | `migration-lint.yml`, `schema-migration-reviewer` | apply and revert on a scratch DB, prod data shape |
-| **Auth / webhook / privacy** | `webhook-security-auditor`, `privacy-auditor` | end to end with a real Pub/Sub OIDC token or a signed Paddle / Razorpay / Resend payload |
+| **Auth / webhook / privacy** | `webhook-security-auditor`, `privacy-auditor` | end to end with a real Pub/Sub OIDC token or a signed Paddle / Resend payload |
 | **Billing / entitlements** | entitlements suite, `architecture-guardian` | a sandbox checkout, a downgrade, and what each tier now sees |
 | **Observability** | tests for event shape | Sentry and PostHog actually receive the event |
 
@@ -129,8 +129,8 @@ every scoped surface.
 - Rapid retries return a 429 with the standard error envelope
 
 ### Webhooks
-- Replay a signed payload from fixtures: Pub/Sub runs the OIDC path; Paddle,
-  Razorpay and Resend run their HMAC check over the raw body
+- Replay a signed payload from fixtures: Pub/Sub runs the OIDC path; Paddle
+  and Resend run their HMAC check over the raw body
 - A repeat delivery is deduplicated
 - `x-goog-authenticated-user-email` is never read (D229)
 

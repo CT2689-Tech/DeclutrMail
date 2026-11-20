@@ -167,8 +167,7 @@ export function CancelModal({
       <div style={{ display: 'flex', flexDirection: 'column', gap: space[4], textAlign: 'left' }}>
         {backsEntitlement ? <PlanConsequences fromTier={entitlementTier} toTier="free" /> : null}
         {/* D118's retention offer. Offered only where it can actually
-            work: Paddle (Razorpay has no pause primitive we drive —
-            `PAUSE_UNSUPPORTED`), on an active row that is not already on
+            work: Paddle, on an active row that is not already on
             its way out. A button that answers 409 would be the same
             asserting-what-we-don't-know defect this codebase keeps
             paying for. */}

@@ -206,10 +206,6 @@ export class BillingController {
    * POST, not GET: it MINTS a short-lived credential-bearing session at
    * the provider rather than reading state, so it takes CsrfGuard and
    * must not be prefetched or cached by anything in between.
-   *
-   * The `unsupported` arm (Razorpay has no self-serve path) is a 200.
-   * "This rail cannot" is an answer, not a failure — surfacing it as an
-   * error would invite a retry that can never succeed.
    */
   @Post('payment-method/session')
   @UseGuards(CsrfGuard)

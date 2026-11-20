@@ -56,7 +56,6 @@ describe('durable checkout fulfillment and recovery', () => {
           founding: false,
           usdCents: 900,
           paddlePriceId: PRICE,
-          razorpayPlanId: null,
         },
       ],
       250,

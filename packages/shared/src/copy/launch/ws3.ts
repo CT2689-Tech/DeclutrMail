@@ -429,8 +429,6 @@ export const WS3_COPY = {
   'ws3.brand.makerName': 'DeclutrMail',
   'ws3.legal.terms.buyer':
     'Paddle is our merchant of record and reseller, so you buy your plan from Paddle. Paddle handles payment, tax and invoices, and Paddle’s buyer terms apply to the purchase. This is the same everywhere, including India.',
-  'ws3.legal.terms.existingRupee':
-    'If you already pay in rupees through Razorpay, your plan carries on and you can still manage it in {BILLING_NAME}. You can cancel there; to change, pause or restart it, email support@declutrmail.com. For these plans, DeclutrMail is the seller.',
   'ws3.legal.terms.refunds':
     'Refunds are described in our Refund Policy. To ask for a refund, contact Paddle or email support@declutrmail.com.',
   'ws3.legal.terms.pause':

@@ -118,11 +118,11 @@ describe('/refunds content — published refund window', () => {
     expect(text).toMatch(/Statutory refund rights/);
   });
 
-  it('routes refunds through the original payment provider (Paddle / Razorpay)', async () => {
+  it('routes refunds through Paddle, the original payment provider', async () => {
     const { container } = render(pageElement(RefundPolicyPage));
     const text = container.textContent ?? '';
     expect(text).toContain('Paddle');
-    expect(text).toContain('Razorpay');
+    expect(text).not.toContain('Razorpay');
     expect(text).toMatch(/original payment method/);
   });
 
@@ -283,6 +283,8 @@ describe('/privacy content — D7 + D228 posture', () => {
       'Brandfetch',
       'Resend',
       'Paddle',
+      // Kept as a past processor: unpaid Razorpay checkouts from 2026-07-25 to
+      // 2026-10-10 may still hold payer contact details at Razorpay.
       'Razorpay',
     ]) {
       expect(screen.getByRole('cell', { name: provider })).toBeInTheDocument();

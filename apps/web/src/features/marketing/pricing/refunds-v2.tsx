@@ -13,7 +13,7 @@ export function RefundsV2() {
     { id: 'cancellation', label: 'Cancellation' },
     { id: 'refund-window', label: fillStory(WS1_COPY['refunds.toc.window']) },
     { id: 'paddle', label: 'Purchases outside India (Paddle)' },
-    { id: 'razorpay', label: 'Purchases in India' },
+    { id: 'india', label: 'Purchases in India' },
     { id: 'exclusions', label: 'What is not refundable' },
     { id: 'how-to-request', label: 'How to request a refund' },
   ] as const;
@@ -58,7 +58,7 @@ export function RefundsV2() {
           the receipt email they sent you.
         </p>
       </LegalSection>
-      <LegalSection id="razorpay" title="5. Purchases in India">
+      <LegalSection id="india" title="5. Purchases in India">
         <p>{fillStory(WS1_COPY['refunds.india'])}</p>
       </LegalSection>
       <LegalSection id="exclusions" title="6. What is not refundable">

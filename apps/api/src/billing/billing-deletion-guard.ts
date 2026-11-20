@@ -12,7 +12,6 @@ import {
 import { AppException } from '../common/app-exception.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
 import { PaddleAdapter } from './paddle.adapter.js';
-import { RazorpayAdapter } from './razorpay.adapter.js';
 
 export type DeletionBillingBlock = 'subscription' | 'checkout' | 'verification';
 type Reader = Pick<DrizzleDb, 'select'>;
@@ -85,7 +84,6 @@ export class BillingDeletionGuard {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly paddle: PaddleAdapter,
-    private readonly razorpay: RazorpayAdapter,
   ) {}
 
   async blockReason(userId: string): Promise<DeletionBillingBlock | null> {
@@ -236,8 +234,12 @@ export class BillingDeletionGuard {
         const states = await Promise.all(
           unique
             .slice(offset, offset + 4)
+            // Paddle is the only rail. Any other provider cannot be read,
+            // so it stays unverified and deletion stays blocked.
             .map(({ provider, ref }) =>
-              (provider === 'paddle' ? this.paddle : this.razorpay).deletionBillingState(ref),
+              provider === 'paddle'
+                ? this.paddle.deletionBillingState(ref)
+                : Promise.resolve('unknown' as const),
             ),
         );
         if (states.includes('billable'))

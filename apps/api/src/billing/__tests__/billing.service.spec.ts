@@ -22,7 +22,6 @@ import { BillingCatalog, type CatalogEntry } from '../billing-catalog.js';
 import { BillingService } from '../billing.service.js';
 import type { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import type { PaddleAdapter } from '../paddle.adapter.js';
-import type { RazorpayAdapter } from '../razorpay.adapter.js';
 import { appendUpgradeRecord, hasUnresolvedUpgrade } from '../upgrade-intents.js';
 
 /**
@@ -46,7 +45,6 @@ const CATALOG_ENTRIES: CatalogEntry[] = [
     founding: false,
     usdCents: 900,
     paddlePriceId: 'pri_plus_m',
-    razorpayPlanId: 'plan_plus_m',
   },
   {
     planCode: 'pro_annual',
@@ -55,7 +53,6 @@ const CATALOG_ENTRIES: CatalogEntry[] = [
     founding: false,
     usdCents: 19000,
     paddlePriceId: 'pri_pro_a',
-    razorpayPlanId: null, // not provisioned — exercises fail-closed
   },
   {
     planCode: 'plus_annual',
@@ -64,7 +61,6 @@ const CATALOG_ENTRIES: CatalogEntry[] = [
     founding: false,
     usdCents: 9000,
     paddlePriceId: 'pri_plus_a',
-    razorpayPlanId: null,
   },
   {
     planCode: 'pro_annual_founding',
@@ -73,7 +69,6 @@ const CATALOG_ENTRIES: CatalogEntry[] = [
     founding: true,
     usdCents: 12900,
     paddlePriceId: 'pri_pro_f',
-    razorpayPlanId: 'plan_pro_f',
   },
 ];
 
@@ -110,9 +105,6 @@ describe('BillingService', () => {
   let paddleInvoiceTransaction: ReturnType<typeof vi.fn>;
   let paddleInvoiceDocumentUrl: ReturnType<typeof vi.fn>;
   let paddlePaymentMethodSession: ReturnType<typeof vi.fn>;
-  let razorpayListInvoices: ReturnType<typeof vi.fn>;
-  let razorpayCheckout: ReturnType<typeof vi.fn>;
-  let razorpayCancel: ReturnType<typeof vi.fn>;
   let reconciliationStub: BillingReconciliationService;
   let principal: { userId: string; workspaceId: string };
 
@@ -168,33 +160,10 @@ describe('BillingService', () => {
       invoiceDocumentUrl: paddleInvoiceDocumentUrl,
       paymentMethodSession: paddlePaymentMethodSession,
     } as unknown as PaddleAdapter;
-    razorpayListInvoices = vi
-      .fn()
-      .mockResolvedValue({ invoices: [], truncated: false, omitted: 0 });
-    razorpayCheckout = vi.fn();
-    razorpayCancel = vi.fn().mockResolvedValue(undefined);
-    const razorpay = {
-      id: 'razorpay',
-      createCheckout: razorpayCheckout,
-      cancelSubscription: razorpayCancel,
-      changePlan: vi.fn(),
-      resumeSubscription: vi.fn(),
-      clearScheduledCancellation: vi.fn(),
-      pauseSubscription: vi.fn(),
-      listInvoices: razorpayListInvoices,
-      listCustomerInvoices: vi
-        .fn()
-        .mockResolvedValue({ invoices: [], truncated: false, omitted: 0 }),
-      invoiceDocumentUrl: vi.fn().mockResolvedValue(null),
-      paymentMethodSession: vi
-        .fn()
-        .mockResolvedValue({ kind: 'unsupported', reason: 'no_self_serve' }),
-    } as unknown as RazorpayAdapter;
     service = new BillingService(
       db,
       new BillingCatalog(CATALOG_ENTRIES, 2),
       paddle,
-      razorpay,
       // The upgrade path projects provider truth post-changePlan; specs
       // here assert the adapter calls, not the projection (covered in
       // billing-reconciliation.service.spec.ts).
@@ -754,9 +723,7 @@ describe('BillingService', () => {
 
   it('a provider failure KEEPS the claim — an ambiguous outcome may be payable provider-side', async () => {
     // A timeout after the request landed still creates the provider
-    // artifact, and Razorpay creates with customer_notify — the orphan
-    // is payable from the provider's own emailed link. Auto-releasing
-    // here reopened checkout for attempt #2 while #1 could still be
+    // artifact. Auto-releasing here reopened checkout for attempt #2 while #1 could still be
     // paid (Codex stop-review 2026-07-29). Only the TTL or the user's
     // explicit no-charge assertion reopens.
     paddleCheckout.mockRejectedValueOnce(new Error('paddle timeout'));
@@ -794,18 +761,6 @@ describe('BillingService', () => {
     ).rejects.toMatchObject({ code: 'CHECKOUT_IN_FLIGHT' });
     expect(paddleCheckout).toHaveBeenCalledTimes(1);
     expect(await db.select().from(pendingCheckouts)).toHaveLength(1);
-  });
-
-  it('refuses new INR checkout before catalog resolution, claims or provider side effects', async () => {
-    const before = await db.select().from(users).where(eq(users.id, principal.userId));
-    await expect(
-      service.createCheckout(principal, { tierId: 'plus', cycle: 'annual', provider: 'razorpay' }),
-    ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
-    expect(await db.select().from(pendingCheckouts)).toHaveLength(0);
-    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
-    expect(await db.select().from(users).where(eq(users.id, principal.userId))).toEqual(before);
-    expect(paddleCheckout).not.toHaveBeenCalled();
-    expect(razorpayCheckout).not.toHaveBeenCalled();
   });
 
   it('never returns a localizable Paddle price for an omitted, US, or IN country', async () => {
@@ -861,7 +816,6 @@ describe('BillingService', () => {
         provider: 'paddle',
       }),
     ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
-    expect(razorpayCheckout).not.toHaveBeenCalled();
   });
 
   it('opens a USD-locked Paddle transaction for an omitted, US, or IN country', async () => {
@@ -902,24 +856,26 @@ describe('BillingService', () => {
         .delete(pendingCheckouts)
         .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
     }
-    expect(razorpayCheckout).not.toHaveBeenCalled();
   });
 
-  it('keeps existing INR cancellation available while new purchases are paused', async () => {
+  it('refuses to cancel a retired-provider subscription and writes nothing', async () => {
     await db.insert(subscriptions).values({
       workspaceId: principal.workspaceId,
       provider: 'razorpay',
-      providerSubscriptionId: 'sub_existing_inr',
+      providerSubscriptionId: 'sub_retired',
       tier: 'plus',
       status: 'active',
-      providerPriceId: 'plan_plus_m',
+      providerPriceId: 'plan_retired',
       billingCycle: 'monthly',
       currentPeriodEnd: new Date(Date.now() + 30 * 86400000),
     });
-    const result = await service.cancelAtPeriodEnd(principal, { reason: 'too_expensive' });
-    expect(razorpayCancel).toHaveBeenCalledWith('sub_existing_inr');
-    expect(result.subscription).toMatchObject({ provider: 'razorpay', cancelAtPeriodEnd: true });
-    expect(razorpayCheckout).not.toHaveBeenCalled();
+    await expect(
+      service.cancelAtPeriodEnd(principal, { reason: 'too_expensive' }),
+    ).rejects.toMatchObject({ code: 'BILLING_PROVIDER_ERROR' });
+    expect(paddleCancel).not.toHaveBeenCalled();
+    const [row] = await db.select().from(subscriptions);
+    expect(row).toMatchObject({ status: 'active', cancelAtPeriodEnd: false });
+    expect(await db.select().from(subscriptionEvents)).toHaveLength(0);
   });
 
   it('rejects a second checkout while a granting subscription exists (SUBSCRIPTION_EXISTS)', async () => {
@@ -939,19 +895,16 @@ describe('BillingService', () => {
 
   // A PAUSED blocker is a different refusal from a live one, and it used to
   // share `SUBSCRIPTION_EXISTS` — whose copy asserts the account "already has
-  // an ACTIVE subscription", untrue of a paused row. On Razorpay that made a
-  // real trap (sandbox smoke 2026-07-29): no no-charge resume, no plan change,
-  // and the only message claimed an active subscription the user did not have.
-  // The exit is cancel-then-resubscribe, so the code has to be distinguishable
-  // for the UI to say that.
+  // an ACTIVE subscription", untrue of a paused row. The code has to be
+  // distinguishable for the UI to say that.
   it('distinguishes a PAUSED blocker from a live one (SUBSCRIPTION_PAUSED_BLOCKS_NEW)', async () => {
     await db.insert(subscriptions).values({
       workspaceId: principal.workspaceId,
-      provider: 'razorpay',
-      providerSubscriptionId: 'sub_paused_rzp',
+      provider: 'paddle',
+      providerSubscriptionId: 'sub_paused',
       tier: 'plus',
       status: 'paused',
-      providerPriceId: 'plan_plus_m',
+      providerPriceId: 'pri_plus_m',
       billingCycle: 'monthly',
     });
     await expect(
@@ -966,11 +919,11 @@ describe('BillingService', () => {
     await db.insert(subscriptions).values([
       {
         workspaceId: principal.workspaceId,
-        provider: 'razorpay',
+        provider: 'paddle',
         providerSubscriptionId: 'sub_paused_sibling',
         tier: 'plus',
         status: 'paused',
-        providerPriceId: 'plan_plus_m',
+        providerPriceId: 'pri_plus_m',
         billingCycle: 'monthly',
       },
       {
@@ -2026,14 +1979,14 @@ describe('BillingService', () => {
       expect(paddleChangePlan).not.toHaveBeenCalled();
     });
 
-    it('Razorpay subscription → PLAN_CHANGE_UNSUPPORTED (Paddle-only at launch)', async () => {
+    it('retired-provider subscription → PLAN_CHANGE_UNSUPPORTED', async () => {
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
         provider: 'razorpay',
-        providerSubscriptionId: 'sub_rzp',
+        providerSubscriptionId: 'sub_retired',
         tier: 'plus',
         status: 'active',
-        providerPriceId: 'plan_plus_m',
+        providerPriceId: 'plan_retired',
         billingCycle: 'monthly',
       });
       await expect(
@@ -2077,14 +2030,9 @@ describe('BillingService', () => {
       // — `recomputeWorkspaceTier` then quietly grants the max rank and
       // nothing on any screen says the customer is paying twice.
       // Checkout has always guarded this; resume was missed.
-      // Providers chosen deliberately: `resume` calls the adapter of the
-      // PAUSED subscription, so that one must be paddle — the only
-      // adapter whose `resumeSubscription` is an observable mock here.
-      // Seeding it as razorpay would make the assertion below vacuous:
-      // paddleResume could not have fired either way.
       await db.insert(subscriptions).values({
         workspaceId: principal.workspaceId,
-        provider: 'razorpay',
+        provider: 'paddle',
         providerSubscriptionId: 'sub_active_pro',
         tier: 'pro',
         status: 'active',
@@ -2199,18 +2147,9 @@ describe('BillingService', () => {
       hostedUrl: null,
       documentAvailable: true,
     };
-    const RZP_ROW = {
-      id: 'inv_1',
-      issuedAt: '2026-06-01T00:00:00.000Z',
-      amount: '99900',
-      currencyCode: 'INR',
-      status: 'paid' as const,
-      hostedUrl: 'https://rzp.io/i/x',
-      documentAvailable: false,
-    };
-
-    /** A CANCELED paddle row + an ACTIVE razorpay row — the region-switch shape. */
-    async function seedBothRails() {
+    const LATER_ROW = { ...PADDLE_ROW, id: 'txn_2', issuedAt: '2026-06-01T00:00:00.000Z' };
+    /** A CANCELED paddle row + an ACTIVE paddle row — the replaced-subscription shape. */
+    async function seedSubscriptions() {
       await db.insert(subscriptions).values([
         {
           workspaceId: principal.workspaceId,
@@ -2223,12 +2162,12 @@ describe('BillingService', () => {
         },
         {
           workspaceId: principal.workspaceId,
-          provider: 'razorpay',
-          providerSubscriptionId: 'sub_rzp_live',
+          provider: 'paddle',
+          providerSubscriptionId: 'sub_pdl_live',
           tier: 'pro',
           status: 'active',
-          providerPriceId: 'plan_pro_m',
-          billingCycle: 'monthly',
+          providerPriceId: 'pri_pro_a',
+          billingCycle: 'annual',
         },
       ]);
     }
@@ -2258,7 +2197,7 @@ describe('BillingService', () => {
     });
 
     it('loads customer-only history and deduplicates documents also returned for a subscription', async () => {
-      await seedBothRails();
+      await seedSubscriptions();
       await db.insert(billingCustomers).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',
@@ -2329,7 +2268,7 @@ describe('BillingService', () => {
     });
 
     it('retains legacy invoices when a customer history read fails and marks the list partial', async () => {
-      await seedBothRails();
+      await seedSubscriptions();
       await db.insert(billingCustomers).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',
@@ -2349,8 +2288,8 @@ describe('BillingService', () => {
       expect(result.unavailableProviders).toEqual(['paddle']);
     });
 
-    it('bounds a stalled rail, retains healthy history and skips unread scopes', async () => {
-      await seedBothRails();
+    it('bounds a stalled rail and skips its unread scopes', async () => {
+      await seedSubscriptions();
       await db.insert(billingCustomers).values({
         workspaceId: principal.workspaceId,
         provider: 'paddle',
@@ -2359,40 +2298,72 @@ describe('BillingService', () => {
       });
       // Even a misbehaving adapter that ignores abort must not hold the response.
       paddleListCustomerInvoices.mockImplementation(() => new Promise(() => {}));
-      razorpayListInvoices.mockResolvedValue({ invoices: [RZP_ROW], truncated: false, omitted: 0 });
       const started = Date.now();
       const result = await service.listInvoices(principal.workspaceId);
       expect(Date.now() - started).toBeLessThan(3_000);
-      expect(result.invoices.map((invoice) => invoice.id)).toEqual(['inv_1']);
+      expect(result.invoices).toEqual([]);
       expect(result.unavailableProviders).toEqual(['paddle']);
       expect(paddleListInvoices).not.toHaveBeenCalled();
     });
 
-    it('unions invoices across BOTH rails, including a canceled row — the tax need outlives the subscription', async () => {
-      await seedBothRails();
-      paddleListInvoices.mockResolvedValue({
-        invoices: [PADDLE_ROW],
-        truncated: false,
-        omitted: 0,
-      });
-      razorpayListInvoices.mockResolvedValue({ invoices: [RZP_ROW], truncated: false, omitted: 1 });
+    it('unions invoices across every subscription row, including a canceled one — the tax need outlives the subscription', async () => {
+      await seedSubscriptions();
+      paddleListInvoices.mockImplementation(async (id: string) =>
+        id === 'sub_pdl_live'
+          ? { invoices: [LATER_ROW], truncated: false, omitted: 1 }
+          : { invoices: [PADDLE_ROW], truncated: false, omitted: 0 },
+      );
       const list = await service.listInvoices(principal.workspaceId);
       expect(paddleListInvoices).toHaveBeenCalledWith('sub_pdl_old');
-      expect(razorpayListInvoices).toHaveBeenCalledWith('sub_rzp_live');
-      // Newest first across providers; per-adapter omissions aggregate.
-      expect(list.invoices.map((i) => i.id)).toEqual(['inv_1', 'txn_1']);
-      expect(list.invoices[0]!.provider).toBe('razorpay');
+      expect(paddleListInvoices).toHaveBeenCalledWith('sub_pdl_live');
+      // Newest first; per-read omissions aggregate.
+      expect(list.invoices.map((i) => i.id)).toEqual(['txn_2', 'txn_1']);
       expect(list.omittedRows).toBe(1);
       expect(list.unavailableProviders).toEqual([]);
     });
 
     it('names an unreachable rail instead of failing the whole read or serving a silently short list', async () => {
-      await seedBothRails();
-      paddleListInvoices.mockRejectedValue(new AppException({ code: 'BILLING_PROVIDER_ERROR' }));
-      razorpayListInvoices.mockResolvedValue({ invoices: [RZP_ROW], truncated: false, omitted: 0 });
+      await seedSubscriptions();
+      paddleListInvoices.mockImplementation(async (id: string) => {
+        if (id === 'sub_pdl_live') throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+        return { invoices: [PADDLE_ROW], truncated: false, omitted: 0 };
+      });
       const list = await service.listInvoices(principal.workspaceId);
-      expect(list.invoices.map((i) => i.id)).toEqual(['inv_1']);
+      expect(list.invoices.map((i) => i.id)).toEqual(['txn_1']);
       expect(list.unavailableProviders).toEqual(['paddle']);
+    });
+
+    it('names a retired-provider row unavailable and never reads it', async () => {
+      await db.insert(subscriptions).values([
+        {
+          workspaceId: principal.workspaceId,
+          provider: 'paddle',
+          providerSubscriptionId: 'sub_pdl_old',
+          tier: 'plus',
+          status: 'canceled',
+          providerPriceId: 'pri_plus_m',
+          billingCycle: 'monthly',
+        },
+        {
+          workspaceId: principal.workspaceId,
+          provider: 'razorpay',
+          providerSubscriptionId: 'sub_retired',
+          tier: 'plus',
+          status: 'canceled',
+          providerPriceId: 'plan_retired',
+          billingCycle: 'monthly',
+        },
+      ]);
+      paddleListInvoices.mockResolvedValue({
+        invoices: [PADDLE_ROW],
+        truncated: false,
+        omitted: 0,
+      });
+      const list = await service.listInvoices(principal.workspaceId);
+      expect(paddleListInvoices).toHaveBeenCalledTimes(1);
+      expect(paddleListInvoices).toHaveBeenCalledWith('sub_pdl_old');
+      expect(list.invoices.map((i) => i.id)).toEqual(['txn_1']);
+      expect(list.unavailableProviders).toEqual(['razorpay']);
     });
 
     it('reports the subscription-row cap as truncated instead of silently dropping the oldest rows', async () => {
@@ -2416,7 +2387,7 @@ describe('BillingService', () => {
     });
 
     it('IDOR: an id absent from a COMPLETE listing is NOT_FOUND and never reaches the provider', async () => {
-      await seedBothRails();
+      await seedSubscriptions();
       paddleListInvoices.mockResolvedValue({
         invoices: [PADDLE_ROW],
         truncated: false,
@@ -2432,7 +2403,7 @@ describe('BillingService', () => {
       // With a rail unreadable, the id may belong to exactly the rows
       // we could not read — NOT_FOUND would tell the customer their
       // invoice does not exist during a provider blip.
-      await seedBothRails();
+      await seedSubscriptions();
       paddleListInvoices.mockRejectedValue(new AppException({ code: 'BILLING_PROVIDER_ERROR' }));
       await expect(service.invoiceDocument(principal.workspaceId, 'txn_1')).rejects.toMatchObject({
         code: 'BILLING_PROVIDER_ERROR',
@@ -2441,7 +2412,7 @@ describe('BillingService', () => {
     });
 
     it('mints a document for an owned row that advertises one', async () => {
-      await seedBothRails();
+      await seedSubscriptions();
       paddleListInvoices.mockResolvedValue({
         invoices: [PADDLE_ROW],
         truncated: false,
@@ -2460,25 +2431,29 @@ describe('BillingService', () => {
     });
 
     it('payment-method session: resolves ids from the granting row + customer record', async () => {
-      await seedBothRails();
+      await seedSubscriptions();
       await db.insert(billingCustomers).values({
         workspaceId: principal.workspaceId,
-        provider: 'razorpay',
-        providerCustomerId: 'cust_rzp_1',
-        region: 'india',
+        provider: 'paddle',
+        providerCustomerId: 'ctm_1',
+        region: 'international',
       });
       const session = await service.paymentMethodSession(principal.workspaceId);
-      // The granting row is the razorpay one — the canceled paddle row
-      // must not be the instrument anyone is sent to update.
+      // The granting row is the active one — the canceled row must not be
+      // the instrument anyone is sent to update.
+      expect(paddlePaymentMethodSession).toHaveBeenCalledWith({
+        providerCustomerId: 'ctm_1',
+        providerSubscriptionId: 'sub_pdl_live',
+      });
       expect(session).toEqual({
-        kind: 'unsupported',
-        reason: 'no_self_serve',
-        provider: 'razorpay',
+        kind: 'url',
+        url: 'https://paddle.example/portal',
+        provider: 'paddle',
       });
     });
 
     it('payment-method session: a granting row with no customer record is a loud provider error', async () => {
-      await seedBothRails();
+      await seedSubscriptions();
       await expect(service.paymentMethodSession(principal.workspaceId)).rejects.toMatchObject({
         code: 'BILLING_PROVIDER_ERROR',
       });
@@ -2494,7 +2469,6 @@ describe('BillingService launch catalog refusals', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
   }
 
@@ -2505,15 +2479,6 @@ describe('BillingService launch catalog refusals', () => {
         { tierId: 'pro', cycle: 'annual', provider: 'paddle' },
       ),
     ).rejects.toMatchObject({ code: 'PLAN_NOT_PURCHASABLE' });
-  });
-
-  it('rejects Razorpay checkout while the rail is off', async () => {
-    await expect(
-      service().createCheckout(
-        { userId: 'user-1', workspaceId: 'workspace-1' },
-        { tierId: 'plus', cycle: 'annual', provider: 'razorpay' },
-      ),
-    ).rejects.toMatchObject({ code: 'BILLING_NOT_PROVISIONED' });
   });
 
   it('rejects a new Plus monthly checkout', async () => {
@@ -2530,7 +2495,6 @@ describe('BillingService launch catalog refusals', () => {
       new BillingService(
         {} as never,
         new BillingCatalog([], 0, null),
-        {} as never,
         {} as never,
         {} as never,
         {} as never,
