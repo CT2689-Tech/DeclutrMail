@@ -74,6 +74,18 @@ const inputs = {
       q: text(200).optional().describe('Match on sender name or address.'),
       gmail_tab: z.enum(MCP_GMAIL_TABS).optional(),
       protected_only: z.boolean().optional(),
+      in_inbox: z.boolean().optional().describe('true: only senders with email in the inbox now.'),
+      can_unsubscribe: z
+        .boolean()
+        .optional()
+        .describe(
+          'true: only senders with an unsubscribe method. false: only senders without one.',
+        ),
+      quiet_for_days: z
+        .literal([...MCP_OLDER_THAN_DAYS])
+        .optional()
+        .describe('Only senders whose newest email is older than this many days.'),
+      domain: text(200).optional().describe('Match on the sender domain.'),
       limit: z.number().int().min(1).max(100).optional().describe('Default: 25.'),
       cursor: text(512).optional().describe('next_cursor from the previous page.'),
     })
