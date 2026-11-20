@@ -7,12 +7,14 @@ import {
   requireScopes,
   type AuthInfo,
   type CallToolResult,
+  type ServerContext,
 } from '@modelcontextprotocol/server';
 import type { Request, Response } from 'express';
 
 import type { ProductEventsPort } from '@declutrmail/shared/analytics/product-events';
 
 import { PRODUCT_EVENTS, recordProductEvent } from '../analytics/product-events.port.js';
+import { clientProfile, errorClassOf, type McpClientProfile } from './mcp-client-profile.js';
 import { mcpResourceUrl } from './mcp-config.js';
 import {
   MCP_TOOL_NAMES,
@@ -94,7 +96,8 @@ export class McpServerService implements OnModuleDestroy {
       scopes: [...principal.scopes],
       resource,
       resourceMetadataUrl: getOAuthProtectedResourceMetadataUrl(resource),
-      extra: { principal },
+      // The header a 2025-era client sends instead of a per-request envelope.
+      extra: { principal, protocolHeader: req.headers['mcp-protocol-version'] },
     };
     await this.nodeHandler()(req, res, req.body);
   }
@@ -107,23 +110,26 @@ export class McpServerService implements OnModuleDestroy {
   private nodeHandler(): NodeMcpRequestHandler {
     if (!this.handler) {
       const onerror = (error: Error): void => this.report(error);
-      const mcp = createMcpHandler((ctx) => this.buildServer(principalOf(ctx.authInfo)), {
-        responseMode: 'json',
-        // The SDK serves `subscriptions/listen` as a stream that stays
-        // open, on a bus shared by every caller, and it is a POST — so the
-        // controller's POST-only rule does not stop it. Nothing here ever
-        // publishes a change, and 1,024 idle streams per instance (the
-        // default) is a way to hold the API's connections. Zero refuses
-        // every one, in-band, before a stream opens.
-        maxSubscriptions: 0,
-        onerror,
-      });
+      const mcp = createMcpHandler(
+        (ctx) => this.buildServer(principalOf(ctx.authInfo), ctx.authInfo?.extra?.protocolHeader),
+        {
+          responseMode: 'json',
+          // The SDK serves `subscriptions/listen` as a stream that stays
+          // open, on a bus shared by every caller, and it is a POST — so the
+          // controller's POST-only rule does not stop it. Nothing here ever
+          // publishes a change, and 1,024 idle streams per instance (the
+          // default) is a way to hold the API's connections. Zero refuses
+          // every one, in-band, before a stream opens.
+          maxSubscriptions: 0,
+          onerror,
+        },
+      );
       this.handler = { node: toNodeHandler(mcp, { onerror }), close: () => mcp.close() };
     }
     return this.handler.node;
   }
 
-  private buildServer(principal: McpPrincipal): McpServer {
+  private buildServer(principal: McpPrincipal, protocolHeader: unknown): McpServer {
     const server = new McpServer(
       { name: 'declutrmail', title: 'DeclutrMail', version: '1.0.0' },
       // The tool and prompt lists are fixed, so there is no change to subscribe to.
@@ -132,7 +138,7 @@ export class McpServerService implements OnModuleDestroy {
         capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
       },
     );
-    for (const name of MCP_TOOL_NAMES) this.register(server, name, principal);
+    for (const name of MCP_TOOL_NAMES) this.register(server, name, principal, protocolHeader);
     // Clients that show prompts offer this as a command (in Claude Code,
     // `/mcp__declutrmail__start`). It reads no data itself.
     server.registerPrompt(
@@ -155,6 +161,7 @@ export class McpServerService implements OnModuleDestroy {
     server: McpServer,
     name: N,
     principal: McpPrincipal,
+    protocolHeader: unknown,
   ): void {
     const tool = MCP_TOOLS[name];
     server.registerTool(
@@ -169,7 +176,8 @@ export class McpServerService implements OnModuleDestroy {
         // client can ask the person for the missing scope.
         scopeChallenge: requireScopes(tool.scope),
       },
-      async (args: unknown): Promise<CallToolResult> => {
+      async (args: unknown, ctx: ServerContext): Promise<CallToolResult> => {
+        this.logClientProfile(name, principal, clientProfile(ctx.mcpReq.envelope, protocolHeader));
         try {
           // Checked again here: the challenge above is the SDK's, and a
           // tool must not depend on it alone to stay inside its scope.
@@ -184,19 +192,55 @@ export class McpServerService implements OnModuleDestroy {
             structuredContent: output,
           };
         } catch (error) {
-          this.recordCall(name, principal, 'error');
+          const code = toToolError(error)?.code ?? 'INTERNAL_ERROR';
+          this.recordCall(name, principal, 'error', code);
           return this.errorResult(name, error);
         }
       },
     );
   }
 
-  private recordCall(name: McpToolName, principal: McpPrincipal, outcome: 'ok' | 'error'): void {
+  private recordCall(
+    name: McpToolName,
+    principal: McpPrincipal,
+    outcome: 'ok' | 'error',
+    errorCode?: string,
+  ): void {
     recordProductEvent(
       this.productEvents,
       'connector_tool_called',
-      { client: principal.client, tool: name, outcome },
+      {
+        client: principal.client,
+        tool: name,
+        outcome,
+        // Which refusal, so rates like expired previews are countable.
+        ...(errorCode === undefined ? {} : { error_class: errorClassOf(errorCode) }),
+      },
       principal.userId,
+    );
+  }
+
+  /**
+   * One line per tool call: which protocol the client speaks and whether
+   * it can show an in-chat confirmation. Logs, not product events: the
+   * events table holds closed lists only, and this is a measurement.
+   * Plain JSON on stdout, like `http.request`, so Cloud Logging stores it
+   * as `jsonPayload` and each field can be filtered and counted; a Nest
+   * Logger line arrives as coloured `textPayload` instead.
+   */
+  private logClientProfile(
+    name: McpToolName,
+    principal: McpPrincipal,
+    profile: McpClientProfile,
+  ): void {
+    console.log(
+      JSON.stringify({
+        level: 'info',
+        kind: 'mcp.client_profile',
+        client: principal.client,
+        tool: name,
+        ...profile,
+      }),
     );
   }
 
