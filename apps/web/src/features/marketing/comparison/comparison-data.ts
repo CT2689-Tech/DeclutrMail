@@ -173,7 +173,7 @@ const DECLUTR = {
   funding: {
     summary: 'Subscriptions only',
     detail:
-      'The published privacy policy states that Gmail data is not sold and is not used for advertising of any kind, and that it is not transferred to third parties except the subprocessors needed to run the service.',
+      'The published privacy policy states that Gmail data is not sold and is not used for advertising of any kind, and that it is not transferred to third parties except the subprocessors needed to run the service or an app the user connects and approves.',
     state: 'supported',
   },
   price: {

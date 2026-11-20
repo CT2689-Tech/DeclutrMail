@@ -167,8 +167,10 @@ export default function PrivacyPolicyPage() {
           <li>We do not sell Gmail data, and we do not use it for advertising of any kind.</li>
           <li>
             We do not transfer Gmail data to third parties except the subprocessors needed to run
-            the service (<a href="#subprocessors">Section 8</a>), as required by law, or as part of
-            a merger or acquisition with notice to you.
+            the service (<a href="#subprocessors">Section 8</a>), an app you connect yourself in
+            Settings → Connected apps (only what it asks for while connected, after you approve it,
+            and you can disconnect it at any time), as required by law, or as part of a merger or
+            acquisition with notice to you.
           </li>
           <li>
             Humans at DeclutrMail do not read your Gmail data, except with your explicit permission

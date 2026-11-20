@@ -59,4 +59,4 @@ follow, and both are legal calls, not code:
 **Verifies by:** `/privacy` §4 names connected apps (or the connector stays
 off), and this entry records the decision on 1a–1c.
 
-**Status:** Open
+**Status:** Skipped — founder decision 2026-11-20: launch without asking Google; /privacy §4 updated in this PR

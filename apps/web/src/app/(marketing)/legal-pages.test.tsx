@@ -214,6 +214,15 @@ describe('/privacy content — D7 + D228 posture', () => {
     expect(screen.getByText(/Limited Use requirements/)).toBeInTheDocument();
   });
 
+  it('§4 names apps the user connects among the Gmail data transfers', () => {
+    render(<PrivacyPolicyPage />);
+    const text = (document.getElementById('google-limited-use')!.textContent ?? '').replace(
+      /\s+/g,
+      ' ',
+    );
+    expect(text).toContain('an app you connect yourself in Settings → Connected apps');
+  });
+
   it('carries the DPDP Act 2023 (India) clause with the grievance contact (D148)', () => {
     const { container } = render(<PrivacyPolicyPage />);
     const text = container.textContent ?? '';
