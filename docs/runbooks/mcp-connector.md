@@ -159,3 +159,60 @@ database), or keep its other data: run
 `psql -f packages/db/migrations/0101_mcp_connector.rollback` (both skip a
 table a draft never made), delete the `0101` and `0102` rows from
 `atlas_schema_revisions`, and migrate again.
+
+### What does not work locally (checked 2026-11-19)
+
+- **The Claude desktop app** refuses the local sign-in: "Refused to open
+  sign-in URL for declutrmail: must be https".
+- **A tunnel** (`API_URL` set to an `https://…trycloudflare.com` host)
+  gets as far as the consent page, which then says the request is no
+  longer available. The authorize step sets the pending request's cookie
+  on the tunnel host, while the consent page at `localhost:3000` calls
+  the API at `localhost:4000`, which never receives that cookie
+  (`GET …/details` answers 410 `CONNECT_REQUEST_GONE`). The client's
+  configured URL must also match the issuer exactly, or it stops before
+  sign-in ("Protected resource … does not match expected …").
+
+Test a real client against production in beta instead ("Turn on for
+yourself"). Locally, drive the flow by hand:
+
+### Drive the flow by hand
+
+With the API on `:4000` and the web app on `:3000`, sign in with the dev
+login (CLAUDE.md §8.7), then register a client and make a PKCE pair:
+
+```bash
+curl -s -X POST http://localhost:4000/oauth/register -H 'content-type: application/json' -d '{"client_name":"Local test","redirect_uris":["http://127.0.0.1:53682/callback"],"token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"]}'
+```
+
+```bash
+VERIFIER=local-test-verifier-0123456789-abcdefghijklmnopqrstuvwxyz
+CHALLENGE=$(printf %s "$VERIFIER" | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+```
+
+Open this in the signed-in browser, with the `client_id` from the
+registration:
+
+```
+http://localhost:4000/oauth/authorize?client_id=<client_id>&response_type=code&redirect_uri=http%3A%2F%2F127.0.0.1%3A53682%2Fcallback&code_challenge=<CHALLENGE>&code_challenge_method=S256&scope=read+cleanup&resource=http%3A%2F%2Flocalhost%3A4000%2Fmcp&state=x
+```
+
+Approve. The browser then fails to load `127.0.0.1:53682/callback`;
+copy `code` from its address bar and exchange it within 60 seconds:
+
+```bash
+curl -s -X POST http://localhost:4000/oauth/token -d grant_type=authorization_code --data-urlencode code=<code> --data-urlencode redirect_uri=http://127.0.0.1:53682/callback --data-urlencode client_id=<client_id> --data-urlencode code_verifier="$VERIFIER" --data-urlencode resource=http://localhost:4000/mcp
+```
+
+Call a tool with the `access_token`:
+
+```bash
+curl -s -X POST http://localhost:4000/mcp -H "authorization: Bearer <access_token>" -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H 'mcp-protocol-version: 2025-06-18' -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_senders","arguments":{"limit":5}}}'
+```
+
+To see the consent page as an account outside the beta, restart the API
+with an override; nothing in `.env.local` changes:
+
+```bash
+MCP_ENABLED=beta MCP_BETA_USER_IDS=00000000-0000-0000-0000-000000000000 pnpm --filter @declutrmail/api start
+```
