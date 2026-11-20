@@ -152,6 +152,10 @@ export class McpToolsService {
           cursor: cursor ? { key: cursor.key, id: cursor.id } : null,
           limit,
           q: args.q?.trim() || null,
+          hasInboxMail: args.in_inbox === true,
+          unsubReady: args.can_unsubscribe ?? null,
+          quietForDays: args.quiet_for_days ?? null,
+          domain: args.domain?.trim() || null,
         }),
         this.freshness(mailbox.id),
       ]);

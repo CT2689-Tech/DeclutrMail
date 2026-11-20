@@ -205,6 +205,33 @@ describe('MCP tools — transport and the read-only tools', () => {
     expect(none.data.senders).toEqual([]);
   });
 
+  it('filters list_senders by inbox, unsubscribe, quiet period and domain', async () => {
+    await seedSender(harness, mailboxId, {
+      email: 'old@quiet.example',
+      mail: 1,
+      newestDaysAgo: 200,
+      unsubscribe: 'none',
+    });
+    await seedSender(harness, mailboxId, { email: 'gone@emptied.example', mail: 0 });
+    const addresses = async (args: Record<string, unknown>) =>
+      (await mcp.call('list_senders', args)).data.senders
+        .map((s: { address: string }) => s.address)
+        .sort();
+
+    expect(await addresses({ in_inbox: true })).not.toContain('gone@emptied.example');
+    expect(await addresses({})).toContain('gone@emptied.example');
+    expect(await addresses({ can_unsubscribe: false })).toEqual(['old@quiet.example']);
+    expect(await addresses({ can_unsubscribe: true })).not.toContain('old@quiet.example');
+    expect(await addresses({ quiet_for_days: 180 })).toEqual(['old@quiet.example']);
+    expect(await addresses({ domain: 'shop' })).toEqual(['news@shop.example']);
+    // Filters combine.
+    expect(await addresses({ in_inbox: true, can_unsubscribe: false })).toEqual([
+      'old@quiet.example',
+    ]);
+    // Only the periods the cleanup tools use.
+    expect((await mcp.call('list_senders', { quiet_for_days: 45 })).isError).toBe(true);
+  });
+
   it('refuses to open a long-lived stream, for a 2026 client too', async () => {
     // The SDK would serve `subscriptions/listen` as a stream that never
     // closes (up to 1,024 of them per instance). Nothing here publishes
