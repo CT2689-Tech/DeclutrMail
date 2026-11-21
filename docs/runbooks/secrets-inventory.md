@@ -75,7 +75,7 @@ slots above:
 
 `check-vendor-limits.mjs` had no Anthropic check at all until
 2026-08-29 despite `billing-guardrails.md` describing one — see
-FOUNDER-FOLLOWUPS 2026-08-29. Requires an org/Console Anthropic account;
+`docs/log/founder-followups/2026-08-29-give-watchdog-real-anthropic-admin-key.md`. Requires an org/Console Anthropic account;
 the Admin API is documented as unavailable for individual accounts, so
 the first watchdog run after this key is created will itself confirm
 whether that applies here.

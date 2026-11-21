@@ -242,7 +242,7 @@ case "$file_path" in
     # What that test cannot reach is prose inlined in JSX (landing
     # sections, the help page, the Screener screen). That remainder sits
     # with the copy spec's review brief at
-    # docs/execution/repositioning-copy-spec-2026-08-01.md §7, beside T1,
+    # docs/marketing/repositioning-copy-spec-2026-08-01.md §7, beside T1,
     # T4 and T7 — the constraints already routed to a reader.
     #
     # D194's forbidden framings (blocks / prevents / keeps out /
@@ -250,7 +250,7 @@ case "$file_path" in
 
     if [ "$truth_violations" -gt 0 ]; then
       echo "" >&2
-      echo "   Truth constraints live in docs/execution/repositioning-copy-spec-2026-08-01.md §1." >&2
+      echo "   Truth constraints live in docs/marketing/repositioning-copy-spec-2026-08-01.md §1." >&2
       echo "   Positioning rules: docs/adr/0030-positioning-preview-guarantee.md." >&2
       exit 2
     fi

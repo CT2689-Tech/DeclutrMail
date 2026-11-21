@@ -107,7 +107,7 @@ Gmail (D194, D72).
 ## Implementation notes
 
 - Shipped copy and the per-surface change register live in
-  `docs/execution/repositioning-copy-spec-2026-08-01.md` (see the DECISIONS LOCKED block
+  `docs/marketing/repositioning-copy-spec-2026-08-01.md` (see the DECISIONS LOCKED block
   at the top, which overrides the sections written before D251 expanded).
 - Packaging rationale and the tier table live in
   `docs/execution/packaging-2026-08-02.md`.

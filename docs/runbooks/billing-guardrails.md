@@ -222,9 +222,9 @@ and is not shipped:
   `billing-budget-alerts` topic, create the $60 budget wired to it,
   create the `billing-hard-cap` runtime SA, grant it
   `roles/billing.projectManager` on the billing account, deploy with
-  `DRY_RUN=true`, then flip it off. Tracked as the Open
-  FOUNDER-FOLLOWUPS entry "Hard $60/mo billing cap on
-  declutrmail-ai-prod" (2026-06-08).
+  `DRY_RUN=true`, then flip it off. Tracked in
+  `docs/log/founder-followups/2026-06-08-set-and-arm-the-gcp-billing-kill-switch.md`
+  (the $60 figure is out of date; that entry asks for a new amount).
 
 Until that setup runs, the compensating controls are
 `scripts/setup-billing-alerts.sh` (log-based alert on the BullMQ

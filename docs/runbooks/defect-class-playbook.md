@@ -2,7 +2,7 @@
 
 **First compiled:** 2026-08-21 · **Method:** 8 parallel review sweeps over `apps/api`, `apps/web`,
 `packages/{shared,workers,db,events}` (~178k lines of non-test code), cross-read against
-135 `MISTAKES.md` entries. Every finding cited below was re-verified by hand against the
+135 `MISTAKES.md` entries (root file deleted 2026-11-19; read it with `git show cb785809:MISTAKES.md`). Every finding cited below was re-verified by hand against the
 source before it was written down.
 
 **This document is a review aid, not a status report.** It names the defect _classes_ this

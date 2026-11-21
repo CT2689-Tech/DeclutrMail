@@ -309,7 +309,7 @@ unknown callback. The read-only diagnostic now recognizes the exact verified
 aliases, retains anonymous URL-shape categories for other endpoints and reports
 sensitive-field configuration as true/false/unknown. No target is contacted or
 trusted for a purchase based on these labels. See
-`docs/execution/paddle-sandbox-callback-targets-2026-10-06.md`.
+`docs/execution/paddle-sandbox-callback-targets-2026-10-06.md` (deleted 2026-11-19, in Git history).
 
 ## Sandbox billing inspection — 2026-10-06
 
@@ -320,7 +320,7 @@ before requests, and reads only fixed sandbox GET endpoints. Bounded sanitized
 reports preserve partial/unavailable sections without exposing webhook secrets,
 destination addresses or raw responses. Configuration inspection does not prove
 payment/webhook/refund/renewal outcomes or launch readiness. See
-`docs/execution/paddle-sandbox-inspection-2026-10-06.md` for scope and verification.
+`docs/execution/paddle-sandbox-inspection-2026-10-06.md` (deleted 2026-11-19, in Git history) for scope and verification.
 
 ## API pool failure diagnostics — 2026-10-06
 
@@ -329,7 +329,7 @@ occupancy and checked-out-client age. Optional node-postgres event observations
 now enrich existing operational failure records with counts/timing only, preserving
 responses, Sentry payloads, pool settings and retries. Native local HTTP saturation
 and recovery, lifecycle/error isolation and static verification are recorded in
-`docs/execution/api-pool-failure-diagnostics-2026-10-06.md`. This diagnostic change
+`docs/execution/api-pool-failure-diagnostics-2026-10-06.md` (deleted 2026-11-19, in Git history). This diagnostic change
 does not establish the historical incident's held-client cause or clear launch.
 
 ## Development Sentry isolation — 2026-10-06
@@ -345,12 +345,12 @@ Actual browser and Node SDK rehearsals used a loopback sink: development off
 produced zero events, explicit opt-in and a production build captured synthetic
 events. Independent architecture/type/failure/defect-class review found no blockers.
 Full release checks and production readback remain separate integration stages.
-See `docs/execution/sentry-development-isolation-2026-10-06.md`.
+See `docs/execution/sentry-development-isolation-2026-10-06.md` (deleted 2026-11-19, in Git history).
 
 
 ## Autopilot evaluation freshness — 2026-10-05
 
-The optional rule-details upgrade surfaces the existing recorded evaluation timestamp with date, time and viewer timezone while retaining match-count semantics. Source and synthetic verification are separate from deployment and production readback; see docs/execution/autopilot-evaluation-time-audit.md.
+The optional rule-details upgrade surfaces the existing recorded evaluation timestamp with date, time and viewer timezone while retaining match-count semantics. Source and synthetic verification are separate from deployment and production readback; see `docs/execution/autopilot-evaluation-time-audit.md` (deleted 2026-11-19, in Git history).
 
 
 ## Brief history before delivery — 2026-10-05
@@ -377,7 +377,7 @@ from price/renewal claims. Meaningful caller, database and model negative contro
 failed before their repairs. Local browser/API smoke and release builds passed;
 independent review found no blockers. PR, CI/queue, deployment and production
 readback remain distinct stages. See
-`docs/execution/billing-complimentary-completion-2026-10-06.md`.
+`docs/execution/billing-complimentary-completion-2026-10-06.md` (deleted 2026-11-19, in Git history).
 
 ## Payment recovery labels — 2026-10-06
 
@@ -388,7 +388,7 @@ to plans. Adjacent plan-change/resume recovery labels follow the same three-word
 budget. Provider checks, release eligibility, two-step assertions and billing
 state remain unchanged. The Free card also stops claiming the provider has no
 stored card without evidence. See
-`docs/execution/billing-recovery-language-2026-10-06.md`; real purchases and the
+`docs/execution/billing-recovery-language-2026-10-06.md` (deleted 2026-11-19, in Git history); real purchases and the
 original charge status remain separate verification requirements.
 
 ## Scoped infrastructure inspection — 2026-10-06
@@ -401,7 +401,7 @@ and uploads only an authenticated encrypted report. Closed numeric projections
 retain unavailable sources and process failures. It publishes no monitoring
 heartbeat and cannot establish daily collector recovery or dashboard usability.
 The existing scheduled watchdog and Sentry encryption context remain intact. See
-`docs/execution/infra-readonly-inspection-2026-10-06.md` for review and verification.
+`docs/execution/infra-readonly-inspection-2026-10-06.md` (deleted 2026-11-19, in Git history) for review and verification.
 
 ## Sentry loss counters — 2026-10-06
 
@@ -413,7 +413,7 @@ combined counters and valid-data severity/acknowledgment semantics stay intact;
 malformed counts remain unavailable rather than becoming zero. The encrypted
 non-payment projection permits these counters without exporting raw reason
 strings. No capacity, schedule, provider policy or runtime billing change is made.
-See `docs/execution/sentry-loss-counters-2026-10-06.md` for bounded verification.
+See `docs/execution/sentry-loss-counters-2026-10-06.md` (deleted 2026-11-19, in Git history) for bounded verification.
 
 
 ## Signed-in UI consistency and usability — 2026-10-10
@@ -426,7 +426,7 @@ visual and design-system audits; proposed remedies are checked against real
 semantics rather than treated as authority. No provider, billing-state, OAuth,
 privacy, migration or worker behavior is changed. The complete finding mapping,
 verification evidence and limits are in
-`docs/execution/signed-in-ui-audit-2026-10-10.md`. Merge and serving-state
+`docs/execution/signed-in-ui-audit-2026-10-10.md` (deleted 2026-11-19, in Git history). Merge and serving-state
 verification are separate from this implementation record.
 
 ## Home v1, meter mounts and Home glossary requests — 2026-10-11
@@ -439,7 +439,7 @@ and on Home. Preview sentences use the email allowance only when a
 metered cleanup summary exists; the sender-unit sentence stays until
 then. Home strings that need a rewrite are requested, not invented.
 No billing state, OAuth scope, migration or mail-changing default is
-changed. See `docs/execution/ws2b-home-v1-2026-10-11.md`. Preview visual
+changed. See `docs/execution/ws2b-home-v1-2026-10-11.md` (deleted 2026-11-19, in Git history). Preview visual
 review is separate from this record.
 
 ## Operational alert email routing — 2026-10-22
@@ -485,32 +485,32 @@ Relates to D159 and D160.
 
 ## Home Action overview — 2026-10-25
 
-Relates to D198, D200 and D210. The approved Home composition now exposes a bounded sender shortlist, capability-gated attention queues, windowed Activity results, complete automation states, and mailbox insights. A workspace-authorized snapshot read aggregates all scanned inbound metadata, independently of sender pagination. See `docs/execution/home-action-overview-2026-10-25.md` for scope, state coverage, independent review and local verification. This entry does not assert deployment or production provider execution.
+Relates to D198, D200 and D210. The approved Home composition now exposes a bounded sender shortlist, capability-gated attention queues, windowed Activity results, complete automation states, and mailbox insights. A workspace-authorized snapshot read aggregates all scanned inbound metadata, independently of sender pagination. See `docs/execution/home-action-overview-2026-10-25.md` (deleted 2026-11-19, in Git history) for scope, state coverage, independent review and local verification. This entry does not assert deployment or production provider execution.
 
 ### 2026-10-25 — Home visual sharpening (Relates to D198, D210)
 
-Founder-approved presentation pass after accepting the Action overview data. Sharpened hierarchy, sender/count contrast, typography, phone CTA and result/snapshot surfaces without changing data or action behavior. Added long-name story and preview theme parity. Local tests, build/budgets and independent visual review recorded in `docs/execution/home-visual-sharpen-2026-10-25.md`. No D status reclassified.
+Founder-approved presentation pass after accepting the Action overview data. Sharpened hierarchy, sender/count contrast, typography, phone CTA and result/snapshot surfaces without changing data or action behavior. Added long-name story and preview theme parity. Local tests, build/budgets and independent visual review recorded in `docs/execution/home-visual-sharpen-2026-10-25.md` (deleted 2026-11-19, in Git history). No D status reclassified.
 
 
 ### 2026-10-25 — Workspace visual consistency (Relates to D198, D210)
 
-Extended the approved Home typography, boundaries, spacing and count hierarchy to Cleanup, Automations, Catch up and Activity. Retained feature-specific layouts and all data/action behavior; fixed 320px report, summary, metadata and button containment discovered in visual smoke. Home/account routes remain outside the scope. Desktop, phone, dark mode, preview/cancel, existing regression suites, build/budgets and independent review are recorded in `docs/execution/workspace-visual-consistency-2026-10-25.md`. No D status reclassified.
+Extended the approved Home typography, boundaries, spacing and count hierarchy to Cleanup, Automations, Catch up and Activity. Retained feature-specific layouts and all data/action behavior; fixed 320px report, summary, metadata and button containment discovered in visual smoke. Home/account routes remain outside the scope. Desktop, phone, dark mode, preview/cancel, existing regression suites, build/budgets and independent review are recorded in `docs/execution/workspace-visual-consistency-2026-10-25.md` (deleted 2026-11-19, in Git history). No D status reclassified.
 
 
 ### 2026-10-25 — Account visual consistency (Relates to D198, D210)
 
-Extended the accepted app typography, compact spacing, panel boundaries and restrained accents to Settings (including subpages) and Plan & billing. Preserved all account/payment data, controls, deep links and safety gates; active billing checkout files remain untouched. Production-build synthetic desktop/320px/dark smoke, preference restore, billing warning/recovery states, regression checks and independent review are recorded in `docs/execution/account-visual-consistency-2026-10-25.md`. No D status reclassified.
+Extended the accepted app typography, compact spacing, panel boundaries and restrained accents to Settings (including subpages) and Plan & billing. Preserved all account/payment data, controls, deep links and safety gates; active billing checkout files remain untouched. Production-build synthetic desktop/320px/dark smoke, preference restore, billing warning/recovery states, regression checks and independent review are recorded in `docs/execution/account-visual-consistency-2026-10-25.md` (deleted 2026-11-19, in Git history). No D status reclassified.
 
 ### 2026-10-25 — Setup and preview visual consistency (Relates to D198, D210)
 
-Extended the accepted app typography and panel treatment to centered onboarding and scoped action previews. Kept setup choices and scan status simple; preserved each preview's account, scope, consequence, recovery and Cancel. Repaired the first-review header at 320px and its inline-preview story fixture. Synthetic desktop/phone/light/dark checks, Cancel/focus-return evidence, regression results, independent review and limits are recorded in `docs/execution/setup-preview-visual-2026-10-25.md`. No D status reclassified.
+Extended the accepted app typography and panel treatment to centered onboarding and scoped action previews. Kept setup choices and scan status simple; preserved each preview's account, scope, consequence, recovery and Cancel. Repaired the first-review header at 320px and its inline-preview story fixture. Synthetic desktop/phone/light/dark checks, Cancel/focus-return evidence, regression results, independent review and limits are recorded in `docs/execution/setup-preview-visual-2026-10-25.md` (deleted 2026-11-19, in Git history). No D status reclassified.
 
 ### 2026-10-26 — Signed-out onboarding entry (Relates to D107, D108)
 
 The public Promise and Connect steps now probe the session without redirecting
 anonymous visitors to returning sign-in. Protected secondary-mailbox entry
 retains its redirect. Regression and synthetic browser evidence are recorded in
-`docs/execution/onboarding-signedout-2026-10-26.md`. No D status reclassified.
+`docs/execution/onboarding-signedout-2026-10-26.md` (deleted 2026-11-19, in Git history). No D status reclassified.
 
 ### 2026-10-27 — Sender logo clarity (Relates to D254, D210)
 
@@ -518,4 +518,4 @@ Prefer scalable artwork within each discovery tier and reject blank assets befor
 they can cover the sender fallback. Shared avatars now derive readable Unicode
 initials from names or email domains and retain personal initials on free-mail
 provider domains. Scope, verification and cache-refresh limits are recorded in
-`docs/execution/sender-logo-clarity-2026-10-27.md`. No D status reclassified.
+`docs/execution/sender-logo-clarity-2026-10-27.md` (deleted 2026-11-19, in Git history). No D status reclassified.
