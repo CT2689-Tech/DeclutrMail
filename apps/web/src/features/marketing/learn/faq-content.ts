@@ -61,7 +61,7 @@ export const FAQ_ENTRIES: readonly FaqEntry[] = [
     id: 'ai-assistants',
     question: 'Can I use DeclutrMail from Claude, ChatGPT or another AI assistant?',
     answer:
-      'Yes. Add DeclutrMail as a connector in Claude, Claude Code, ChatGPT, Codex or Cursor, then ask who sends you the most email or which senders to clean up. Through DeclutrMail, your assistant sees sender names, subject lines, dates and counts, never full emails. Keep, Archive, Unsubscribe, Later and Delete wait until you confirm a preview on DeclutrMail. Disconnect the assistant any time in Settings → Connected apps.',
+      'Yes. Add DeclutrMail as a connector in Claude, Claude Code, ChatGPT, Codex or Cursor, then ask who sends you the most email or which senders to clean up. Through DeclutrMail, your assistant sees sender names, subject lines, dates and counts, never full emails. Keep, Archive, Unsubscribe, Later and Delete wait until you confirm a preview: in the chat if your assistant can ask, otherwise on DeclutrMail. Disconnect the assistant any time in Settings → Connected apps.',
     link: {
       href: '/connect',
       label: 'Set up your assistant',

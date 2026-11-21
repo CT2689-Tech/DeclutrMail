@@ -413,9 +413,9 @@ export const MCP_TOOLS = {
   }),
   preview_cleanup: spec('preview_cleanup', {
     title: 'Preview a cleanup',
-    ask: 'Prepare Keep, Archive, Unsubscribe, Later or Delete for one sender or many. Unsubscribe can also archive or delete their existing email. Nothing changes until you confirm on DeclutrMail.',
+    ask: 'Prepare Keep, Archive, Unsubscribe, Later or Delete for one sender or many. Unsubscribe can also archive or delete their existing email. Nothing changes until you confirm it.',
     description:
-      'Prepare Keep, Archive, Unsubscribe, Later or Delete for one or more senders. Changes nothing in Gmail. Returns a preview and a confirm_url: give that link to the person, who confirms in DeclutrMail. Protected senders are skipped.',
+      'Prepare Keep, Archive, Unsubscribe, Later or Delete for one or more senders. Changes nothing in Gmail. Returns a preview; then call apply_cleanup, which asks the person to confirm in the chat when this app can, or returns the confirm_url for them to confirm in DeclutrMail. Protected senders are skipped.',
     scope: 'cleanup',
     budget: 'read',
     annotations: READ_ONLY,
@@ -424,7 +424,7 @@ export const MCP_TOOLS = {
     title: 'Apply a confirmed cleanup',
     ask: 'Find out whether you confirmed a prepared change, and what it did.',
     description:
-      'Apply a preview the person has confirmed in DeclutrMail. Until they confirm, this returns needs_confirmation and the confirm_url, and changes nothing. Calling it again returns the same result; in_progress means it is starting, so call again shortly.',
+      'Apply a preview once the person confirms it. When this app can ask, the person is asked in the chat and their Accept applies it. Otherwise, or if they decline, this returns needs_confirmation and the confirm_url, and changes nothing until they confirm in DeclutrMail. Calling it again returns the same result; in_progress means it is starting, so call again shortly.',
     scope: 'cleanup',
     budget: 'write',
     annotations: {

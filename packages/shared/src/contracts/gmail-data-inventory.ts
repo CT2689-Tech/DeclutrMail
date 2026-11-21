@@ -467,7 +467,7 @@ export const GMAIL_DERIVED_DATA_INVENTORY = [
     storageRefs: ['action_previews.*'],
     derived: true,
     purpose:
-      'Hold what a connected app asked for until you confirm it in DeclutrMail. Stores sender identifiers and counts, never a subject line.',
+      'Hold what a connected app asked for until you confirm it. Stores sender identifiers and counts, never a subject line.',
     // The sweep runs once a day and removes rows that expired more than a
     // day ago, so the bound a person can rely on is two days, not one.
     retention:

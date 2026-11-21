@@ -1,6 +1,10 @@
 import { createHash } from 'node:crypto';
 
 import { and, eq } from 'drizzle-orm';
+import {
+  CLIENT_CAPABILITIES_META_KEY,
+  PROTOCOL_VERSION_META_KEY,
+} from '@modelcontextprotocol/server';
 
 import { mailMessages, mailboxAccounts, providerSyncState, senders } from '@declutrmail/db';
 
@@ -21,6 +25,15 @@ import { SendersPolicyService } from '../senders/senders-policy.service.js';
  * Not a `.spec.ts` on purpose — shared by the tool specs — and never
  * imported by production code.
  */
+
+/** A raw JSON-RPC answer from `callModern`. */
+export interface RpcAnswer {
+  status: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test kit; every use is an assertion
+  result: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test kit; every use is an assertion
+  error: any;
+}
 
 export interface ToolAnswer {
   /** The HTTP exchange, for status and headers. */
@@ -65,6 +78,50 @@ export class McpTestClient {
       },
       body: JSON.stringify({ jsonrpc: '2.0', id: this.nextId++, method, params }),
     });
+  }
+
+  /**
+   * One `tools/call` as a 2026-07-28 client sends it: the capabilities on
+   * the request itself, and — on a retry — the person's answers and the
+   * server's `requestState`. Returns the raw JSON-RPC result or error.
+   */
+  async callModern(
+    name: string,
+    args: Record<string, unknown>,
+    round: {
+      capabilities?: Record<string, unknown>;
+      inputResponses?: Record<string, unknown>;
+      requestState?: string;
+    } = {},
+  ): Promise<RpcAnswer> {
+    const http = await new Browser(this.base).request('/mcp', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${this.accessToken}`,
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'mcp-protocol-version': '2026-07-28',
+        'mcp-method': 'tools/call',
+        'mcp-name': name,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: this.nextId++,
+        method: 'tools/call',
+        params: {
+          name,
+          arguments: args,
+          _meta: {
+            [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
+            [CLIENT_CAPABILITIES_META_KEY]: round.capabilities ?? { elicitation: { form: {} } },
+          },
+          ...(round.inputResponses ? { inputResponses: round.inputResponses } : {}),
+          ...(round.requestState ? { requestState: round.requestState } : {}),
+        },
+      }),
+    });
+    const body = rpcBody(http);
+    return { status: http.status, result: body?.result, error: body?.error };
   }
 
   /** The text of a prompt's first message. */

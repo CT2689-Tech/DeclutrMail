@@ -36,6 +36,7 @@ import {
   type PreviewDetail,
   type PreviewOwner,
 } from './action-previews.service.js';
+import { chatConfirmMessage } from './mcp-chat-confirm.js';
 import { webUrl } from './mcp-config.js';
 import {
   MCP_TOOLS,
@@ -97,14 +98,49 @@ export class McpToolsService {
     principal: McpPrincipal,
     args: McpToolInput<N>,
   ): Promise<McpToolOutput<N>> {
-    // Reads and writes draw from the budgets the web app's own routes
-    // use, keyed by user, so one person has one allowance (spec §6).
+    await this.spendFor(name, principal);
+    return this.handlers[name](principal, args);
+  }
+
+  /**
+   * `apply_cleanup` with the person's in-chat answer. `accepted` means
+   * they pressed Accept on the prompt this server sent for this preview
+   * (`chatAnswer`); it confirms the preview exactly as the confirm page's
+   * press does. Also returns the prompt to show while it still waits.
+   */
+  async applyCleanup(
+    principal: McpPrincipal,
+    args: McpToolInput<'apply_cleanup'>,
+    accepted: boolean,
+  ): Promise<{ output: McpToolOutput<'apply_cleanup'>; prompt: string }> {
+    await this.spendFor('apply_cleanup', principal);
+    // A named mailbox must be the preview's own. Unnamed, the preview
+    // knows its mailbox, whichever one is active now.
+    const named =
+      args.mailbox === undefined ? null : await this.resolveMailbox(principal, args.mailbox);
+    const detail = accepted
+      ? await this.previews.confirmInChat(args.preview_id, owner(principal), named?.id ?? null)
+      : await this.previews.apply(args.preview_id, owner(principal), named?.id ?? null);
+    const { preview } = detail;
+    return {
+      output: await this.appliedOutput(detail),
+      prompt: chatConfirmMessage({
+        verb: preview.verb,
+        alsoVerb: preview.alsoVerb,
+        senderCount: preview.senderIds.length,
+        emailCount: preview.emailCount,
+        mailbox: detail.mailboxEmail,
+      }),
+    };
+  }
+
+  /** Reads and writes draw from the budgets the web app's own routes use, keyed by user (spec §6). */
+  private async spendFor(name: McpToolName, principal: McpPrincipal): Promise<void> {
     const bucket = MCP_TOOLS[name].budget === 'write' ? 'gmail-action' : 'triage-load';
     await this.spend(`${bucket}:user:${principal.userId}`, { bucket, ...BUCKET_DEFAULTS[bucket] });
     if (name === 'undo') {
       await this.spend(`${UNDO_ROUTE_KEY}:user:${principal.userId}`, UNDO_ROUTE_LIMIT);
     }
-    return this.handlers[name](principal, args);
   }
 
   private readonly handlers: Handlers = {
@@ -257,16 +293,12 @@ export class McpToolsService {
     },
 
     apply_cleanup: async (principal, args) => {
-      // A named mailbox must be the preview's own. Unnamed, the preview
-      // knows its mailbox, whichever one is active now.
+      // Reached only through `run`, which has already spent the budget.
       const named =
         args.mailbox === undefined ? null : await this.resolveMailbox(principal, args.mailbox);
-      const detail = await this.previews.apply(
-        args.preview_id,
-        owner(principal),
-        named?.id ?? null,
+      return this.appliedOutput(
+        await this.previews.apply(args.preview_id, owner(principal), named?.id ?? null),
       );
-      return this.appliedOutput(detail);
     },
 
     get_action_status: async (principal, args) => {
@@ -534,7 +566,7 @@ function owner(principal: McpPrincipal): PreviewOwner {
   };
 }
 
-/** DeclutrMail's own page — the only place a preview can be confirmed. */
+/** DeclutrMail's own page: where a preview is confirmed when the app cannot ask in the chat. */
 export function confirmUrl(previewId: string): string {
   return `${webUrl()}/confirm/${previewId}`;
 }
