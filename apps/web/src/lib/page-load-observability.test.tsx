@@ -66,6 +66,11 @@ describe('PageLoadObservability', () => {
     );
   });
 
+  it('keeps the public /connect page apart from the connector consent flow', () => {
+    expect(pageLoadSurface('/connect')).toBe('connect_setup');
+    expect(pageLoadSurface('/connect/authorize')).toBe('connect');
+  });
+
   it('is installed once by the root providers shared by every route', async () => {
     render(
       <Providers>

@@ -54,6 +54,7 @@ test.use({ locale: 'de-DE', timezoneId: 'Asia/Kolkata' });
  *   security       LegalPageLayout renderer, shared with the other 5
  *   how-it-works   ProductStoryShell renderer, shared with /methodology
  *   faq            FAQ surface
+ *   connect        DocPage column + the Copy-button client island
  */
 const PUBLIC_HYDRATED_ROUTES = [
   '/',
@@ -65,6 +66,7 @@ const PUBLIC_HYDRATED_ROUTES = [
   '/security',
   '/how-it-works',
   '/faq',
+  '/connect',
 ] as const;
 
 /**

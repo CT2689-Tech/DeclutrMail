@@ -74,6 +74,8 @@ export interface OpsEventPayloads {
       | 'settings_help'
       | 'demo'
       | 'connect'
+      /** The public /connect setup page — marketing, not the consent flow. */
+      | 'connect_setup'
       | 'other';
     metric: 'CLS' | 'FCP' | 'INP' | 'LCP' | 'TTFB';
     /** Milliseconds except CLS, which is a unitless score. Rounded to 3 decimals. */
