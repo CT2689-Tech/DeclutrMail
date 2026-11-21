@@ -152,41 +152,65 @@ export function Companion() {
           cleanup.
         </p>
       </div>
-      <div
-        className="dm-home-companion-map"
-        role="group"
-        aria-label="Gmail and DeclutrMail work together"
-      >
-        <div className="dm-home-companion-tile">
+      <div className="dm-home-companion-side">
+        <div
+          className="dm-home-companion-map"
+          role="group"
+          aria-label="Gmail and DeclutrMail work together"
+        >
+          <div className="dm-home-companion-tile">
+            <span className="dm-home-companion-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="24" height="24">
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <path d="M3 7l9 6 9-6" />
+              </svg>
+            </span>
+            <strong>Gmail</strong>
+            <p>Read and reply</p>
+          </div>
+          <svg
+            className="dm-home-companion-connector"
+            viewBox="0 0 24 24"
+            width="28"
+            height="28"
+            aria-hidden="true"
+          >
+            <path d="M4 9h16" />
+            <path d="M16 5l4 4-4 4" />
+            <path d="M20 15H4" />
+            <path d="M8 19l-4-4 4-4" />
+          </svg>
+          <div className="dm-home-companion-tile dm-home-companion-tile-product">
+            <span className="dm-home-companion-mark" aria-hidden="true">
+              {/* Always a dark ground, so the tone is pinned (ADR-0036). */}
+              <Logo variant="mark" tone="reversed" size={30} label={null} />
+            </span>
+            <strong>DeclutrMail</strong>
+            <p>Review and clean up</p>
+          </div>
+        </div>
+        {/* Optional, so dashed: the connector adds a way in, not a step. */}
+        <a
+          href="/connect"
+          className="dm-home-companion-assistant"
+          aria-label="Set up your AI assistant: every cleanup waits for you to confirm it on DeclutrMail"
+        >
           <span className="dm-home-companion-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="24" height="24">
-              <rect x="3" y="5" width="18" height="14" rx="2" />
-              <path d="M3 7l9 6 9-6" />
+            <svg viewBox="0 0 24 24" width="22" height="22">
+              <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-7l-4 3v-3H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />
+              <path d="M8 10h8" />
+              <path d="M8 13h5" />
             </svg>
           </span>
-          <strong>Gmail</strong>
-          <p>Read and reply</p>
-        </div>
-        <svg
-          className="dm-home-companion-connector"
-          viewBox="0 0 24 24"
-          width="28"
-          height="28"
-          aria-hidden="true"
-        >
-          <path d="M4 9h16" />
-          <path d="M16 5l4 4-4 4" />
-          <path d="M20 15H4" />
-          <path d="M8 19l-4-4 4-4" />
-        </svg>
-        <div className="dm-home-companion-tile dm-home-companion-tile-product">
-          <span className="dm-home-companion-mark" aria-hidden="true">
-            {/* Always a dark ground, so the tone is pinned (ADR-0036). */}
-            <Logo variant="mark" tone="reversed" size={30} label={null} />
+          <span className="dm-home-companion-assistant-text">
+            <strong>Or ask your AI assistant</strong>
+            <span>
+              Use DeclutrMail from Claude, ChatGPT or Cursor. Every cleanup waits for you to confirm
+              it on DeclutrMail.
+            </span>
           </span>
-          <strong>DeclutrMail</strong>
-          <p>Review and clean up</p>
-        </div>
+          <span className="dm-home-companion-assistant-cta">Set up</span>
+        </a>
       </div>
     </section>
   );
