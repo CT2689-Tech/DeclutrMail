@@ -1,13 +1,16 @@
 # DeclutrMail Operating Manual
 
-> Gmail cleanup SaaS. Solo founder + AI agents (Claude, Codex, Cursor).
-> **Read this file at the start of every session before writing code.**
+> Gmail cleanup SaaS, live in production. Chintan is the solo founder; AI
+> agents (Claude, Codex, Cursor) do the building. This file is every rule
+> that applies to all work here. It loads by itself; nothing else is required
+> reading.
 
 ---
 
 ## 1. How to work
 
-Four principles, adapted from Andrej Karpathy's notes on LLM coding pitfalls.
+Four principles, adapted from Andrej Karpathy's notes on LLM coding pitfalls,
+then how to talk to the founder.
 
 ### 1.1 Think before coding
 
@@ -32,14 +35,46 @@ pre-existing dead code.
 Define a verifiable success criterion before implementing ("fix the bug" →
 "a test reproduces it, then passes"), then loop until it is verified (§8).
 
+### 1.5 How to talk to the founder
+
+- **Start every reply with a TLDR** of one to three short lines.
+- Keep the rest short and precise. **Plain words, no jargon**: say what a
+  person sees or what a system does, not the internal name for it. Code,
+  commands and numbers stay exact.
+- For every change, say in one line **what it means for a user**.
+- **Reports keep three lists apart:** proven by a test · checked by hand ·
+  not checked. Keep **ready · queued · merged · deployed ·
+  production-verified** distinct.
+- **Never drop a risk or cost** that bears on a decision; say it in one line.
+- **Questions** are batched, at most five, numbered, asked once, after the
+  research is done. Each one has: the question and why it needs him; what the
+  research found, with sources; every real option with pros, cons and cost;
+  one recommendation with its reason and what would change it; a confidence
+  percentage. Ask what he wants to *see*, in product terms — never
+  "(a) email / (b) no email / (c) hash".
+- **Do everything you can yourself.** Ask only for what only he can do
+  (§2.0), and ask for the smallest step that unblocks you.
+- **His hands:** passwords, payment cards, sign-ups, legal attestations,
+  permission grants, a real Google OAuth connect or revoke. When he must act
+  outside the repo (a console, DNS, a key, an app listing), give him **one
+  complete prompt to paste into Claude.ai**, which drives his browser: the
+  exact addresses, the 1Password item or secret names, what to check, what to
+  report back. Claude.ai never types a secret (it places the cursor; he
+  pastes) and asks for his "yes" before any final Save, Create, Merge or
+  Publish. Save the prompt in the session's notes folder too.
+- **When a change can be seen**, leave it running and give the links.
+- **Blocked by a rule:** do not work around it and do not quietly settle for
+  less. Write an exception request — what is blocked, by which rule, what
+  you would do instead, what it gains, what it risks — and carry on with
+  other work.
+
 ---
 
 ## 2. Rules
 
 Every rule here says what backs it: an outside commitment, security, an
-incident, or executable truth. Where nothing external backs a rule, it says
-so — those are product choices, and keeping or dropping one is the founder's
-call. A D-number from the retired plan is never the reason (§3).
+incident, or executable truth. Where nothing outside backs a rule, it is a
+product choice, and keeping or dropping it is the founder's call.
 
 ### 2.0 Two tiers
 
@@ -48,19 +83,17 @@ legally exposed: body/attachment storage and the header allowlist (§2.1),
 Gmail OAuth scopes, token encryption, webhook auth (§2.5), billing and
 payment state, account deletion and undo windows, destructive Gmail actions
 without preview (§2.3), security headers / CORS / CSP, production
-migrations, category prediction (§2.4).
+migrations, category prediction (§2.4), and any public claim you cannot
+source.
 
 **Tier 1b — truth.** Never publish a claim about the product or a third
 party without a source a reader can open. Scope an observed fact to what was
 checked and when ("in messages checked 2026-08-26…"), never as a universal.
 Prefer `unknown` to turning absence of evidence into "no".
 
-**Tier 2 — ship it, do not ask.** Marketing content, information
-architecture, pages, routes, copy, comparisons, structure, formats, internal
-linking, metadata. No plan citation, no permission. Match
-existing conventions and move. (Founder decision 2026-08-27: an audit found
-nothing blocking content work was a real rule — it was stale docs, narrow
-tests and hooks.)
+**Tier 2 — ship it, do not ask.** Everything else: product UI within §2,
+marketing, copy, pages, routes, docs, tooling, CI, tests, refactors. Match
+existing conventions and move; note a judgment call in the PR body.
 
 ### 2.1 Privacy — never fetch or store full email contents
 
@@ -89,8 +122,8 @@ including Limited Use, for the restricted `gmail.modify` scope we request.
   contents."** + the generated storage list. Never counter-style claims
   ("Bodies read: 0", "Full bodies fetched: 0").
 
-Enforced by the `privacy-auditor` agent and `verify-no-body-storage.sh`
-(run on every PR by CI, §7.4).
+Enforced in CI by `verify-no-body-storage.sh` (§7.4) and in review by
+`privacy-auditor`.
 
 ### 2.2 Five verbs — K/A/U/L/D (ADR-0019)
 
@@ -104,10 +137,8 @@ actions such as Unprotect. Marketing pages are outside this rule.
 - The API says `snoozed` where the UI says **Later**; keep it that way on the
   wire, never in copy.
 
-**Why:** product choice — nothing external requires it. One vocabulary and
-one set of shortcuts on every surface.
-
-Enforced by `check-microcopy.sh` (CI) and `design-system-agent`.
+**Why:** product choice. One vocabulary and one set of shortcuts everywhere.
+Enforced in CI by `check-microcopy.sh` and in review by `design-system-agent`.
 
 ### 2.3 Action lifecycle
 
@@ -116,30 +147,26 @@ user intent → action sheet → action preview → mutation → undo
 ```
 
 The preview is **mandatory**. The sheet may be skipped (its "remember
-preference" toggle); the preview then renders inline. A preview owes the user the
-count, where the email goes, and how to undo — each once. "What does not
+preference" toggle); the preview then renders inline. A preview owes the user
+the count, where the email goes, and how to undo — each once. "What does not
 change" appears only where the user would plausibly fear it (Delete →
 "Future email is unchanged"); an Archive preview does not deny deleting
-(founder decision 2026-09-19).
+(founder decision 2026-09-19). An AI assistant confirms through the same
+preview, in the chat or on the confirm page (`docs/spec/mcp-connector.md` §3).
 
-**Why:** a mutation changes the user's real Gmail. The preview is where they
-see what will happen before it does, and it is what the product promises —
-the homepage is built around it (PR #1200).
-
-Enforced by `design-system-agent` and `architecture-guardian`. The
-`require-preview-before-mutation.sh` hook is advisory only — it never fails
-a run.
+**Why:** a mutation changes the user's real Gmail; the preview is where they
+see what will happen, and it is what the homepage promises (PR #1200).
+Enforced in review by `design-system-agent` and `architecture-guardian`.
 
 ### 2.4 No category prediction
 
 DeclutrMail never predicts email categories (newsletter, transactional,
 personal, …) to auto-protect or auto-route. Categories are user-assigned or
-rule-matched. Enforced by `block-category-prediction.sh` (CI).
+rule-matched.
 
-**Why:** product choice — nothing external requires it. The reasoning when
-it was made: category guesses are often wrong and feel invasive, and a wrong
-one would quietly protect or move real mail, while Protected (§2.7) is meant
-to rest on signals the user can see.
+**Why:** product choice. A wrong guess would quietly protect or move real
+mail, while Protected (§2.7) rests on signals the user can see. Enforced in
+CI by `block-category-prediction.sh`.
 
 ### 2.5 Webhook authentication
 
@@ -154,69 +181,62 @@ signature is the only proof the provider sent the request.
   JSON parsing, compared with `timingSafeEqual`, secret from env, fail
   closed, dedup on the provider event id. There is no Stripe.
 
-Enforced by `webhook-security-auditor`.
+Paddle specifics (sandbox vs live, signature format) are in `AGENTS.md`.
+Enforced in review by `webhook-security-auditor`.
 
 ### 2.6 Invariants
 
-Each line says why it is a rule: an incident it already caused, or the
-user's mail, data or trust it protects.
+Each one already caused an incident, or protects the user's mail, data or
+trust.
 
 - **Failed destructive jobs are never auto-replayed** — a retry of a
-  mutation the user previewed earlier needs a fresh preview of current state
-  (§2.3).
+  mutation the user previewed earlier needs a fresh preview (§2.3).
 - **Account deletion respects undo windows**:
-  `max(now + 7d, latest_undo_expires_at)`. Deleting the account must not
-  void an undo the user was already given.
+  `max(now + 7d, latest_undo_expires_at)`.
 - **Mailto unsubscribe is manual** — never auto-sent. Sent from our address
-  it may not unsubscribe the user at all, so "Unsubscribed" would be a claim
-  we cannot back (§8.5). Sending it as the user, unseen, is a product choice
-  not to (§2.7).
-- **Prelaunch: no hypothetical compatibility.** Remove superseded routes,
-  columns, contracts, fixtures and docs directly unless a current technical
-  invariant needs them — compatibility code for users who do not exist has
-  no reader (founder direction). **Water line:** Atlas tracks migrations by
+  it may not unsubscribe the user at all, so "Unsubscribed" would be an
+  unbacked claim (§8.5).
+- **No compatibility code for users who do not exist.** Remove superseded
+  routes, columns, contracts, fixtures and docs directly unless a current
+  technical invariant needs them. **Migrations:** Atlas tracks them by
   version, not content — once any long-lived DB applied vN, never edit vN;
-  ship vN+1 (2026-07-15, PRs #333/#335/#336, a ~15 h prod sync rollback).
+  ship vN+1 (2026-07-15, a ~15 h prod sync rollback).
 - **Quiet governs Autopilot**, so no tier may grant `autopilot` without
   `quiet` (pinned in `packages/shared/src/entitlements/entitlements.test.ts`).
-  Otherwise a stored quiet window strands on downgrade and silently defers
-  approved batches.
 - **A capability guard is a request guard; a cron has no request.** Any
   scheduled producer of gated data needs its own tier filter derived via
   `hasCapability`, never a literal tier list. (The Brief cron once sent
   Free/Plus subjects and snippets to Anthropic daily for a Pro feature.)
 - **No network call, queue publish, or session-scoped Postgres primitive
-  inside an open transaction.** Resolve external values first. Session state
-  (`SET`, `LISTEN`, advisory locks) goes to the session pooler, never a
-  transaction-mode connection (2026-06-05; PR #509; an 8-minute prod hang).
+  inside an open transaction.** Session state (`SET`, `LISTEN`, advisory
+  locks) goes to the session pooler, never a transaction-mode connection
+  (2026-06-05, an 8-minute prod hang).
 - **A required key added to a shared contract is defaulted at every
   consumer** unless runtime-validated. One card's data must never decide
   whether a page renders (2026-08-25: a web deploy ahead of its API
-  white-screened all of Settings).
-- **A cron looping over `mailbox_accounts` ships with bounded concurrency**
-  from its first PR: `createLimiter(n)` (`packages/workers/src/reasoning.ts`),
-  default 8, env-clamped `[1, 32]`, try/catch per mailbox.
+  white-screened Settings).
+- **A cron looping over `mailbox_accounts` ships with bounded concurrency**:
+  `createLimiter(n)` (`packages/workers/src/reasoning.ts`), default 8,
+  env-clamped `[1, 32]`, try/catch per mailbox.
 - **Provider event timestamps are not a total order.** Protect
   money-critical transitions with a domain invariant (terminal states stay
   terminal), not a timestamp tiebreak (an 11-day lockout after a settled
-  refund, 2026-08-25). Entitlement-affecting concurrency changes need an
-  independent adversarial review before merge (one billing PR, #364, had 11
-  defects green CI missed).
+  refund). Entitlement-affecting concurrency changes get an independent
+  adversarial review before merge (#364 had 11 defects green CI missed).
 - **Never interpolate a JS `Date`/`BigInt` into a raw `sql` template.**
   PGlite (tests) coerces silently; postgres.js (prod) throws or corrupts.
-  Use a typed column or cast (`.toISOString()` + `::timestamptz`). Any spec
-  exercising a raw template needs a driver-parity check. Enforced by
-  `check-raw-date-in-sql.sh` (CI).
+  Use a typed column or `.toISOString()` + `::timestamptz`. Enforced in CI by
+  `check-raw-date-in-sql.sh`.
+- **Worker jobs carry an idempotency key.** BullMQ delivers at least once, so
+  a duplicate job is a duplicate Gmail change. Enforced in CI by
+  `require-idempotency.sh`.
 
 ### 2.7 Product choices
 
-Nothing external requires these. Each records a choice; keep enforcing it
-until the founder changes it. §2.2 (five verbs) and §2.4 (no category
-prediction) are the same kind.
+Nothing outside requires these; keep them until the founder changes one.
 
 - **A mailto unsubscribe is not sent as the user.** It opens a pre-filled
-  Gmail draft the user sends. Mail in someone's name that they never saw is
-  a trust choice; `gmail.modify` would technically allow it.
+  Gmail draft the user sends.
 - **Protected is the only visible safety state.** Protected senders are
   excluded from bulk and automatic mail-changing actions. VIP is retired —
   never reintroduce it as a ranking or safety alias; a manual ranking control
@@ -224,6 +244,10 @@ prediction) are the same kind.
   strong signals (≥3 replies, a star in the past year, or ≥3 Gmail-important
   messages in the past year), never on read/open rate. Show the exact
   reason; manual Unprotect is a sticky override.
+- **Autopilot runs only the built-in presets**, not custom rules, until
+  custom rules have their own preview and safety design.
+- **Mail tables are not partitioned** until a measured need (guidance: about
+  25M rows, 2M per mailbox, or slow queries with `EXPLAIN` evidence).
 
 ---
 
@@ -233,42 +257,51 @@ prediction) are the same kind.
 2. **Executable truth** — `packages/shared/src/entitlements/pricing.config.ts`,
    `gmail-data-inventory.ts`, the entitlements suite, the marketing
    truth-gates, and tests that run in CI.
-3. **ADRs** in `docs/adr/` — rules about how code is written.
+3. **ADRs** in `docs/adr/` — rules about how code is written. A new rule
+   that constrains code goes in an ADR with its reason.
 4. **Local conventions** in the module you are touching.
 5. Your judgment.
 
-**Conflicts.** Tier 1 / 1b conflict → the founder decides; surface it. Tier
-2 → nothing to resolve: serve the user, match convention, note the choice in
-the PR body. When prose contradicts a manifest, the manifest wins; fix the
-prose.
-
-**D-numbers are retired** (founder decision 2026-11-17). The plan
-(`docs/execution/Implementation-Plan.md`) and `IMPLEMENTATION-LOG.md` are
-frozen history: read them for why something was once decided, never as a
-rule, a gate, or a description of current behavior. A D-number is not a
-reason. Cite what backs a rule — §2, an ADR, a manifest, a test — and never
-require, add or invent a D-number in a branch, commit, PR or doc. A new rule
-that constrains code goes in an ADR with its reason.
+When prose contradicts a manifest, the manifest wins; fix the prose.
+D-numbers are retired (2026-11-17): never require, add or cite one.
+**Frozen history** — `docs/execution/Implementation-Plan.md`,
+`IMPLEMENTATION-LOG.md`, `.impl-log/`, `LEARNINGS.md`, `MISTAKES.md`,
+`FOUNDER-FOLLOWUPS.md` — is read only to trace why something was once done,
+never as a rule or as current behavior. Nothing updates it.
 
 ---
 
 ## 4. Repo map
 
-pnpm workspace · Node ≥ 22 · pnpm ≥ 10.
+pnpm workspace · Node ≥ 22 · pnpm ≥ 10. The repo is **public**: never commit
+secrets, personal details, customer data, or links to private documents.
+Secrets live in 1Password and GCP Secret Manager; refer to them by name.
 
-| Path                | What                                                                                                    |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| `apps/web`          | Next.js app + marketing site (TanStack Query for server state, Zustand for client state)                |
-| `apps/api`          | NestJS API and worker entrypoint (`src/main.ts`, `src/worker.ts`)                                        |
-| `packages/db`       | Drizzle schema (`src/schema/`) + Atlas migrations (`migrations/NNNN_*.sql` with paired `.rollback`)      |
-| `packages/shared`   | Contracts (Zod), verb registry, shared components, tokens, copy, entitlements                            |
-| `packages/events`   | Typed outbox event schemas — cross-feature writes go through `OutboxPublisher`, not a direct call        |
-| `packages/workers`  | `BaseDeclutrWorker` + the five worker policies                                                           |
-| `packages/e2e`      | Playwright                                                                                              |
+| Path               | What                                                                                                |
+| ------------------ | --------------------------------------------------------------------------------------------------- |
+| `apps/web`         | Next.js app + marketing site (TanStack Query for server state, Zustand for client state)            |
+| `apps/api`         | NestJS API, MCP connector and worker entrypoint (`src/main.ts`, `src/worker.ts`)                    |
+| `packages/db`      | Drizzle schema (`src/schema/`) + Atlas migrations (`migrations/NNNN_*.sql` with paired `.rollback`) |
+| `packages/shared`  | Contracts (Zod), verb registry, shared components, tokens, copy, entitlements                       |
+| `packages/events`  | Typed outbox events — cross-feature writes go through `OutboxPublisher`, not a direct call          |
+| `packages/workers` | `BaseDeclutrWorker` + the worker policies                                                           |
+| `packages/e2e`     | Playwright                                                                                          |
 
-**Promoted shared components** live in `packages/shared/src/components/`
-(≥2 consumers or founder ratification). Ratified additions: `NumericDisplay`
-(ADR-0016), `ActionPopover` (ADR-0019), `ErrorState`.
+Shared components live in `packages/shared/src/components/` once they have
+two consumers (`NumericDisplay` ADR-0016, `ActionPopover` ADR-0019,
+`ErrorState`).
+
+### Before you…
+
+| Before you…                         | Read / run                                                          |
+| ----------------------------------- | ------------------------------------------------------------------- |
+| Change a table or migration         | §2.6 migrations line; `schema-migration-reviewer`                   |
+| Touch Gmail data or a Gmail field   | §2.1 and `gmail-data-inventory.ts`; `privacy-auditor`               |
+| Touch billing or a webhook          | §2.5 and `AGENTS.md`; `webhook-security-auditor`                    |
+| Build or change a screen            | §2.2, §2.3, §8.7; `design-system-agent`                             |
+| Write words a person sees           | §8.5 copy budgets                                                   |
+| Build a feature                     | list its connected pieces (§5.2)                                    |
+| Open a PR                           | §6 and `.github/pull_request_template.md`                           |
 
 ### Commands
 
@@ -276,8 +309,8 @@ pnpm workspace · Node ≥ 22 · pnpm ≥ 10.
 pnpm install
 pnpm typecheck && pnpm lint && pnpm format:check
 pnpm --filter <pkg> exec vitest run       # per package; root `pnpm test` can livelock
-node --test scripts/*.test.mjs            # CI Lint's script guards — run before pushing
-node scripts/run-guard-hooks.mjs --base origin/main   # CI's guard hooks over your diff
+node --test scripts/*.test.mjs            # CI Lint's script tests
+node scripts/run-guard-hooks.mjs --base origin/main   # CI's guards over your diff (run from a checkout outside .claude/)
 pnpm build && pnpm check:bundle           # web bundle budget — not a required check, so red merges, then blocks deploys
 scripts/wt-new.sh <branch>                # worktree at ../wt-<branch> from fresh origin/main
 
@@ -288,19 +321,25 @@ pnpm --filter @declutrmail/web dev        # web (:3000)
 
 ---
 
-## 5. Parallel work
+## 5. Working in parallel
 
-### 5.1 Parallel sessions
+### 5.1 Sessions and branches
 
-Read `docs/runbooks/parallel-development.md` before starting a branch. In
-short: one isolated worktree per session off fresh `origin/main`; declare
-owned files, shared contracts and dependencies; related pieces go to one
-integration owner. Queue ready PRs through the merge queue (never an admin
-bypass). **Do not rebase or merge main just because main moved** — the queue
-re-validates; update only for a real conflict, dependency or failure. Keep
-**ready · queued · merged · deployed · production-verified** distinct when
-reporting. Follow the user's limits on sessions, delegation, merging and
-deploying.
+- One worktree per session, off fresh `origin/main`. Say which files you own;
+  related pieces go to one integration owner.
+- Queue ready PRs through the merge queue (never an admin bypass). **Do not
+  rebase or merge main just because main moved** — the queue re-tests. Update
+  only for a real conflict, dependency or failure.
+- Follow the founder's limits on sessions, delegation, merging and
+  deploying. Background on required checks and CI waits:
+  `docs/runbooks/parallel-development.md` (reference, not required reading).
+
+### 5.2 Connected pieces
+
+Before building a feature, list what else it touches — landing page, FAQ,
+`/connect`, `llms.txt`, the MCP tool contract, directory listings, help
+guides, emails — and update them in the same change (Tier 2). Put the list in
+the PR body; if there are none, say "no connected pieces".
 
 ---
 
@@ -317,69 +356,45 @@ deploying.
 | PR body              | the sections in `.github/pull_request_template.md`       |                                                    |
 
 Types: `feat fix chore docs refactor test perf security`. Subject imperative,
-≤ 50 chars. Enforced by `.husky/pre-push`, commitlint, and `branch-name.yml`
-(authoritative). Never bypass with `--no-verify`.
-
-No D-number anywhere (retired 2026-11-17): no `d<NNN>` branch segment, no
-`(D###)` commit trailer, no `Closes D###`. CI's
-`PR body references D-decisions or is bootstrap-exempt` check is a
-placeholder that checks nothing; it runs only because branch protection
-requires its name (`docs/log/founder-followups/2026-11-17-remove-retired-pr-body-required-check.md`).
+≤ 50 chars. Enforced by `.husky/pre-push`, commitlint and `branch-name.yml`.
+Never bypass with `--no-verify`.
 
 ### 6.2 Agent review comments
 
-Prefix every agent-authored review comment: `[BLOCKING]` (blocks merge),
-`[SUGGESTION]`, `[QUESTION]`, `[NIT]`, `[PRAISE]`.
+Agent review comments start with `[BLOCKING]` (blocks merge),
+`[SUGGESTION]`, `[QUESTION]`, `[NIT]` or `[PRAISE]`.
 
 ---
 
-## 7. Gate network — agents and guards
+## 7. Review agents and guards
 
 ### 7.1 Agents
 
-Definitions in `.claude/agents/`. Run them over a diff with the `ct-gates`
-workflow (`.claude/workflows/ct-gates.js`), which routes by path and
-verifies every BLOCKING item before reporting. CI's `Gate scope report`
-only lists which agents apply; it does not run them.
-
-| Agent                                          | Tier     | Routes on                                                                                                              |
-| ---------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `privacy-auditor`                              | gate     | `apps/api/src/{gmail,senders,sync}/**`, `gmail-data-inventory.ts`, `packages/db/src/schema/{mail-messages,senders}.ts` |
-| `architecture-guardian`                        | gate     | `apps/api/**`, `packages/{db,workers,events}/**`                                                                       |
-| `schema-migration-reviewer`                    | gate     | `packages/db/{migrations,src/schema}/**`                                                                               |
-| `design-system-agent`                          | gate     | `apps/web/src/{components,features,app}/**`, `packages/shared/**`, `*.stories.tsx`                                     |
-| `webhook-security-auditor`                     | gate     | `apps/api/src/webhooks/**`, `*-webhook.controller.ts`, billing adapters                                                |
-| `typescript-reviewer`, `silent-failure-hunter` | advisory | all TS                                                                                                                 |
-| `type-design-analyzer`                         | advisory | `packages/{events,workers}/**`, `packages/shared/src/{contracts,actions}/**`                                           |
-| `flow-completeness-auditor`                    | advisory | `apps/web/src/features/**`, lifecycle flows                                                                            |
-| `usability-editor`                             | advisory | user-facing copy — judges against §8.5 budgets                                                                         |
-| `defect-class-sweeper`, `finding-refuter`      | advisory | called by `/ct-qa` and `/ct-class`                                                                                     |
-
-Gates are structural — they never run the app. Green gates are not verified
+Definitions are in `.claude/agents/` (each file says what it routes on). Run
+them over a diff with `/ct-gates` (`.claude/workflows/ct-gates.js`), which
+routes by path and verifies every BLOCKING finding before reporting. Agents
+are structural — they never run the app, so green gates are not verified
 behavior (§8).
 
 ### 7.2 Tools
 
 Every product command, skill or workflow is `ct-<word>`; the index is
-`.claude/README.md` (`/ct-qa`, `/ct-journey`, `/ct-class`, `/ct-finding`,
-`/ct-decide`, `/ct-status`).
+`.claude/README.md`.
 
 ### 7.3 Hooks
 
-`.claude/settings.json` registers PreToolUse hooks (bypass flags, protected
-files, destructive cloud ops, branch name) and PostToolUse guards (body
-storage, microcopy, category prediction, idempotency, raw dates in SQL,
-preview-before-mutation). If a hook fires, fix the cause —
-never bypass it.
+`.claude/settings.json` registers only edit-time blockers: secrets files,
+hook-bypass flags, and destructive cloud/production commands. If one fires,
+fix the cause — never bypass it.
 
 ### 7.4 CI runs the guards
 
+The guard scripts in `.claude/hooks/` (body storage, microcopy, category
+prediction, idempotency, raw dates in SQL) run in **CI only**:
 `scripts/run-guard-hooks.mjs` (CI Lint) feeds every changed file to every
-PostToolUse guard, fails on a violation, and fails loudly if it saw nothing
-(shallow checkout, missing guard, a guard that does not fire on its positive
-control). Accepted pre-existing findings live in
-`scripts/guard-hooks-allowlist.json`. This — not the edit-time hook — is what
-makes §2's "enforced by" true.
+guard, fails on a violation, and fails loudly if it saw nothing. Accepted
+pre-existing findings live in `scripts/guard-hooks-allowlist.json`. If a
+guard fires, fix the cause — never bypass it.
 
 ---
 
@@ -388,24 +403,22 @@ makes §2's "enforced by" true.
 ### 8.1 Where status lives
 
 In PRs, issues and the merge history. `IMPLEMENTATION-LOG.md` and
-`.impl-log/` — the old per-D status table — are frozen as of 2026-11-17;
-nothing generates, checks or updates them.
+`.impl-log/` are frozen history (§3).
 
 ### 8.2 Definition of done
 
 - `pnpm typecheck`, `pnpm lint`, affected unit/integration and E2E tests,
-  and `node --test scripts/*.test.mjs` all pass.
-- No unresolved `[BLOCKING]`.
-- No new TODO without a linked issue.
-- By PR type: a migration states its rollback path; an API change keeps contract tests green; a worker names its
-  policy and idempotency key in the PR body.
+  and `node --test scripts/*.test.mjs` pass. No unresolved `[BLOCKING]`. No
+  new TODO without a linked issue.
+- A migration states its rollback path; an API change keeps contract tests
+  green; a worker names its policy and idempotency key in the PR body.
 - Local smoke passed (§8.7).
 - **Context-moving changes** (request path → background job, in-process →
   shared state, inside a lock → outside it) get an adversarial review
-  (`/code-review ultra` or an equivalent second opinion). First list every
-  reader of the relocated data and what it does with a stale value; if any
-  reader takes a destructive action on it, the write cannot be deferred past
-  that reader.
+  (`/code-review ultra` or a fresh agent given the code, not your
+  conclusions). First list every reader of the moved data and what it does
+  with a stale value; if any reader takes a destructive action on it, the
+  write cannot be deferred past that reader.
 
 ### 8.3 A green test is not evidence
 
@@ -414,51 +427,48 @@ fix:
 
 1. **Negative control** — revert the fix, watch the new assertion go red,
    restore.
-2. **State what the user sees** before and after, one line each. A fix that
-   changes neither the visible state nor the way out of it is a quieter bug.
+2. **State what the user sees** before and after, one line each.
 3. **Verify the experience** — smoke it; where no runtime exists, trace the
    render path and say so. Never merge on green tests alone.
 
-Reviewers: when test and code agree, ask what the test would have to look
-like to catch the bug the code has. Producer-side tests and consumer-side
-mocks can both be green while the join is broken.
+When test and code agree, ask what the test would have to look like to catch
+the bug the code has. Producer-side tests and consumer-side mocks can both be
+green while the join is broken.
 
 ### 8.4 A guard that cannot fail is not a guard
 
-Guards, hooks, watchdogs and sweeps whose subject goes missing keep printing
-green (a dependency-free `/healthz`, a push branch protection rejected every
-run, `check-changelog` walking 0 merges on a shallow clone, a watchdog
-measuring last _attempt_ instead of last _success_). Before trusting a new
-guard, **starve it** — empty input, shallow checkout, unreachable source,
-stale-forever record — and require it to fail closed, loudly, by name. If
-its own source goes dark, the verdict is `UNVERIFIED`, never the nearest
-substitute source. A hook can enforce a match (fixed string, closed set); a
-constraint that needs a reading (proximity, intent) belongs in review.
+Guards, watchdogs and sweeps whose subject goes missing keep printing green
+(a dependency-free `/healthz`, a check walking 0 merges on a shallow clone, a
+watchdog measuring last _attempt_ instead of last _success_). Before trusting
+a new guard, **starve it** — empty input, shallow checkout, unreachable
+source — and require it to fail closed, loudly, by name. A watchdog that is
+red every day is not read: fix it or delete it. A hook can enforce a match
+(fixed string, closed set); a constraint that needs a reading belongs in
+review.
 
 ### 8.5 A claim is only as true as what backs it
 
 Before any user- or ops-facing sentence names a cause, count, scope or
 guarantee, name the field, error code or component that proves it. A claim
 you cannot prove has three exits, in order: **delete it, prove it, mark it
-unverified** — never add a qualifying clause to make it pass (founder
-decision 2026-09-19).
+unverified** — never add a qualifying clause to make it pass.
 
 **Copy budgets:** button or menu item ≤ 3 words · toast 1 sentence · error =
 cause + next action, ≤ 2 sentences · empty state = title + at most one
 sentence or one action · in product flows, trust/privacy copy once per flow,
 at the decision point, never on banners or empty states. Marketing pages may
-lead with or repeat the exact privacy sentence (founder decision 2026-11-17). When truth and budget
+lead with or repeat the exact privacy sentence. When truth and budget
 collide, cut the claim. Tests pin facts (digits, the verb, a short
 fragment), not whole sentences.
 
 ### 8.6 Fix the class, not the instance
 
-When one instance of a defect is found, name its shape and sweep the whole
-codebase for siblings before calling the fix done — run
-`defect-class-sweeper`. Fix defects you find on the surface you are already
-touching; "pre-existing" is not a reason to walk past.
+When one instance of a defect is found, name its shape and sweep the
+codebase for siblings before calling the fix done (`defect-class-sweeper`).
+Fix defects you find on the surface you are already touching; "pre-existing"
+is not a reason to walk past.
 
-### 8.7 Flows, state, and smoke
+### 8.7 Flows, screens and smoke
 
 Any feature with a lifecycle (connect · disconnect · switch · reconnect ·
 sync `queued → syncing → ready | failed | needs_reconnect` · active
@@ -466,41 +476,41 @@ mailbox = null) is done only when every state and transition has UI, cache
 and test handling. Write the table first:
 `| state / transition | UI shows | cache effect | tested? |`.
 
-Three invariants this codebase keeps relearning:
-
 - **Scope change ⇒ reset scoped cache** (`resetMailboxScopedCache`), not just
   invalidate `me` — query keys are not partitioned by mailbox.
 - **A read guard's 4xx is a designed state, never a retry.**
   `CurrentMailboxGuard` reads can 409 (`SELECT_MAILBOX` / `NO_ACTIVE_MAILBOX`);
-  render a picker or reconnect gate, and never retry 4xx.
+  render a picker or reconnect gate.
 - **A shared fact changed on one surface ships green while its sibling
   drifts.** Find "every surface" by grepping the code for the old markup,
   selector or table — never from a design doc's list.
+- **A screen** is stressed before it is built: 0 items (first visit), 1,
+  and 200; very long text; keyboard only; 375 px and 1280 px; a failed save
+  or load. A first visit is never an empty screen with nothing to do.
+- **Prefer Undo to a question.** If an action can be undone, do it and offer
+  Undo; ask first only when it cannot be undone.
 
-**Smoke before merge.** Green CI is necessary, not sufficient. Pull the
-branch, exercise every touched feature end to end, and try to break it:
-empty, error, stale, in-flight, both connected mailboxes, rapid switches,
-unowned ids, null prefs. On a break: find the cause, fix, re-smoke.
+**Smoke before merge.** Green CI is necessary, not sufficient. Exercise every
+touched feature end to end and try to break it: empty, error, stale,
+in-flight, both connected mailboxes, rapid switches, unowned ids, null prefs.
 
 | PR touches                           | Minimum smoke                                                                        |
 | ------------------------------------ | ------------------------------------------------------------------------------------ |
-| `apps/web/**` product UI             | web dev server → walk the affected flow through every state; no console errors       |
+| `apps/web/**` product UI             | web dev server → walk the affected flow through every state, wide and narrow        |
 | marketing / content pages            | load each changed page once; CI's Lighthouse, prerender and journey lanes cover more |
 | `apps/api/**`                        | `./scripts/dev-up.sh` → `curl` the endpoint; status, envelope, a downstream log line |
 | `packages/workers/**`                | enqueue a real job; see `worker.succeeded`                                           |
 | `packages/db/migrations/**`          | `./scripts/db-migrate.sh` on a scratch DB, run the `.rollback` with `psql`, re-apply |
 | `.husky/**`, `commitlint.config.cjs` | run the hook on a throwaway branch; the exit code is what it should be               |
-| `scripts/**`                         | run it; observe the side effect                                                      |
+| `scripts/**`, `.github/**`           | run it; observe the side effect                                                      |
 | docs only                            | none — green CI suffices                                                             |
 
 **Authed flows** use the dev test login — "needs OAuth" is not an excuse.
-Set `DEV_AUTH_ENABLED=true` and `DEV_AUTH_EMAIL_PREFIX=chintan` in
-`.env.local`, then open
-`http://localhost:4000/api/auth/dev/login?email=chintan.a.thakkar@gmail.com`.
-That workspace has two connected Gmail accounts for multi-mailbox states.
-Force edge states reversibly with SQL and restore afterward. Only a real
-Google token revoke and a real OAuth connect need the founder's hands — stop
-and ask for those. If a smoke fails, report it and do not recommend merge.
+Set `DEV_AUTH_ENABLED=true` and `DEV_AUTH_EMAIL_PREFIX` in `.env.local`, then
+open `http://localhost:4000/api/auth/dev/login?email=<the founder's dev
+address>`. That workspace has two connected Gmail accounts. Force edge states
+reversibly with SQL on the dev DB and restore afterward. If a smoke fails,
+report it and do not recommend merge.
 
 **Traps where the tool, not the product, lies:**
 
@@ -511,8 +521,7 @@ and ask for those. If a smoke fails, report it and do not recommend merge.
   workers from other worktrees have served old code at least three times.
 - A dependency major bump can make a config key silently inert; grep the
   first lines of output for "ignored" / "deprecated".
-- Escape any content string you build a matcher from (a title ending in `?`
-  stayed green for weeks).
+- Escape any content string you build a matcher from.
 
 ### 8.8 Measuring performance
 
@@ -521,24 +530,19 @@ dev` timings, a single `EXPLAIN`, or a benchmark whose result is never
 consumed are not evidence. Pin the client floor at 0 ms API latency, or split
 a HAR by dependency, before profiling a query — a flat per-request pool
 penalty on Cloud Run was invisible to every query benchmark (2026-08-15).
+Put the numbers in the PR.
 
 ---
 
 ## 9. When unsure
 
 First ask which tier it is (§2.0). Tier 2: you are unsure about craft, not
-permission — pick what serves the user and ship. Otherwise: check the
-manifests and tests (§3), re-read §2, run the relevant agent, state your
-assumption and proceed if low-stakes, or add a
-`docs/log/founder-followups/` entry.
+permission — pick what serves the user and ship. Otherwise check the
+manifests and tests (§3), re-read §2, run the relevant agent, and state your
+assumption and proceed if low-stakes.
 
-**Stop and ask the founder** when a change touches: Gmail OAuth scopes;
-token encryption; production migrations; billing provider webhooks or
-payment state; account deletion; privacy or retention behavior; destructive
-Gmail actions without complete preview + undo; webhook authentication;
-security headers / CORS / CSP; anything that contradicts §2.1–§2.5; or a public
-claim you cannot source (e.g. "brand X does not support unsubscribe" from two
-observed messages). Nothing else is a stop condition.
+**Stop and ask the founder** (§1.5 says how) when a change touches anything
+in Tier 1 (§2.0) or contradicts §2.1–§2.5. Nothing else is a stop condition.
 
 ---
 
@@ -546,47 +550,36 @@ observed messages). Nothing else is a stop condition.
 
 - Bypass hooks (`--no-verify`, `--no-gpg-sign`, …) or force-push `main`.
 - Run `atlas migrate apply` against production from a laptop (CI only).
-- Implement category prediction (§2.4).
 - Store bodies, attachments or non-allowlisted headers (§2.1).
-- Show "Screen" in product UI (§2.2).
+- Implement category prediction (§2.4) or show "Screen" in product UI (§2.2).
 - Skip the action preview (§2.3) or auto-replay failed destructive jobs.
 - Use `x-goog-authenticated-user-email` for Pub/Sub auth (§2.5).
-- Commit secrets (`.env`, credentials, API keys, OAuth secrets).
+- Commit secrets or personal details (`.env`, credentials, API keys, OAuth
+  secrets, real email addresses).
 - Add features, abstractions or "while I'm here" cleanups beyond the task.
 
 ### 10.1 No fake completion
 
 Never ship stubbed production behavior as done: mocked Gmail calls, fake
-sync progress (it must reflect real `current_stage` / `progress_pct`),
-fake billing state, hard-coded analytics triggers, placeholder signature
-verification, `// TODO: implement`, empty catch blocks, hard-coded test data
-in prod paths, disabled tests without a reason, or optimistic UI for a
-destructive action. If it can't be finished, split it out — don't stub it.
+sync progress (it must reflect real `current_stage` / `progress_pct`), fake
+billing state, placeholder signature verification, `// TODO: implement`,
+empty catch blocks, test data in prod paths, disabled tests without a reason,
+or optimistic UI for a destructive action. If it can't be finished, split it
+out — don't stub it.
 
 ---
 
 ## 11. Logs and learning
 
-| Where                                                 | Lifecycle                                                                    |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `docs/log/learnings/`                                 | append-only, one file per entry, `YYYY-MM-DD-<slug>.md`                      |
-| `docs/log/mistakes/`                                  | append-only, one file per entry; add one when a bug ships                    |
-| `docs/log/founder-followups/`                         | one file per entry; only its **Status:** line changes (Open → Done/Skipped) |
-| `LEARNINGS.md`, `MISTAKES.md`, `FOUNDER-FOLLOWUPS.md` | frozen; older entries stay there                                             |
-| `docs/adr/`                                           | rules that constrain code (template `0000-template.md`)                      |
+| Where                         | What                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------- |
+| `docs/log/mistakes/`          | one file per shipped bug: what happened, correct approach, rule, enforcement |
+| `docs/log/learnings/`         | one file per finding worth keeping                                            |
+| `docs/log/founder-followups/` | one file per thing only the founder can do; only its **Status:** line changes |
+| `docs/adr/`                   | rules that constrain code (template `0000-template.md`)                       |
 
-One file per entry because two PRs appending to one file conflicted and got
-ejected from the merge queue (2026-09-27).
-
-- **Learning:** `## YYYY-MM-DD — Title` / **Context** / **Finding** /
-  **Rule (provisional)** / **Distillation trigger**.
-- **Mistake:** `## YYYY-MM-DD — Title` / **PR** / **Caught by** / **What
-  happened** / **Correct approach** / **Rule** / **Enforcement update**.
-- **Founder follow-up:** `### YYYY-MM-DD — Title` / **Source** / **Why** /
-  **How** (literal steps) / **Verifies by** / **Status**.
-
-Log signal, not noise — would the entry help a future session? The founder
-promotes a pattern into this file (a `chore/distill-*` PR) when it recurs 3+
-times, carries data-loss / privacy / security / billing risk, implies a §2
-rule, or spans 3+ features. Distill on pattern, not calendar. Agents log;
-they edit this file only when the founder asks.
+Files are named `YYYY-MM-DD-<slug>.md`, one entry per file (shared files
+conflicted in the merge queue). Log signal, not noise — would the entry help
+a future session? A pattern that recurs 3+ times, or carries data-loss,
+privacy, security or billing risk, gets promoted into this file in a
+`chore/distill-*` PR. Agents edit this file only when the founder asks.

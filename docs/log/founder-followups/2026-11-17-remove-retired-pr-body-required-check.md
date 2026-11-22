@@ -29,4 +29,4 @@ still does real work (type prefix on branch names) and can stay.
 **Verifies by:** `gh api repos/CT2689-Tech/DeclutrMail/branches/main/protection --jq '.required_status_checks.contexts'`
 no longer lists the check, and `scripts/check-merge-queue-ready.sh` reports no
 mismatch after the job and the `required-checks.json` row are removed.
-**Status:** Open
+**Status:** Done 2026-11-21 — requirement removed from main's branch protection; placeholder job deleted.

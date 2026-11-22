@@ -1,14 +1,8 @@
 # DeclutrMail agent conventions
 
-## Parallel sessions and integration
-
-Before starting a branch or preparing a PR, read
-[the shared parallel-development runbook](docs/runbooks/parallel-development.md).
-Use an isolated worktree, declare dependencies and shared-file ownership, and
-hand related changes to one integration owner. Queue ready independent PRs
-together; do not repeatedly update branches merely because main advanced.
-Keep ready, queued, merged, deployed, and production-verified states distinct.
-Follow explicit user limits on sessions, delegation, merging, and deployment.
+Every rule for this repo is in [CLAUDE.md](CLAUDE.md): read it first. This
+file adds the Paddle and observability details that agents without
+CLAUDE.md loaded still need.
 
 ## Paddle Billing
 
@@ -22,9 +16,9 @@ Follow explicit user limits on sessions, delegation, merging, and deployment.
   verification. Use `paddle-live` only for an explicitly approved production
   cutover. Never use a live key for exploratory reads or tests.
 - Runtime billing is fail-closed. The API requires `BILLING_ENABLED=true`,
-  `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, and `PADDLE_WEBHOOK_SECRET`; billing
-  remains disabled until those values are provisioned in GCP Secret Manager and
-  the deploy manifest binds them to the API service only.
+  `PADDLE_API_KEY`, `PADDLE_CLIENT_TOKEN`, and `PADDLE_WEBHOOK_SECRET`, held in
+  GCP Secret Manager and bound to the API service only by the deploy manifest.
+  Billing is live in production.
 - Paddle webhooks are authoritative. Preserve the raw request body, verify
   `Paddle-Signature` (`ts` plus every `h1`) with the five-second skew guard,
   reject invalid signatures before state writes, and keep event handling
