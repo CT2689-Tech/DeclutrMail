@@ -117,20 +117,33 @@ export function canReuse(context) {
   );
 }
 
-function api(route) {
-  try {
-    return JSON.parse(
-      execFileSync('gh', ['api', route], {
-        encoding: 'utf8',
-        timeout: 10_000,
-        maxBuffer: 4 * 1024 * 1024,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      }),
-    );
-  } catch {
-    throw new Error('GitHub CI metadata could not be read');
-  }
+const ghApi = (route) =>
+  execFileSync('gh', ['api', route], {
+    encoding: 'utf8',
+    timeout: 10_000,
+    maxBuffer: 4 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// A 5xx, timeout or network blip is retried twice with backoff, so one bad
+// response cannot fail a queue entry's aggregate. A 4xx answer is final, and
+// anything still failing after three tries fails closed.
+export function makeApi(exec = ghApi, sleep = pause, delays = [1_000, 3_000]) {
+  return (route) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return JSON.parse(exec(route));
+      } catch (error) {
+        const clientError = /\(HTTP 4\d\d\)/.test(String(error?.stderr ?? ''));
+        if (clientError || attempt >= delays.length || error instanceof SyntaxError)
+          throw new Error('GitHub CI metadata could not be read');
+        sleep(delays[attempt]);
+      }
+    }
+  };
 }
+const api = makeApi();
 
 // The receipt is data, never code: a two-line text file read out of the zip.
 function downloadArtifact(route) {
@@ -200,7 +213,7 @@ function readJobs(read, root, run, sha) {
   return { step, proven };
 }
 
-function newestRun(read, root, workflow, event, sha) {
+function newestRun(read, root, workflow, event, sha, belongs = () => true) {
   const listed = read(
     `${root}/workflows/${workflow.id}/runs?event=${event}&head_sha=${sha}&per_page=100`,
   );
@@ -222,7 +235,8 @@ function newestRun(read, root, workflow, event, sha) {
     `Mismatched ${event} run inventory`,
   );
   // Never fall back to an older green run when the newest one is red/pending.
-  const candidate = [...listed.workflow_runs].sort((a, b) => b.id - a.id)[0];
+  const candidate = listed.workflow_runs.filter(belongs).sort((a, b) => b.id - a.id)[0];
+  requireProof(candidate, `No ${event} run of this branch`);
   return { candidate: candidate.id, run: read(`${root}/runs/${candidate.id}`) };
 }
 
@@ -300,12 +314,26 @@ export function findPrSource(context, workflow, prNumber, allowed, read, downloa
     'Not a same-repository pull request into main',
   );
   const head = pull.head.sha;
-  const run = checkRun(context, workflow, newestRun(read, root, workflow, 'pull_request', head), {
-    event: 'pull_request',
-    sha: head,
-    maxAge: 7 * 24 * HOUR,
-    now,
-  });
+  const run = checkRun(
+    context,
+    workflow,
+    newestRun(
+      read,
+      root,
+      workflow,
+      'pull_request',
+      head,
+      // A fork or another branch can push the same head SHA; its runs (pending
+      // approval or red) are not this PR's and must not become the newest.
+      (run) => run.head_repository?.id === context.repoId && run.head_branch === pull.head.ref,
+    ),
+    {
+      event: 'pull_request',
+      sha: head,
+      maxAge: 7 * 24 * HOUR,
+      now,
+    },
+  );
   requireProof(run.head_branch === pull.head.ref, 'Pull request run is for another branch');
   const listed = read(`${root}/runs/${run.id}/artifacts?name=${treeArtifact}&per_page=100`);
   const artifact = listed.artifacts?.[0];

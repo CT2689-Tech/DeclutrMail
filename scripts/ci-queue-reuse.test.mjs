@@ -8,6 +8,7 @@ import {
   canReuse,
   findReuse,
   jobLegs,
+  makeApi,
   receiptOf,
   reusableOn,
   sourceJobs,
@@ -683,4 +684,77 @@ test('main never skips a job that publishes an artifact only its push run produc
   for (const key of publishers) assert.ok(!reusableOn.push.includes(key), key);
   for (const key of ['typecheck', 'lint', 'format', 'web-types'])
     assert.ok(reusableOn.push.includes(key), key);
+});
+
+test('a fork or other-branch run of the same head SHA never becomes the newest PR run', () => {
+  for (const foreign of [
+    { head_repository: { id: 999, full_name: 'fork/DeclutrMail' }, conclusion: null },
+    { head_branch: 'someone-else', conclusion: 'failure' },
+  ]) {
+    const data = fixture();
+    data.prListed.workflow_runs.push({ ...data.prRun, id: 150, status: 'waiting', ...foreign });
+    data.prListed.total_count = 2;
+    const read = (route) => {
+      assert.ok(!route.includes('/runs/150'), 'the foreign run was read');
+      return data.read(route);
+    };
+    assert.deepEqual(findReuse(queue, read, now, data.download).sources, [
+      { kind: 'pr', runId: 90, attempt: 1 },
+    ]);
+  }
+  // A newer red run on this PR's own branch still blocks reuse.
+  const data = fixture();
+  data.prListed.workflow_runs.push({ ...data.prRun, id: 150 });
+  data.prListed.total_count = 2;
+  const read = (route) =>
+    route.endsWith('/runs/150')
+      ? { ...data.prRun, id: 150, conclusion: 'failure' }
+      : data.read(route);
+  assert.throws(() => findReuse(queue, read, now, data.download), /did not finish successfully/);
+  // Only foreign runs: nothing of this branch to prove with.
+  const none = fixture();
+  none.prListed.workflow_runs[0].head_branch = 'someone-else';
+  assert.throws(() => none.find(queue), /No pull_request run of this branch/);
+});
+
+test('aggregate lookups retry a transient failure, never a 4xx, and fail closed when it persists', () => {
+  const failure = (stderr, extra = {}) =>
+    Object.assign(new Error('gh failed'), { stderr, ...extra });
+  const slept = [];
+  const flaky = (failures) => {
+    const data = fixture();
+    const calls = [];
+    const exec = (route) => {
+      calls.push(route);
+      if (calls.length <= failures.length) throw failures[calls.length - 1];
+      return JSON.stringify(data.read(route));
+    };
+    return { data, calls, read: makeApi(exec, (ms) => slept.push(ms)) };
+  };
+  for (const context of [push, queue]) {
+    const receipt = receiptOf(fixture().find(context));
+    for (const transient of [
+      failure('gh: Bad Gateway (HTTP 502)'),
+      failure('', { code: 'ETIMEDOUT' }),
+      failure('error connecting to api.github.com'),
+    ]) {
+      const { data, read } = flaky([transient]);
+      assert.deepEqual(verifyReuse(context, receipt, read, now, data.download), data.find(context));
+    }
+    const persistent = flaky(Array(3).fill(failure('gh: Service Unavailable (HTTP 503)')));
+    assert.throws(
+      () => verifyReuse(context, receipt, persistent.read, now, persistent.data.download),
+      /could not be read/,
+    );
+    assert.equal(persistent.calls.length, 3);
+    for (const status of [403, 404, 422]) {
+      const client = flaky([failure(`gh: Nope (HTTP ${status})`)]);
+      assert.throws(
+        () => verifyReuse(context, receipt, client.read, now, client.data.download),
+        /could not be read/,
+      );
+      assert.equal(client.calls.length, 1, `${status} was retried`);
+    }
+  }
+  assert.ok(slept.length > 0 && slept.every((ms) => ms > 0));
 });
