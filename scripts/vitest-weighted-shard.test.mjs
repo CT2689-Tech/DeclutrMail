@@ -35,7 +35,12 @@ test('heavy files are spread longest-first instead of by path', () => {
     [1, 1, 1],
   );
   const load = (files) => files.reduce((t, f) => t + apiWeights[f], 0);
-  const loads = assignShards(Object.keys(apiWeights), apiWeights, 3).map(load);
+  // Balance at the count CI actually runs, read from the API job's matrix.
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const apiJob = workflow.split('\n  test-api:\n')[1].split('\n  test-workers:\n')[0];
+  const count = JSON.parse(/shard: (\[[\d, ]+\])/.exec(apiJob)[1]).length;
+  assert.equal(count, 4);
+  const loads = assignShards(Object.keys(apiWeights), apiWeights, count).map(load);
   const heaviest = Math.max(...Object.values(apiWeights));
   assert.ok(Math.max(...loads) - Math.min(...loads) <= heaviest, loads.join(' / '));
 });

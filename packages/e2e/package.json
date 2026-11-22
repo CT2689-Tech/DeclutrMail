@@ -16,6 +16,8 @@
     "typecheck": "tsc --noEmit",
     "build": "echo 'no build'",
     "e2e:journeys": "playwright test triage-keep sender-policy protection-review autopilot-pages followups-dismiss later-recovery quiet-hours brief-preview senders-search-typing public-journeys cookie-consent journey-recovery scan-recovery unsubscribe-backlog home-next-step manual-delete-previews reconnect-action-feedback connect-app confirm-request --project=default",
+    "e2e:journeys-1": "playwright test home-next-step scan-recovery journey-recovery cookie-consent public-journeys confirm-request --project=default",
+    "e2e:journeys-2": "playwright test triage-keep sender-policy protection-review followups-dismiss autopilot-pages later-recovery quiet-hours brief-preview senders-search-typing unsubscribe-backlog manual-delete-previews reconnect-action-feedback connect-app --project=default",
     "test:harness": "node --experimental-strip-types --test contracts/*.test.mjs",
     "seed": "tsx helpers/seed-local.ts",
     "stack": "node --experimental-strip-types helpers/start-isolated.mjs"

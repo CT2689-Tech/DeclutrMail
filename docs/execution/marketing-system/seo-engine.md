@@ -9,7 +9,7 @@ service, paid API, dependency installation or scheduler is required.
 
 Owner/integration owner: the Codex session implementing this engine. New owned
 paths: `scripts/seo-engine*`, this document, its configuration, the upstream notice
-and `.github/workflows/seo-engine-tests.yml`. The existing marketing plan receives
+and the `SEO engine contracts` step of CI's Lint job. The existing marketing plan receives
 a pointer. Dependencies: existing growth automation and private evidence, public
 website, Node 22+. No application, billing, mailbox, database or provider policy
 change. Existing product and infrastructure PRs retain their owners.

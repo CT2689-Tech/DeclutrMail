@@ -165,29 +165,38 @@ present, because a second deployment posts pending and the queue waits on it.
 Creating one remains the recovery path when Vercel has posted nothing. CI
 still gates the merge.
 
-Post-merge CI remains enabled and reports the same required checks. The queue
-and main sometimes use the **exact same commit SHA** (observed in queue run
-38691424940 and main run 38692088406). On the first push attempt only, main may
-reuse the tests, browser lanes and Lighthouse results from that commit's newest
-successful merge-group CI run. It never uses a PR head, equivalent tree, nearby
-commit, arbitrary status, or a previous main run as proof.
+Post-merge CI remains enabled and reports the same required checks. Two runs
+can reuse earlier evidence instead of re-executing a job, on their first
+attempt only (`scripts/ci-queue-reuse.mjs`):
 
-`scripts/ci-queue-reuse.mjs` checks the repository IDs, active workflow ID/path,
-exact commit, main queue ref, successful completed run less than 24 hours old,
-and all 25 expected jobs from the same attempt. Every job must succeed; both
-aggregate steps must have passed, and the source queue's reuse lookup must have
-been skipped. An incomplete inventory, changed matrix, older green behind a
-newer failed run, mixed attempts, expired proof or API error selects full CI.
-PR and queue execution retain their existing coverage, and manual dispatch or
-rerunning all push CI jobs forces fresh execution.
+- **A merge-queue entry** reuses a job from its pull request's newest green CI
+  run when that run tested exactly the tree the queue checked out. A PR run
+  tests `refs/pull/N/merge`, which no run record names, so its changes job
+  uploads a `ci-tested-tree` receipt (commit and tree, kept 7 days). The receipt
+  counts only for the PR's current head, from a same-repository PR into main,
+  when the named commit is a real merge of that head with that tree. Main
+  moving after the PR run, or a batched queue entry, changes the tree, and the
+  queue runs everything. Jobs the PR run path-skipped run in the queue.
+- **A main push** reuses typecheck, lint, format, the tests, route types,
+  browser lanes and Lighthouse from the newest
+  green merge-group run of its exact commit (observed: queue run 38691424940
+  and main run 38692088406 share a SHA). Where that queue run itself reused a
+  job, main proves the PR evidence again rather than trusting the queue.
 
-`Test` and `CI required` independently re-read the source and compare the receipt
+A job is reused only when every one of its matrix legs succeeded in the
+evidence run's own attempt; a job carried over from an earlier attempt, a run
+that is red, pending or being re-run, an unknown job name, a stale inventory,
+an expired receipt or any API error selects the full suite.
+`ci-queue-reuse.test.mjs` derives the check inventory from ci.yml, so a
+renamed or removed job fails CI instead of quietly disabling reuse.
+
+`Test` and `CI required` independently re-read the evidence and compare the receipt
 before allowing those declared jobs to skip. If evidence changes or disappears
 after selection, the aggregate fails; use **Re-run all jobs** or dispatch CI manually to
 execute everything. Re-running only failed jobs can retain the successful
-selector's old receipt, so it is not a full-execution recovery path. Main still runs typecheck, lint and its push-base guard
-hooks, formatting, the production build/bundle/prerender budgets and generated
-route types. Its bundle baseline continues to be freshly published. CodeQL
+selector's old receipt, so it is not a full-execution recovery path. Main still runs
+the production build/bundle/prerender budgets, so its bundle baseline continues
+to be freshly published. CodeQL
 remains separately required. No branch requirement, token write permission,
 assertion threshold or release gate changes. Run summaries link the source
 attempt and identify reused validation rather than claiming new execution.

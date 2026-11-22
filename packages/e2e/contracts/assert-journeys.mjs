@@ -1,27 +1,11 @@
 import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
+import { expectedJourneys } from './journey-lanes.mjs';
+
 // Pin every journey file, not just a nonempty aggregate report. Missing file = failure.
-const expected = new Map([
-  ['triage-keep.spec.ts', 1],
-  ['sender-policy.spec.ts', 1],
-  ['protection-review.spec.ts', 1],
-  ['followups-dismiss.spec.ts', 1],
-  ['autopilot-pages.spec.ts', 2],
-  ['later-recovery.spec.ts', 1],
-  ['quiet-hours.spec.ts', 1],
-  ['brief-preview.spec.ts', 1],
-  ['senders-search-typing.spec.ts', 3],
-  ['public-journeys.spec.ts', 3],
-  ['cookie-consent.spec.ts', 2],
-  ['journey-recovery.spec.ts', 4],
-  ['unsubscribe-backlog.spec.ts', 4],
-  ['home-next-step.spec.ts', 1],
-  ['manual-delete-previews.spec.ts', 4],
-  ['reconnect-action-feedback.spec.ts', 1],
-  ['connect-app.spec.ts', 3],
-  ['confirm-request.spec.ts', 3],
-]);
+// An optional lane argument narrows the expectation to that CI lane's files.
+const expected = expectedJourneys(process.argv[3]);
 const report = JSON.parse(readFileSync(process.argv[2], 'utf8'));
 const counts = new Map();
 function visit(suite) {
@@ -44,4 +28,6 @@ for (const [file, minimum] of expected)
     (counts.get(file) ?? 0) >= minimum,
     `${file}: expected at least ${minimum} executed journeys`,
   );
-console.log('Every required isolated journey executed successfully.');
+console.log(
+  `Every required isolated journey executed successfully${process.argv[3] ? ` (${process.argv[3]})` : ''}.`,
+);

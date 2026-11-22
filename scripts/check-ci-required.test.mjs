@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkRequired } from './check-ci-required.mjs';
-import { reusedJobs } from './ci-queue-reuse.mjs';
+import { receiptOf, reusableOn } from './ci-queue-reuse.mjs';
 
 function fixture() {
   const jobs = [
@@ -91,32 +91,62 @@ test('push and manual runs require full suites', () => {
   assert.ok(checkRequired(fixture(), 'unknown').length);
 });
 
-test('only independently verified main queue proof permits the declared reused suites to skip', () => {
-  const needs = fixture();
-  Object.assign(needs.changes.outputs, { reuse: 'true', reuse_run_id: '100', reuse_attempt: '1' });
-  for (const job of reusedJobs) needs[job].result = 'skipped';
-  const verifiedSource = { runId: 100, attempt: 1 };
-  assert.deepEqual(checkRequired(needs, 'push', { verifiedSource }), []);
-  assert.deepEqual(checkRequired(needs, 'push', { verifiedSource, testsOnly: true }), []);
-  for (const proof of [undefined, { runId: 99, attempt: 1 }, { runId: 100, attempt: 2 }]) {
-    assert.ok(checkRequired(needs, 'push', { verifiedSource: proof }).length);
-    assert.ok(checkRequired(needs, 'push', { verifiedSource: proof, testsOnly: true }).length);
-  }
-  for (const event of ['pull_request', 'merge_group', 'workflow_dispatch']) {
-    assert.ok(checkRequired(needs, event, { verifiedSource }).length);
-  }
-  for (const job of ['changes', 'typecheck', 'lint', 'format', 'build-web', 'web-types']) {
-    const bad = structuredClone(needs);
-    bad[job].result = 'skipped';
-    assert.ok(checkRequired(bad, 'push', { verifiedSource }).length, job);
-  }
-  for (const job of reusedJobs) {
-    for (const result of ['failure', 'cancelled', undefined]) {
-      const bad = structuredClone(needs);
-      bad[job].result = result;
-      assert.ok(checkRequired(bad, 'push', { verifiedSource }).length, `${job}: ${result}`);
+test('only independently verified evidence permits exactly its proven jobs to skip', () => {
+  const sources = {
+    push: [{ kind: 'queue', runId: 100, attempt: 1 }],
+    merge_group: [{ kind: 'pr', runId: 90, attempt: 1 }],
+  };
+  for (const event of ['push', 'merge_group']) {
+    const verifiedSource = { jobs: reusableOn[event], sources: sources[event] };
+    const needs = fixture();
+    Object.assign(needs.changes.outputs, receiptOf(verifiedSource));
+    for (const job of reusableOn[event]) needs[job].result = 'skipped';
+    assert.deepEqual(checkRequired(needs, event, { verifiedSource }), [], event);
+    assert.deepEqual(checkRequired(needs, event, { verifiedSource, testsOnly: true }), [], event);
+    for (const proof of [
+      undefined,
+      { ...verifiedSource, sources: [{ kind: 'queue', runId: 99, attempt: 1 }] },
+      { ...verifiedSource, sources: [{ ...sources[event][0], attempt: 2 }] },
+      { ...verifiedSource, jobs: reusableOn[event].slice(1) },
+    ]) {
+      assert.ok(checkRequired(needs, event, { verifiedSource: proof }).length, event);
+      assert.ok(
+        checkRequired(needs, event, { verifiedSource: proof, testsOnly: true }).length,
+        event,
+      );
     }
+    for (const other of ['pull_request', 'workflow_dispatch']) {
+      assert.ok(checkRequired(needs, other, { verifiedSource }).length, other);
+    }
+    // A job outside the proof, or outside this event's reusable set, still must run.
+    for (const job of Object.keys(fixture()).filter((j) => j !== 'changes')) {
+      const bad = structuredClone(needs);
+      bad[job].result = 'skipped';
+      const partial = { ...verifiedSource, jobs: verifiedSource.jobs.filter((j) => j !== job) };
+      Object.assign(bad.changes.outputs, receiptOf(partial));
+      assert.ok(checkRequired(bad, event, { verifiedSource: partial }).length, `${event} ${job}`);
+    }
+    for (const job of reusableOn[event]) {
+      for (const result of ['failure', 'cancelled', undefined]) {
+        const bad = structuredClone(needs);
+        bad[job].result = result;
+        assert.ok(checkRequired(bad, event, { verifiedSource }).length, `${job}: ${result}`);
+      }
+    }
+    const changes = structuredClone(needs);
+    changes.changes.result = 'skipped';
+    assert.ok(checkRequired(changes, event, { verifiedSource }).length);
   }
+  // Main never skips the build that publishes its bundle baseline.
+  assert.ok(!reusableOn.push.includes('build-web'));
+  const needs = fixture();
+  const verifiedSource = {
+    jobs: reusableOn.merge_group,
+    sources: [{ kind: 'pr', runId: 90, attempt: 1 }],
+  };
+  Object.assign(needs.changes.outputs, receiptOf(verifiedSource));
+  needs['build-web'].result = 'skipped';
+  assert.ok(checkRequired(needs, 'push', { verifiedSource }).length);
 });
 
 test('test aggregate also rejects unexpected skips and an invalid path selection', () => {
@@ -136,7 +166,13 @@ test('isolated browser matrix preserves every suite and its coverage assertion',
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const browser = workflow.split('  accessibility:')[1];
   assert.match(browser, /fail-fast: false/);
-  for (const lane of ['accessibility', 'responsive', 'hydration-billing', 'journeys']) {
+  for (const lane of [
+    'accessibility',
+    'responsive',
+    'hydration-billing',
+    'journeys-1',
+    'journeys-2',
+  ]) {
     assert.match(browser, new RegExp(`- lane: ${lane}\\b`));
   }
   // The 2026-10 pricing is unconditional; no lane carries a pricing flag.
@@ -147,12 +183,17 @@ test('isolated browser matrix preserves every suite and its coverage assertion',
     ['Run the responsive layout gate (320px)', 'responsive', 'e2e:responsive'],
     ['Run the hydration smoke (non-en-US locale + timezone)', 'hydration-billing', 'e2e:hydration'],
     ['Run the billing money-path spec', 'hydration-billing', 'e2e:billing'],
-    ['Verify isolated harness guards', 'journeys', 'test:harness'],
-    ['Run isolated product and public journeys', 'journeys', 'e2e:journeys'],
-    ['Assert each required journey executed', 'journeys', 'assert-journeys.mjs'],
+    ['Verify isolated harness guards', 'journeys-1', 'test:harness'],
+    ['Run isolated product and public journeys', 'journeys-', 'e2e:${{ matrix.lane }}'],
+    ['Assert each required journey executed', 'journeys-', 'assert-journeys.mjs'],
   ]) {
     const step = browser.split(`- name: ${name}\n`)[1]?.split('\n      - ')[0];
-    assert.ok(step?.includes(`matrix.lane == '${lane}'`), name);
+    assert.ok(
+      step?.includes(
+        lane.endsWith('-') ? `startsWith(matrix.lane, '${lane}')` : `matrix.lane == '${lane}'`,
+      ),
+      name,
+    );
     assert.ok(step?.includes(command), name);
     if (name.startsWith('Assert')) assert.ok(step.includes('if: always()'), name);
   }
@@ -174,7 +215,8 @@ test('actual browser coverage step rejects each absent, skipped or empty lane re
     accessibility: ['e2e-a11y-report.json'],
     responsive: ['e2e-render-report.json', 'e2e-responsive-report.json'],
     'hydration-billing': ['e2e-billing-report.json', 'e2e-hydration-report.json'],
-    journeys: ['e2e-journeys-report.json'],
+    'journeys-1': ['e2e-journeys-report.json'],
+    'journeys-2': ['e2e-journeys-report.json'],
   };
   const run = (lane) =>
     spawnSync('bash', ['-e', '-u', '-o', 'pipefail', '-c', shell], {
@@ -375,4 +417,33 @@ test('the build wait fails promptly, by name, on every missing or bad status', (
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test('the journey lanes in CI are exactly the pinned lanes, each asserted against its own files', async () => {
+  const { journeyLanes } = await import('../packages/e2e/contracts/journey-lanes.mjs');
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const browser = workflow.split('  accessibility:')[1];
+  const lanes = [...browser.matchAll(/- lane: (journeys-[\w-]+)\n/g)].map((m) => m[1]);
+  assert.deepEqual(lanes.sort(), Object.keys(journeyLanes).sort());
+  const step = browser
+    .split('- name: Assert each required journey executed\n')[1]
+    .split('\n      - ')[0];
+  assert.ok(step.includes('assert-journeys.mjs e2e-journeys-report.json ${{ matrix.lane }}'));
+});
+
+test('Lint runs the content pipeline and SEO engine contracts on every run', async () => {
+  const { existsSync } = await import('node:fs');
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const lint = workflow.split('\n  lint:\n')[1].split('\n  format:\n')[0];
+  for (const command of [
+    'node --test scripts/content-pipeline.test.mjs',
+    'node scripts/content-pipeline.mjs check-registry',
+    'node --test scripts/seo-engine.test.mjs',
+  ]) {
+    const step = lint.split('\n      - ').find((item) => item.includes(command));
+    assert.ok(step, command);
+    assert.doesNotMatch(step, /\bif:/, command);
+  }
+  for (const retired of ['content-pipeline-tests.yml', 'seo-engine-tests.yml'])
+    assert.ok(!existsSync(new URL(`../.github/workflows/${retired}`, import.meta.url)), retired);
 });
