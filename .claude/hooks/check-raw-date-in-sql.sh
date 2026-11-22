@@ -6,7 +6,7 @@
 # silently coerces a raw JS Date to a string; postgres.js (production)
 # sends `Date.toString()` — e.g. "Thu Sep 03 2026 07:46:21 GMT+0000..."
 # — as the bind param and Postgres rejects it. This has now shipped to
-# production three times (PR #117 D86 2026-05-27; PR #334 2026-07-15;
+# production three times (PR #117 2026-05-27; PR #334 2026-07-15;
 # packages/workers/src/lapse-reengagement.worker.ts's
 # `notDecidedRecently`, live in prod 2026-08-23 through this fix),
 # each time invisible to the PGlite-backed test suite that exercised

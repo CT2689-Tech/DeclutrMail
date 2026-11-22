@@ -4,7 +4,7 @@
 # Enforces the canonical user-facing actions (Keep / Archive / Unsubscribe /
 # Later / Delete). "Screen" is an internal enum only — never user-facing.
 #
-# Also enforces the D228 privacy-badge rule: counter-style trust copy is
+# Also enforces the privacy-badge rule: counter-style trust copy is
 # banned in product surfaces (CLAUDE.md §2.1). The locked replacement is
 # "We never fetch or store full email contents." + the explicit storage
 # list, rendered by PrivacyBadge from packages/shared/src/copy/privacy.ts.
@@ -73,7 +73,7 @@ case "$file_path" in
     ;;
 esac
 
-# Privacy badge rule (D228 + CLAUDE.md §2.1): the pre-D228 trust copy
+# Privacy badge rule (CLAUDE.md §2.1 — a published claim we must be able to prove).
 # Counter-style privacy claims are banned in product surfaces. The locked
 # replacement is a plain-language sentence + the explicit storage list — render
 # <PrivacyBadge> from @declutrmail/shared; copy literals live ONLY in
@@ -87,10 +87,10 @@ case "$file_path" in
     ;;
   */apps/web/*|*/packages/shared/*|*.stories.tsx|*.stories.ts|*.stories.jsx|*.stories.js|*.stories.mdx)
     if grep -nE 'Bodies read: 0|Full bodies fetched: 0' "$file_path" >/dev/null 2>&1; then
-      echo "❌ check-microcopy: banned counter-style privacy copy (D228)" >&2
+      echo "❌ check-microcopy: banned counter-style privacy copy (CLAUDE.md §2.1)" >&2
       grep -nE 'Bodies read: 0|Full bodies fetched: 0' "$file_path" | sed 's/^/   /' >&2
       echo "" >&2
-      echo "   D228: use 'We never fetch or store full email contents.' + the explicit storage list." >&2
+      echo "   CLAUDE.md §2.1: use 'We never fetch or store full email contents.' + the explicit storage list." >&2
       echo "   Render <PrivacyBadge> from @declutrmail/shared — copy lives only in packages/shared/src/copy/privacy.ts." >&2
       exit 2
     fi
@@ -245,8 +245,9 @@ case "$file_path" in
     # docs/execution/repositioning-copy-spec-2026-08-01.md §7, beside T1,
     # T4 and T7 — the constraints already routed to a reader.
     #
-    # D194's forbidden framings (blocks / prevents / keeps out /
-    # intercepts / quarantines) remain binding on ALL copy.
+    # T3's forbidden Screener framings (blocks / prevents / keeps out /
+    # intercepts / quarantines) remain binding on ALL copy: new senders still
+    # arrive in Gmail, so any of them is a false claim (ADR-0030).
 
     if [ "$truth_violations" -gt 0 ]; then
       echo "" >&2
@@ -311,7 +312,7 @@ if grep -nE "['\"]Screen([[:space:]]|['\"\$])" "$file_path" >/dev/null 2>&1; the
   fi
 fi
 
-# 3) Banned shortcut: the 'S' key was canonical pre-D227; now it's 'L' for Later.
+# 3) Banned shortcut: the 'S' key was the old Screen shortcut; now it's 'L' for Later.
 #    Flag any aria-keyshortcut or hotkey config that binds 'S' to a verb action.
 if grep -nE "(aria-keyshortcuts|hotkey|shortcut)\s*[:=]\s*['\"](S|s)['\"]" "$file_path" >/dev/null 2>&1; then
   echo "❌ check-microcopy: 'S' as an action shortcut ('S' was the old Screen shortcut)" >&2

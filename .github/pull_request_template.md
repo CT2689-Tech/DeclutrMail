@@ -2,16 +2,7 @@
 DeclutrMail PR Template
 
 See CLAUDE.md §6 (naming conventions) and §8 (definition of done) for full rules.
-Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 -->
-
-## Closes
-
-<!-- One or more D-numbers from the plan. Required (bootstrap branches exempt).
-     Shipping: `Closes D###` (flips IMPLEMENTATION-LOG).
-     Follow-up that must not flip a row: `Relates to D###`. -->
-- Closes D###
-<!-- - Relates to D### -->
 
 ## What changed
 
@@ -26,7 +17,7 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 
 ## Verification
 
-<!-- Tick at least one verification source per D# closed. -->
+<!-- Tick at least one verification source. -->
 - [ ] Unit / integration tests added (list test names: ``)
 - [ ] Playwright E2E added (for user flows)
 - [ ] Gate subagent: [ ] privacy-auditor / [ ] architecture-guardian / [ ] schema-migration-reviewer / [ ] design-system-agent / [ ] webhook-security-auditor
@@ -38,7 +29,7 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 - [ ] **Migration PR:** Atlas dry-run output attached. Rollback path: 
 
 <!-- API PR -->
-- [ ] **API PR:** Contract tests pass. OpenAPI updated. Response follows D202 envelope.
+- [ ] **API PR:** Contract tests pass. OpenAPI updated. Response uses the shared API envelope.
 
 <!-- Worker PR -->
 - [ ] **Worker PR:** Policy: [ ] webhook / [ ] perMailbox / [ ] batch / [ ] cron / [ ] admin. Idempotency key: 
@@ -50,9 +41,8 @@ Bootstrap PRs (branch `chore/bootstrap-*`) may omit the Closes section.
 - [ ] `pnpm lint` passes
 - [ ] Affected unit + integration tests pass
 - [ ] Affected E2E tests pass (or N/A)
-- [ ] `IMPLEMENTATION-LOG.md` is current for the cited decisions (or N/A)
 - [ ] No unresolved [BLOCKING] comments from gate agents
-- [ ] No new TODOs unless linked to a D-decision or GitHub issue
+- [ ] No new TODOs unless linked to a GitHub issue
 - [ ] No new secrets in code (`gitleaks`-clean)
 
 ## Stop conditions (review carefully)

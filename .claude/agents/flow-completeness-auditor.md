@@ -44,7 +44,7 @@ behavior.
   undo attempted after the window.
 - Unsubscribe lifecycle: `sender_policies` unsub status — `requested →
   endpoint_accepted | unconfirmed | action_required | unavailable`, and the
-  manual mailto path `draft_opened → user_marked_sent` (D230). A surface
+  manual mailto path `draft_opened → user_marked_sent` (CLAUDE.md §2.6). A surface
   must never say "Unsubscribed" before the request resolves.
 - Later: a Later job waking mail back into the inbox at
   `action_jobs.wake_at`.
@@ -55,7 +55,7 @@ behavior.
   Terminal states stay terminal; same-second provider events must not
   reorder them (CLAUDE.md §2.6).
 - Account deletion: `pending → cancelled | executing → completed`, never
-  executing before the latest undo window closes (D232).
+  executing before the latest undo window closes (CLAUDE.md §2.6).
 - Any TanStack query whose result depends on a server-resolved scope
   (active mailbox) — the cache is NOT partitioned by that scope.
 - Onboarding / gate flows that auto-advance or trap.
@@ -109,6 +109,6 @@ End with one line: `Flows audited: <list>. States enumerated: <n>.
 Verified by test: <n>. Needs live smoke/e2e: <list>.`
 
 Advisory tier — non-blocking. You report; you never refactor. If a flow
-is OAuth/session-gated and a dev test-login (D206) exists, recommend the
+is OAuth/session-gated and a dev test-login (CLAUDE.md §8) exists, recommend the
 exact `GET /api/auth/dev/login?email=…` smoke path so the reviewer can
 actually walk it.

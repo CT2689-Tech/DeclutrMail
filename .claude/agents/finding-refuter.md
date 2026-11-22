@@ -56,7 +56,7 @@ moves the working tree to main, and a live guard then reads as dead code.
 Read the invariant before you concede the behaviour is wrong. A designed 4xx is
 not a failure: reads behind `CurrentMailboxGuard` return 409
 (`SELECT_MAILBOX` / `NO_ACTIVE_MAILBOX`) by design. A mandatory preview
-(D226) is not friction. "Screen" as an internal enum value is correct; only the
+(CLAUDE.md §2.3) is not friction. "Screen" as an internal enum value is correct; only the
 product surface is forbidden it. A Free-tier 402 is the product working.
 Check the entitlement manifest (`pricing.config.ts`) and the Gmail data
 registry (`gmail-data-inventory.ts`) — **executable truth beats the plan**, and

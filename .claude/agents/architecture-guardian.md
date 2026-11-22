@@ -55,7 +55,7 @@ pnpm lint 2>&1 | tail -20
 
 Run each check below. Report findings per the output format at the end.
 
-#### Check A — NestJS module structure (D201)
+#### Check A — NestJS module structure
 
 For each new NestJS module (`*.module.ts`) added or modified:
 
@@ -69,7 +69,7 @@ internal repository or service as its own provider. Importing the owning
 module and calling its exported service is fine; so is a direct read when it
 is simpler (2026-11-17: cross-feature access is a convention, not a gate).
 
-#### Check B — Worker policies (D203, D225)
+#### Check B — Worker policies
 
 For each new or modified worker class extending `BaseDeclutrWorker`:
 
@@ -85,7 +85,7 @@ For each new or modified worker class extending `BaseDeclutrWorker`:
   - `cronPolicy`: keyed on `(worker_name, scheduled_at_minute)`
   - `adminPolicy`: exempt from idempotency (its job IS to surface failures)
 - Does it call `Sentry.captureException` exactly once per failure (NOT in
-  multiple nested try/catch — violates D203 Sentry test)?
+  multiple nested try/catch — one failure must be one Sentry event)?
 - For `adminPolicy` only: Sentry-multiple is allowed (the purpose IS alerting)
 
 **Flag (BLOCKING)** any worker that:
@@ -107,7 +107,7 @@ async side effects in another feature.
 feature enforces — the undo journal, Protected exclusion, an entitlement
 check. Never BLOCK on read-only/event-only purity.
 
-#### Check D — Undo journal wiring (D232, D207)
+#### Check D — Undo journal wiring (CLAUDE.md §2.3 undo step, §2.6 account deletion)
 
 For each destructive mutation handler (Archive, Unsubscribe, Later,
 Delete, account deletion):
@@ -120,7 +120,7 @@ Delete, account deletion):
 
 **Flag (BLOCKING)** any destructive mutation that doesn't wire to undo.
 
-#### Check E — Observability events (D159)
+#### Check E — Observability events
 
 For each new event in the codebase:
 
@@ -135,11 +135,11 @@ For each new event in the codebase:
 they could contain message body (`message_text`, `email_content`, `body_preview`).
 Refer to `privacy-auditor` for body-storage check.
 
-#### Check F — API envelope + pagination (D202)
+#### Check F — API envelope + pagination
 
 For each new HTTP endpoint (`@Get`, `@Post`, etc.) in a controller:
 
-- Does the response follow the D202 envelope `{ data, meta? }`
+- Does the response follow the envelope `{ data, meta? }`
   (`packages/shared/src/contracts/envelope.ts`, built with `ok()` /
   `withMeta()`)? Errors go through `AllExceptionsFilter`, never a hand-built body.
 - For list endpoints: does it use cursor pagination (`cursor` + `limit`),
@@ -149,7 +149,7 @@ For each new HTTP endpoint (`@Get`, `@Post`, etc.) in a controller:
 - Is the request body parsed with a Zod schema from
   `packages/shared/src/contracts/` (there are no `dto/` classes)?
 
-#### Check G — Rate limiting (D156)
+#### Check G — Rate limiting
 
 For each new public endpoint:
 
@@ -204,7 +204,7 @@ Each of these shipped to production at least once. Flag (BLOCKING):
 **Check:** <A–I>
 **File:** <path>:<line>
 **Pattern:** <what was found>
-**Why it's a violation:** <reference D###>
+**Why it's a violation:** <cite the source: CLAUDE.md section, ADR, or the file that defines the convention>
 **Required fix:** <what to change>
 
 ### [WARNING] ...
@@ -228,8 +228,8 @@ If no findings: `## Architecture Guardian — PR #<NN>: no findings.`
 
 Stop and surface to founder immediately if the PR:
 
-- Modifies the API envelope contract (D202)
-- Changes the undo journal schema or TTL logic (D232)
+- Modifies the API envelope contract (`packages/shared/src/contracts/envelope.ts`)
+- Changes the undo journal schema or TTL logic
 - Modifies CLAUDE.md §2 guardrails or this file
 
 These are systemic changes requiring founder review beyond the gate.

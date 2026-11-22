@@ -144,7 +144,7 @@ If the file is a worker (`extends BaseDeclutrWorker`):
   the worker policy's retry strategy applies.
 
 Flag in-worker swallowed errors as **[SUGGESTION]** with reference to
-D203/D225.
+the worker policy in `packages/workers/src/worker-policies.ts`.
 
 ### Step 5: Observability path checks
 
@@ -183,8 +183,8 @@ If no findings: `## Silent Failure Hunt — PR #<NN>: no findings.`
 ## Severity rubric
 
 - **[BLOCKING]** — swallowed error in a security check, an auth flow,
-  a privacy enforcement path (D7/D228), or a webhook signature
-  verification (D229)
+  a privacy enforcement path (CLAUDE.md §2.1), or a webhook signature
+  verification (§2.5)
 - **[SUGGESTION]** — empty catch in production code, console.log-only
   catch handler, dropped promise rejection in non-trivial flow
 - **[NIT]** — return value of a result-shaped function used as a

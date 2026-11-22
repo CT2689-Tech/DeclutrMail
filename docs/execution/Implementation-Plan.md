@@ -1,3 +1,5 @@
+> **Retired 2026-11-17 (founder decision): D-numbers are out of consideration for all work. Historical record only.**
+>
 > ## ⛔ FROZEN — historical record, not a source of truth
 >
 > **Founder decision 2026-08-27.** This document records how DeclutrMail V2

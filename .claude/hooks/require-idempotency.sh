@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # require-idempotency.sh — PostToolUse hook for Edit/Write/MultiEdit
 #
-# Enforces D203 + D225: every worker class extending BaseDeclutrWorker
+# BullMQ delivers at least once, so a duplicate job is a duplicate Gmail
+# mutation. Hence every worker class extending BaseDeclutrWorker
 # must declare an idempotencyKey (field, getter, or method). Webhook
 # handlers must dedupe on the external message ID; per-mailbox workers
 # must key on (mailbox_id, gmail_message_id) or equivalent.
@@ -46,7 +47,8 @@ if ! grep -qE "(idempotencyKey\s*[:=(]|get\s+idempotencyKey\s*\(|getIdempotencyK
   echo "❌ require-idempotency: worker class missing idempotencyKey declaration" >&2
   echo "   File: $file_path" >&2
   echo "" >&2
-  echo "   Per D203 + D225, every BaseDeclutrWorker subclass declares an idempotency key:" >&2
+  echo "   BullMQ is at-least-once (a duplicate job = a duplicate Gmail mutation), so every" >&2
+  echo "   BaseDeclutrWorker subclass declares an idempotency key:" >&2
   echo "   - webhookPolicy: key on the webhook event id (Pub/Sub messageId, Stripe event.id, ...)" >&2
   echo "   - perMailboxPolicy: key on (mailbox_id, gmail_message_id) or equivalent" >&2
   echo "   - batchPolicy: key on the batch's deterministic identifier" >&2

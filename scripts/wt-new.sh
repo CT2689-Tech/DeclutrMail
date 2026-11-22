@@ -19,8 +19,7 @@
 # Teardown: scripts/wt-clean.sh  (removes all worktrees + branches except main)
 #
 # Branch-name convention (CLAUDE.md §6):
-#   <type>/d<NNN>-<kebab-description>     (≤50 chars; zero-padded D)
-#   chore/bootstrap-<topic>               (pre-PR-1 work or no D-tie)
+#   <type>/<kebab-description>            (≤50 chars)
 #
 # The script does NOT enforce the convention — that's the GH Action's job.
 # It WILL warn loudly if the branch name looks malformed.
@@ -29,7 +28,7 @@ set -euo pipefail
 
 if [ $# -ne 1 ]; then
   echo "usage: $(basename "$0") <branch-name>" >&2
-  echo "  example: $(basename "$0") feat/d042-sender-detail-charts" >&2
+  echo "  example: $(basename "$0") feat/sender-detail-charts" >&2
   exit 2
 fi
 
@@ -37,9 +36,9 @@ branch="$1"
 
 # Soft-warn on malformed names rather than refusing — agents already failed
 # enough today.
-if ! printf '%s' "$branch" | grep -qE '^(feat|fix|chore|docs|refactor|test|perf|security)/(d[0-9]{3}-[a-z0-9-]+|bootstrap-[a-z0-9-]+)$'; then
+if ! printf '%s' "$branch" | grep -qE '^(feat|fix|chore|docs|refactor|test|perf|security)/[a-z0-9][a-z0-9-]*$'; then
   echo "WARN: '$branch' does not match the CLAUDE.md §6 convention." >&2
-  echo "      Expected: <type>/d<NNN>-<kebab>  or  chore/bootstrap-<topic>" >&2
+  echo "      Expected: <type>/<kebab-description>" >&2
   echo "      Continuing anyway — the GH Action will reject on PR open if non-conformant." >&2
 fi
 
