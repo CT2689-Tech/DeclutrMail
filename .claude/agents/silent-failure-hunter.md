@@ -105,6 +105,22 @@ Lines that read like `result.error` standalone (not assigned) likely
 mean the implementer forgot to do something. **[NIT]** to **[SUGGESTION]**
 depending on context.
 
+#### Unchecked values at a boundary
+
+What `tsc --strict` and lint let through, and what fails silently later:
+
+```bash
+git diff origin/main...HEAD -- '*.ts' '*.tsx' | rg -n 'JSON\.parse\(|\.json\(\)|[\w)\]]!\.|switch\s*\('
+```
+
+- `JSON.parse(...)` or `await res.json()` used without a Zod parse or an
+  explicit `unknown`: an implicit `any` that reads a missing field as
+  `undefined`. **[SUGGESTION]**: parse at the boundary.
+- A non-null `!` on a value from an API response, DB row or Gmail payload.
+  **[SUGGESTION]**: an explicit check with an error path.
+- A `switch` on a union discriminant with no `never` default: the next
+  variant falls through and does nothing. **[SUGGESTION]**.
+
 #### Scripts, hooks and workflows
 
 ```bash
@@ -204,6 +220,6 @@ Surface to founder if the PR:
 - You do NOT review architecture / module structure (architecture-guardian)
 - You do NOT review privacy data flow (privacy-auditor) — but flag
   swallowed privacy errors specifically
-- You do NOT review TypeScript types broadly (typescript-reviewer)
+- You do NOT review TypeScript types broadly (`tsc --strict` and `pnpm lint` do)
 - You do NOT write or propose fixes
 - You do NOT block PRs (advisory tier, except [BLOCKING] for security paths)

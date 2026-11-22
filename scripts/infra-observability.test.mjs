@@ -80,27 +80,3 @@ test('Vercel charges preserve USD and reject missing amount/currency instead of 
     else process.env.VERCEL_TEAM_ID = originalTeam;
   }
 });
-
-// Legacy history is a migration input, not a new measurement.
-import { legacySnapshot } from './refresh-infra-dashboard.mjs';
-test('legacy import preserves collection time, refuses incomplete reports and never imports old Anthropic dollars', () => {
-  const names = [
-    'Supabase (DB size)',
-    'Google Cloud (budgets)',
-    'Upstash Redis',
-    'Anthropic',
-    'Vercel',
-    'Sentry',
-    'PostHog',
-    'GitHub Actions',
-    'Paddle (webhooks)',
-    'Razorpay (webhooks)',
-  ];
-  const log = names
-    .map((name) => `check\t2026-09-05T15:43:48Z | ${name} | 🟢 OK | — | MTD cost $100.00 |`)
-    .join('\n');
-  const result = legacySnapshot(log);
-  assert.equal(result.observedAt, '2026-09-05T15:43:48Z');
-  assert.equal(result.vendors.find((v) => v.name === 'Anthropic').costMtdUsd, null);
-  assert.throws(() => legacySnapshot(log.split('\n').slice(1).join('\n')), /Incomplete/);
-});

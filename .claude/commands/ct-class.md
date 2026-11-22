@@ -111,15 +111,15 @@ Close with:
 - **Fixes** — one line each, grouped by whether they are safe to just do.
 - **Needs the founder** — anything touching a destructive verb, automation
   reach, billing, privacy, or production data (CLAUDE.md §9). Do not decide
-  these. Name them and point at `/ct-decide`.
+  these. Name each as a question for the founder.
 - **Filed** — offer to append each confirmed instance to `FINDINGS.md` via
   `/ct-finding`. Do not write the file unless asked.
 
 ## The trust score
 
 A number from 1 to 10 where **10 = certain this instance is real**. It scores
-your EVIDENCE, not the severity and not the fix. This is a different axis from
-`/ct-decide`'s safety score — do not blend them.
+your EVIDENCE, not the severity and not the fix. Do not blend it with how
+safe a fix is.
 
 - **9–10** — observed. Reproduced live, or the wrong value queried out of a
   real database, or the screenshot shows it.

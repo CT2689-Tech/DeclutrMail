@@ -117,7 +117,7 @@ and budgets, and accessibility/browser smoke. A PR can skip a suite only when
 path detection explicitly excludes it. Merge groups run all release suites.
 CodeQL security scanning remains a separately required check.
 
-Run `scripts/check-merge-queue-ready.sh` to compare this policy with live branch
+Run `node scripts/check-merge-queue-ready.mjs` to compare this policy with live branch
 protection/rulesets and workflow producers. External checks such as Vercel need
 actual merge-group status evidence; this audit cannot establish their behavior.
 The audit is read-only and intentionally reports missing protection during a

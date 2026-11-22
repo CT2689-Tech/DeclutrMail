@@ -28,7 +28,7 @@ That same move hands our mutation pipeline to a caller that reads
 attacker-written text. Subject lines are written by senders, and they
 would sit in the context of a model holding archive and delete tools.
 The web app's preview step is enforced in the client
-(`require-preview-before-mutation.sh`); `POST /api/actions` and the
+(by the action sheet and design review); `POST /api/actions` and the
 intent routes accept a mutation with no preview attached. An LLM client
 would skip it. Tool annotations
 (`destructiveHint`) do not close the gap: clients let a user choose

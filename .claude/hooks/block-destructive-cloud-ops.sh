@@ -1,113 +1,59 @@
 #!/usr/bin/env bash
 # block-destructive-cloud-ops.sh — PreToolUse hook for Bash
 #
-# Halts any Bash command that performs an irreversible / hard-to-reverse
-# operation against production infra, the live Postgres / Redis backends,
-# stored secrets, or version control. Reads (list, describe, get, query
-# SELECT) pass through untouched.
+# Halts a Bash command that deletes or destroys production infra, stored
+# secrets or a non-local database. Reads (list, describe, get, SELECT) pass.
+# Git rewrites are left to the deny list in .claude/settings.json.
 #
-# Rationale (memory `no-destructive-without-approval`): the founder
-# rejects unilateral destructive actions from Claude sessions. The
-# advisory memory + the per-action approval convention catch most
-# cases — this hook is the enforced backstop.
+# psql TRUNCATE / DELETE FROM pass only against a local DSN (localhost,
+# 127.0.0.1 or $DEV_DATABASE_URL) and with no other host on the line.
 #
-# Exit 0 = allow. Exit 2 = block with a message explaining what
-# matched and why. To override for a specific session, the founder
-# can comment out the matching pattern below OR move the hook out of
-# `.claude/settings.json`.
+# Exit 0 = allow. Exit 2 = block. The founder runs a blocked command, or
+# approves it for one session (memory: no-destructive-without-approval).
 
 set -euo pipefail
 
-input=$(cat)
-command=$(echo "$input" | jq -r '.tool_input.command // empty')
+command=$(jq -r '.tool_input.command // empty')
+[ -z "$command" ] && exit 0
 
-if [ -z "$command" ]; then
-  exit 0
+S='[[:space:]]+'
+cloud="gcloud$S(secrets$S(delete|destroy|versions$S(disable|destroy))"
+cloud+="|iam$S(service-accounts$S(keys$S)?delete|workload-identity-pools${S}delete)"
+cloud+="|kms${S}keys${S}versions${S}destroy|run$S(services|revisions)${S}delete"
+cloud+="|pubsub$S(topics|subscriptions)${S}delete"
+cloud+="|artifacts$S(repositories|docker|files|packages|tags|versions)${S}delete"
+cloud+="|sql$S(instances|databases|backups|users)${S}delete|projects${S}delete"
+cloud+="|billing${S}projects${S}unlink|logging$S(metrics|sinks)${S}delete"
+cloud+="|((alpha|beta)$S)?monitoring$S(policies|channels)${S}delete"
+cloud+="|projects${S}remove-iam-policy-binding)"
+cloud+="|gh$S(secret|repo|release)${S}delete|gh${S}api$S.*(-X|--method)${S}DELETE"
+cloud+="|vercel$S(rm|remove|project${S}rm|env${S}rm)"
+cloud+="|supabase$S(projects${S}delete|db${S}reset)"
+cloud+="|redis-cli$S.*(FLUSHDB|FLUSHALL)"
+cloud+="|psql$S.+DROP$S(DATABASE|SCHEMA|TABLE|ROLE|USER)"
+cloud+="|atlas${S}migrate${S}down|atlas${S}schema${S}apply|drizzle-kit${S}drop"
+files="(rm$S(-[rfFv]+$S)*|shred$S).*(\.env(\.|$| )|credentials\.json|auth\.json)"
+
+block() {
+  echo "❌ block-destructive-cloud-ops: $1" >&2
+  echo "   Command: $command" >&2
+  echo "   Deletes against prod, secrets or a shared DB need the founder's go-ahead;" >&2
+  echo "   surface the exact command and let them run it." >&2
+  exit 2
+}
+
+if printf '%s' "$command" | grep -qE "($cloud)([^[:alnum:]_-]|$)|$files"; then
+  block "irreversible cloud, secret or database operation."
 fi
 
-# Patterns are matched with `grep -qE`. Word boundaries avoid catching
-# read-only subcommands that happen to share a word.
-forbidden=(
-  # GCP destructive operations
-  'gcloud[[:space:]]+secrets[[:space:]]+(delete|destroy)\b'
-  'gcloud[[:space:]]+secrets[[:space:]]+versions[[:space:]]+(disable|destroy)\b'
-  'gcloud[[:space:]]+iam[[:space:]]+service-accounts[[:space:]]+delete\b'
-  'gcloud[[:space:]]+iam[[:space:]]+service-accounts[[:space:]]+keys[[:space:]]+delete\b'
-  'gcloud[[:space:]]+kms[[:space:]]+keys[[:space:]]+versions[[:space:]]+destroy\b'
-  'gcloud[[:space:]]+run[[:space:]]+services[[:space:]]+delete\b'
-  'gcloud[[:space:]]+run[[:space:]]+revisions[[:space:]]+delete\b'
-  'gcloud[[:space:]]+pubsub[[:space:]]+(topics|subscriptions)[[:space:]]+delete\b'
-  'gcloud[[:space:]]+artifacts[[:space:]]+repositories[[:space:]]+delete\b'
-  'gcloud[[:space:]]+artifacts[[:space:]]+(docker|files|packages|tags|versions)[[:space:]]+delete\b'
-  'gcloud[[:space:]]+sql[[:space:]]+instances[[:space:]]+delete\b'
-  'gcloud[[:space:]]+sql[[:space:]]+databases[[:space:]]+delete\b'
-  'gcloud[[:space:]]+sql[[:space:]]+backups[[:space:]]+delete\b'
-  'gcloud[[:space:]]+sql[[:space:]]+users[[:space:]]+delete\b'
-  'gcloud[[:space:]]+projects[[:space:]]+delete\b'
-  'gcloud[[:space:]]+billing[[:space:]]+projects[[:space:]]+unlink\b'
-  'gcloud[[:space:]]+iam[[:space:]]+workload-identity-pools[[:space:]]+delete\b'
-  'gcloud[[:space:]]+logging[[:space:]]+(metrics|sinks)[[:space:]]+delete\b'
-  'gcloud[[:space:]]+(alpha|beta)?[[:space:]]*monitoring[[:space:]]+(policies|channels)[[:space:]]+delete\b'
-  'gcloud[[:space:]]+projects[[:space:]]+remove-iam-policy-binding\b'
-
-  # GitHub destructive operations
-  'gh[[:space:]]+secret[[:space:]]+delete\b'
-  'gh[[:space:]]+repo[[:space:]]+delete\b'
-  'gh[[:space:]]+release[[:space:]]+delete\b'
-  'gh[[:space:]]+api[[:space:]]+.*-X[[:space:]]+DELETE\b'
-  'gh[[:space:]]+api[[:space:]]+.*--method[[:space:]]+DELETE\b'
-
-  # Vercel destructive operations
-  'vercel[[:space:]]+(rm|remove)\b'
-  'vercel[[:space:]]+project[[:space:]]+rm\b'
-  'vercel[[:space:]]+env[[:space:]]+rm\b'
-
-  # Supabase CLI / Postgres destructive operations
-  'supabase[[:space:]]+projects[[:space:]]+delete\b'
-  'supabase[[:space:]]+db[[:space:]]+reset\b'
-  'redis-cli[[:space:]]+.*[[:space:]](FLUSHDB|FLUSHALL)\b'
-  'psql[[:space:]]+.+DROP[[:space:]]+(DATABASE|SCHEMA|TABLE|ROLE|USER)\b'
-  'psql[[:space:]]+.+TRUNCATE\b'
-  'psql[[:space:]]+.+DELETE[[:space:]]+FROM\b'
-
-  # Migration toolchain destructive
-  'atlas[[:space:]]+migrate[[:space:]]+down\b'
-  'atlas[[:space:]]+schema[[:space:]]+apply\b'
-  'drizzle-kit[[:space:]]+drop\b'
-
-  # Git rewrites and rewrites-to-remote
-  'git[[:space:]]+push[[:space:]]+.*--force\b'
-  'git[[:space:]]+push[[:space:]]+.*-f\b'
-  'git[[:space:]]+push[[:space:]]+.*--mirror\b'
-  'git[[:space:]]+push[[:space:]]+.*--delete\b'
-  'git[[:space:]]+reset[[:space:]]+--hard\b'
-  'git[[:space:]]+branch[[:space:]]+-D\b'
-  'git[[:space:]]+tag[[:space:]]+-d\b'
-
-  # File-system risk surfaces (.env / credentials)
-  'rm[[:space:]]+(-[rfFv]+[[:space:]]+)*.*\.env(\.|$| )'
-  'rm[[:space:]]+(-[rfFv]+[[:space:]]+)*.*credentials\.json'
-  'rm[[:space:]]+(-[rfFv]+[[:space:]]+)*.*auth\.json'
-  'shred[[:space:]]+.*\.env(\.|$| )'
-)
-
-for pattern in "${forbidden[@]}"; do
-  if echo "$command" | grep -qE "$pattern"; then
-    echo "block-destructive-cloud-ops: irreversible operation detected." >&2
-    echo "   Pattern: $pattern" >&2
-    echo "   Command: $command" >&2
-    echo "" >&2
-    echo "   The founder rule (memory: no-destructive-without-approval):" >&2
-    echo "   reads / lists / describes pass freely. Mutations that DELETE," >&2
-    echo "   destroy, drop, truncate, force-push, or hard-reset always need" >&2
-    echo "   explicit founder approval before execution." >&2
-    echo "" >&2
-    echo "   To proceed: surface intent + exact command, wait for the" >&2
-    echo "   founder's go-ahead, then have them run it directly OR comment" >&2
-    echo "   out this pattern in .claude/hooks/block-destructive-cloud-ops.sh" >&2
-    echo "   for a single session and revert immediately after." >&2
-    exit 2
+if printf '%s' "$command" | grep -qiE "psql$S.+(TRUNCATE|DELETE${S}FROM)([^[:alnum:]_]|$)"; then
+  local_dsn="postgres(ql)?://([^[:space:]\"'/@]*@)?(localhost|127\.0\.0\.1)([:/][^[:space:]\"']*)?([[:space:]\"']|$)"
+  local_dsn+="|(-h|--host)[[:space:]=]*(localhost|127\.0\.0\.1)([[:space:]\"']|$)|\\$\\{?DEV_DATABASE_URL\\}?"
+  rest=$(printf '%s' "$command" | sed -E "s#$local_dsn# #g")
+  if [ "$rest" = "$command" ] ||
+    printf '%s' "$rest" | grep -qE "postgres(ql)?://|(^|[[:space:]])(-h|--host)([[:space:]=]|$)|\\$\\{?[A-Z_]*DATABASE_URL"; then
+    block "psql TRUNCATE/DELETE against a non-local database."
   fi
-done
+fi
 
 exit 0

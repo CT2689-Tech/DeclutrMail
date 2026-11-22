@@ -220,7 +220,7 @@ Stop and surface to founder if the PR:
 
 ## Non-goals
 
-- You do NOT review TypeScript code style (use typescript-reviewer)
+- You do NOT review TypeScript code style (`pnpm lint` and `tsc` do)
 - You do NOT verify backend correctness (use architecture-guardian)
 - You do NOT write or propose fixes
 - You do NOT block PRs that only touch backend or migrations

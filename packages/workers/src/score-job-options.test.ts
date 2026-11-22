@@ -8,11 +8,10 @@ import { WORKER_POLICIES } from './worker-policies.js';
  * producer gets its retry budget from — the 5 in-app producers
  * (`apps/api/src/worker.ts`'s `onSenderIndexBuilt` / `onNewSender` /
  * `onSendersRecategorized`, `TriageService.scoreSender`, and
- * `buildRescoreSenders`), plus the 2 backlog/dev-tooling scripts that also
- * enqueue onto this queue (`scripts/rescore-leaked-copy.ts`,
- * `apps/api/scripts/dev-autopilot-harness.ts`'s `enqueue-score`) — 7
- * producers total, all of them now (the 2 scripts as of PR #827's round-3
- * follow-up, PR #835). Before this helper existed each producer passed
+ * `buildRescoreSenders`), plus the dev-tooling script that also enqueues
+ * onto this queue (`apps/api/scripts/dev-autopilot-harness.ts`'s
+ * `enqueue-score`) — 6 producers total, all of them now (the script as of
+ * PR #827's round-3 follow-up, PR #835). Before this helper existed each producer passed
  * only `{ jobId }`. BullMQ defaults a job with no `attempts` to a single
  * try, so `perMailboxPolicy`'s 5-attempt budget with backoff never
  * actually applied to a score job — a transient failure dead-lettered on

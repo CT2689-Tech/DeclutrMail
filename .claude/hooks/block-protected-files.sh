@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # block-protected-files.sh — PreToolUse hook for Edit/Write/MultiEdit
 #
-# Blocks edits to secrets, lock files, build artifacts, git internals.
+# Blocks edits to secrets and git internals. Lockfiles and build output are
+# left alone: regenerating them is ordinary work.
 # Exit 0 to allow; exit 2 to block (Claude Code ignores any other non-zero code).
 #
 # NOTE on CLAUDE.md: Edits to CLAUDE.md are NOT blocked here, by design.
@@ -26,52 +27,25 @@ fi
 repo_root=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
 if [ -n "$repo_root" ]; then
   # Resolve symlinks and produce an absolute path
-  abs_path=$(cd "$(dirname "$file_path")" 2>/dev/null && pwd -P)/$(basename "$file_path") 2>/dev/null || abs_path="$file_path"
+  # (a missing directory keeps the path as given, not "/<basename>")
+  if dir=$(cd "$(dirname "$file_path")" 2>/dev/null && pwd -P); then
+    abs_path="$dir/$(basename "$file_path")"
+  else
+    abs_path="$file_path"
+  fi
   rel_path="${abs_path#$repo_root/}"
 else
   rel_path="${file_path#$PWD/}"
 fi
 
-# Patterns that are HARD-blocked
-blocked_patterns=(
-  # Secrets
-  '\.env(\.|$)'
-  '\.envrc$'
-  '\.pem$'
-  '\.key$'
-  '\.p12$'
-  '\.pfx$'
-  'credentials\.json$'
-  'secrets\.json$'
-  'service-account.*\.json$'
-  # Lock files (regenerate via package manager, not edit)
-  '^pnpm-lock\.yaml$'
-  '^package-lock\.json$'
-  '^yarn\.lock$'
-  # Git internals
-  '^\.git/'
-  # Build artifacts
-  '^dist/'
-  '^build/'
-  '^\.next/'
-  '^node_modules/'
-  # Coverage / reports
-  '^coverage/'
-)
+# Secrets and git internals. Example env files hold placeholder names, never
+# secrets, and are tracked so contributors know what to set (2026-11-17).
+blocked='\.env(\.|$)|\.envrc$|\.(pem|key|p12|pfx)$|(credentials|secrets)\.json$|service-account.*\.json$|(^|/)\.git/'
 
-# Example env files hold placeholder names, never secrets, and are tracked so
-# contributors know what to set (2026-11-17).
-if echo "$rel_path" | grep -qE '(^|/)\.env\.example$'; then
-  exit 0
+if echo "$rel_path" | grep -qE "$blocked" && ! echo "$rel_path" | grep -qE '(^|/)\.env\.example$'; then
+  echo "❌ block-protected-files: edits to '$rel_path' are not allowed (secret or git internals)." >&2
+  echo "   If you need this change, raise it with the founder." >&2
+  exit 2
 fi
-
-for pattern in "${blocked_patterns[@]}"; do
-  if echo "$rel_path" | grep -qE "$pattern"; then
-    echo "❌ block-protected-files: edits to '$rel_path' are not allowed." >&2
-    echo "   Matched pattern: $pattern" >&2
-    echo "   If you need this change, raise it with the founder." >&2
-    exit 2
-  fi
-done
 
 exit 0

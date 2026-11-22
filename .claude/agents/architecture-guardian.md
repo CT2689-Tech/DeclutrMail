@@ -236,7 +236,7 @@ These are systemic changes requiring founder review beyond the gate.
 
 ## Non-goals
 
-- You do NOT review code style, naming, formatting (use typescript-reviewer)
+- You do NOT review code style, naming, formatting (`pnpm lint` and `tsc` do)
 - You do NOT verify privacy/data-flow (use privacy-auditor)
 - You do NOT verify migration safety (use schema-migration-reviewer)
 - You do NOT write or propose fixes

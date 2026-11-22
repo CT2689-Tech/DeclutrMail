@@ -4,8 +4,7 @@
 
 A product tool is anything built for working on DeclutrMail itself — a slash
 command, a skill, or a workflow. Name it `ct-` plus one short word for the job
-(`ct-qa`, `ct-journey`), a second word only when one is ambiguous
-(`ct-gates-verify-test`). No product name in it; the prefix already says whose
+(`ct-qa`, `ct-journey`), a second word only when one is ambiguous. No product name in it; the prefix already says whose
 it is. Typing `/ct-` lists them all.
 
 | Tool                   | Kind           | File                                    | Use it to                                                            |
@@ -14,10 +13,7 @@ it is. Typing `/ct-` lists them all.
 | `/ct-qa`               | command        | `commands/ct-qa.md`                     | drive one user job in the browser and try to break it                |
 | `/ct-class`            | command        | `commands/ct-class.md`                  | turn one defect into a sweep of its whole class                      |
 | `/ct-finding`          | command        | `commands/ct-finding.md`                | capture a founder observation into `FINDINGS.md`                     |
-| `/ct-decide`           | command        | `commands/ct-decide.md`                 | surface every open decision that needs the founder                   |
-| `/ct-status`           | command        | `commands/ct-status.md`                 | summarise a session in product terms                                 |
 | `ct-gates`             | workflow       | `workflows/ct-gates.js`                 | run the CLAUDE.md §7 gate agents over a diff, verify BLOCKING items |
-| `ct-gates-verify-test` | workflow       | `workflows/ct-gates-verify-test.js`     | regression-test the `ct-gates` refuters                              |
 | `/ct-pr`               | command        | `commands/ct-pr.md`                     | list what a PR still needs checked by hand before merge              |
 | `/ct-reddit`           | personal skill | `~/.claude/skills/ct-reddit/`           | draft a Reddit comment for a thread                                  |
 | `/ct-orchestrate`      | personal cmd   | `~/.claude/commands/ct-orchestrate.md`  | run a session as tech lead for every parallel session                |
@@ -37,8 +33,31 @@ it is. Typing `/ct-` lists them all.
   (`privacy-auditor`, `defect-class-sweeper`, …). CLAUDE.md §7 and the
   commands above call them by those names.
 - Third-party skills (`caveman*`, plugin skills) keep their upstream names.
-- The `pr-review-toolkit` plugin ships generic agents with the same names
-  (`pr-review-toolkit:silent-failure-hunter`, `…:type-design-analyzer`). The
+- The `pr-review-toolkit` plugin ships a generic agent with the same name
+  (`pr-review-toolkit:silent-failure-hunter`). The
   plugin is per machine and knows nothing of the privacy rule, the action
   preview or the worker policies.
   Gates and `ct-gates` call the repo agents in `agents/`; use those.
+
+## Hooks
+
+`settings.json` registers only the PreToolUse blockers, each a cheap
+single-pass check:
+
+- `block-protected-files.sh` — no edits to secrets (`.env*`, keys,
+  credential / service-account JSON) or `.git/`.
+- `block-bypass-flags.sh` — no `git … --no-verify` / `--no-gpg-sign` /
+  `commit.gpgsign=false`; the same text inside a quoted message passes.
+- `block-destructive-cloud-ops.sh` — no destructive gcloud / gh / vercel /
+  supabase / redis / migration ops, and psql `DROP` anywhere or
+  `TRUNCATE` / `DELETE FROM` against a non-local DSN.
+
+The guard hooks (`verify-no-body-storage`, `check-microcopy`,
+`block-category-prediction`, `require-idempotency`, `check-raw-date-in-sql`)
+are not registered here. CI runs them on every PR through
+`scripts/run-guard-hooks.mjs`, whose `GUARDS` list is their one registration;
+`node scripts/run-guard-hooks.mjs --base origin/main` runs them locally.
+`hooks/test/check-microcopy.test.sh` runs from `scripts/run-guard-hooks.test.mjs`.
+
+`launch.json` starts `web` (:3000) or `api` (:4000) from whichever checkout
+runs it; `./scripts/dev-up.sh` brings up the full stack with the worker.

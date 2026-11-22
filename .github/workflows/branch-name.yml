@@ -9,14 +9,14 @@ on:
   # had already passed.
   pull_request:
     types: [opened, edited, reopened, synchronize]
-  # MERGE QUEUE. All three checks here are REQUIRED, so the queue waits
+  # MERGE QUEUE. Both checks here are REQUIRED, so the queue waits
   # on them — and a workflow that never fires on `merge_group` hangs
   # every entry silently, with no failure to read.
   #
   # The two live ones cannot meaningfully RUN there: each reads
   # pull-request metadata (head ref, title), and a merge group has no
   # pull request. So they fire, say they have nothing to check, and
-  # pass. (The third, pr-body, is a retired placeholder; see below.)
+  # pass.
   #
   # That is not a hole. Every one was enforced on the PR before it was
   # allowed to queue, and none describes the merged RESULT — a branch
@@ -54,8 +54,7 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          # Allowed — KEEP IN SYNC with .husky/pre-push and
-          # .claude/hooks/require-pr-template.sh:
+          # Allowed — KEEP IN SYNC with .husky/pre-push:
           #   <type>/<kebab>                 e.g. feat/sender-detail-undo
           #   (codex|claude|cursor)/<kebab>  harness-assigned branches; the
           #                                  session cannot rename them
@@ -100,24 +99,3 @@ jobs:
             perf
             security
           requireScope: false
-
-  # RETIRED 2026-11-17 with the D-decision system (founder decision).
-  # This job used to require `Closes D###` in the PR body. It still RUNS
-  # only because branch protection on `main` requires a check with this
-  # exact name: deleting or renaming it would leave every queue entry
-  # waiting forever on a check that never reports. It checks nothing,
-  # and says so in its log rather than printing a green "✓ passed".
-  # Founder follow-up: docs/log/founder-followups/
-  # 2026-11-17-remove-retired-pr-body-required-check.md — drop the
-  # requirement first, then delete this job and its row in
-  # scripts/required-checks.json.
-  pr-body:
-    name: PR body references D-decisions or is bootstrap-exempt
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - name: Retired — required-check placeholder
-        run: |
-          echo "D-decision references were retired 2026-11-17. This job checks nothing."
-          echo "It exists only because branch protection requires its name;"
-          echo "see docs/log/founder-followups/2026-11-17-remove-retired-pr-body-required-check.md."

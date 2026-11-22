@@ -1,7 +1,7 @@
 // ct-gates — fan out the CLAUDE.md §7 gate agents across a diff.
 //
 // Replaces the sequential "run each applicable gate by hand" step before a
-// merge recommendation. Routing follows the CLAUDE.md §7 table, taking paths
+// merge recommendation. Routing follows each agent's own routing line, taking paths
 // from a gate's own charter where §7 names none, with one addition:
 // silent-failure-hunter also reads scripts, hooks, workflows, watchdog
 // acknowledgment lists and hook registrations, where this repo's watchdogs
@@ -76,7 +76,6 @@ const GATES = [
   // Marketing pages are Tier 2 (CLAUDE.md §2.0) and leave this gate (2026-11-17).
   { type: 'design-system-agent',       tier: 'gate',     when: /^(?!apps\/web\/src\/(app\/\(marketing\)|features\/marketing)\/)(apps\/web\/src\/(components|features|app)\/|packages\/shared\/)|\.stories\.tsx$/ },
   { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$|^apps\/api\/src\/billing\/(paddle|razorpay)\.adapter\.ts$/ },
-  { type: 'typescript-reviewer',       tier: 'advisory', when: /\.tsx?$/ },
   // §7's "all TS files" (.ts and .tsx), plus scripts, shell hooks, workflows,
   // the acknowledgment lists that mute watchdogs and the hook registrations:
   // the guard-that-cannot-fail class (§8) keeps recurring there, and before
@@ -86,8 +85,6 @@ const GATES = [
   { type: 'flow-completeness-auditor', tier: 'advisory', when: /^apps\/web\/src\/features\// },
   // §7: "any PR that changes user-facing copy" under these paths.
   { type: 'usability-editor',          tier: 'advisory', when: /^(apps\/web\/src\/features\/|packages\/shared\/src\/(actions|components|copy)\/)/ },
-  // §7 says only "type-heavy files"; these are the paths its charter lists.
-  { type: 'type-design-analyzer',      tier: 'advisory', when: /^(packages\/(events|workers)\/|packages\/shared\/src\/(contracts|actions)\/)/ },
 ]
 
 // Global cap on how many BLOCKING findings get the adversarial pass (2 refuters

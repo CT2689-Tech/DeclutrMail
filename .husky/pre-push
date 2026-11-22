@@ -4,8 +4,7 @@
 
 branch=$(git rev-parse --abbrev-ref HEAD)
 
-# Allowed — KEEP IN SYNC with .github/workflows/branch-name.yml and
-# .claude/hooks/require-pr-template.sh:
+# Allowed — KEEP IN SYNC with .github/workflows/branch-name.yml:
 #   <type>/<kebab>                 e.g. feat/sender-detail-undo
 #   dependabot/<ecosystem>/...     bot-named branches — mirrors the dependabot
 #                                  exemption in branch-name.yml
