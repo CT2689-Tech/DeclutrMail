@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { checkRequired } from './check-ci-required.mjs';
-import { reusedJobs } from './ci-queue-reuse.mjs';
+import { receiptOf, reusableOn } from './ci-queue-reuse.mjs';
 
 function fixture() {
   const jobs = [
@@ -91,32 +91,62 @@ test('push and manual runs require full suites', () => {
   assert.ok(checkRequired(fixture(), 'unknown').length);
 });
 
-test('only independently verified main queue proof permits the declared reused suites to skip', () => {
-  const needs = fixture();
-  Object.assign(needs.changes.outputs, { reuse: 'true', reuse_run_id: '100', reuse_attempt: '1' });
-  for (const job of reusedJobs) needs[job].result = 'skipped';
-  const verifiedSource = { runId: 100, attempt: 1 };
-  assert.deepEqual(checkRequired(needs, 'push', { verifiedSource }), []);
-  assert.deepEqual(checkRequired(needs, 'push', { verifiedSource, testsOnly: true }), []);
-  for (const proof of [undefined, { runId: 99, attempt: 1 }, { runId: 100, attempt: 2 }]) {
-    assert.ok(checkRequired(needs, 'push', { verifiedSource: proof }).length);
-    assert.ok(checkRequired(needs, 'push', { verifiedSource: proof, testsOnly: true }).length);
-  }
-  for (const event of ['pull_request', 'merge_group', 'workflow_dispatch']) {
-    assert.ok(checkRequired(needs, event, { verifiedSource }).length);
-  }
-  for (const job of ['changes', 'typecheck', 'lint', 'format', 'build-web', 'web-types']) {
-    const bad = structuredClone(needs);
-    bad[job].result = 'skipped';
-    assert.ok(checkRequired(bad, 'push', { verifiedSource }).length, job);
-  }
-  for (const job of reusedJobs) {
-    for (const result of ['failure', 'cancelled', undefined]) {
-      const bad = structuredClone(needs);
-      bad[job].result = result;
-      assert.ok(checkRequired(bad, 'push', { verifiedSource }).length, `${job}: ${result}`);
+test('only independently verified evidence permits exactly its proven jobs to skip', () => {
+  const sources = {
+    push: [{ kind: 'queue', runId: 100, attempt: 1 }],
+    merge_group: [{ kind: 'pr', runId: 90, attempt: 1 }],
+  };
+  for (const event of ['push', 'merge_group']) {
+    const verifiedSource = { jobs: reusableOn[event], sources: sources[event] };
+    const needs = fixture();
+    Object.assign(needs.changes.outputs, receiptOf(verifiedSource));
+    for (const job of reusableOn[event]) needs[job].result = 'skipped';
+    assert.deepEqual(checkRequired(needs, event, { verifiedSource }), [], event);
+    assert.deepEqual(checkRequired(needs, event, { verifiedSource, testsOnly: true }), [], event);
+    for (const proof of [
+      undefined,
+      { ...verifiedSource, sources: [{ kind: 'queue', runId: 99, attempt: 1 }] },
+      { ...verifiedSource, sources: [{ ...sources[event][0], attempt: 2 }] },
+      { ...verifiedSource, jobs: reusableOn[event].slice(1) },
+    ]) {
+      assert.ok(checkRequired(needs, event, { verifiedSource: proof }).length, event);
+      assert.ok(
+        checkRequired(needs, event, { verifiedSource: proof, testsOnly: true }).length,
+        event,
+      );
     }
+    for (const other of ['pull_request', 'workflow_dispatch']) {
+      assert.ok(checkRequired(needs, other, { verifiedSource }).length, other);
+    }
+    // A job outside the proof, or outside this event's reusable set, still must run.
+    for (const job of Object.keys(fixture()).filter((j) => j !== 'changes')) {
+      const bad = structuredClone(needs);
+      bad[job].result = 'skipped';
+      const partial = { ...verifiedSource, jobs: verifiedSource.jobs.filter((j) => j !== job) };
+      Object.assign(bad.changes.outputs, receiptOf(partial));
+      assert.ok(checkRequired(bad, event, { verifiedSource: partial }).length, `${event} ${job}`);
+    }
+    for (const job of reusableOn[event]) {
+      for (const result of ['failure', 'cancelled', undefined]) {
+        const bad = structuredClone(needs);
+        bad[job].result = result;
+        assert.ok(checkRequired(bad, event, { verifiedSource }).length, `${job}: ${result}`);
+      }
+    }
+    const changes = structuredClone(needs);
+    changes.changes.result = 'skipped';
+    assert.ok(checkRequired(changes, event, { verifiedSource }).length);
   }
+  // Main never skips the build that publishes its bundle baseline.
+  assert.ok(!reusableOn.push.includes('build-web'));
+  const needs = fixture();
+  const verifiedSource = {
+    jobs: reusableOn.merge_group,
+    sources: [{ kind: 'pr', runId: 90, attempt: 1 }],
+  };
+  Object.assign(needs.changes.outputs, receiptOf(verifiedSource));
+  needs['build-web'].result = 'skipped';
+  assert.ok(checkRequired(needs, 'push', { verifiedSource }).length);
 });
 
 test('test aggregate also rejects unexpected skips and an invalid path selection', () => {
