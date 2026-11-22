@@ -4,32 +4,18 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 
-const files = [
-  ['triage-keep', 1],
-  ['sender-policy', 1],
-  ['protection-review', 1],
-  ['followups-dismiss', 1],
-  ['autopilot-pages', 2],
-  ['later-recovery', 1],
-  ['quiet-hours', 1],
-  ['brief-preview', 1],
-  ['senders-search-typing', 3],
-  ['public-journeys', 3],
-  ['cookie-consent', 2],
-  ['journey-recovery', 4],
-  ['unsubscribe-backlog', 4],
-  ['home-next-step', 1],
-  ['manual-delete-previews', 4],
-  ['reconnect-action-feedback', 1],
-  ['connect-app', 3],
-  ['confirm-request', 3],
-];
-function report() {
+import { journeyLanes } from './journey-lanes.mjs';
+
+const files = Object.values(journeyLanes)
+  .flat()
+  .map(([file, n]) => [file.replace(/\.spec\.ts$/, ''), n]);
+function report(only = files) {
   return {
     suites: [
       {
-        specs: files.flatMap(([file, n]) =>
+        specs: only.flatMap(([file, n]) =>
           Array.from({ length: n }, () => ({
             file: `specs/${file}.spec.ts`,
             tests: [{ status: 'expected', results: [{ status: 'passed' }] }],
@@ -39,14 +25,18 @@ function report() {
     ],
   };
 }
-function check(body) {
+function check(body, lane) {
   const dir = mkdtempSync(join(tmpdir(), 'e2e-report-'));
   try {
     const path = join(dir, 'report.json');
     writeFileSync(path, JSON.stringify(body));
-    return spawnSync(process.execPath, ['contracts/assert-journeys.mjs', path], {
-      encoding: 'utf8',
-    }).status;
+    return spawnSync(
+      process.execPath,
+      ['contracts/assert-journeys.mjs', path, ...(lane ? [lane] : [])],
+      {
+        encoding: 'utf8',
+      },
+    ).status;
   } finally {
     rmSync(dir, { recursive: true });
   }
@@ -91,4 +81,38 @@ test('missing either genuinely empty Triage presentation cannot pass the journey
   );
   body.suites[0].specs.splice(index, 1);
   assert.notEqual(check(body), 0);
+});
+
+test('each CI lane passes on exactly its own files and fails on a missing one', () => {
+  for (const [lane, entries] of Object.entries(journeyLanes)) {
+    const own = files.filter(([file]) => entries.some(([name]) => name === `${file}.spec.ts`));
+    assert.equal(check(report(own), lane), 0, lane);
+    for (const index of own.keys())
+      assert.notEqual(check(report(own.filter((_, i) => i !== index)), lane), 0, own[index][0]);
+  }
+  // A lane is not the whole suite: one lane's report fails the other lane.
+  const [first, second] = Object.keys(journeyLanes);
+  const firstOnly = files.filter(([file]) =>
+    journeyLanes[first].some(([name]) => name === `${file}.spec.ts`),
+  );
+  assert.notEqual(check(report(firstOnly), second), 0);
+  assert.notEqual(check(report(firstOnly)), 0, 'no lane means every journey');
+  assert.notEqual(check(report(), 'journeys'), 0, 'an unknown lane fails');
+});
+
+test('the lane scripts run exactly the pinned files, together the whole local suite', () => {
+  const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).scripts;
+  const filesOf = (script) => {
+    const match = /^playwright test ((?:[a-z-]+ )+)--project=default$/.exec(script ?? '');
+    assert.ok(match, script);
+    return match[1].trim().split(' ').sort();
+  };
+  const all = [];
+  for (const [lane, entries] of Object.entries(journeyLanes)) {
+    const pinned = entries.map(([file]) => file.replace(/\.spec\.ts$/, '')).sort();
+    assert.deepEqual(filesOf(scripts[`e2e:${lane}`]), pinned, lane);
+    all.push(...pinned);
+  }
+  assert.equal(new Set(all).size, all.length, 'a spec is in two lanes');
+  assert.deepEqual(filesOf(scripts['e2e:journeys']), all.sort());
 });

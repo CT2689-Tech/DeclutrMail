@@ -17,13 +17,15 @@ export const reusedJobs = [
 
 // Exact matrix inventory, not just an aggregate's green badge. A changed matrix
 // must update this contract; otherwise main safely runs everything itself.
+// ci-queue-reuse.test.mjs derives the same list from ci.yml, so a job renamed
+// or removed there fails CI instead of silently disabling reuse (#1201 removed
+// a job and every main push after it ran the full suite).
 export const sourceJobs = [
   'Detect changed paths',
   'Typecheck',
   'Lint',
   'Format check',
-  'Implementation log is derived and current',
-  ...[1, 2, 3].map((n) => `Tests — API (${n})`),
+  ...[1, 2, 3, 4].map((n) => `Tests — API (${n})`),
   ...[1, 2, 3].map((n) => `Tests — Workers (${n})`),
   'Tests — Database',
   ...[1, 2].map((n) => `Tests — Web (${n})`),
@@ -32,7 +34,7 @@ export const sourceJobs = [
   'Build — Web route types',
   'Lighthouse — marketing home (D160 ≥90)',
   'Lighthouse — marketing other-pages (D160 ≥90)',
-  ...['accessibility', 'responsive', 'hydration-billing', 'journeys'].map(
+  ...['accessibility', 'responsive', 'hydration-billing', 'journeys-1', 'journeys-2'].map(
     (lane) => `Authenticated accessibility smoke (${lane})`,
   ),
   'Test',

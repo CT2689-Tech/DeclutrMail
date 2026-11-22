@@ -136,7 +136,13 @@ test('isolated browser matrix preserves every suite and its coverage assertion',
   const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const browser = workflow.split('  accessibility:')[1];
   assert.match(browser, /fail-fast: false/);
-  for (const lane of ['accessibility', 'responsive', 'hydration-billing', 'journeys']) {
+  for (const lane of [
+    'accessibility',
+    'responsive',
+    'hydration-billing',
+    'journeys-1',
+    'journeys-2',
+  ]) {
     assert.match(browser, new RegExp(`- lane: ${lane}\\b`));
   }
   // The 2026-10 pricing is unconditional; no lane carries a pricing flag.
@@ -147,12 +153,17 @@ test('isolated browser matrix preserves every suite and its coverage assertion',
     ['Run the responsive layout gate (320px)', 'responsive', 'e2e:responsive'],
     ['Run the hydration smoke (non-en-US locale + timezone)', 'hydration-billing', 'e2e:hydration'],
     ['Run the billing money-path spec', 'hydration-billing', 'e2e:billing'],
-    ['Verify isolated harness guards', 'journeys', 'test:harness'],
-    ['Run isolated product and public journeys', 'journeys', 'e2e:journeys'],
-    ['Assert each required journey executed', 'journeys', 'assert-journeys.mjs'],
+    ['Verify isolated harness guards', 'journeys-1', 'test:harness'],
+    ['Run isolated product and public journeys', 'journeys-', 'e2e:${{ matrix.lane }}'],
+    ['Assert each required journey executed', 'journeys-', 'assert-journeys.mjs'],
   ]) {
     const step = browser.split(`- name: ${name}\n`)[1]?.split('\n      - ')[0];
-    assert.ok(step?.includes(`matrix.lane == '${lane}'`), name);
+    assert.ok(
+      step?.includes(
+        lane.endsWith('-') ? `startsWith(matrix.lane, '${lane}')` : `matrix.lane == '${lane}'`,
+      ),
+      name,
+    );
     assert.ok(step?.includes(command), name);
     if (name.startsWith('Assert')) assert.ok(step.includes('if: always()'), name);
   }
@@ -174,7 +185,8 @@ test('actual browser coverage step rejects each absent, skipped or empty lane re
     accessibility: ['e2e-a11y-report.json'],
     responsive: ['e2e-render-report.json', 'e2e-responsive-report.json'],
     'hydration-billing': ['e2e-billing-report.json', 'e2e-hydration-report.json'],
-    journeys: ['e2e-journeys-report.json'],
+    'journeys-1': ['e2e-journeys-report.json'],
+    'journeys-2': ['e2e-journeys-report.json'],
   };
   const run = (lane) =>
     spawnSync('bash', ['-e', '-u', '-o', 'pipefail', '-c', shell], {
@@ -375,4 +387,16 @@ test('the build wait fails promptly, by name, on every missing or bad status', (
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test('the journey lanes in CI are exactly the pinned lanes, each asserted against its own files', async () => {
+  const { journeyLanes } = await import('../packages/e2e/contracts/journey-lanes.mjs');
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const browser = workflow.split('  accessibility:')[1];
+  const lanes = [...browser.matchAll(/- lane: (journeys-[\w-]+)\n/g)].map((m) => m[1]);
+  assert.deepEqual(lanes.sort(), Object.keys(journeyLanes).sort());
+  const step = browser
+    .split('- name: Assert each required journey executed\n')[1]
+    .split('\n      - ')[0];
+  assert.ok(step.includes('assert-journeys.mjs e2e-journeys-report.json ${{ matrix.lane }}'));
 });

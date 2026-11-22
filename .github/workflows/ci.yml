@@ -337,7 +337,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     services:
       postgres:
         image: postgres:16
@@ -806,7 +806,12 @@ jobs:
           - lane: accessibility
           - lane: responsive
           - lane: hydration-billing
-          - lane: journeys
+          # The journey specs run serially, so one lane was the longest
+          # browser leg. Two lanes, each with its own stack, split the spec
+          # files (packages/e2e/contracts/journey-lanes.mjs); each lane's
+          # assertion pins exactly its half.
+          - lane: journeys-1
+          - lane: journeys-2
     services:
       postgres:
         image: postgres:16-alpine
@@ -1042,18 +1047,18 @@ jobs:
       # can pass having asserted nothing. This is the required check that
       # would go green over it, so coverage is asserted, not assumed.
       - name: Verify isolated harness guards
-        if: matrix.lane == 'journeys'
+        if: matrix.lane == 'journeys-1'
         run: pnpm --filter @declutrmail/e2e run test:harness
 
       - name: Run isolated product and public journeys
-        if: matrix.lane == 'journeys'
-        run: pnpm --filter @declutrmail/e2e run e2e:journeys
+        if: startsWith(matrix.lane, 'journeys-')
+        run: pnpm --filter @declutrmail/e2e run e2e:${{ matrix.lane }}
         env:
           E2E_JSON_REPORT: ${{ github.workspace }}/e2e-journeys-report.json
 
       - name: Assert each required journey executed
-        if: always() && matrix.lane == 'journeys'
-        run: node packages/e2e/contracts/assert-journeys.mjs e2e-journeys-report.json
+        if: always() && startsWith(matrix.lane, 'journeys-')
+        run: node packages/e2e/contracts/assert-journeys.mjs e2e-journeys-report.json ${{ matrix.lane }}
 
       - name: Assert the selected browser lane actually ran
         if: always()
@@ -1072,8 +1077,8 @@ jobs:
               node scripts/assert-e2e-ran.mjs e2e-billing-report.json "billing money path"
               node scripts/assert-e2e-ran.mjs e2e-hydration-report.json "hydration smoke"
               ;;
-            journeys)
-              node scripts/assert-e2e-ran.mjs e2e-journeys-report.json "product and public journeys"
+            journeys-1|journeys-2)
+              node scripts/assert-e2e-ran.mjs e2e-journeys-report.json "product and public journeys ($BROWSER_LANE)"
               ;;
             *) echo "::error::Unknown browser lane: $BROWSER_LANE"; exit 1 ;;
           esac

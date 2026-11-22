@@ -311,3 +311,39 @@ test('workflow gates only the reusable suites, with independently verified summa
   );
   assert.doesNotMatch(workflow, /checks: write|actions: write|statuses: write/);
 });
+
+// Every check name ci.yml produces, expanded the way GitHub names matrix legs:
+// a `${{ matrix.x }}` in the name is substituted, otherwise values are appended.
+export function checkNamesFromWorkflow(text) {
+  const body = text.split('\njobs:\n')[1];
+  const starts = [...body.matchAll(/^ {2}[a-z][\w-]*:$/gm)].map((m) => m.index);
+  const jobs = starts.map((start, i) => body.slice(start, starts[i + 1]));
+  return jobs.flatMap((block) => {
+    const name = /^ {4}name: (.+)$/m.exec(block)?.[1];
+    assert.ok(name, `job without a name: ${block.slice(0, 40)}`);
+    const matrix = block.split(/\n {6}matrix:\n/)[1]?.split(/\n {4}[a-z]/)[0];
+    if (!matrix) return [name];
+    const list = /^ {8}(\w+): \[([^\]]+)\]$/m.exec(matrix);
+    const key = list?.[1] ?? /^ {10}- (\w+):/m.exec(matrix)[1];
+    const values = list
+      ? list[2].split(',').map((v) => v.trim())
+      : [...matrix.matchAll(new RegExp(`^ {10}- ${key}: (.+)$`, 'gm'))].map((m) => m[1]);
+    const slot = `\${{ matrix.${key} }}`;
+    return values.map((v) => (name.includes(slot) ? name.replace(slot, v) : `${name} (${v})`));
+  });
+}
+
+test('the reuse inventory is exactly the check names ci.yml produces', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const names = checkNamesFromWorkflow(workflow);
+  assert.ok(names.length > 20, 'the workflow parser found too few jobs to be trusted');
+  assert.ok(names.includes('Tests — API (1)') && names.includes('CI required'));
+  assert.deepEqual([...sourceJobs].sort(), names.sort());
+});
+
+test('the inventory parser fails on a job it cannot name and sees a removed job', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  assert.throws(() => checkNamesFromWorkflow(workflow.replace('    name: Format check\n', '')));
+  const fewer = checkNamesFromWorkflow(workflow.replace('shard: [1, 2, 3, 4]', 'shard: [1, 2, 3]'));
+  assert.ok(!fewer.includes('Tests — API (4)'));
+});

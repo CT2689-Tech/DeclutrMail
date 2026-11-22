@@ -36,7 +36,7 @@ For manual CUA verification, visit the isolated API `/api/auth/dev/login?email=c
 
 ## CI coverage and limits
 
-The workflow provisions disposable Postgres/Redis services; no worker or real credentials. It retains the existing accessibility, responsive, hydration, paint and billing lanes, and adds `e2e:journeys`:
+The workflow provisions disposable Postgres/Redis services; no worker or real credentials. It retains the existing accessibility, responsive, hydration, paint and billing lanes, and adds `e2e:journeys`, which CI runs as two lanes (`e2e:journeys-1`, `e2e:journeys-2`; split in `contracts/journey-lanes.mjs`):
 
 | Journey | Evidence asserted |
 | --- | --- |
