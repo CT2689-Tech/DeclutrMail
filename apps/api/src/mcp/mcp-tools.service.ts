@@ -112,7 +112,12 @@ export class McpToolsService {
     principal: McpPrincipal,
     args: McpToolInput<'apply_cleanup'>,
     accepted: boolean,
-  ): Promise<{ output: McpToolOutput<'apply_cleanup'>; prompt: string }> {
+  ): Promise<{
+    output: McpToolOutput<'apply_cleanup'>;
+    /** A fresh `pending` preview, never refused: the only kind an Accept can confirm. */
+    askable: boolean;
+    prompt: () => Promise<string>;
+  }> {
     await this.spendFor('apply_cleanup', principal);
     // A named mailbox must be the preview's own. Unnamed, the preview
     // knows its mailbox, whichever one is active now.
@@ -124,13 +129,15 @@ export class McpToolsService {
     const { preview } = detail;
     return {
       output: await this.appliedOutput(detail),
-      prompt: chatConfirmMessage({
-        verb: preview.verb,
-        alsoVerb: preview.alsoVerb,
-        senderCount: preview.senderIds.length,
-        emailCount: preview.emailCount,
-        mailbox: detail.mailboxEmail,
-      }),
+      askable: preview.state === 'pending' && preview.refusedCode === null,
+      prompt: async () =>
+        chatConfirmMessage({
+          verb: preview.verb,
+          alsoVerb: preview.alsoVerb,
+          senderNames: await this.previews.senderNames(preview),
+          emailCount: preview.emailCount,
+          mailbox: detail.mailboxEmail,
+        }),
     };
   }
 

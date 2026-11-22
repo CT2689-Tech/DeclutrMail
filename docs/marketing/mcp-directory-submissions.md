@@ -109,7 +109,7 @@ Reviewer test account
   > sender or many.
   >
   > Nothing changes until you confirm. Claude prepares a change; you see the preview — how many
-  > emails, where they go — and confirm it, in the chat if Claude asks or on DeclutrMail. Protected senders
+  > emails, where they go — and confirm it before anything moves. Protected senders
   > are skipped. Undo puts back an Archive, Later or Delete; a sent unsubscribe request cannot be
   > taken back. Disconnect Claude any time in DeclutrMail's Settings → Connected apps.
   >
@@ -192,7 +192,7 @@ called plugins and are uploaded as a ZIP with `plugin.json` and `mcp.json` (no s
   > can then prepare Keep, Archive, Unsubscribe, Later or Delete for one sender or many.
   >
   > Nothing changes until you confirm. ChatGPT prepares a change; you see the preview and confirm
-  > it, in the chat if ChatGPT asks or on DeclutrMail. Protected senders are skipped. Undo puts back an
+  > it before anything moves. Protected senders are skipped. Undo puts back an
   > Archive, Later or Delete; a sent unsubscribe request cannot be taken back. Disconnect ChatGPT
   > any time in DeclutrMail's Settings → Connected apps.
   >

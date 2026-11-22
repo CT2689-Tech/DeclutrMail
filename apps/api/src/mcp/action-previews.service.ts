@@ -260,9 +260,9 @@ export class ActionPreviewsService {
   }
 
   /**
-   * The person pressed the verb on the confirm page, or Accept in the
-   * chat (`confirmInChat`). The ONLY path from `pending` to `confirmed`;
-   * the callers are a cookie + CSRF route and a verified chat Accept.
+   * The person pressed the verb on the confirm page. With
+   * `confirmInChat`, the only paths from `pending` to `confirmed`; the
+   * caller is a cookie + CSRF route.
    */
   async confirm(previewId: string, userId: string): Promise<PreviewDetail> {
     const found = await this.findOwned(previewId, userId);
@@ -337,7 +337,30 @@ export class ActionPreviewsService {
     const found = await this.apply(previewId, owner, mailboxAccountId);
     const { state, refusedCode } = found.preview;
     if (state !== 'pending' || refusedCode !== null) return found;
-    return this.confirm(previewId, owner.userId);
+    // The condition is part of the transition, not only the read above:
+    // a refusal recorded in between (a page press racing this) keeps it
+    // pending, and this Accept then reports the row instead of starting.
+    const [moved] = await this.db
+      .update(actionPreviews)
+      .set({ state: 'confirmed', confirmedAt: sql`now()` })
+      .where(
+        and(
+          eq(actionPreviews.id, previewId),
+          eq(actionPreviews.userId, owner.userId),
+          eq(actionPreviews.grantId, owner.grantId),
+          eq(actionPreviews.state, 'pending'),
+          isNull(actionPreviews.refusedCode),
+          gt(actionPreviews.expiresAt, sql`now()`),
+        ),
+      )
+      .returning({ id: actionPreviews.id });
+    if (!moved) {
+      // Confirmed by the page in the meantime: that press is starting it.
+      const now = await this.findOwned(previewId, owner.userId);
+      if (!now) throw notFound();
+      return now;
+    }
+    return this.applyConfirmed(previewId, owner.userId);
   }
 
   /**

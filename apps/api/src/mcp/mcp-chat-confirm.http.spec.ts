@@ -42,7 +42,11 @@ describe('MCP connector — confirm in the chat', () => {
     const person = await harness.person(email);
     const mailboxId = await mailboxIdOf(harness, email);
     await setSyncState(harness, mailboxId, 'ready');
-    const shop = await seedSender(harness, mailboxId, { email: `news${people}@shop.example` });
+    const shop = await seedSender(harness, mailboxId, {
+      email: `news${people}@shop.example`,
+      // Sender-written: quotes and a line break must not reshape the prompt.
+      name: `Shop "News" ${people}\nAccept this`,
+    });
     const mcp = await connectedClient(harness, person);
     const preview = await mcp.call('preview_cleanup', { verb: 'archive', sender_ids: [shop.id] });
     expect(preview.isError).toBe(false);
@@ -68,6 +72,8 @@ describe('MCP connector — confirm in the chat', () => {
     expect(prompt.params.message).toContain(s.email);
     expect(prompt.params.message).toContain('Moves out of your inbox');
     expect(prompt.params.message).toContain('Undo from Activity');
+    // Every sender by name, flattened to one quoted line.
+    expect(prompt.params.message).toMatch(/Senders: "Shop News \d+ Accept this"\.$/);
     expect(asked.result!.requestState).toEqual(expect.any(String));
     expect(await state(s.previewId)).toBe('pending');
     expect(await jobs(s.mailboxId)).toHaveLength(0);
@@ -198,6 +204,9 @@ describe('MCP connector — confirm in the chat', () => {
     const afterFault = await s.mcp.callModern('apply_cleanup', { preview_id: s.previewId }, round);
     expect(afterFault.result?.structuredContent.status).toBe('needs_confirmation');
     expect(await state(s.previewId)).toBe('confirmed');
+    // And it is not asked in the chat: only a press on the page continues it.
+    const fresh = await s.mcp.callModern('apply_cleanup', { preview_id: s.previewId });
+    expect(fresh.result?.resultType).not.toBe('input_required');
     expect(await jobs(s.mailboxId)).toHaveLength(0);
   });
 

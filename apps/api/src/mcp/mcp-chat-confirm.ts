@@ -76,18 +76,24 @@ export function chatAnswer(ctx: ServerContext, previewId: string): ChatAnswer {
 export interface PromptFacts {
   verb: Parameters<typeof actionPreviewFacts>[0];
   alsoVerb: 'archive' | 'delete' | null;
-  senderCount: number;
+  /** Every sender, as the confirm page lists them. Written by the senders. */
+  senderNames: readonly string[];
   emailCount: number;
   mailbox: string;
 }
 
 /**
  * The preview's own copy, written by the server, never by the model:
- * the count, where the email goes, how to undo — once each (§2.3).
+ * the count, where the email goes, how to undo — once each (§2.3) — and
+ * every sender by name, as the confirm page lists them, so a model that
+ * prepared the wrong sender cannot pass it off as the right one. Names
+ * are sender-written: one line each, cut at 80 characters, and quoted.
  */
 export function chatConfirmMessage(facts: PromptFacts): string {
   const { destination, undo, alsoTrue } = actionPreviewFacts(facts.verb, facts.alsoVerb);
-  const senders = `${facts.senderCount.toLocaleString('en-US')} ${facts.senderCount === 1 ? 'sender' : 'senders'}`;
+  const count = facts.senderNames.length;
+  const senders = `${count.toLocaleString('en-US')} ${count === 1 ? 'sender' : 'senders'}`;
+  const names = facts.senderNames.map((name) => `"${oneLine(name)}"`).join(', ');
   const emails = `${facts.emailCount.toLocaleString('en-US')} ${facts.emailCount === 1 ? 'email' : 'emails'}`;
   const label = ACTION_SEMANTICS[facts.verb].label;
   return [
@@ -95,5 +101,11 @@ export function chatConfirmMessage(facts: PromptFacts): string {
     destination,
     ...alsoTrue,
     undo,
+    `Senders: ${names}.`,
   ].join(' ');
+}
+
+function oneLine(name: string): string {
+  const flat = name.replace(/[\s"]+/g, ' ').trim();
+  return flat.length > 80 ? `${flat.slice(0, 79)}…` : flat;
 }

@@ -233,8 +233,9 @@ export class McpServerService implements OnModuleDestroy {
    * (spec §3). A waiting preview is answered with the server's own
    * prompt; the person's Accept, on the next round, confirms it. A
    * Decline or Cancel leaves it waiting, with the confirm link, and is
-   * not asked again on that round. A press the plan or quota refused is
-   * not asked again either: the same Accept would be refused the same way.
+   * not asked again on that round. A press the plan or quota refused, or
+   * a start that failed, is never asked in the chat: an Accept cannot
+   * continue either (`confirmInChat`), so only the confirm page can.
    */
   private async applyCleanup(
     principal: McpPrincipal,
@@ -242,21 +243,21 @@ export class McpServerService implements OnModuleDestroy {
     ctx: ServerContext,
   ): Promise<McpToolOutput<'apply_cleanup'> | InputRequiredResult> {
     const answer = chatAnswer(ctx, args.preview_id);
-    const { output, prompt } = await this.tools.applyCleanup(
+    const { output, askable, prompt } = await this.tools.applyCleanup(
       principal,
       args,
       answer === 'accepted',
     );
     const ask =
       output.status === 'needs_confirmation' &&
-      output.refused === null &&
+      askable &&
       answer === 'none' &&
       clientProfile(ctx.mcpReq.envelope, undefined).elicitation === 'yes';
     if (!ask) return output;
     return inputRequired({
       inputRequests: {
         [CONFIRM_KEY]: inputRequired.elicit({
-          message: prompt,
+          message: await prompt(),
           // Nothing to fill in: Accept is the confirmation.
           requestedSchema: { type: 'object', properties: {} },
         }),
