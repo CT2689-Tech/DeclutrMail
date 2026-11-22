@@ -2,7 +2,8 @@
 
 Operating the connector that lets an assistant (Claude, ChatGPT, a local
 MCP client) read a person's senders and _ask_ for a cleanup the person
-confirms in DeclutrMail. Design: [ADR-0048](../adr/0048-mcp-connector-is-a-second-client.md),
+confirms — in the chat when the client can show a form (protocol
+2026-07-28), otherwise on DeclutrMail's confirm page. Design: [ADR-0048](../adr/0048-mcp-connector-is-a-second-client.md),
 [spec](../spec/mcp-connector.md). Code: `apps/api/src/{mcp,oauth}/`,
 `apps/web/src/features/connected-apps/`.
 

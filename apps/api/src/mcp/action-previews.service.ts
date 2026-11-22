@@ -110,12 +110,15 @@ const SINGLE_SENDER_SKIP: Record<string, ActionPreviewSkipReason> = {
  *   preview_cleanup → `create`   a `pending` row, 15 minutes
  *   the person      → `confirm`  on DeclutrMail's page: pending → confirmed
  *                                → the action is enqueued → applied
+ *   the person      → `confirmInChat`  Accept on the prompt the server
+ *                                sent through the client (elicitation)
  *   apply_cleanup   → `apply`    reports the row's state; never confirms
  *
- * `confirm` is reachable only from a cookie-authenticated, CSRF-checked
- * route, and it is the only thing that starts an action. `apply` is what
- * the bearer-token tool calls: it reports the row and starts nothing, in
- * any state. A start that failed is continued by the person's next
+ * `confirm` is reached from a cookie-authenticated, CSRF-checked route,
+ * or through `confirmInChat`, which only the person's Accept on a signed,
+ * server-sent prompt reaches. Those are the only things that start an
+ * action. `apply` is what the bearer-token tool calls without an Accept:
+ * it reports the row and starts nothing, in any state. A start that failed is continued by the person's next
  * press, never by the app (CLAUDE.md §2.6, D233; spec §8).
  *
  * Every enqueue uses the idempotency key `mcp-preview:<id>`, so a double
@@ -257,8 +260,9 @@ export class ActionPreviewsService {
   }
 
   /**
-   * The person pressed the verb on the confirm page. The ONLY path from
-   * `pending` to `confirmed`; the caller is a cookie + CSRF route.
+   * The person pressed the verb on the confirm page. With
+   * `confirmInChat`, the only paths from `pending` to `confirmed`; the
+   * caller is a cookie + CSRF route.
    */
   async confirm(previewId: string, userId: string): Promise<PreviewDetail> {
     const found = await this.findOwned(previewId, userId);
@@ -311,6 +315,52 @@ export class ActionPreviewsService {
     // Said now, not after the person has gone to the page and pressed.
     if (!found.mailboxConnected) throw mailboxDisconnected();
     return found;
+  }
+
+  /**
+   * The person pressed Accept on the prompt this server sent for this
+   * preview, through the app that made it. The same ownership checks as
+   * `apply`, then the same transition as the confirm page's press — but
+   * only from a fresh `pending`. The Accept's signed state lives ten
+   * minutes and a client can send it again, so it must never be what:
+   *  - re-confirms a press the plan or quota refused (that press is
+   *    spent: only a new one starts it), or
+   *  - continues a start that failed while `confirmed` (D233: a failed
+   *    start is continued only by a new press on the confirm page).
+   * Either way the row is reported as it is, like `apply`.
+   */
+  async confirmInChat(
+    previewId: string,
+    owner: PreviewOwner,
+    mailboxAccountId: string | null,
+  ): Promise<PreviewDetail> {
+    const found = await this.apply(previewId, owner, mailboxAccountId);
+    const { state, refusedCode } = found.preview;
+    if (state !== 'pending' || refusedCode !== null) return found;
+    // The condition is part of the transition, not only the read above:
+    // a refusal recorded in between (a page press racing this) keeps it
+    // pending, and this Accept then reports the row instead of starting.
+    const [moved] = await this.db
+      .update(actionPreviews)
+      .set({ state: 'confirmed', confirmedAt: sql`now()` })
+      .where(
+        and(
+          eq(actionPreviews.id, previewId),
+          eq(actionPreviews.userId, owner.userId),
+          eq(actionPreviews.grantId, owner.grantId),
+          eq(actionPreviews.state, 'pending'),
+          isNull(actionPreviews.refusedCode),
+          gt(actionPreviews.expiresAt, sql`now()`),
+        ),
+      )
+      .returning({ id: actionPreviews.id });
+    if (!moved) {
+      // Confirmed by the page in the meantime: that press is starting it.
+      const now = await this.findOwned(previewId, owner.userId);
+      if (!now) throw notFound();
+      return now;
+    }
+    return this.applyConfirmed(previewId, owner.userId);
   }
 
   /**

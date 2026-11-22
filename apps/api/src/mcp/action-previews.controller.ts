@@ -30,10 +30,11 @@ const PREVIEW_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
  *   GET  /api/action-previews/:id          — what an assistant asked for.
  *   POST /api/action-previews/:id/confirm  — the person pressed the verb.
  *
- * `confirm` is the ONLY way a preview leaves `pending`, and it sits on
- * the session cookie plus the CSRF token — credentials a bearer-token
- * MCP client does not hold. That separation is the whole guarantee: the
- * model can ask, only the person can say yes.
+ * `confirm` sits on the session cookie plus the CSRF token — credentials
+ * a bearer-token MCP client does not hold. The one other way out of
+ * `pending` is the person's Accept on a signed prompt this server sent
+ * through the client (`ActionPreviewsService.confirmInChat`, spec §3).
+ * The model can ask; only the person can say yes.
  *
  * USER-scoped (`JwtGuard`, no `CurrentMailboxGuard`): the preview names
  * its own mailbox, whichever one is active in the app.

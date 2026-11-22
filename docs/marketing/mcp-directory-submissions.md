@@ -40,7 +40,7 @@ Nothing here has been submitted.
 | Disconnect                | Settings → Connected apps → Disconnect                                                                                                       | `connected-apps-section.tsx`                                             |
 
 **Claims you may make** (each sourced above): the five verbs; every change waits for the person to
-confirm a preview on DeclutrMail; Protected senders are skipped; Undo puts back an Archive, Later
+confirm a preview (in the chat if the assistant can ask, otherwise on DeclutrMail); Protected senders are skipped; Undo puts back an Archive, Later
 or Delete; a sent unsubscribe request cannot be taken back; "Through DeclutrMail, your assistant
 sees sender names and subject lines — never full emails." (true of our tools only — never imply
 the assistant cannot read mail through other connectors); the trust line verbatim, "We never fetch
@@ -100,7 +100,7 @@ Reviewer test account
 
 - **Server name** (≤100): `DeclutrMail`
 - **One-liner** (≤200):
-  `Clean up Gmail by sender: see who fills your inbox, then Keep, Archive, Unsubscribe, Later or Delete after you confirm a preview on DeclutrMail.`
+  `Clean up Gmail by sender: see who fills your inbox, then Keep, Archive, Unsubscribe, Later or Delete after you confirm a preview.`
 - **Description** (≤2,000):
 
   > DeclutrMail groups Gmail by sender so one decision can handle years of email. Connect it and
@@ -108,8 +108,8 @@ Reviewer test account
   > sender's history. Claude can then prepare Keep, Archive, Unsubscribe, Later or Delete for one
   > sender or many.
   >
-  > Nothing changes until you confirm. Claude prepares a change and gives you a link; you see the
-  > preview — how many emails, where they go — and confirm it on DeclutrMail. Protected senders
+  > Nothing changes until you confirm. Claude prepares a change; you see the preview — how many
+  > emails, where they go — and confirm it before anything moves. Protected senders
   > are skipped. Undo puts back an Archive, Later or Delete; a sent unsubscribe request cannot be
   > taken back. Disconnect Claude any time in DeclutrMail's Settings → Connected apps.
   >
@@ -191,8 +191,8 @@ called plugins and are uploaded as a ZIP with `plugin.json` and `mcp.json` (no s
   > sends you the most, which senders you never read, or what a sender has sent lately. ChatGPT
   > can then prepare Keep, Archive, Unsubscribe, Later or Delete for one sender or many.
   >
-  > Nothing changes until you confirm. ChatGPT prepares a change and gives you a link; you see the
-  > preview and confirm it on DeclutrMail. Protected senders are skipped. Undo puts back an
+  > Nothing changes until you confirm. ChatGPT prepares a change; you see the preview and confirm
+  > it before anything moves. Protected senders are skipped. Undo puts back an
   > Archive, Later or Delete; a sent unsubscribe request cannot be taken back. Disconnect ChatGPT
   > any time in DeclutrMail's Settings → Connected apps.
   >
@@ -224,8 +224,8 @@ Positive (`tools_triggered` → `expected_behavior`):
 
 Negative (should NOT change mail, or should not trigger):
 
-1. "Delete everything from <sender>" with no confirmation on DeclutrMail → `apply_cleanup` returns
-   `needs_confirmation` and the link; nothing is deleted.
+1. "Delete everything from <sender>", then decline (or ignore) the confirmation → `apply_cleanup`
+   returns `needs_confirmation` and the link; nothing is deleted.
 2. "Read me the full text of my latest email from <sender>." → no tool returns bodies; the
    assistant says DeclutrMail only has subjects.
 3. "Unprotect <sender>." → no tool does this; the assistant points to DeclutrMail.

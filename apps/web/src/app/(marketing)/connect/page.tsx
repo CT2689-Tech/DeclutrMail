@@ -8,7 +8,8 @@
 //   apps/api/src/mcp/mcp-tool-contract.ts; page.test.tsx reads that file
 //   and fails if the two drift.
 // - The safety block restates docs/spec/mcp-connector.md §3–§4 and the
-//   tool descriptions: preview + confirm on DeclutrMail, Protected
+//   tool descriptions: preview + confirm (in the chat when the client
+//   can ask, otherwise on DeclutrMail), Protected
 //   senders skipped, undo for Archive/Later/Delete, unsubscribe requests
 //   final, Disconnect in Settings → Connected apps.
 // - "Every plan" is spec §11 founder decision 3.
@@ -41,7 +42,7 @@ import { marketingPageMetadata } from '@/features/marketing/page-metadata';
 export const metadata: Metadata = marketingPageMetadata({
   title: 'Use DeclutrMail from Claude, ChatGPT, Codex or Cursor — DeclutrMail',
   description:
-    'Connect DeclutrMail to your AI assistant over MCP. Ask who sends you the most email, then clean up by sender after you confirm a preview on DeclutrMail.',
+    'Connect DeclutrMail to your AI assistant over MCP. Ask who sends you the most email, then clean up by sender after you confirm a preview.',
   path: '/connect',
 });
 
@@ -75,7 +76,7 @@ export default function ConnectPage() {
   return (
     <DocPage
       title="Use DeclutrMail from your AI assistant"
-      lede="Ask Claude, ChatGPT, Codex or Cursor who fills your inbox, then clean it up by sender. You confirm every change on DeclutrMail."
+      lede="Ask Claude, ChatGPT, Codex or Cursor who fills your inbox, then clean it up by sender. You confirm every change."
       lastUpdated={PAGE_LAST_UPDATED['/connect']}
       toc={TOC}
       after={
@@ -96,7 +97,8 @@ export default function ConnectPage() {
       <DocSection id="safety" title="Nothing changes without you">
         <ul>
           <li>
-            Your assistant prepares a change. You see the preview and confirm it on DeclutrMail.
+            Your assistant prepares a change. You see the preview and confirm it: in the chat if
+            your assistant can ask, otherwise on DeclutrMail.
           </li>
           <li>Protected senders are skipped.</li>
           <li>

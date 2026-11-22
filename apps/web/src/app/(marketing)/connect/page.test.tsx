@@ -41,7 +41,7 @@ describe('/connect', () => {
     const { container } = render(<ConnectPage />);
     const copy = container.textContent ?? '';
 
-    expect(copy).toContain('confirm it on DeclutrMail');
+    expect(copy).toContain('in the chat if your assistant can ask, otherwise on DeclutrMail');
     expect(copy).toContain('Protected senders are skipped');
     expect(copy).toContain('Undo puts back an Archive, Later or Delete');
     expect(copy).toContain('cannot be taken back');

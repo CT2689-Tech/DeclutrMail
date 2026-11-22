@@ -14,6 +14,7 @@ import {
 export interface McpClientProfile {
   /** A protocol revision date, `other` for anything not date-shaped, `unknown` when absent. */
   protocol: string;
+  /** `yes` only when the client can show a form: what an in-chat confirm needs. */
   elicitation: 'yes' | 'no' | 'unknown';
 }
 
@@ -29,7 +30,18 @@ export function clientProfile(envelope: unknown, protocolHeader: unknown): McpCl
   if (capabilities === null || typeof capabilities !== 'object') {
     return { protocol, elicitation: 'unknown' };
   }
-  return { protocol, elicitation: 'elicitation' in capabilities ? 'yes' : 'no' };
+  return { protocol, elicitation: canShowForm(capabilities) ? 'yes' : 'no' };
+}
+
+/**
+ * Form mode is what an in-chat confirm needs. `elicitation: {}` is form
+ * mode (the spec's default); a client that lists modes must list `form`.
+ */
+function canShowForm(capabilities: object): boolean {
+  const elicitation = (capabilities as Record<string, unknown>).elicitation;
+  if (elicitation === null || typeof elicitation !== 'object') return false;
+  const modes = Object.keys(elicitation);
+  return modes.length === 0 || modes.includes('form');
 }
 
 /** `PREVIEW_EXPIRED` → `PreviewExpired`: the shape `error_class` accepts in product events. */

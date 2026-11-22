@@ -193,7 +193,7 @@ export function Companion() {
         <a
           href="/connect"
           className="dm-home-companion-assistant"
-          aria-label="Set up your AI assistant: every cleanup waits for you to confirm it on DeclutrMail"
+          aria-label="Set up your AI assistant: every cleanup waits for you to confirm it"
         >
           <span className="dm-home-companion-mark" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22">
@@ -206,7 +206,7 @@ export function Companion() {
             <strong>Or ask your AI assistant</strong>
             <span>
               Use DeclutrMail from Claude, ChatGPT or Cursor. Every cleanup waits for you to confirm
-              it on DeclutrMail.
+              it.
             </span>
           </span>
           <span className="dm-home-companion-assistant-cta">Set up</span>

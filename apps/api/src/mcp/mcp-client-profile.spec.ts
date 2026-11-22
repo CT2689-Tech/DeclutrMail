@@ -25,6 +25,21 @@ describe('clientProfile', () => {
     ).toEqual({ protocol: '2026-07-28', elicitation: 'no' });
   });
 
+  it('counts only form mode: a client that can only open links cannot confirm in chat', () => {
+    const profile = (elicitation: unknown) =>
+      clientProfile(
+        {
+          [PROTOCOL_VERSION_META_KEY]: '2026-07-28',
+          [CLIENT_CAPABILITIES_META_KEY]: { elicitation },
+        },
+        undefined,
+      ).elicitation;
+    expect(profile({})).toBe('yes');
+    expect(profile({ form: {}, url: {} })).toBe('yes');
+    expect(profile({ url: {} })).toBe('no');
+    expect(profile(true)).toBe('no');
+  });
+
   it('a 2025 client sent capabilities only at initialize, so elicitation is unknown, not no', () => {
     expect(clientProfile(undefined, '2025-06-18')).toEqual({
       protocol: '2025-06-18',

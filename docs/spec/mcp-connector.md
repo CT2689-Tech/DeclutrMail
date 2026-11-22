@@ -79,10 +79,11 @@ apply_cleanup(preview_id)
   ├─ row missing / other user / other mailbox ─▶ PREVIEW_NOT_FOUND
   ├─ expired ─────────────────────────────────▶ PREVIEW_EXPIRED
   ├─ applied ─────────────────────────────────▶ same action id (idempotent)
-  ├─ client supports elicitation
-  │    └─ send elicitation: the preview text + Confirm / Cancel
-  │         ├─ Confirm ─▶ state confirmed ─▶ enqueue ─▶ state applied
-  │         └─ Cancel / no answer ─▶ NOT_APPLIED (row stays pending)
+  ├─ client can show a form (2026-07-28 envelope, elicitation form mode)
+  │    └─ input_required: the preview text, Accept / Decline, and a signed
+  │       requestState {preview_id} bound to person + app, 10 minutes
+  │         ├─ Accept on that prompt ─▶ state confirmed ─▶ enqueue ─▶ applied
+  │         └─ Decline / Cancel ─▶ needs_confirmation + confirm_url (row stays pending)
   └─ no elicitation ─▶ needs_confirmation + confirm_url
         person opens confirm_url in DeclutrMail (session cookie, same user)
         ─▶ sees the web app's preview ─▶ presses the verb button
@@ -104,9 +105,16 @@ apply_cleanup(preview_id)
 - **Confirm page** is a new web route `/confirm/[previewId]` that
   renders the existing preview sheet for the stored preview. Signed-out
   → sign in → back to the page. A different user → not found.
-- Verify at build time whether Claude and ChatGPT support elicitation
-  on remote servers. If neither does, the link is the only path, and
-  that is acceptable: it is still a human pressing our button.
+- **In-chat confirm** (built 2026-11-21): stateless, so it rides the
+  2026-07-28 multi-round-trip flow (`input_required` + `inputResponses`).
+  A 2025-era client declares capabilities only at `initialize`, which
+  this server never keeps, so it always gets the link. An Accept counts
+  only with a `requestState` this server signed for that preview, person
+  and app; a forged, moved or replayed answer confirms nothing. The
+  Accept is only as human as the client: a client that answers prompts
+  without showing them is the person's own software acting with their
+  token. Which clients reach this path: `mcp.client_profile` logs
+  (runbook).
 
 ## 4. Authentication
 
@@ -222,7 +230,7 @@ finds mail moved deserves to know who moved it.
 | Mailbox needs Gmail reconnect  | `MAILBOX_RECONNECT_REQUIRED` + link                                                                       | link                         | integration |
 | Sync still running             | results carry sync state and "as of" time                                                                 | counts labelled as partial   | unit        |
 | Preview expired                | `PREVIEW_EXPIRED`                                                                                         | assistant re-previews        | unit        |
-| Elicitation cancelled          | `NOT_APPLIED`                                                                                             | nothing moved                | unit        |
+| Elicitation declined           | `needs_confirmation` + link                                                                               | nothing moved; link offered  | integration |
 | No elicitation support         | `needs_confirmation` + link                                                                               | DeclutrMail preview page     | e2e         |
 | Confirm page, other user       | 404                                                                                                       | not found                    | e2e         |
 | Sender protected after preview | applied minus that sender, named in `skipped`                                                             | named                        | integration |

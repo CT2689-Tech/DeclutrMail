@@ -19,7 +19,7 @@ export const TOOL_ASKS = [
   'List who sends you email, biggest first, with read rates and how to unsubscribe.',
   'Look closer at one sender: how much is in your inbox, and their recent subject lines.',
   'Check your plan and how much of its monthly limit is used.',
-  'Prepare Keep, Archive, Unsubscribe, Later or Delete for one sender or many. Unsubscribe can also archive or delete their existing email. Nothing changes until you confirm on DeclutrMail.',
+  'Prepare Keep, Archive, Unsubscribe, Later or Delete for one sender or many. Unsubscribe can also archive or delete their existing email. Nothing changes until you confirm it.',
   'Find out whether you confirmed a prepared change, and what it did.',
   'Check how far a change has got.',
   'List recent changes that can still be undone.',
