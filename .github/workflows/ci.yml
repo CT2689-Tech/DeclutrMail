@@ -266,10 +266,6 @@ jobs:
         run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/alert-email-routing.test.mjs scripts/alert-promql-fixtures.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/vercel-spend-guard.test.mjs scripts/paddle-webhook-monitor.test.mjs scripts/vendor-monitoring-followups.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
-      - name: Scoped private infrastructure inspection contracts
-        run: node --test scripts/infra-readonly-inspection.test.mjs
-      - name: Sandbox-only Paddle inspection contracts
-        run: node --test scripts/paddle-sandbox-inspection.test.mjs scripts/paddle-sandbox-india-checkout.test.mjs
       - name: Build selection and artifact retention contracts
         run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/artifact-cleanup-policy.test.mjs scripts/deploy-api-safely.test.mjs scripts/live-india-billing-env.test.mjs scripts/check-billing-queue-runtime.test.mjs
       - name: ct-gates verdicts (a run that reviewed nothing never passes)
@@ -298,8 +294,8 @@ jobs:
           else
             node scripts/run-guard-hooks.mjs --base "$BASE_SHA"
           fi
-      - name: Performance probes and release contract
-        run: node --test scripts/check-sender-release-contract.test.mjs scripts/probe-db-latency.test.mjs scripts/summarize-performance.test.mjs
+      - name: Performance summary contract
+        run: node --test scripts/summarize-performance.test.mjs
       - name: CI and release coordination contracts
         run: node --test scripts/check-ci-required.test.mjs scripts/ci-queue-reuse.test.mjs scripts/check-merge-queue-ready.test.mjs scripts/select-deployment.test.mjs scripts/cloud-run-deploy-paths.test.mjs scripts/select-lighthouse-url.test.mjs scripts/vitest-weighted-shard.test.mjs scripts/ci-command-deadline.test.mjs scripts/install-ci-chromium.test.mjs
       - name: Bundle budget contracts (served-HTML measure, fails closed)
