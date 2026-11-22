@@ -36,15 +36,23 @@ export const consumers = { 'build-web': ['web-types', 'lighthouse'] };
 
 // What each event may take from earlier evidence instead of running it.
 export const reusableOn = {
-  // Main still runs typecheck, lint (including push-base guards), formatting,
-  // the production build with its bundle baseline publication and the
-  // generated-route typecheck. CodeQL is separate.
+  // Main keeps only the production build: its push run publishes the
+  // web-bundle-sizes baseline every PR's budget step compares against, and
+  // nothing else produces it. Typecheck, lint and format are pure functions
+  // of the tree. Lint's push-base guard hooks read only files changed since
+  // the push base, which the queue run (or the PR run of the same tree)
+  // already covered: a batched push spans several queue entries, each of
+  // which ran the guards over its own changes.
   push: [
+    'typecheck',
+    'lint',
+    'format',
     'test-api',
     'test-workers',
     'test-db',
     'test-web',
     'test-units',
+    'web-types',
     'lighthouse',
     'accessibility',
   ],

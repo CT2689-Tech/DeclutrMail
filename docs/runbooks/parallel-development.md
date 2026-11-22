@@ -177,7 +177,8 @@ attempt only (`scripts/ci-queue-reuse.mjs`):
   when the named commit is a real merge of that head with that tree. Main
   moving after the PR run, or a batched queue entry, changes the tree, and the
   queue runs everything. Jobs the PR run path-skipped run in the queue.
-- **A main push** reuses the tests, browser lanes and Lighthouse from the newest
+- **A main push** reuses typecheck, lint, format, the tests, route types,
+  browser lanes and Lighthouse from the newest
   green merge-group run of its exact commit (observed: queue run 38691424940
   and main run 38692088406 share a SHA). Where that queue run itself reused a
   job, main proves the PR evidence again rather than trusting the queue.
@@ -193,9 +194,9 @@ renamed or removed job fails CI instead of quietly disabling reuse.
 before allowing those declared jobs to skip. If evidence changes or disappears
 after selection, the aggregate fails; use **Re-run all jobs** or dispatch CI manually to
 execute everything. Re-running only failed jobs can retain the successful
-selector's old receipt, so it is not a full-execution recovery path. Main still runs typecheck, lint and its push-base guard
-hooks, formatting, the production build/bundle/prerender budgets and generated
-route types. Its bundle baseline continues to be freshly published. CodeQL
+selector's old receipt, so it is not a full-execution recovery path. Main still runs
+the production build/bundle/prerender budgets, so its bundle baseline continues
+to be freshly published. CodeQL
 remains separately required. No branch requirement, token write permission,
 assertion threshold or release gate changes. Run summaries link the source
 attempt and identify reused validation rather than claiming new execution.

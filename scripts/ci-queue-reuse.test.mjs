@@ -666,3 +666,21 @@ test('the inventory parser fails on a job it cannot name and sees a removed job'
   const fewer = checkNamesFromWorkflow(workflow.replace('shard: [1, 2, 3, 4]', 'shard: [1, 2, 3]'));
   assert.ok(!fewer.includes('Tests — API (4)'));
 });
+
+test('main never skips a job that publishes an artifact only its push run produces', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const body = workflow.split('\njobs:\n')[1];
+  const keys = [...body.matchAll(/^ {2}([a-z][\w-]*):$/gm)];
+  const publishers = keys
+    .map(([, key], i) => [key, body.slice(keys[i].index, keys[i + 1]?.index)])
+    .filter(([, block]) =>
+      block
+        .split('\n      - ')
+        .some((step) => /github\.event_name == 'push'/.test(step) && /upload-artifact/.test(step)),
+    )
+    .map(([key]) => key);
+  assert.deepEqual(publishers, ['build-web']);
+  for (const key of publishers) assert.ok(!reusableOn.push.includes(key), key);
+  for (const key of ['typecheck', 'lint', 'format', 'web-types'])
+    assert.ok(reusableOn.push.includes(key), key);
+});

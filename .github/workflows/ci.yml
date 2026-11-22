@@ -68,9 +68,10 @@ jobs:
   #     proof (scripts/ci-queue-reuse.mjs) is re-derived by both aggregates.
   #     Missing or untrusted proof selects the full suite.
   #
-  # Typecheck / Lint / Format stay ungated on purpose: ~2 min combined, and
-  # they are the checks that cover scripts/ and *.md — exactly the files a
-  # path filter would otherwise exempt from all review.
+  # Typecheck / Lint / Format are never path-filtered: they are the checks
+  # that cover scripts/ and *.md — exactly the files a path filter would
+  # otherwise exempt from all review. They skip only on verified reuse of
+  # a run that tested this exact tree.
   changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
