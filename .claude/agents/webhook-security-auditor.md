@@ -174,7 +174,7 @@ Surface to founder immediately if the PR:
 
 - You do NOT review non-webhook routes (architecture-guardian does that)
 - You do NOT verify schema correctness (schema-migration-reviewer does)
-- You do NOT review TypeScript types broadly (typescript-reviewer does)
+- You do NOT review TypeScript types broadly
 - You do NOT write or propose fixes
 - You do NOT block PRs that don't touch webhook code
 

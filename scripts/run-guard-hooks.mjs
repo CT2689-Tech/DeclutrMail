@@ -2,19 +2,21 @@
 // in CI, so a rule a hook claims to enforce holds on every PR, not only on
 // the edits an agent happened to make through Claude Code.
 //
-// Why (2026-09-27): the PostToolUse guards in .claude/settings.json signalled
-// violations with `exit 1`, which Claude Code treats as a non-blocking error
-// the agent never sees, and nothing in CI ran them. CLAUDE.md §2.1/§2.2/§2.4
-// said "Enforced by … hook" about rules nothing enforced.
+// Why (2026-09-27): the edit-time guards signalled violations with `exit 1`,
+// which Claude Code treats as a non-blocking error the agent never sees, and
+// nothing in CI ran them. CLAUDE.md §2.1/§2.2/§2.4 said "Enforced by … hook"
+// about rules nothing enforced. Since 2026-11-21 the guards run here only
+// (founder decision): they are not registered as Claude Code hooks, so this
+// runner's GUARDS list is the one registration.
 //
-// Every changed file is fed to every registered PostToolUse guard with the
-// stdin payload Claude Code sends after an Edit of that file. A change to a
-// guard, its registration or this runner re-judges every tracked file. A
-// violation fails the run, naming guard, file and message. So does every way
-// of seeing nothing (CLAUDE.md §8, "A guard that cannot fail is not a guard"):
+// Every changed file is fed to every guard with the stdin payload Claude Code
+// sends a PostToolUse hook after an Edit of that file. A change to a guard or
+// this runner re-judges every tracked file. A violation fails the run, naming
+// guard, file and message. So does every way of seeing nothing (CLAUDE.md §8,
+// "A guard that cannot fail is not a guard"):
 //   - an unreadable base, no merge base (a shallow checkout), an empty diff,
 //     or a changed file that is not on disk;
-//   - a registered guard that is missing, not executable, or crashes (a
+//   - a listed guard that is missing, not executable, or crashes (a
 //     non-zero exit without its own `❌ <guard>:` finding);
 //   - a guard that does not fire on its positive control, placed under this
 //     checkout's own root — a guard that exempts this checkout's path (every
@@ -39,7 +41,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { availableParallelism } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
@@ -47,16 +49,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const ALLOWLIST = 'scripts/guard-hooks-allowlist.json';
 const HOOK_TIMEOUT_MS = 30_000;
 // A change to one of these re-judges every tracked file, not only the diff.
-const JUDGES_EVERY_FILE =
-  /^(?:\.claude\/hooks\/|\.claude\/settings\.json$|scripts\/run-guard-hooks\.mjs$)/;
-
-/** Guards CLAUDE.md §2 cites as enforcement; unregistering one fails the run. */
-export const REQUIRED_GUARDS = [
-  'verify-no-body-storage', // §2.1
-  'check-microcopy', // §2.2
-  'require-preview-before-mutation', // §2.3
-  'block-category-prediction', // §2.4
-];
+const JUDGES_EVERY_FILE = /^(?:\.claude\/hooks\/|scripts\/run-guard-hooks\.mjs$)/;
 
 /**
  * One positive control per guard: a file the guard must react to. It is
@@ -92,12 +85,14 @@ export const POSITIVE_CONTROLS = {
       'export const since = (createdAt) => sql`created_at > ${createdAt}`;\n',
     expect: 'violation',
   },
-  'require-preview-before-mutation': {
-    path: 'apps/web/src/control-mutation.ts',
-    content: 'export const useControl = () => useMutation({ mutationFn: archive });\n',
-    expect: 'advisory',
-  },
 };
+
+/**
+ * The guards, each `.claude/hooks/<name>.sh`: verify-no-body-storage (§2.1),
+ * check-microcopy (§2.2), block-category-prediction (§2.4), and the two
+ * shipped-bug invariants (§2.6). A guard runs only with a positive control.
+ */
+export const GUARDS = Object.keys(POSITIVE_CONTROLS);
 
 export class RunnerError extends Error {}
 
@@ -113,46 +108,17 @@ function nulList(output) {
   return output.split('\0').filter(Boolean);
 }
 
-/** The PostToolUse guards Claude Code runs after an Edit, from .claude/settings.json. */
+/** Every guard in GUARDS, each an executable `.claude/hooks/<name>.sh`. */
 export function loadGuards(root) {
-  let settings;
-  try {
-    settings = JSON.parse(readFileSync(join(root, '.claude/settings.json'), 'utf8'));
-  } catch (error) {
-    throw new RunnerError(`cannot read .claude/settings.json: ${error.message}`);
-  }
-  const guards = [];
-  for (const group of settings.hooks?.PostToolUse ?? []) {
-    const matcher = group.matcher ?? '';
-    if (matcher && matcher !== '*' && !new RegExp(`^(?:${matcher})$`).test('Edit')) continue;
-    for (const hook of group.hooks ?? []) {
-      if (hook.type !== 'command') continue;
-      if (!/^\.claude\/hooks\/[\w.-]+\.sh$/.test(hook.command)) {
-        throw new RunnerError(
-          `unsupported PostToolUse command '${hook.command}': expected .claude/hooks/<name>.sh`,
-        );
-      }
-      const path = join(root, hook.command);
-      try {
-        accessSync(path, constants.X_OK);
-      } catch {
-        throw new RunnerError(`guard ${hook.command} is registered but missing or not executable`);
-      }
-      guards.push({ name: basename(hook.command, '.sh'), path });
+  return GUARDS.map((name) => {
+    const path = join(root, '.claude/hooks', `${name}.sh`);
+    try {
+      accessSync(path, constants.X_OK);
+    } catch {
+      throw new RunnerError(`guard .claude/hooks/${name}.sh is missing or not executable`);
     }
-  }
-  const names = new Set(guards.map((guard) => guard.name));
-  for (const name of REQUIRED_GUARDS) {
-    if (!names.has(name)) {
-      throw new RunnerError(`guard ${name} is not registered as a PostToolUse hook for Edit`);
-    }
-  }
-  for (const name of names) {
-    if (!POSITIVE_CONTROLS[name]) {
-      throw new RunnerError(`guard ${name} has no positive control — add one to POSITIVE_CONTROLS`);
-    }
-  }
-  return guards;
+    return { name, path };
+  });
 }
 
 /** Explicit, fail-closed baseline of violations that predate this check. */

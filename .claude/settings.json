@@ -10,7 +10,6 @@
       "Bash(storybook:*)",
       "Bash(drizzle-kit generate:*)",
       "Bash(drizzle-kit check:*)",
-      "Bash(drizzle-kit drop:*)",
       "Bash(atlas migrate diff:*)",
       "Bash(atlas migrate lint:*)",
       "Bash(atlas migrate status:*)",
@@ -21,7 +20,6 @@
       "Bash(git show:*)",
       "Bash(git branch:*)",
       "Bash(git fetch:*)",
-      "Bash(git stash:*)",
       "Bash(gh pr view:*)",
       "Bash(gh pr list:*)",
       "Bash(gh pr checks:*)",
@@ -40,8 +38,7 @@
       "Bash(cat turbo.json)",
       "Bash(cat pnpm-workspace.yaml)",
       "Bash(ls:*)",
-      "Bash(pwd)",
-      "Bash(env)"
+      "Bash(pwd)"
     ],
     "deny": [
       "Bash(rm -rf:*)",
@@ -59,7 +56,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "FORCE_COLOR=1 pnpm -s --dir \"${CLAUDE_PROJECT_DIR:-.}\" status --summary 2>/dev/null"
+    "command": "cd \"${CLAUDE_PROJECT_DIR:-.}\" 2>/dev/null && b=$(git branch --show-current 2>/dev/null) && printf '%s%s' \"${b:-$(git rev-parse --short HEAD 2>/dev/null)}\" \"$(git status --porcelain -uno 2>/dev/null | head -c1 | sed 's/.*/ */')\""
   },
   "hooks": {
     "PreToolUse": [
@@ -81,62 +78,7 @@
           },
           {
             "type": "command",
-            "command": ".claude/hooks/require-pr-template.sh"
-          },
-          {
-            "type": "command",
             "command": ".claude/hooks/block-destructive-cloud-ops.sh"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": ".claude/hooks/verify-no-body-storage.sh"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/check-microcopy.sh"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/block-category-prediction.sh"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/require-idempotency.sh"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/require-preview-before-mutation.sh"
-          },
-          {
-            "type": "command",
-            "command": ".claude/hooks/check-raw-date-in-sql.sh"
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'DeclutrMail session start. Checklist:'; echo '  - Read CLAUDE.md (last modified: '$(git log -1 --format='%cd' --date=short -- CLAUDE.md 2>/dev/null || echo unknown)')'; echo '  - Review docs/log/mistakes/ for entries added since your last session'"
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo 'Before closing session:'; echo '  - Add a docs/log/learnings/ entry if anything surprised you'; echo '  - Add a docs/log/mistakes/ entry if a gate fired or bug was caught'"
           }
         ]
       }

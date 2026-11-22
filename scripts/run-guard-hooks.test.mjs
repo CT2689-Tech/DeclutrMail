@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { POSITIVE_CONTROLS, classify, hitsOf } from './run-guard-hooks.mjs';
+import { GUARDS, POSITIVE_CONTROLS, classify, hitsOf } from './run-guard-hooks.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RUNNER = join(REPO_ROOT, 'scripts/run-guard-hooks.mjs');
@@ -49,12 +49,11 @@ function commit(root) {
   return git(root, 'rev-parse', 'HEAD');
 }
 
-/** A throwaway repo carrying this checkout's real guard hooks and settings. */
+/** A throwaway repo carrying this checkout's real guard hooks. */
 function fixtureRepo(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'guard-hooks-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   cpSync(join(REPO_ROOT, '.claude/hooks'), join(root, '.claude/hooks'), { recursive: true });
-  cpSync(join(REPO_ROOT, '.claude/settings.json'), join(root, '.claude/settings.json'));
   write(root, 'scripts/guard-hooks-allowlist.json', '{ "entries": [] }\n');
   write(root, 'README.md', '# fixture\n');
   git(root, 'init', '-q');
@@ -98,7 +97,7 @@ test('a clean change passes, and every guard reports what it checked', (t) => {
   const { status, output } = run(root, '--base', base);
 
   assert.equal(status, 0, output);
-  assert.match(output, /Positive controls: all 6 guards fired/);
+  assert.match(output, new RegExp(`Positive controls: all ${GUARDS.length} guards fired`));
   for (const guard of Object.keys(POSITIVE_CONTROLS)) {
     assert.match(output, new RegExp(`${guard} +checked 2 files · 0 violations`));
   }
@@ -126,7 +125,7 @@ test('an unreadable base fails loudly, including a shallow checkout missing it',
   assert.match(output, /unreadable base/);
 });
 
-test('a registered guard that is missing, not executable or unregistered fails loudly', (t) => {
+test('a guard that is missing or not executable fails loudly', (t) => {
   const { root, base } = fixtureRepo(t);
   write(root, 'apps/api/src/clean.ts', 'export const one = 1;\n');
   commit(root);
@@ -136,23 +135,27 @@ test('a registered guard that is missing, not executable or unregistered fails l
   rmSync(guard);
   let { status, output } = run(root, '--base', base);
   assert.equal(status, 2, output);
-  assert.match(output, /block-category-prediction\.sh is registered but missing/);
+  assert.match(output, /block-category-prediction\.sh is missing or not executable/);
 
   writeFileSync(guard, script);
   chmodSync(guard, 0o644);
   ({ status, output } = run(root, '--base', base));
   assert.equal(status, 2, output);
-  assert.match(output, /block-category-prediction\.sh is registered but missing or not executable/);
+  assert.match(output, /block-category-prediction\.sh is missing or not executable/);
+});
 
-  chmodSync(guard, 0o755);
-  const settings = join(root, '.claude/settings.json');
-  writeFileSync(
-    settings,
-    readFileSync(settings, 'utf8').replace(/\n\s*\{[^{}]*verify-no-body-storage\.sh"\s*\},?/, ''),
+test('check-microcopy keeps its regression cases', () => {
+  const result = spawnSync(
+    'bash',
+    [join(REPO_ROOT, '.claude/hooks/test/check-microcopy.test.sh')],
+    {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      env: ENV,
+    },
   );
-  ({ status, output } = run(root, '--base', base));
-  assert.equal(status, 2, output);
-  assert.match(output, /verify-no-body-storage is not registered/);
+  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
+  assert.match(result.stdout, /all check-microcopy\.sh regression cases pass/);
 });
 
 test('a guard that cannot see a violation from this checkout fails loudly', (t) => {

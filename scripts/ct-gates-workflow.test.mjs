@@ -106,11 +106,9 @@ test('scripts, hooks, workflows, ack lists and .tsx files each reach silent-fail
   }
 });
 
-test('the §7 gates for copy and for type-heavy files are routed', async () => {
+test('the §7 gate for copy is routed', async () => {
   const copy = await gateRun(['apps/web/src/features/triage/triage-copy.ts'], () => reviewed);
   assert.ok(copy.result.gatesRun.includes('usability-editor'));
-  const types = await gateRun(['packages/events/src/mailbox-events.ts'], () => reviewed);
-  assert.ok(types.result.gatesRun.includes('type-design-analyzer'));
 });
 
 test('gate routes cover the paths the agents name as their scope', async () => {
@@ -119,7 +117,6 @@ test('gate routes cover the paths the agents name as their scope', async () => {
     ['packages/shared/src/contracts/gmail-data-inventory.ts', 'privacy-auditor'],
     ['apps/api/src/billing/paddle.adapter.ts', 'webhook-security-auditor'],
     ['apps/api/src/webhooks/billing-razorpay.controller.ts', 'webhook-security-auditor'],
-    ['packages/shared/src/contracts/activity.ts', 'type-design-analyzer'],
   ]) {
     const { result } = await gateRun([file], () => reviewed);
     assert.ok(result.gatesRun.includes(gate), `${file} -> ${gate}`);
@@ -179,7 +176,7 @@ test('prose does not stop a clean verdict, but a gate charter or CLAUDE.md is no
 test('a gate that died is INCOMPLETE, not a decline and not a pass', async () => {
   const { result } = await gateRun(['scripts/probe.ts'], () => null);
   assert.equal(result.verdict, 'INCOMPLETE');
-  assert.deepEqual(result.gatesFailed, ['typescript-reviewer', 'silent-failure-hunter']);
+  assert.deepEqual(result.gatesFailed, ['silent-failure-hunter']);
   assert.deepEqual(result.gatesRun, []);
 });
 

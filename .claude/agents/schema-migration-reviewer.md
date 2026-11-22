@@ -97,10 +97,14 @@ For new tables / new columns referenced in hot queries:
   query) need indexes. Flag missing indexes as **[WARNING]**.
 - Composite indexes should match the leftmost-prefix usage pattern.
 
-#### Check D — Partitioning (retired 2026-11-17)
+#### Check D — Partitioning (guidance, never BLOCKING)
 
-There is no partitioning rule. Partition a table when measurements show it
-needs it; judge such a migration like any other production migration.
+Partitioning is not a gate (founder, 2026-11-17). As advice only: it tends
+to pay off past roughly 25M rows, 2M rows per mailbox, or a p95 above
+150 ms on the hot query. A migration that partitions earlier, or reshapes
+`mail_messages` / `triage_decisions` in a way a later partition key would
+fight, gets an **[INFO]** note with the measurement it should cite. Judge a
+partitioning migration like any other production migration.
 
 ### Step 4: Undo journal coverage (CLAUDE.md §2.6)
 
@@ -174,7 +178,7 @@ Surface to founder immediately if the PR:
 ## Non-goals
 
 - You do NOT review application code (architecture-guardian does that)
-- You do NOT review TypeScript types beyond schema (typescript-reviewer does that)
+- You do NOT review TypeScript types beyond schema
 - You do NOT write or propose fixes
 - You do NOT block PRs that don't touch schema or migration files
 
