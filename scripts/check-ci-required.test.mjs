@@ -430,3 +430,20 @@ test('the journey lanes in CI are exactly the pinned lanes, each asserted agains
     .split('\n      - ')[0];
   assert.ok(step.includes('assert-journeys.mjs e2e-journeys-report.json ${{ matrix.lane }}'));
 });
+
+test('Lint runs the content pipeline and SEO engine contracts on every run', async () => {
+  const { existsSync } = await import('node:fs');
+  const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const lint = workflow.split('\n  lint:\n')[1].split('\n  format:\n')[0];
+  for (const command of [
+    'node --test scripts/content-pipeline.test.mjs',
+    'node scripts/content-pipeline.mjs check-registry',
+    'node --test scripts/seo-engine.test.mjs',
+  ]) {
+    const step = lint.split('\n      - ').find((item) => item.includes(command));
+    assert.ok(step, command);
+    assert.doesNotMatch(step, /\bif:/, command);
+  }
+  for (const retired of ['content-pipeline-tests.yml', 'seo-engine-tests.yml'])
+    assert.ok(!existsSync(new URL(`../.github/workflows/${retired}`, import.meta.url)), retired);
+});

@@ -340,6 +340,16 @@ jobs:
       - run: pnpm check:icons
       - name: No index in user-facing copy
         run: node scripts/check-no-index-copy.mjs apps/web/src packages/shared/src/contracts
+      # Formerly content-pipeline-tests.yml and seo-engine-tests.yml. Together
+      # ~1.5 s, so they run on every Lint rather than behind a path filter: a
+      # step filter inside a job the queue can reuse would let a queue entry
+      # skip them on the strength of a PR run that path-skipped them.
+      - name: Content pipeline contracts
+        run: |
+          node --test scripts/content-pipeline.test.mjs
+          node scripts/content-pipeline.mjs check-registry
+      - name: SEO engine contracts
+        run: node --test scripts/seo-engine.test.mjs
 
   format:
     name: Format check
