@@ -51,6 +51,7 @@ describe('/pricing.md — machine-readable pricing', () => {
     expect(markdown).not.toContain('$9/mo');
     expect(markdown).not.toContain('$90/yr');
     expect(markdown).not.toContain('Founding Pro');
+    expect(markdown).not.toContain('Razorpay');
     expect(markdown).toContain(
       `${METER.free.limit.toLocaleString('en-US')} emails cleared a month`,
     );

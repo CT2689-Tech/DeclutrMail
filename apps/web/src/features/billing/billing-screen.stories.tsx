@@ -430,30 +430,6 @@ export const Paused: Story<typeof BillingScreen> = {
     ),
 };
 
-/** Razorpay paused — no self-serve resume promise; support route only
- *  (no-charge resume semantics unverified for this provider). */
-export const PausedRazorpay: Story<typeof BillingScreen> = {
-  render: (_args: ComponentProps<typeof BillingScreen>) =>
-    frame(
-      makeClient(meFixture('free', 0), {
-        complimentary: null,
-        tier: 'free',
-        foundingMember: false,
-        pendingCheckout: null,
-        subscription: PRO_SUB.subscription
-          ? {
-              ...PRO_SUB.subscription,
-              provider: 'razorpay',
-              tier: 'plus',
-              status: 'paused',
-              pauseUntil: '2026-08-03T12:00:00.000Z',
-              currentPeriodEnd: '2026-08-15T12:00:00.000Z',
-            }
-          : null,
-      }),
-    ),
-};
-
 /** A6 repro — entitlement Pro, paused PLUS row (tier_mismatch): the
  *  card tells ONE story (Pro, no price claim), the non-backing notice
  *  names the paused row as a record with consequence-stating resume

@@ -61,15 +61,6 @@
 //     `<script src="cdn.paddle.com/...">` tag will be BLOCKED. U13 must
 //     load Paddle.js via a nonced loader (next/script with the request
 //     `x-nonce`) so trust propagates; the host entry alone is NOT enough.
-//   Razorpay (D77/U13) — checkout script is `https://checkout.razorpay.com`;
-//     the checkout iframe + API calls hit `https://api.razorpay.com`
-//     (https://razorpay.com/docs/payments/payment-gateway/web-integration/standard/).
-//     Same script-src/strict-dynamic caveat as Paddle: load
-//     checkout.razorpay.com via a nonced loader, not a bare <script src>.
-//     NOTE for U13: Razorpay's telemetry host `lumberjack.razorpay.com`
-//     is intentionally NOT allowlisted — verify checkout still completes
-//     (it should; telemetry is fire-and-forget) and widen connect-src
-//     only if the overlay actually breaks.
 //   Vercel Toolbar   — Vercel injects its comment/feedback toolbar on
 //     deployments that have it enabled and renders it in an iframe from
 //     `https://vercel.live` (frame-src). It is not user-facing — only a
@@ -172,8 +163,8 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
     // load the chunk graph. The vendor host entries below are a CSP2-only
     // fallback: under strict-dynamic, CSP3 browsers IGNORE host-source
     // expressions in script-src, so a STATIC third-party <script src>
-    // (Paddle.js, Razorpay checkout) is blocked — U13 must load those
-    // via a nonced loader (see the Paddle/Razorpay header note).
+    // (Paddle.js) is blocked — U13 must load it via a nonced loader
+    // (see the Paddle header note).
     //
     // PUBLIC (nonce === null): 'unsafe-inline' instead, because a
     // prerendered page has no request to mint a nonce from and its HTML
@@ -189,7 +180,6 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
       nonce !== null && `'strict-dynamic'`,
       env.isDev && `'unsafe-eval'`,
       'https://*.paddle.com',
-      'https://checkout.razorpay.com',
       'https://*.posthog.com',
       'https://*.sentry.io',
     )}`,
@@ -222,22 +212,11 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
       posthogOrigin,
       'https://*.posthog.com',
       'https://*.paddle.com',
-      'https://api.razorpay.com',
     )}`,
-    `frame-src ${sources(
-      'https://*.paddle.com',
-      'https://checkout.razorpay.com',
-      'https://api.razorpay.com',
-      'https://vercel.live',
-    )}`,
+    `frame-src ${sources('https://*.paddle.com', 'https://vercel.live')}`,
     `frame-ancestors 'none'`,
     `base-uri 'self'`,
-    `form-action ${sources(
-      `'self'`,
-      'https://*.paddle.com',
-      'https://checkout.razorpay.com',
-      'https://api.razorpay.com',
-    )}`,
+    `form-action ${sources(`'self'`, 'https://*.paddle.com')}`,
     `object-src 'none'`,
     // Prod-only: on http://localhost this would upgrade the API fetch
     // to https://localhost:4000 and break local dev.
@@ -253,8 +232,8 @@ export function buildContentSecurityPolicy(nonce: string | null, env: CspEnv): s
  *  - nosniff: no MIME sniffing of responses.
  *  - Referrer-Policy: full referrer stays same-origin only.
  *  - Permissions-Policy: deny the sensor APIs nothing in the product
- *    needs. `payment` is intentionally NOT denied — the U13 Paddle /
- *    Razorpay checkout overlays may use the Payment Request API.
+ *    needs. `payment` is intentionally NOT denied — the U13 Paddle
+ *    checkout overlay may use the Payment Request API.
  *  - HSTS: 1 year + subdomains, preload OFF for now (D175 unit spec —
  *    preload is a one-way door; founder decision later). Browsers
  *    ignore the header over plain http, so localhost is unaffected.

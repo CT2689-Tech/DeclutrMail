@@ -50,14 +50,14 @@ import {
 } from '@declutrmail/db';
 import type { BillingProviderId } from '@declutrmail/shared/contracts';
 
+import { AppException } from '../common/app-exception.js';
 import { DRIZZLE, type DrizzleDb } from '../db/db.module.js';
-import {
-  CancellationFactsCache,
-  type BillingProvider,
-  type CheckoutHold,
-  type NormalizedBillingEvent,
-  type NormalizedSubscription,
-  type ProviderCancellationFacts,
+import type {
+  BillingProvider,
+  CheckoutHold,
+  NormalizedBillingEvent,
+  NormalizedSubscription,
+  ProviderCancellationFacts,
 } from './billing-provider.interface.js';
 import { BillingCatalog } from './billing-catalog.js';
 import { BillingWebhookService, GRANTING_STATUSES } from './billing-webhook.service.js';
@@ -67,7 +67,6 @@ import {
   throwIfVerdictStopped,
   VERDICT_DB_STATEMENT_TIMEOUT_MS,
 } from './provider-signal.js';
-import { RazorpayAdapter } from './razorpay.adapter.js';
 import { upgradeRecords } from './upgrade-intents.js';
 
 /** Outcome of an on-demand pending-checkout reconciliation. */
@@ -261,11 +260,13 @@ export class BillingReconciliationService {
     private readonly catalog: BillingCatalog,
     private readonly webhookService: BillingWebhookService,
     private readonly paddle: PaddleAdapter,
-    private readonly razorpay: RazorpayAdapter,
   ) {}
 
+  /** Paddle is the only rail. A row naming any other provider cannot be read. */
   private adapterFor(provider: BillingProviderId): BillingProvider {
-    return provider === 'paddle' ? this.paddle : this.razorpay;
+    if (provider === 'paddle') return this.paddle;
+    this.logger.error(`billing.reconcile.provider_retired provider=${provider}`);
+    throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
   }
 
   /**
@@ -380,32 +381,6 @@ export class BillingReconciliationService {
   }
 
   /**
-   * Every catalog id the wait could resolve to on one provider — both
-   * cycles when the hint carries none, plus the founding variant for
-   * pro. Razorpay's search lists per plan_id, so this set IS its
-   * search key; Paddle ignores it (email lookup) and the shared
-   * candidate filter re-checks tier/cycle either way.
-   */
-  private candidatePriceIds(
-    provider: BillingProviderId,
-    tier: string,
-    cycle: 'monthly' | 'annual' | null,
-  ): string[] {
-    if (tier !== 'plus' && tier !== 'pro') return [];
-    const cycles = cycle ? [cycle] : (['monthly', 'annual'] as const);
-    const ids: string[] = [];
-    for (const c of cycles) {
-      const standard = this.catalog.resolvePriceId(provider, tier, c, false);
-      if (standard) ids.push(standard);
-      if (tier === 'pro') {
-        const founding = this.catalog.resolvePriceId(provider, tier, c, true);
-        if (founding) ids.push(founding);
-      }
-    }
-    return ids;
-  }
-
-  /**
    * On-demand: reconcile a workspace's open pending checkout against
    * provider truth. Resolution ladder, strictest first:
    *
@@ -413,9 +388,7 @@ export class BillingReconciliationService {
    *      fetchCheckoutHold (exact, read-only). It can only add
    *      `payment_in_progress` or mark a `none_found` exact. A Pass has
    *      no other witness.
-   *   1. `provider_ref` on the claim → fetchSubscription (Razorpay —
-   *      the server minted the subscription, so the id is exact).
-   *   2. searchSubscriptionsByEmail(owner email), filtered to the
+   *   1. searchSubscriptionsByEmail(owner email), filtered to the
    *      claim: catalog (tier, cycle) match + granting status +
    *      created-at ≥ claim − 15 min. Newest wins; extras are logged,
    *      never projected.
@@ -573,8 +546,8 @@ export class BillingReconciliationService {
     // Timestamp BEFORE any provider read — see ORDERING in the header.
     const observedAt = new Date().toISOString();
     // With a claim, only its provider is asked. Hint-only reconciles
-    // ask both (the hint does not know the provider).
-    const providers: BillingProviderId[] = claim ? [claim.provider] : ['paddle', 'razorpay'];
+    // ask Paddle, the only rail.
+    const providers: BillingProviderId[] = claim ? [claim.provider] : ['paddle'];
 
     const candidates: Array<{ provider: BillingProviderId; sub: NormalizedSubscription }> = [];
     // Pre-grant artifacts seen anywhere along the way (the 3DS window)
@@ -582,61 +555,20 @@ export class BillingReconciliationService {
     // "no payment found".
     let inProgress = 0;
     try {
-      // The claim's provider_ref is a FAST PATH, never the only
-      // witness (Codex round 4): a 404 on a rotten ref, or a reclaimed
-      // claim pointing at attempt #2 while attempt #1 carried the
-      // money, must not conclude none_found from the ref alone. The
-      // search below always runs when the ref produced no candidate.
-      // Razorpay only: its ref names a SUBSCRIPTION. Paddle's ref names a
-      // transaction and is read above, never fed to a subscription GET.
-      if (claim?.providerRef && claim.provider !== 'paddle') {
-        const result = await this.adapterFor(claim.provider).fetchSubscription(claim.providerRef);
-        if (result.kind === 'found_unmapped') {
-          // The checkout's own artifact EXISTS pre-grant (Razorpay
-          // created/authenticated — the 3DS window). "No payment
-          // found" here invited the double charge; keep it locked.
-          this.logger.log(
-            `billing.reconcile.pending_in_progress workspace=${workspaceId} provider=${claim.provider} provider_status=${result.providerStatus}`,
-          );
-          return 'payment_in_progress';
-        }
-        if (
-          result.kind === 'found' &&
-          (!result.subscription.workspaceId || result.subscription.workspaceId === workspaceId)
-        ) {
-          candidates.push({ provider: claim.provider, sub: result.subscription });
-        }
-      }
-      // Fall back to the search unless the ref produced a candidate
-      // that actually SURVIVES the filter — a found-but-canceled ref
-      // (a reclaimed claim's attempt #2) must not suppress the search
-      // that would find attempt #1's money.
-      if (this.filterMatches(candidates, target, searchFloorMs).length === 0) {
-        const [owner] = await this.db
-          .select({ email: users.email })
-          .from(users)
-          .where(eq(users.workspaceId, workspaceId))
-          .orderBy(asc(users.createdAt))
-          .limit(1);
-        if (!owner) return 'none_found';
-        const createdAfter =
-          searchFloorMs !== null ? new Date(searchFloorMs).toISOString() : undefined;
-        for (const provider of providers) {
-          // Every catalog id the wait could resolve to on THIS provider
-          // (both cycles when the hint has none; founding variant for
-          // pro) — Razorpay's search lists per plan_id, so the id set
-          // IS its search key.
-          const priceIds = this.candidatePriceIds(provider, target.tier, target.cycle);
-          const found = await this.adapterFor(provider).searchSubscriptions({
-            workspaceId,
-            email: owner.email,
-            providerPriceIds: priceIds,
-            createdAfter,
-          });
-          inProgress += found.inProgress;
-          for (const sub of found.subscriptions) {
-            if (sub.workspaceId === workspaceId) candidates.push({ provider, sub });
-          }
+      // Paddle's ref names a transaction and is read above, never fed to
+      // a subscription GET, so the subscription search always runs.
+      const [owner] = await this.db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.workspaceId, workspaceId))
+        .orderBy(asc(users.createdAt))
+        .limit(1);
+      if (!owner) return 'none_found';
+      for (const provider of providers) {
+        const found = await this.adapterFor(provider).searchSubscriptions({ email: owner.email });
+        inProgress += found.inProgress;
+        for (const sub of found.subscriptions) {
+          if (sub.workspaceId === workspaceId) candidates.push({ provider, sub });
         }
       }
     } catch (err) {
@@ -914,14 +846,6 @@ export class BillingReconciliationService {
     let refuted = 0;
     let settled = 0;
     const consecutiveErrors: Record<BillingProviderId, number> = { paddle: 0, razorpay: 0 };
-    // Scoped to THIS pass and never stored on the service. Some provider
-    // reads behind `providerCancellationFacts` are account-wide rather
-    // than per-subscription (Razorpay's disputes list), so without this
-    // the loop below re-asks one identical question per row. Declaring it
-    // here rather than as a field is the whole safety argument: the next
-    // pass cannot see this one's answers, because after this method
-    // returns nothing holds a reference to them.
-    const factsCache = new CancellationFactsCache();
 
     for (const row of rows) {
       throwIfVerdictStopped();
@@ -982,7 +906,6 @@ export class BillingReconciliationService {
         // outage is never read as a rejected refund.
         const facts = await this.adapterFor(row.provider).providerCancellationFacts(
           row.providerSubscriptionId,
-          factsCache,
         );
         // Facts reads swallow fetch failures and return null, including a
         // deadline abort. Stop before that null is treated as "unreadable,
@@ -1075,19 +998,6 @@ export class BillingReconciliationService {
           // same-day is how a seller account gets flagged (founder
           // decision, 2026-08-13). They still release normally when the
           // period ends and the real `subscription.canceled` arrives.
-          //
-          // No provider check guards this, and that is now load-bearing
-          // rather than merely tidy. An earlier revision justified the
-          // absence by saying Razorpay could never reach here — its
-          // facts read returned null and its mapper minted no verdict.
-          // Both clauses died in this same branch: Razorpay now reads
-          // refunds and disputes, and its mapper resolves a subscription
-          // id through the invoice, so Razorpay rows DO reach here and
-          // settle. That is the point. A hardcoded
-          // `provider !== 'razorpay'` would have become a permanent
-          // lockout for every Indian customer at exactly that moment —
-          // the bug this feature removes, re-created by its own
-          // mitigation.
           //
           // BOTH sides must agree no dispute is involved, and they are
           // asking different questions. `facts.settled === 'refund'` is

@@ -124,7 +124,7 @@ rule-matched. Enforced by `block-category-prediction.sh` (CI).
   checklist — issuer, JWKS signature, `aud`, `email`, `exp`, `messageId`
   dedup, monotonic `historyId`. **Never** `x-goog-authenticated-user-email`
   (that is Cloud Run IAM, not Pub/Sub auth).
-- **Billing (Paddle, Razorpay) and Resend:** HMAC over the raw body, before
+- **Billing (Paddle) and Resend:** HMAC over the raw body, before
   JSON parsing, compared with `timingSafeEqual`, secret from env, fail
   closed, dedup on the provider event id. There is no Stripe.
 

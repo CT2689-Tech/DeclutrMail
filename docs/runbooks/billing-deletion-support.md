@@ -4,7 +4,7 @@ The product never cancels or refunds billing as part of deletion. Cancel in Bill
 
 ## Unresolved checkout attempts
 
-The transient pending checkout can expire, be released or be replaced without invalidating a provider artifact. Each new attempt therefore has a retained `local.checkout_attempted` billing event. A known Razorpay subscription is recorded as `local.checkout_artifact` and can be checked exactly. Paddle overlay payloads do not carry an attempt identifier; the verified workspace attribution of one purchase cannot prove all attempts have finished. Those attempts need support review, even after the visible subscription ends.
+The transient pending checkout can expire, be released or be replaced without invalidating a provider artifact. Each new attempt therefore has a retained `local.checkout_attempted` billing event. A recorded `local.checkout_artifact` names a provider subscription that can be checked exactly. Paddle overlay payloads do not carry an attempt identifier; the verified workspace attribution of one purchase cannot prove all attempts have finished. Those attempts need support review, even after the visible subscription ends.
 
 Support must use the correct provider/environment, inspect every subscription and open transaction/link associated with the account (including payer aliases), and check each retained attempt. Canceling, refunding, or changing a production subscription needs separate explicit authorization and the normal provider workflow. This procedure itself performs no provider mutation. Never infer resolution from elapsed time, a browser success callback, an empty capped search, or the customer's “no charge” assertion.
 

@@ -98,8 +98,8 @@ export const GRANTING_STATUSES = ['active', 'past_due'] as const;
 /**
  * Founder decision 2026-07-28: a failed payment keeps its tier for 14
  * days past the period end, then entitlement drops. Terminal provider
- * states (Razorpay `halted` → canceled) drop immediately — the window
- * applies ONLY to genuine retry states.
+ * states drop immediately — the window applies ONLY to genuine retry
+ * states.
  */
 const DUNNING_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -175,21 +175,17 @@ function scalar(value: unknown): string | number | undefined {
 
 /**
  * Raw scalars the normalization drops but the audit trail keeps:
- * verbatim provider status (lossy mapping — Razorpay `pending` and
- * `halted` both normalize to `past_due`), the provider's own event
- * timestamp, period start, and pause/cancel stamps. Paddle carries
- * these under `data.*`; Razorpay under `payload.subscription.entity.*`.
+ * verbatim provider status (the mapping is lossy), the provider's own
+ * event timestamp, period start, and pause/cancel stamps. Paddle carries
+ * these under `data.*`.
  */
 function pickRawAuditScalars(rawPayload: unknown): Record<string, unknown> {
   const data = prop(rawPayload, 'data'); // Paddle
-  const entity = prop(prop(prop(rawPayload, 'payload'), 'subscription'), 'entity'); // Razorpay
   const picked: Record<string, unknown> = {
-    provider_status: scalar(prop(data, 'status') ?? prop(entity, 'status')),
-    occurred_at: scalar(prop(rawPayload, 'occurred_at') ?? prop(rawPayload, 'created_at')),
-    period_start: scalar(
-      prop(prop(data, 'current_billing_period'), 'starts_at') ?? prop(entity, 'current_start'),
-    ),
-    canceled_at: scalar(prop(data, 'canceled_at') ?? prop(entity, 'ended_at')),
+    provider_status: scalar(prop(data, 'status')),
+    occurred_at: scalar(prop(rawPayload, 'occurred_at')),
+    period_start: scalar(prop(prop(data, 'current_billing_period'), 'starts_at')),
+    canceled_at: scalar(prop(data, 'canceled_at')),
     paused_at: scalar(prop(data, 'paused_at')),
   };
   for (const key of Object.keys(picked)) {
@@ -203,8 +199,7 @@ function pickRawAuditScalars(rawPayload: unknown): Record<string, unknown> {
  * `subscription_events.payload`.
  *
  * Provider webhook bodies carry customer PII — Paddle nests email/
- * name/address under `data.customer` / `data.billing_details`,
- * Razorpay nests email/contact/card under `payload.payment.entity` —
+ * name/address under `data.customer` / `data.billing_details` —
  * none of it in the D7 allowlist, so the raw body never reaches the
  * database. This pure function projects the event down to billing
  * metadata only: the normalized fields the handler applies plus the
@@ -669,14 +664,10 @@ export class BillingWebhookService {
             ),
           );
 
-        // Providers disagree on format: Paddle sends an ISO string,
-        // Razorpay unix SECONDS. Normalize to epoch millis so a marker
-        // written by our own cancel path (ISO) compares correctly against
-        // either. A subscription belongs to one provider, but the local
-        // cancel marker crosses that boundary.
+        // Paddle and our own cancel path both write ISO strings.
+        // Normalize to epoch millis for comparison.
         const toMillis = (value: string | null): number | null => {
           if (value === null) return null;
-          if (/^\d+$/.test(value)) return Number(value) * 1000;
           const parsed = Date.parse(value);
           return Number.isNaN(parsed) ? null : parsed;
         };
@@ -738,8 +729,7 @@ export class BillingWebhookService {
         // providers — the same subscription id never reactivates
         // (reactivation is a fresh subscription). This catches the one
         // resurrection the timestamp guard above cannot: a stale active
-        // event sharing the cancel's event-time (Razorpay stamps unix
-        // SECONDS, so any two events in the same second are unorderable)
+        // event sharing the cancel's event-time (same-second ties exist)
         // that arrives AFTER the cancel — nothing in the event stream
         // marks it older, yet it must not move the row out of canceled.
         const [current] = await tx
@@ -881,8 +871,7 @@ export class BillingWebhookService {
         // re-granting a charged-back subscription. Provider-derived
         // states compute fresh each event:
         //   past_due → deadline = period end + 14d (the dunning window;
-        //     a terminal provider state never reaches here — Razorpay
-        //     `halted` maps to canceled at the adapter);
+        //     a terminal provider state never reaches here);
         //   anything else → no deadline.
         const localVerdict =
           current?.cancelSource === 'refund' || current?.cancelSource === 'chargeback';
@@ -924,7 +913,7 @@ export class BillingWebhookService {
               workspaceId,
               provider,
               providerCustomerId: sub.providerCustomerId,
-              region: provider === 'razorpay' ? 'india' : 'international',
+              region: 'international',
             })
             .onConflictDoNothing();
         }
@@ -1578,7 +1567,7 @@ export class BillingWebhookService {
             workspaceId: ws.id,
             provider,
             providerCustomerId: event.providerCustomerId,
-            region: provider === 'razorpay' ? 'india' : 'international',
+            region: 'international',
           })
           .onConflictDoNothing();
       } else {
@@ -1675,8 +1664,8 @@ export class BillingWebhookService {
    * Resolve which workspace a subscription event belongs to:
    *   1. existing `subscriptions` row (later events on a known sub),
    *   2. `billing_customers` by the provider's customer id,
-   *   3. the payload's own attribution (Paddle custom_data / Razorpay
-   *      notes) — validated against `workspaces` so a typo'd or forged
+   *   3. the payload's own attribution (Paddle custom_data) —
+   *      validated against `workspaces` so a typo'd or forged
    *      id can never flip a random row.
    */
   private async resolveWorkspace(

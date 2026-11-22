@@ -1,8 +1,7 @@
 'use client';
 
 import { Button, tokens } from '@declutrmail/shared';
-import { BRIEF_PROCESSING_NOTE, RAZORPAY_LIMITATIONS_NOTE } from './billing-copy';
-import type { BillingProviderId } from '@declutrmail/shared/contracts';
+import { BRIEF_PROCESSING_NOTE } from './billing-copy';
 import { inrNewPurchasePaused } from '@declutrmail/shared/contracts/billing-availability';
 import { WS1_COPY } from '@declutrmail/shared/copy/launch';
 import {
@@ -20,7 +19,6 @@ type PaidTier = 'plus' | 'pro';
 
 export function ConfirmPanel({
   target,
-  provider,
   offer = null,
   country = null,
   indiaCheckoutOpen = false,
@@ -31,9 +29,6 @@ export function ConfirmPanel({
   onDismiss,
 }: {
   target: PaidTier;
-  /** The RAW regional/user rail pick, NOT the parent's clamped one —
-   *  the price point clamps against its own catalog id. */
-  provider: BillingProviderId;
   offer?: 'pass_onetime' | null;
   country?: string | null;
   /** Public flag: both India Paddle price ids exist and geo can be signed. */
@@ -49,9 +44,9 @@ export function ConfirmPanel({
   // happens" step, so it must quote the currency this checkout would
   // charge. An India visitor is quoted INR only while India checkout is
   // open; otherwise USD.
-  const currency = currencyForPricePoint(pricePoint, provider, { country, indiaCheckoutOpen });
+  const currency = currencyForPricePoint(pricePoint, { country, indiaCheckoutOpen });
   const amountLabel = formatLaunchPrice(pricePoint, currency === 'INR' ? 'inr' : 'usd');
-  const checkoutPaused = inrNewPurchasePaused(provider, currency, indiaCheckoutOpen);
+  const checkoutPaused = inrNewPurchasePaused(currency, indiaCheckoutOpen);
   const storyLocale = currency === 'INR' ? 'inr' : 'usd';
   const launchImpact =
     offer === 'pass_onetime'
@@ -91,15 +86,6 @@ export function ConfirmPanel({
           {fillStory(WS1_COPY['checkout.inr'], 'inr')}
         </p>
       ) : null}
-      {provider === 'razorpay' && (
-        <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
-          {RAZORPAY_LIMITATIONS_NOTE}{' '}
-          <a href="mailto:support@declutrmail.com" style={{ color: color.primary }}>
-            Contact support
-          </a>
-          .
-        </p>
-      )}
       {target === 'pro' && (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgMuted }}>
           {BRIEF_PROCESSING_NOTE}{' '}

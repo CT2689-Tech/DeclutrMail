@@ -204,7 +204,7 @@ export const ERROR_CODES = {
    *
    * "Change your plan instead" was wrong in the same way the older "already
    * has an ACTIVE subscription" was: it asserts something this layer cannot
-   * know. Changing plan has six refusal paths — Razorpay
+   * know. Changing plan has six refusal paths — an unsupported change
    * (`PLAN_CHANGE_UNSUPPORTED`), a Founding Pro price lock
    * (`FOUNDING_PLAN_LOCKED`), an in-flight change (`PLAN_CHANGE_PENDING`), a
    * scheduled cancel (`SUBSCRIPTION_CANCELING`), a paused row
@@ -231,8 +231,7 @@ export const ERROR_CODES = {
    * ACTIVE subscription", which is untrue of a paused row.
    *
    * Like SUBSCRIPTION_EXISTS it names no remedy. "Resume it, or cancel it and
-   * subscribe again" was wrong twice over: resume does not exist on Razorpay
-   * (`RESUME_UNSUPPORTED`), and cancelling only sets `cancel_at_period_end` —
+   * subscribe again" was wrong: cancelling only sets `cancel_at_period_end` —
    * the row stays `active` until the provider's period-end webhook, so a new
    * checkout is still blocked until then. "Subscribe again" implied something
    * immediate that can be weeks away.
@@ -321,25 +320,12 @@ export const ERROR_CODES = {
     message:
       'This plan is ending because of a refund or chargeback, so it can’t be restored here. Email support@declutrmail.com and we’ll sort it out.',
   },
-  /**
-   * Razorpay has no pause primitive we are willing to drive (same
-   * posture as RESUME_UNSUPPORTED — see D118). Fails closed to support
-   * rather than half-pausing a subscription that keeps charging.
-   */
-  PAUSE_UNSUPPORTED: {
-    status: 409,
-    severityTier: 'inline_recoverable',
-    retryable: false,
-    message:
-      'Pausing is not available for subscriptions billed in India. Email support@declutrmail.com and we will pause it for you.',
-  },
   SUBSCRIPTION_PAUSED: {
     status: 409,
     severityTier: 'inline_recoverable',
     retryable: false,
     // Pre-existing instance of the same defect as SUBSCRIPTION_EXISTS: it told
-    // the user to "resume or cancel", and resume does not exist on Razorpay
-    // (`RESUME_UNSUPPORTED`). States the blocker only — the rail-appropriate
+    // the user to "resume or cancel". States the blocker only — the available
     // options are the controls surrounding this message on Plan & billing.
     message: 'A paused subscription cannot change plans.',
   },
@@ -376,19 +362,6 @@ export const ERROR_CODES = {
     severityTier: 'inline_recoverable',
     retryable: false,
     message: 'This subscription is already scheduled to cancel.',
-  },
-  RESUME_UNSUPPORTED: {
-    status: 409,
-    severityTier: 'inline_recoverable',
-    retryable: false,
-    // Support-led on purpose, matching what the billing screen already tells
-    // a paused Razorpay subscriber. An earlier revision offered "cancel and
-    // subscribe again" as the self-serve exit — but cancelling only schedules
-    // the end of the period, so the replacement checkout stays blocked until
-    // the provider's period-end webhook lands. Offering a remedy that does
-    // not work yet is worse than naming the one that does.
-    message:
-      'No-charge resume is not available for this payment method. Email support@declutrmail.com and we will reactivate it safely.',
   },
   RESUME_PERIOD_ENDED: {
     status: 409,

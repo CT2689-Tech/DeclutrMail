@@ -25,13 +25,11 @@ import {
   REFUND_PENDING_GRACE_DAYS,
 } from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
-import { RazorpayAdapter } from '../razorpay.adapter.js';
 import {
   paddleAdjustmentCreated,
   paddleAdjustmentUpdated,
   paddleSubscriptionActivated,
   paddleTransactionCompleted,
-  razorpaySubscriptionEvent,
   TEST_PADDLE_WEBHOOK_SECRET,
   TEST_PRICE_IDS,
 } from './fixtures.js';
@@ -60,7 +58,6 @@ function testCatalog(foundingMax = 250): BillingCatalog {
       founding: false,
       usdCents: 900,
       paddlePriceId: TEST_PRICE_IDS.paddle.plus_monthly,
-      razorpayPlanId: TEST_PRICE_IDS.razorpay.plus_monthly,
     },
     {
       planCode: 'pro_annual',
@@ -69,7 +66,6 @@ function testCatalog(foundingMax = 250): BillingCatalog {
       founding: false,
       usdCents: 19000,
       paddlePriceId: TEST_PRICE_IDS.paddle.pro_annual,
-      razorpayPlanId: TEST_PRICE_IDS.razorpay.pro_annual,
     },
     {
       planCode: 'pro_annual_founding',
@@ -78,7 +74,6 @@ function testCatalog(foundingMax = 250): BillingCatalog {
       founding: true,
       usdCents: 12900,
       paddlePriceId: TEST_PRICE_IDS.paddle.pro_annual_founding,
-      razorpayPlanId: TEST_PRICE_IDS.razorpay.pro_annual_founding,
     },
   ];
   return new BillingCatalog(entries, foundingMax);
@@ -102,13 +97,12 @@ function collectKeysDeep(value: unknown, out: string[] = []): string[] {
   return out;
 }
 
-/** PII key names real Paddle/Razorpay webhook bodies carry (D7-banned). */
+/** PII key names real webhook bodies carry (D7-banned). */
 const PII_KEYS = ['email', 'contact', 'card', 'name', 'billing_details', 'address'] as const;
 
 const paddle = new PaddleAdapter({
   PADDLE_WEBHOOK_SECRET: TEST_PADDLE_WEBHOOK_SECRET,
 } as unknown as NodeJS.ProcessEnv);
-const razorpay = new RazorpayAdapter({} as NodeJS.ProcessEnv);
 
 describe('BillingWebhookService.process', () => {
   let db: DrizzleDb;
@@ -547,8 +541,7 @@ describe('BillingWebhookService.process', () => {
 
   it('past_due STOPS granting once 14 days past the period end (decision 2)', async () => {
     // The forever-grant class this closes: before 0051, `past_due` had
-    // no time bound, and Razorpay's terminal `halted` mapped into it —
-    // free Pro forever on a dead card.
+    // no time bound — free Pro forever on a dead card.
     const activate = paddleSubscriptionActivated({ workspaceId, eventId: 'evt_pdx_1' });
     await service.process('paddle', paddle.mapWebhookEvent(activate), activate);
     const pastDue = paddleSubscriptionActivated({
@@ -688,18 +681,6 @@ describe('BillingWebhookService.process', () => {
     // the alarm, and the event stays unprocessed for the retry schedule.
     const rows = await db.select().from(subscriptions);
     expect(rows.filter((r) => r.status === 'active')).toHaveLength(1);
-  });
-
-  it('applies Razorpay events via notes attribution and flips pro tier', async () => {
-    const fixture = razorpaySubscriptionEvent({ workspaceId });
-    const event = await razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_rzp_1' });
-    const outcome = await service.process('razorpay', event, fixture);
-    expect(outcome).toEqual({ kind: 'processed', effect: 'subscription:active' });
-
-    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('pro');
-    const customers = await db.select().from(billingCustomers);
-    expect(customers[0]).toMatchObject({ provider: 'razorpay', region: 'india' });
   });
 
   it('D126 — grants founding_member to the first N and stops at the cap (race-safe count)', async () => {
@@ -1470,7 +1451,6 @@ describe('BillingWebhookService.process', () => {
       db,
       testCatalog(),
       { id: 'paddle', cancelSubscription: async () => {} } as unknown as PaddleAdapter,
-      { id: 'razorpay' } as unknown as RazorpayAdapter,
       // cancelAtPeriodEnd never touches reconciliation.
       {} as unknown as BillingReconciliationService,
       legacyUpgradePolicy({
@@ -1517,7 +1497,6 @@ describe('BillingWebhookService.process', () => {
         cancelSubscription: async () => {},
         clearScheduledCancellation: async () => {},
       } as unknown as PaddleAdapter,
-      { id: 'razorpay' } as unknown as RazorpayAdapter,
       {} as unknown as BillingReconciliationService,
       legacyUpgradePolicy({
         id: 'paddle',
@@ -1599,7 +1578,6 @@ describe('BillingWebhookService.process', () => {
       db,
       testCatalog(),
       { id: 'paddle', cancelSubscription: async () => {} } as unknown as PaddleAdapter,
-      { id: 'razorpay' } as unknown as RazorpayAdapter,
       // cancelAtPeriodEnd never touches reconciliation.
       {} as unknown as BillingReconciliationService,
       legacyUpgradePolicy({
@@ -1878,8 +1856,7 @@ describe('BillingWebhookService.process', () => {
 
   it('an equal-occurred_at active event never resurrects a cancelled subscription', async () => {
     // occurred_at is not a total order. Two same-subscription events can
-    // share it — Razorpay stamps unix SECONDS, so any two events in the
-    // same second tie. A tie must not let an older-intent event clobber
+    // share it. A tie must not let an older-intent event clobber
     // a terminal state; the already-processed peer wins.
     const T = '2026-07-20T10:00:00.000000Z';
     const activate = paddleSubscriptionActivated({
@@ -1922,58 +1899,6 @@ describe('BillingWebhookService.process', () => {
       .from(subscriptions)
       .where(eq(subscriptions.providerSubscriptionId, 'sub_tie'));
     expect(subRow!.status).toBe('canceled');
-  });
-
-  it('Razorpay same-second events cannot resurrect a cancelled subscription', async () => {
-    // Razorpay stamps `created_at` in unix SECONDS, so a cancel and a
-    // stale active update in the same second tie on event time and the
-    // active one may arrive last — the exact case occurred_at ordering
-    // cannot resolve. The terminal-canceled floor must still hold.
-    const SEC = 1781430100;
-    const activate = razorpaySubscriptionEvent({
-      workspaceId,
-      subscriptionId: 'sub_rzp_term',
-      event: 'subscription.activated',
-    });
-    await service.process(
-      'razorpay',
-      await razorpay.mapWebhookEvent({ ...activate, __eventId: 'evt_rzp_act' }),
-      activate,
-    );
-
-    const canceled = razorpaySubscriptionEvent({
-      workspaceId,
-      subscriptionId: 'sub_rzp_term',
-      event: 'subscription.cancelled',
-      status: 'cancelled',
-    });
-    canceled.created_at = SEC;
-    await service.process(
-      'razorpay',
-      await razorpay.mapWebhookEvent({ ...canceled, __eventId: 'evt_rzp_can' }),
-      canceled,
-    );
-
-    const [afterCancel] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(afterCancel!.tier).toBe('free');
-
-    // Stale active update, same second, arriving after the cancel.
-    const tiedActive = razorpaySubscriptionEvent({
-      workspaceId,
-      subscriptionId: 'sub_rzp_term',
-      event: 'subscription.updated',
-      status: 'active',
-    });
-    tiedActive.created_at = SEC;
-    const outcome = await service.process(
-      'razorpay',
-      await razorpay.mapWebhookEvent({ ...tiedActive, __eventId: 'evt_rzp_stale' }),
-      tiedActive,
-    );
-    expect(outcome.kind).not.toBe('processed');
-
-    const [ws] = await db.select().from(workspaces).where(eq(workspaces.id, workspaceId));
-    expect(ws!.tier).toBe('free');
   });
 
   it('a stale retry never overwrites newer subscription state', async () => {
@@ -2154,45 +2079,6 @@ describe('BillingWebhookService.process', () => {
       occurred_at: '2026-06-11T10:00:00.000000Z',
       period_start: '2026-06-11T10:00:00.000000Z',
       current_period_end: '2026-07-11T10:00:00.000000Z',
-      workspace_id: workspaceId,
-    });
-  });
-
-  it('D7 — persists the projection, never Razorpay PII (payment entity email / contact / card)', async () => {
-    const fixture = razorpaySubscriptionEvent({ workspaceId, event: 'subscription.charged' });
-    // subscription.charged delivers the payment entity alongside the
-    // subscription — email/contact/card live there on real bodies.
-    (fixture.payload as Record<string, unknown>).payment = {
-      entity: {
-        id: 'pay_rzp00000000001',
-        amount: 1900000,
-        currency: 'INR',
-        email: 'pat@example.in',
-        contact: '+919999999999',
-        card: { last4: '1111', name: 'Pat Example', network: 'Visa' },
-      },
-    };
-
-    const event = await razorpay.mapWebhookEvent({ ...fixture, __eventId: 'evt_pii_rzp_1' });
-    await service.process('razorpay', event, fixture);
-
-    const [row] = await db.select().from(subscriptionEvents);
-    expect(row!.payload).toEqual(projectWebhookPayload(event, fixture));
-    const keys = collectKeysDeep(row!.payload);
-    for (const banned of PII_KEYS) {
-      expect(keys).not.toContain(banned);
-    }
-    expect(row!.payload).toMatchObject({
-      kind: 'subscription',
-      provider_event_id: 'evt_pii_rzp_1',
-      event_type: 'subscription.charged',
-      provider_subscription_id: 'sub_rzp00000000001',
-      provider_customer_id: 'cust_rzp0000000001',
-      provider_price_id: TEST_PRICE_IDS.razorpay.pro_annual,
-      status: 'active',
-      provider_status: 'active',
-      occurred_at: 1781430100,
-      period_start: 1781430000,
       workspace_id: workspaceId,
     });
   });

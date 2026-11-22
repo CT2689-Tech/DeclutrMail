@@ -53,8 +53,8 @@ export interface BillingEventPayloads {
     /** Purchasable target tier (D19). */
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    /** D117 — user's explicit provider choice. */
-    provider: 'paddle' | 'razorpay';
+    /** The checkout rail. Paddle is the only one. */
+    provider: 'paddle';
   };
 
   /**
@@ -66,7 +66,7 @@ export interface BillingEventPayloads {
   checkout_session_created: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
   };
 
   /**
@@ -76,7 +76,7 @@ export interface BillingEventPayloads {
   checkout_failed: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
     code: string;
   };
 
@@ -87,7 +87,7 @@ export interface BillingEventPayloads {
   checkout_overlay_completed: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
   };
 
   /**
@@ -97,7 +97,7 @@ export interface BillingEventPayloads {
   checkout_overlay_closed: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
   };
 
   /**
@@ -107,7 +107,7 @@ export interface BillingEventPayloads {
   checkout_overlay_blocked: {
     tier: 'plus' | 'pro';
     cycle: 'monthly' | 'annual';
-    provider: 'paddle' | 'razorpay';
+    provider: 'paddle';
   };
 
   /** D117/D120 — self-serve plan change on the existing subscription. */

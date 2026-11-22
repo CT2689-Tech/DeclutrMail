@@ -1455,7 +1455,7 @@ describe('OutboxDispatcherWorker', () => {
    * happening to carry that name gets the SAME exemption forever,
    * including a real HTTP timeout from this codebase's own Gmail/BIMI/
    * billing clients (`gmail-client.service.ts`, `bimi-resolver.ts`,
-   * `paddle.adapter.ts`, `razorpay.adapter.ts`), which already throw a
+   * `paddle.adapter.ts`), which already throw a
    * native `TimeoutError`-named `DOMException` from
    * `AbortSignal.timeout()`. This proves a same-named-but-foreign error
    * is treated as an ORDINARY failure — it counts toward `maxAttempts`

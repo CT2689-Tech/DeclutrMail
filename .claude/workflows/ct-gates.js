@@ -75,7 +75,7 @@ const GATES = [
   { type: 'schema-migration-reviewer', tier: 'gate',     when: /^packages\/db\/(migrations\/|src\/schema\/)/ },
   // Marketing pages are Tier 2 (CLAUDE.md §2.0) and leave this gate (2026-11-17).
   { type: 'design-system-agent',       tier: 'gate',     when: /^(?!apps\/web\/src\/(app\/\(marketing\)|features\/marketing)\/)(apps\/web\/src\/(components|features|app)\/|packages\/shared\/)|\.stories\.tsx$/ },
-  { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$|^apps\/api\/src\/billing\/(paddle|razorpay)\.adapter\.ts$/ },
+  { type: 'webhook-security-auditor',  tier: 'gate',     when: /^apps\/api\/src\/webhooks\/|-webhook\.controller\.ts$|^apps\/api\/src\/billing\/paddle\.adapter\.ts$/ },
   { type: 'typescript-reviewer',       tier: 'advisory', when: /\.tsx?$/ },
   // §7's "all TS files" (.ts and .tsx), plus scripts, shell hooks, workflows,
   // the acknowledgment lists that mute watchdogs and the hook registrations:

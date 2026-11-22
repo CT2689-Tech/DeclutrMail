@@ -206,9 +206,8 @@ function livePassGrant(grant: BillingSubscription['complimentary']): boolean {
  *
  * Payment method + invoices (D119/ADR-0035) render from PROVIDER-owned
  * artifacts — we hold no card data and generate no invoice document.
- * The two sections are asymmetric on purpose: Paddle is the merchant of
- * record and has a hosted form and a signed PDF, Razorpay has neither
- * and says so.
+ * Paddle is the merchant of record and has a hosted form and a signed
+ * PDF.
  */
 export function BillingScreen({
   initialIntent = null,
@@ -1229,7 +1228,6 @@ export function BillingScreen({
   const paymentMethodCard =
     !billingDark && paymentMethodSub ? (
       <PaymentMethodCard
-        provider={paymentMethodSub.provider}
         isPastDue={paymentMethodSub.status === 'past_due'}
         disabled={pending !== null}
         disabledReason={
@@ -1309,7 +1307,7 @@ export function BillingScreen({
         if (!mounted.current || currentOwner.current !== workspaceId) return;
         const record = readPendingCheckout(workspaceId);
         if (record?.attemptId !== attemptId) return;
-        if (session.provider === 'paddle' && session.attemptId) {
+        if (session.attemptId) {
           surfaceAttemptLock(attemptId);
           void subscriptionQuery.refetch();
           return;
@@ -1574,9 +1572,6 @@ function resumeCancellationErrorMessage(error: unknown): string {
   if (code === 'NO_SCHEDULED_CANCELLATION') {
     return 'This subscription is already renewing — refresh the page to see the current state.';
   }
-  if (code === 'RESUME_UNSUPPORTED') {
-    return 'Subscriptions billed in India can’t be restored from here. Email support@declutrmail.com and we’ll do it for you.';
-  }
   if (code === 'NO_ACTIVE_SUBSCRIPTION') {
     return 'There is no subscription to restore — refresh the page to see the current state.';
   }
@@ -1589,9 +1584,6 @@ function resumeCancellationErrorMessage(error: unknown): string {
 /** D118 pause-offer failures. */
 function pauseErrorMessage(error: unknown): string {
   const code = apiErrorCode(error);
-  if (code === 'PAUSE_UNSUPPORTED') {
-    return 'Pausing isn’t available for subscriptions billed in India. Email support@declutrmail.com and we’ll pause it for you.';
-  }
   if (code === 'SUBSCRIPTION_PAUSED') {
     return 'This subscription is already paused — refresh the page to see the current state.';
   }
@@ -2746,9 +2738,8 @@ function NonBackingSubscriptionNotice({
       ) : null}
       {isPaused && !canSelfServeResume ? (
         <p style={{ margin: 0, fontSize: text.sm, color: color.fgSoft }}>
-          {sub.provider === 'razorpay'
-            ? 'Restarting a plan paid in rupees could start a new charge. To avoid that, email '
-            : 'We can’t confirm how much paid time remains, so we can’t restart this subscription here. Email '}
+          We can&rsquo;t confirm how much paid time remains, so we can&rsquo;t restart this
+          subscription here. Email{' '}
           <a className={linkStyles.link} href="mailto:support@declutrmail.com">
             support@declutrmail.com
           </a>{' '}

@@ -102,10 +102,8 @@ describe('buildContentSecurityPolicy (D175)', () => {
     for (const dir of ['script-src', 'frame-src', 'connect-src', 'form-action']) {
       expect(directive(csp, dir)).toContain('https://*.paddle.com');
     }
-    // Razorpay: checkout script + api.
-    expect(directive(csp, 'script-src')).toContain('https://checkout.razorpay.com');
-    expect(directive(csp, 'connect-src')).toContain('https://api.razorpay.com');
-    expect(directive(csp, 'frame-src')).toContain('https://api.razorpay.com');
+    // Razorpay was removed 2026-11-17; none of its hosts stay allowed.
+    expect(csp).not.toContain('razorpay');
     // PostHog + Sentry.
     expect(directive(csp, 'connect-src')).toContain('https://*.posthog.com');
     expect(directive(csp, 'connect-src')).toContain('https://*.sentry.io');

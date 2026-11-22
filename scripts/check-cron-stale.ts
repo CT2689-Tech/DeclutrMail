@@ -92,7 +92,7 @@ const WATCHED: WatchedCron[] = [
   {
     workerName: 'BillingVerdictWorker',
     intervalMs: BILLING_VERDICT_INTERVAL_MS,
-    impact: 'entitlements drift from Paddle/Razorpay state',
+    impact: 'entitlements drift from Paddle state',
   },
   {
     workerName: 'SnoozeWakeWorker',

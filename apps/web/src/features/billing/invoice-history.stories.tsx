@@ -6,8 +6,8 @@
 // fetch — same shape as the sibling BillingScreen stories.
 //
 // The variants deliberately cover the honesty states, not just the
-// happy row: a failed read, a partial list, an unmappable status, and
-// Razorpay's typed refusal are the reasons these components exist.
+// happy row: a failed read, a partial list and an unmappable status are
+// the reasons these components exist.
 
 import type { ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -43,15 +43,10 @@ const PAID = {
   documentAvailable: true,
 } satisfies BillingInvoiceList['invoices'][number];
 
-const RAZORPAY_ROW = {
-  id: 'inv_01',
-  provider: 'razorpay',
+const OLDER_PAID = {
+  ...PAID,
+  id: 'txn_00',
   issuedAt: '2026-04-01T00:00:00.000Z',
-  amount: '99900',
-  currencyCode: 'INR',
-  status: 'paid',
-  hostedUrl: 'https://rzp.io/i/example',
-  documentAvailable: false,
 } satisfies BillingInvoiceList['invoices'][number];
 
 /**
@@ -110,7 +105,7 @@ export const WithInvoices: Story<typeof InvoiceHistory> = {
   render: () => (
     <Frame
       client={clientWith({
-        invoices: [PAID, RAZORPAY_ROW],
+        invoices: [PAID, OLDER_PAID],
         unavailableProviders: [],
         truncated: false,
         omittedRows: 0,
@@ -217,13 +212,13 @@ export const ReadFailed: Story<typeof InvoiceHistory> = {
   ),
 };
 
-/** One rail answered, the other did not — the list says it is partial. */
+/** One read answered, another did not — the list says it is partial. */
 export const PartialList: Story<typeof InvoiceHistory> = {
   render: () => (
     <Frame
       client={clientWith({
         invoices: [PAID],
-        unavailableProviders: ['razorpay'],
+        unavailableProviders: ['paddle'],
         truncated: false,
         omittedRows: 0,
       })}
@@ -274,7 +269,7 @@ export const RefundedPayments: Story<typeof InvoiceHistory> = {
 export const PaymentMethodPaddle: Story<typeof PaymentMethodCard> = {
   render: () => (
     <Frame client={emptyClient()}>
-      <PaymentMethodCard provider="paddle" isPastDue={false} />
+      <PaymentMethodCard isPastDue={false} />
     </Frame>
   ),
 };
@@ -283,16 +278,7 @@ export const PaymentMethodPaddle: Story<typeof PaymentMethodCard> = {
 export const PaymentMethodPastDue: Story<typeof PaymentMethodCard> = {
   render: () => (
     <Frame client={emptyClient()}>
-      <PaymentMethodCard provider="paddle" isPastDue />
-    </Frame>
-  ),
-};
-
-/** Razorpay has no self-serve path — a support route, never a dead button. */
-export const PaymentMethodRazorpay: Story<typeof PaymentMethodCard> = {
-  render: () => (
-    <Frame client={emptyClient()}>
-      <PaymentMethodCard provider="razorpay" isPastDue={false} />
+      <PaymentMethodCard isPastDue />
     </Frame>
   ),
 };
@@ -302,7 +288,6 @@ export const PaymentMethodLocked: Story<typeof PaymentMethodCard> = {
   render: () => (
     <Frame client={emptyClient()}>
       <PaymentMethodCard
-        provider="paddle"
         isPastDue={false}
         disabled
         disabledReason="Available once the payment above finishes confirming."

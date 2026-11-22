@@ -94,7 +94,6 @@ test('legacy import preserves collection time, refuses incomplete reports and ne
     'PostHog',
     'GitHub Actions',
     'Paddle (webhooks)',
-    'Razorpay (webhooks)',
   ];
   const log = names
     .map((name) => `check\t2026-09-05T15:43:48Z | ${name} | 🟢 OK | — | MTD cost $100.00 |`)

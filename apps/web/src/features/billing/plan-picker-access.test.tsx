@@ -230,15 +230,6 @@ describe('PlanPicker current access and purchase offers', () => {
     expect(plus).not.toHaveTextContent('$59/yr');
   });
 
-  it('never restates an unresolved Razorpay charge in dollars', () => {
-    // Retired prices left the manifest, so an INR charge the catalog does
-    // not resolve has no amount to show — and must not borrow a USD one.
-    picker({ grantingSub: { ...PRO_MONTHLY, cycle: 'annual', provider: 'razorpay' } });
-    const pro = screen.getByTestId('plan-option-pro');
-    expect(pro).toHaveTextContent('—');
-    expect(pro.textContent).not.toContain('$');
-  });
-
   it('keeps a cancel-scheduled subscription’s display identity while purchases remain locked', () => {
     const sub: Subscription = { ...PRO_MONTHLY, cancelAtPeriodEnd: true };
     picker({

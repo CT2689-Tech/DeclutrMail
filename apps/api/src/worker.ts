@@ -252,7 +252,6 @@ import {
   BillingUpgradeRefundService,
   assertWorkerRefundRestoreDisabled,
 } from './billing/billing-upgrade-refund.service.js';
-import { RazorpayAdapter } from './billing/razorpay.adapter.js';
 import { captureLlmProviderRejection } from './observability/llm-provider-rejection.js';
 import { getInitializedSentry, initSentry } from './observability/sentry.js';
 import { createSentryWorkerObserver } from './observability/sentry-worker-observer.js';
@@ -2604,7 +2603,6 @@ async function bootstrap(): Promise<void> {
       new BillingUpgradeRefundService(db, billingCatalog, billingPaddleAdapter),
     ),
     billingPaddleAdapter,
-    new RazorpayAdapter(),
   );
   async function sweepBillingReconciliation(): Promise<void> {
     if (shuttingDown) return;
@@ -2835,7 +2833,7 @@ async function bootstrap(): Promise<void> {
   });
   const deletionPurgeWorker = new AccountDeletionPurgeWorker({
     db,
-    billingSafety: new BillingDeletionGuard(db, new PaddleAdapter(), new RazorpayAdapter()),
+    billingSafety: new BillingDeletionGuard(db, new PaddleAdapter()),
     gmailLifecycle: { getClient: getGmailClient },
     topicName: gmailPubsubTopic,
     emailQueue: emailSendQueue,

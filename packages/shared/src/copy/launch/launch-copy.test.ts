@@ -67,7 +67,7 @@ describe('launch copy deck snapshots', () => {
 
   it('pins the drop2-r22 INR pause lines', () => {
     expect(WS1_COPY['pricing.inrPaused.notice']).toBe(
-      'Buying a plan in rupees is paused for now, so these prices are for reference. If you already pay in rupees, you can still manage your plan in Billing. Email support@declutrmail.com for help.',
+      'Buying a plan in rupees is paused for now, so these prices are for reference. Email support@declutrmail.com for help.',
     );
     expect(WS1_COPY['pricing.inrPaused.checkout']).toBe(
       'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',

@@ -17,15 +17,14 @@
 // (the `(marketing)` group, 404, error boundaries) render without any
 // auth round-trip.
 //
-// The billing rail (D117) is NOT here either, for the same shape of
-// reason (Option A′, founder 2026-08-14): sourcing it means reading the
-// edge geo header, and reading it at the root forces every route
+// The visitor price locale (D117) is NOT here either, for the same shape
+// of reason (Option A′, founder 2026-08-14): sourcing it means reading
+// the edge geo header, and reading it at the root forces every route
 // dynamic. Each surface that quotes a price now mounts its own
 // `BillingCurrencyProvider` — `(app)/layout.tsx` for the in-app price
 // surfaces, `/` and `/pricing` for the two public ones. Anywhere else,
-// `useRegionProvider`'s own default (Paddle, the always-provisioned
-// international rail) applies, which is what a page with no price shows
-// anyway.
+// `useVisitorPriceLocale`'s own default (USD) applies, which is what a
+// page with no price shows anyway.
 
 'use client';
 

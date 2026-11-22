@@ -89,7 +89,7 @@ export const WS1_COPY = {
   'pricing.faq.india.a.paused':
     'In India, prices are in rupees and include GST: {plusPrice} a year for {plusName} and {passPrice} once for the {passName}. Buying in rupees is paused for now. Email support@declutrmail.com and we’ll help.',
   'pricing.inrPaused.notice':
-    'Buying a plan in rupees is paused for now, so these prices are for reference. If you already pay in rupees, you can still manage your plan in Billing. Email support@declutrmail.com for help.',
+    'Buying a plan in rupees is paused for now, so these prices are for reference. Email support@declutrmail.com for help.',
   'pricing.inrPaused.checkout':
     'Buying a plan in rupees is paused for now. Email support@declutrmail.com for help.',
   'pricing.inrPaused.button': 'Paused for now',
@@ -123,13 +123,13 @@ export const WS1_COPY = {
   'refunds.exclusions.second':
     'A second use of the money-back guarantee. It can be used once per customer.',
   'refunds.india':
-    'New purchases in India go through Paddle, in rupees with GST included, and Paddle’s buyer terms apply. If you bought through Razorpay before, DeclutrMail is your seller: request a refund from us at support@declutrmail.com and approved refunds go back through Razorpay to your original payment method.',
+    'Purchases in India go through Paddle, in rupees with GST included, and Paddle’s buyer terms apply.',
   'terms.plans':
     'DeclutrMail offers a {freeName} plan, a one-time {passName}, and a yearly {plusName} subscription. Current pricing and what each plan includes are shown at purchase time. Subscriptions renew automatically until canceled; you can cancel at any time and keep access until the end of the period you paid for.',
   'terms.pass':
     'The {passName} is a one-time payment for {passDays} days with no monthly limit on one {CONNECTION_TERM}, and never renews. Buying another {passName} adds {passDays} days to the end of your current one.',
   'terms.india':
-    'In India: new purchases are processed by Paddle, our merchant of record, in rupees with GST included. Subscriptions bought earlier through Razorpay continue under DeclutrMail as the seller.',
+    'In India: purchases are processed by Paddle, our merchant of record, in rupees with GST included.',
   'terms.pastDue':
     'A subscription marked past due keeps subscription access for up to 14 days after its billing period ends.',
   'meter.chip': '{remaining} emails left to clear · resets {resetDate}',
@@ -274,13 +274,6 @@ export const WS1_COPY = {
   'simplify.billing.lastChecked': 'Last checked:',
   'simplify.billing.interrupted':
     'We’re confirming what happened with your payment. Billing changes are paused until then.',
-  'simplify.billing.rupeeChanges':
-    'If you pay in rupees, email support@declutrmail.com to change, pause or restart your plan. You can cancel here.',
-  'simplify.billing.switchCurrency':
-    'To pay in another currency, cancel first and subscribe again after your plan ends.',
-  'simplify.billing.rupeeResume':
-    'Restarting a plan paid in rupees could start a new charge. To avoid that, email',
-  'simplify.checkout.rupeeOption': 'Prices in rupees',
   'simplify.changePlan.ifSchedulable': '…if it can be scheduled.',
   'simplify.changePlan.checking': 'Checking…',
   'simplify.changePlan.cantSchedule':

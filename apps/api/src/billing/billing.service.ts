@@ -1,10 +1,8 @@
 // apps/api/src/billing/billing.service.ts — authed billing operations
 // (D117 checkout + D118 cancel + the billing-screen read).
 //
-// Provider routing is the USER'S explicit choice (D117: India →
-// Razorpay, everywhere else → Paddle); the chosen provider's implied
-// `users.billing_region` is recorded at checkout so Settings → Account
-// shows the active routing without IP re-detection.
+// Paddle is the only checkout rail. Checkout records
+// `users.billing_region = 'international'`, the Paddle region.
 //
 // CHECKOUT NEVER GRANTS. The checkout endpoint returns a provider
 // payload only; tier flips happen exclusively in the verified webhook
@@ -68,7 +66,6 @@ import {
   indiaPaddlePriceId,
   indiaPaddlePricesConfigured,
   proNotPurchasableMessage,
-  RAILS,
   type PaddleCheckoutCode,
 } from '@declutrmail/shared/entitlements';
 
@@ -79,11 +76,9 @@ import { BillingCatalog } from './billing-catalog.js';
 import { BillingReconciliationService } from './billing-reconciliation.service.js';
 import { GRANTING_STATUSES, lockSubscription } from './billing-webhook.service.js';
 import { PaddleAdapter } from './paddle.adapter.js';
-import { RazorpayAdapter } from './razorpay.adapter.js';
 import { runWithBillingReadSignal } from './provider-signal.js';
 import { hasUnresolvedUpgrade } from './upgrade-intents.js';
 import { BillingUpgradeRefundService } from './billing-upgrade-refund.service.js';
-import { INR_CHECKOUT_PAUSED_MESSAGE, inrNewPurchasePaused } from '@declutrmail/shared/contracts';
 
 /** 0051 — pending-checkout display/lock horizon. */
 const PENDING_CHECKOUT_TTL_MS = 30 * 60 * 1000;
@@ -115,7 +110,6 @@ export class BillingService {
     @Inject(DRIZZLE) private readonly db: DrizzleDb,
     private readonly catalog: BillingCatalog,
     private readonly paddle: PaddleAdapter,
-    private readonly razorpay: RazorpayAdapter,
     private readonly reconciliation: BillingReconciliationService,
     private readonly upgrades: BillingUpgradeRefundService,
     @Optional() @Inject(PRODUCT_EVENTS) productEvents?: ProductEventsPort,
@@ -123,8 +117,11 @@ export class BillingService {
     this.productEvents = productEvents;
   }
 
-  private adapterFor(provider: 'paddle' | 'razorpay'): BillingProvider {
-    return provider === 'paddle' ? this.paddle : this.razorpay;
+  /** Paddle is the only rail. A row naming any other provider cannot be acted on. */
+  private adapterFor(provider: BillingProviderId): BillingProvider {
+    if (provider === 'paddle') return this.paddle;
+    this.logger.error(`billing.provider_retired provider=${provider}`);
+    throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
   }
 
   private async assertCheckoutEligible(
@@ -200,12 +197,9 @@ export class BillingService {
         message: proNotPurchasableMessage(),
       });
     }
-    if (dto.provider === 'razorpay' && !RAILS.razorpay.enabled) {
-      throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
-    }
     const pass = dto.offer === 'pass_onetime';
     if (pass) {
-      if (dto.provider !== 'paddle' || !this.catalog.passPaddlePriceId) {
+      if (!this.catalog.passPaddlePriceId) {
         throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
       }
     }
@@ -221,26 +215,13 @@ export class BillingService {
     // different next steps, and `SUBSCRIPTION_EXISTS` claims the account
     // "already has an ACTIVE subscription" — false for a paused row, and
     // exactly the assert-what-you-don't-know defect this codebase keeps
-    // hitting. It also left a real trap (sandbox smoke 2026-07-29): a paused
-    // Razorpay subscriber cannot resume (`RESUME_UNSUPPORTED` — the rail has
-    // no no-charge resume), cannot change plan (`PLAN_CHANGE_UNSUPPORTED`),
-    // and was told only that they already had an "active" subscription. The
-    // exit does exist — cancel, then subscribe again, which Razorpay's
-    // adapter fully supports — so the fix is to SAY so rather than to loosen
-    // the guard. Loosening it would let a second live subscription start
-    // while the provider could still resume the paused one.
+    // hitting. The fix is to SAY so rather than to loosen the guard.
+    // Loosening it would let a second live subscription start while the
+    // provider could still resume the paused one.
     await this.assertCheckoutEligible(principal.workspaceId, pass);
 
-    // Razorpay stays closed for new purchases. Paddle's currency is
-    // chosen in the adapter from `trustedCountry`, which is the verified
-    // geo token. `dto.country` is ignored.
-    if (dto.provider === 'razorpay' && inrNewPurchasePaused(dto.provider, 'INR'))
-      throw new AppException({
-        // Existing clients already release a local reservation for this pre-claim refusal.
-        code: 'BILLING_NOT_PROVISIONED',
-        message: INR_CHECKOUT_PAUSED_MESSAGE,
-        details: { reason: 'inr_checkout_paused' },
-      });
+    // Paddle's currency is chosen in the adapter from `trustedCountry`,
+    // which is the verified geo token. `dto.country` is ignored.
 
     const priceId = pass
       ? this.catalog.passPaddlePriceId
@@ -259,7 +240,7 @@ export class BillingService {
       throw new AppException({ code: 'UNAUTHORIZED' });
     }
 
-    if (durableCheckoutEnabled() && dto.provider === 'paddle') {
+    if (durableCheckoutEnabled()) {
       return this.createDurableCheckout(principal, dto, priceId, user.email, trustedCountry);
     }
 
@@ -283,7 +264,7 @@ export class BillingService {
       // A setup refusal performs no billing-region or reservation write.
       await tx
         .update(users)
-        .set({ billingRegion: dto.provider === 'razorpay' ? 'india' : 'international' })
+        .set({ billingRegion: 'international' })
         .where(eq(users.id, principal.userId));
       const claim = await tx
         .insert(pendingCheckouts)
@@ -334,14 +315,11 @@ export class BillingService {
       throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
     }
 
-    const checkoutCode: PaddleCheckoutCode =
-      dto.provider !== 'paddle'
-        ? 'other'
-        : pass
-          ? 'pass_onetime'
-          : dto.tierId === 'plus' && dto.cycle === 'annual'
-            ? 'plus_annual'
-            : 'other';
+    const checkoutCode: PaddleCheckoutCode = pass
+      ? 'pass_onetime'
+      : dto.tierId === 'plus' && dto.cycle === 'annual'
+        ? 'plus_annual'
+        : 'other';
     // Live India ids unbound means this checkout is USD, even when the
     // geo token says IN. Sandbox catalog ids count as configured.
     const checkoutCountry =
@@ -349,7 +327,7 @@ export class BillingService {
 
     let session: CheckoutSession;
     try {
-      session = await this.adapterFor(dto.provider).createCheckout({
+      session = await this.paddle.createCheckout({
         workspaceId: principal.workspaceId,
         userEmail: user.email,
         tierId: dto.tierId,
@@ -362,10 +340,9 @@ export class BillingService {
       // checkout Paddle localizes from the buyer location. Only a
       // transaction id may leave this method.
       if (
-        session.provider === 'paddle' &&
-        (session.priceId !== undefined ||
-          session.customData !== undefined ||
-          session.transactionId === undefined)
+        session.priceId !== undefined ||
+        session.customData !== undefined ||
+        session.transactionId === undefined
       ) {
         throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
       }
@@ -373,48 +350,12 @@ export class BillingService {
       // The claim SURVIVES a provider-call failure — deliberately
       // (Codex stop-review 2026-07-29). A thrown error here is not
       // proof the provider saw nothing: a timeout after the request
-      // landed still creates the artifact, and Razorpay's create runs
-      // with `customer_notify: 1`, so an orphaned subscription is
-      // PAYABLE from the provider's own emailed authorization link —
-      // outside our FE entirely. Auto-releasing on that ambiguity
-      // reopened checkout for attempt #2 while #1 could still be paid:
-      // the exact double-charge this claim exists to prevent. Keep the
-      // unresolved legacy claim until provider-backed recovery resolves it.
+      // landed still creates the artifact. Keep the unresolved legacy
+      // claim until provider-backed recovery resolves it.
       this.logger.error(
         `billing.checkout.create_failed workspace=${principal.workspaceId} provider=${dto.provider} claim_held=true`,
       );
       throw err;
-    }
-
-    // D249 — when the server itself created the provider artifact
-    // (Razorpay mints the subscription before payment), record its id
-    // on the claim so reconciliation can ask the provider about THIS
-    // checkout exactly. Best-effort: a failed stash only means the
-    // reconciler falls back to the email-search ladder.
-    if (session.provider === 'razorpay') {
-      // This evidence must survive release, replacement and reconciliation of
-      // the transient claim. A failed write stays unknown and blocks deletion.
-      await this.db.insert(subscriptionEvents).values({
-        provider: 'razorpay',
-        providerEventId: `artifact_${attemptId}`,
-        eventType: 'local.checkout_artifact',
-        payload: {
-          workspaceId: principal.workspaceId,
-          attemptId,
-          providerRef: session.subscriptionId,
-        },
-        processedAt: new Date(),
-      });
-      try {
-        await this.db
-          .update(pendingCheckouts)
-          .set({ providerRef: session.subscriptionId })
-          .where(eq(pendingCheckouts.workspaceId, principal.workspaceId));
-      } catch (err) {
-        this.logger.warn(
-          `billing.checkout.provider_ref_stash_failed workspace=${principal.workspaceId} err=${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
     }
 
     // A Paddle checkout is a transaction the server has already created
@@ -425,7 +366,7 @@ export class BillingService {
     // this call created, so a released-and-reclaimed slot can never carry
     // an earlier attempt's transaction. Best-effort: a failed write only
     // means reconciliation falls back to what it did before.
-    if (session.provider === 'paddle' && session.transactionId) {
+    if (session.transactionId) {
       try {
         await this.db
           .update(pendingCheckouts)
@@ -535,12 +476,7 @@ export class BillingService {
         checkoutAttemptId: id,
         ...(dto.offer ? { checkoutOffer: dto.offer } : {}),
       });
-      if (
-        session.provider !== 'paddle' ||
-        !session.transactionId ||
-        session.priceId ||
-        session.customData
-      )
+      if (!session.transactionId || session.priceId || session.customData)
         throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
       const boundState = await this.db.transaction(async (tx) => {
         await lockCheckoutWorkspace(tx, principal.workspaceId);
@@ -1333,9 +1269,9 @@ export class BillingService {
     if (sub.foundingMember) {
       throw new AppException({ code: 'FOUNDING_PLAN_LOCKED' });
     }
-    if (sub.provider === 'razorpay') {
-      // Paddle-only at launch — see razorpay.adapter.changePlan for why.
-      // Checked here too so the answer doesn't depend on catalog state.
+    if (sub.provider !== 'paddle') {
+      // Paddle is the only rail. Checked here so the answer doesn't
+      // depend on catalog state.
       throw new AppException({ code: 'PLAN_CHANGE_UNSUPPORTED' });
     }
     return sub;
@@ -1818,15 +1754,13 @@ export class BillingService {
 
   /**
    * D119 / ADR-0035 — the workspace's billing documents, proxied on
-   * read from every rail it has ever paid on.
+   * read from the provider.
    *
    * Reads owned customer mappings plus bounded historical subscriptions and
    * paid Pass grants, not just the granting subscription. A
    * customer who cancelled still needs last year's invoices — the tax
-   * need outlives the subscription — and a workspace that switched
-   * region holds rows under both providers (`billing_customers` is
-   * unique on `(workspace_id, provider)`), so keying this off the
-   * current backing subscription would silently hide half the history.
+   * need outlives the subscription — so keying this off the current
+   * backing subscription would silently hide part of the history.
    *
    * A rail that cannot be read is NAMED rather than skipped. An empty
    * or short list that quietly omits a provider reads as "you have no
@@ -1906,8 +1840,8 @@ export class BillingService {
           invoices.set(`${provider}:${invoice.id}`, { ...invoice, provider });
         }
       } catch (err) {
-        // One rail failing must not fail the whole read: the other
-        // rail's invoices are still true, and a 500 here would hide
+        // One read failing must not fail the whole read: the other
+        // reads' invoices are still true, and a 500 here would hide
         // them behind an error state.
         this.logger.error(
           `billing.invoices.provider_unavailable workspace=${workspaceId} provider=${provider} err=${err instanceof Error ? err.message : String(err)}`,
@@ -1938,8 +1872,8 @@ export class BillingService {
         omittedRows += 1;
       }
     }
-    // One worker per rail (at most two). A stalled rail cannot block the other;
-    // the shared deadline aborts HTTP/body reads and stops unstarted scopes.
+    // One worker per rail. The shared deadline aborts HTTP/body reads and
+    // stops unstarted scopes.
     await Promise.all(
       [...reads].map(async ([provider, queue]) => {
         for (const read of queue) {
@@ -2008,10 +1942,7 @@ export class BillingService {
    * included deliberately — it is the status where this surface earns
    * its existence.
    *
-   * Returns the adapter's typed capability unchanged, including the
-   * `unsupported` arm (Razorpay). That arm is a 200, not an error: "this
-   * rail cannot" is an answer, and rendering it as a failure would tell
-   * the customer to retry something that will never work.
+   * Returns the adapter's session URL with the subscription's provider.
    */
   async paymentMethodSession(workspaceId: string): Promise<PaymentMethodSession> {
     const [sub] = await this.db

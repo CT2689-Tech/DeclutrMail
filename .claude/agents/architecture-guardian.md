@@ -80,7 +80,7 @@ For each new or modified worker class extending `BaseDeclutrWorker`:
   `packages/workers/src/worker-policies.ts`)
 - Does it declare an `idempotencyKey` strategy per the policy:
   - `perMailboxPolicy`: keyed on `(mailbox_id, gmail_message_id)` or similar
-  - `webhookPolicy`: keyed on the webhook event ID (Pub/Sub `messageId`, Paddle / Razorpay event id, etc.)
+  - `webhookPolicy`: keyed on the webhook event ID (Pub/Sub `messageId`, Paddle event id, etc.)
   - `batchPolicy`: keyed on `(batch_id, item_id)`
   - `cronPolicy`: keyed on `(worker_name, scheduled_at_minute)`
   - `adminPolicy`: exempt from idempotency (its job IS to surface failures)
@@ -188,7 +188,7 @@ Each of these shipped to production at least once. Flag (BLOCKING):
 - A JS `Date` or `BigInt` interpolated directly into a raw `sql` template.
 - A billing or entitlement state transition ordered by a provider event
   timestamp instead of a domain rule. Terminal states (`canceled`, a settled
-  refund) stay terminal; same-second Paddle / Razorpay events are not a total
+  refund) stay terminal; same-second Paddle events are not a total
   order. Also recommend an independent adversarial review for any
   entitlement-affecting concurrency change.
 

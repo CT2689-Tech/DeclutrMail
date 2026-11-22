@@ -33,7 +33,6 @@ import {
   verifiedWorkspaceId,
   sandboxCheckoutFailure,
 } from '../src/billing/paddle.adapter.js';
-import { RazorpayAdapter } from '../src/billing/razorpay.adapter.js';
 import { BillingCatalog } from '../src/billing/billing-catalog.js';
 import { BillingWebhookService } from '../src/billing/billing-webhook.service.js';
 import { BillingDeletionGuard } from '../src/billing/billing-deletion-guard.js';
@@ -94,7 +93,6 @@ const evidence: Record<string, unknown> = {
   actionFailures,
   productionCheckoutUnchanged: true,
   productionDeletionHoldsUnchanged: true,
-  razorpay: 'not_rehearsed_no_test_credentials_confirmed',
 };
 let clientToken = '',
   endpointSecret = '',
@@ -986,7 +984,6 @@ try {
       founding: false,
       usdCents: 900,
       paddlePriceId: priceId,
-      razorpayPlanId: null,
     },
   ]);
   projector = new BillingWebhookService(
@@ -995,7 +992,7 @@ try {
     new AutopilotReadService(db),
     new BillingUpgradeRefundService(db, catalog, paddle),
   );
-  guard = new BillingDeletionGuard(db, paddle, new RazorpayAdapter({}));
+  guard = new BillingDeletionGuard(db, paddle);
   evidence.phase = 'gate_probes';
   await listenRehearsalServer(server);
   if ((await fetch('http://127.0.0.1:4049/state?case=cancel')).status !== 403)

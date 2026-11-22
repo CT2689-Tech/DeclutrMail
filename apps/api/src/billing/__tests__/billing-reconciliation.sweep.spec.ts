@@ -81,7 +81,7 @@ describe('runBillingReconciliationSweep', () => {
     const wsId = await seedWorkspace(db, 'plus');
     await db.insert(subscriptions).values({
       workspaceId: wsId,
-      provider: 'razorpay',
+      provider: 'paddle',
       providerSubscriptionId: 'sub_dunning',
       tier: 'plus',
       status: 'past_due',
@@ -132,7 +132,7 @@ describe('runBillingReconciliationSweep', () => {
   it('retains unresolved checkout references regardless of local expiry', async () => {
     // D249 (Codex 2026-07-30): a freshly-expired claim is no longer
     // deleted — its provider_ref is the only exact link a stale
-    // browser lock has to a still-payable Razorpay artifact. Expiry
+    // browser lock has to a still-payable provider artifact. Expiry
     // already re-arms checkout via the claim upsert; deletion is pure
     // housekeeping and can wait 7 days.
     const wsOld = await seedWorkspace(db, 'free');
@@ -148,7 +148,7 @@ describe('runBillingReconciliationSweep', () => {
       },
       {
         workspaceId: wsFresh,
-        provider: 'razorpay',
+        provider: 'paddle',
         tier: 'plus',
         billingCycle: 'monthly',
         providerRef: 'sub_stale_lock_link',
@@ -156,7 +156,7 @@ describe('runBillingReconciliationSweep', () => {
       },
       {
         workspaceId: wsLive,
-        provider: 'razorpay',
+        provider: 'paddle',
         tier: 'plus',
         billingCycle: 'monthly',
         expiresAt: new Date(Date.now() + 60_000),

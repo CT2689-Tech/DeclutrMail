@@ -1,11 +1,10 @@
-// apps/api/src/billing/billing-provider.interface.ts — the shared
-// `BillingProvider` seam both adapters implement (D117).
+// apps/api/src/billing/billing-provider.interface.ts — the
+// `BillingProvider` seam the Paddle adapter implements (D117).
 //
-// D117 locks the architecture: provider-specific code lives in
-// `paddle.adapter.ts` / `razorpay.adapter.ts` behind this interface;
-// everything above it (BillingService, BillingWebhookService, the
-// controllers) is provider-agnostic. Webhook handlers normalize both
-// providers into the single `subscription_events` stream — the
+// Provider-specific code lives in `paddle.adapter.ts` behind this
+// interface; everything above it (BillingService, BillingWebhookService,
+// the controllers) is provider-agnostic. The webhook handler normalizes
+// provider events into the single `subscription_events` stream — the
 // `NormalizedBillingEvent` here is that normalization's in-memory
 // shape.
 
@@ -27,7 +26,7 @@ export interface CreateCheckoutInput {
   userEmail: string;
   tierId: PurchasableTier;
   cycle: BillingCycle;
-  /** Provider-side catalog id (Paddle `pri_…` / Razorpay `plan_…`). */
+  /** Provider-side catalog id (Paddle `pri_…`). */
   providerPriceId: string;
   /**
    * Country from the verified checkout-geo token. Null unless that
@@ -197,7 +196,7 @@ export type NormalizedBillingEvent =
 export interface NormalizedSubscription {
   checkoutAttemptId?: string;
   providerSubscriptionId: string;
-  /** Provider customer id (`ctm_…` / `cust_…`); null when absent. */
+  /** Provider customer id (`ctm_…`); null when absent. */
   providerCustomerId: string | null;
   /** Provider price/plan id — resolved to tier/cycle via the catalog. */
   providerPriceId: string;
@@ -209,8 +208,8 @@ export interface NormalizedSubscription {
   pauseUntil: string | null;
   /**
    * Workspace attribution carried IN the provider payload (Paddle
-   * `custom_data.workspace_id`, Razorpay `notes.workspace_id`). Used
-   * on first contact; later events resolve via `billing_customers`.
+   * `custom_data.workspace_id`). Used on first contact; later events
+   * resolve via `billing_customers`.
    */
   workspaceId: string | null;
   /**
@@ -264,22 +263,12 @@ export interface CheckoutHoldReader {
 }
 
 /**
- * D249 — inputs to the claimless/hint subscription search. Each
- * provider uses the keys it can actually query by: Paddle looks
- * customers up by `email`; Razorpay lists by `providerPriceIds`
- * (plan_id filter) and matches the server-written `notes.workspace_id`
- * against `workspaceId` — its list API has no customer filter, and the
- * overlay-typed email may not even match the owner's (aliases).
+ * D249 — inputs to the claimless/hint subscription search. Paddle looks
+ * customers up by `email`.
  */
 export interface SubscriptionSearchQuery {
-  /** Authed workspace — matched against server-written attribution. */
-  workspaceId: string;
   /** Workspace owner's email — Paddle's customer lookup key. */
   email: string;
-  /** Catalog price/plan ids the wait could resolve to, THIS provider's. */
-  providerPriceIds: string[];
-  /** Only consider artifacts created at/after this instant (ISO). */
-  createdAfter?: string | undefined;
 }
 
 export interface SubscriptionSearchResult {
@@ -295,9 +284,8 @@ export type SignatureVerifyResult =
   | { ok: false; reason: 'malformed_header' | 'signature_mismatch' | 'timestamp_skew' };
 
 /**
- * The D117 provider seam. One implementation per provider; both are
- * stateless (env + fetch only) so they unit-test against recorded
- * fixtures without network.
+ * The D117 provider seam. The implementation is stateless (env + fetch
+ * only) so it unit-tests against recorded fixtures without network.
  */
 /**
  * What the PROVIDER's own records say about ending this subscription —
@@ -323,80 +311,10 @@ export interface ProviderCancellationFacts {
   upgradeRefunds?: Array<{ adjustmentId: string; transactionId: string; status: string }>;
 }
 
-/**
- * Scratch space shared by every `providerCancellationFacts` call in ONE
- * reconciliation pass, created and dropped by the caller.
- *
- * Exists because some provider reads are account-wide rather than
- * subscription-scoped, so asking them once per row asks the identical
- * question N times. Razorpay's `/v1/disputes` is the case: it documents
- * no payment or subscription filter, so the adapter pages the whole
- * account list and filters client-side. Verified 2026-08-14 against
- * Razorpay's Fetch All Disputes reference — `expand` is the only
- * documented query parameter — so this is the API's shape, not a missing
- * optimisation in the adapter.
- *
- * The LIFETIME is the point, and it is enforced by scope rather than by
- * a clock. The caller allocates one before its loop and lets it fall out
- * of reach after; nothing can read a value from a previous pass because
- * no reference to it survives. A TTL would have given the same dedup
- * with a staleness window and a time-dependent test, on a code path
- * whose entire value is being deterministic about provider truth.
- *
- * OPTIONAL on the interface, so a provider whose reads are already
- * scoped implements nothing: TypeScript accepts a narrower
- * `(id: string)` method here, which is why Paddle needs no no-op path.
- * Passing no cache is always correct and always fresh — that is the
- * shape webhook-time callers get.
- *
- * RULE FOR ANY ADAPTER THAT USES THIS. A snapshot is taken when the
- * pass's first row runs, so it cannot see anything that happened during
- * the pass. That is fine for every answer EXCEPT one: an adapter must
- * never report `settled: 'refund'` off a cached read alone. That answer
- * lets the caller free the workspace's plan slot, the settlement is
- * terminal, and the watch pass deliberately never resurrects the row —
- * so a stale "no chargeback" re-arms a disputing customer permanently,
- * with only an operator able to undo it. Re-read fresh before giving it
- * (`RazorpayAdapter.providerCancellationFacts` is the worked example).
- * The cost lands only on rows that are actually settling.
- */
-export class CancellationFactsCache {
-  private readonly reads = new Map<string, Promise<unknown>>();
-
-  /**
-   * Run `read` once per `key` for this pass, handing every later caller
-   * the first call's promise.
-   *
-   * Memoizes the PROMISE, not the resolved value, so callers that
-   * overlap share one in-flight request rather than racing to start a
-   * second.
-   *
-   * A failed read is memoized too, deliberately. `listCollection`
-   * answers `null` for "could not read in full", and its two causes both
-   * argue for holding it: a listing past the page bound fails
-   * identically every time, which is the 100-rows × 50-pages case this
-   * type exists to prevent, and a network fault re-read per row would
-   * hammer a provider that is already unwell. Neither loses safety — a
-   * null is never grounds for a write, so the pass simply leaves those
-   * rows unenforced and the next sweep asks again with a fresh cache.
-   */
-  once<T>(key: string, read: () => Promise<T>): Promise<T> {
-    const inFlight = this.reads.get(key);
-    if (inFlight !== undefined) return inFlight as Promise<T>;
-    const started = read();
-    this.reads.set(key, started);
-    return started;
-  }
-}
-
 export interface BillingProvider {
   readonly id: BillingProviderId;
 
-  /**
-   * Build the provider-specific checkout payload the FE consumes.
-   * Paddle: pure (overlay token + price id, no API call). Razorpay:
-   * creates the provider-side subscription (server-attributed notes).
-   */
+  /** Build the provider-specific checkout payload the FE consumes. */
   createCheckout(input: CreateCheckoutInput): Promise<CheckoutSession>;
 
   /** Cancel at period end (D118 — never immediate, no proration). */
@@ -453,7 +371,6 @@ export interface BillingProvider {
    */
   providerCancellationFacts(
     providerSubscriptionId: string,
-    cache?: CancellationFactsCache,
   ): Promise<ProviderCancellationFacts | null>;
 
   /**
@@ -505,17 +422,7 @@ export interface BillingProvider {
    * provider read this mapping needed but could not make (surfaces as
    * 5xx — the delivery stays in the provider's retry queue).
    *
-   * MAY BE ASYNCHRONOUS, and the union is the point: some payloads
-   * cannot be normalized without asking the provider a question.
-   * Razorpay's refund and dispute entities carry `payment_id` and the
-   * payment carries `invoice_id`, but NONE of the three names a
-   * subscription — the one documented link is
-   * `GET /v1/invoices/{id}` → `subscription_id`, and
-   * `cancellation_scheduled` cannot be minted without it.
-   *
-   * A single `Promise<…>` return would have been simpler to consume but
-   * would force EVERY adapter's mapper to be async, erasing the one
-   * property worth keeping: Paddle's mapper is pure — its payloads carry
+   * MAY BE ASYNCHRONOUS. Paddle's mapper is pure — its payloads carry
    * `subscription_id` inline — and its signature still says so. Adding
    * an outbound call to a mapper that declares itself synchronous is
    * therefore a visible signature change, not a quiet edit. Callers
@@ -532,19 +439,16 @@ export interface BillingProvider {
    * three different things to a pending checkout: `not_found` (provider
    * 404 — nothing exists), `found` (a mappable subscription), and
    * `found_unmapped` (the subscription EXISTS in a status we do not
-   * map — Razorpay `created`/`authenticated` is the 3DS-in-flight
-   * window). Collapsing the last into `not_found` told users "no
-   * payment found" seconds before a charge settled (Codex 2026-07-30).
+   * map). Collapsing the last into `not_found` told users "no payment
+   * found" seconds before a charge settled (Codex 2026-07-30).
    */
   fetchSubscription(providerSubscriptionId: string): Promise<FetchSubscriptionResult>;
 
   /**
    * Subscriptions attributable to this workspace, for reconciles with
-   * no usable `provider_ref` — Paddle claims never carry one, and a
-   * stale lock may outlive the claim row entirely (Codex 2026-07-30:
-   * the "Razorpay always has provider_ref" assumption died exactly
-   * there). Each adapter searches by what its API supports; see
-   * SubscriptionSearchQuery.
+   * no usable `provider_ref` — a Paddle claim's ref names a
+   * transaction, not a subscription, and a stale lock may outlive the
+   * claim row entirely (Codex 2026-07-30). See SubscriptionSearchQuery.
    */
   searchSubscriptions(query: SubscriptionSearchQuery): Promise<SubscriptionSearchResult>;
 
@@ -556,19 +460,11 @@ export interface BillingProvider {
   fetchCheckoutHold?: CheckoutHoldReader['fetchCheckoutHold'];
 
   /**
-   * D119 / ADR-0035 — a self-serve payment-method surface, when the rail
-   * has one.
-   *
-   * Returns a CAPABILITY, never a nullable URL: Razorpay subscriptions
-   * cannot change instrument without re-authorizing the mandate, and
-   * `null` would make "this rail can't" indistinguishable from "the
-   * read failed". The FE renders the `unsupported` arm as
-   * support-assisted copy, exactly as it already does for Razorpay
-   * pause and resume.
+   * D119 / ADR-0035 — the provider's self-serve payment-method surface.
    *
    * The URL is short-lived and customer-specific — minted per call,
    * never cached or persisted. Throws `BILLING_PROVIDER_ERROR` on
-   * network/5xx.
+   * network/5xx or a 200 with no usable URL.
    */
   paymentMethodSession(input: PaymentMethodSessionInput): Promise<PaymentMethodSessionResult>;
 
@@ -578,9 +474,9 @@ export interface BillingProvider {
    *
    * Amounts come back in the currency's LOWEST unit (the existing
    * provider-money convention). A status this adapter cannot map stays
-   * `'unknown'` rather than being rounded to `paid` — both providers'
-   * status vocabularies are wider than the normalized enum, and
-   * guessing would assert something the read did not say.
+   * `'unknown'` rather than being rounded to `paid` — the provider's
+   * status vocabulary is wider than the normalized enum, and guessing
+   * would assert something the read did not say.
    *
    * Throws `BILLING_PROVIDER_ERROR` on network/5xx: the caller reports
    * the rail as unavailable rather than serving a silently short list.
@@ -593,37 +489,33 @@ export interface BillingProvider {
   /**
    * D119 / ADR-0035 — mint a document URL for one invoice, per click.
    *
-   * `null` here means this rail mints nothing because it does not need
-   * to: Razorpay exposes a stable hosted invoice page on the row itself
-   * (`hostedUrl`), so there is no per-click artifact to create. That is
-   * a capability fact the row already carries via `documentAvailable`,
-   * not an error — unlike `paymentMethodSession`, the FE never has to
-   * distinguish a null here from a failure, because it only calls this
-   * for rows that advertised `documentAvailable: true`.
+   * `null` means the provider answered 404 for this invoice; the caller
+   * reports NOT_FOUND. The FE only calls this for rows that advertised
+   * `documentAvailable: true`.
    */
   invoiceDocumentUrl(invoiceId: string): Promise<string | null>;
 }
 
 /**
- * Input to `paymentMethodSession`. Both ids are passed because the two
- * rails key the surface differently — Paddle's portal session is
- * CUSTOMER-scoped (and takes the subscription only to deep-link the
- * right row), while a future subscription-scoped rail would need the
- * subscription id. Neither adapter may infer one from the other.
+ * Input to `paymentMethodSession`. Paddle's portal session is
+ * CUSTOMER-scoped and takes the subscription only to deep-link the
+ * right row. Neither id may be inferred from the other.
  */
 export interface PaymentMethodSessionInput {
   providerCustomerId: string;
   providerSubscriptionId: string;
 }
 
-export type PaymentMethodSessionResult =
-  { kind: 'url'; url: string } | { kind: 'unsupported'; reason: 'no_self_serve' };
+export interface PaymentMethodSessionResult {
+  kind: 'url';
+  url: string;
+}
 
 /**
  * One page of billing documents.
  *
  * `truncated` exists so a capped read cannot pass for a complete
- * history. Both adapters ask for a single large page; when the provider
+ * history. The adapter asks for a single large page; when the provider
  * reports more rows behind it, that fact reaches the UI rather than
  * being dropped — a list that silently omits older invoices is worse
  * than one that admits it (no-silent-caps).

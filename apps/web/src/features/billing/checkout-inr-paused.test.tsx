@@ -11,7 +11,6 @@ function renderPanel(options?: { country?: string | null; indiaCheckoutOpen?: bo
   return render(
     <ConfirmPanel
       target="plus"
-      provider="paddle"
       country={options?.country ?? null}
       indiaCheckoutOpen={options?.indiaCheckoutOpen ?? false}
       pricePoint={PLUS_ANNUAL_2026_10}

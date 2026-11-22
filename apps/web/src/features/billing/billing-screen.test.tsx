@@ -55,8 +55,8 @@ vi.mock('@/features/auth/auth-provider', () => {
   return { useAuth: auth, useOptionalAuth: auth };
 });
 
-// Provider launch is a side-effect seam (Paddle overlay / Razorpay
-// navigation) — stub it; the checkout CONTRACT is asserted on the wire
+// Provider launch is a side-effect seam (Paddle overlay) — stub it; the
+// checkout CONTRACT is asserted on the wire
 // and the overlay lifecycle is driven through the captured events arg.
 vi.mock('@/features/billing/checkout', async (importOriginal) => ({
   ...(await importOriginal<typeof CheckoutModule>()),
@@ -109,7 +109,7 @@ const PAUSED_BODY: BillingSubscription = {
   foundingMember: false,
   pendingCheckout: null,
   subscription: {
-    provider: 'razorpay',
+    provider: 'paddle',
     tier: 'plus',
     status: 'paused',
     cycle: 'monthly',
@@ -2875,32 +2875,6 @@ describe('BillingScreen — paid subscriber', () => {
     expect(card).not.toHaveTextContent('Renews');
   });
 
-  // Offering a control the API would refuse is the assert-what-we-don't-
-  // know defect; the modal's guard mirrors the service's exactly.
-  it('pause offer: hidden for Razorpay, which has no pause primitive', async () => {
-    mockTier = 'plus';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () =>
-          jsonOk({
-            data: {
-              tier: 'plus',
-              foundingMember: false,
-              pendingCheckout: null,
-              complimentary: null,
-              subscription: { ...SUB, provider: 'razorpay', tier: 'plus' },
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Review cancellation' }));
-    expect(within(screen.getByTestId('cancel-modal')).queryByTestId('pause-offer')).toBeNull();
-  });
-
   it('cancel modal stays silent on the guarantee for a PLUS subscriber too', async () => {
     mockTier = 'plus';
     installFetchStub([
@@ -3669,42 +3643,6 @@ describe('BillingScreen — paid subscriber', () => {
     const after = window.localStorage.getItem(pendingCheckoutKey('w'));
     expect((JSON.parse(after!) as { attemptId: string }).attemptId).toBe('attempt-B');
     expect((JSON.parse(after!) as { toTier: string }).toTier).toBe('plus');
-  });
-
-  it('a Razorpay subscriber gets the honest support route, never the failing confirm', async () => {
-    mockTier = 'pro';
-    installFetchStub([
-      {
-        method: 'GET',
-        path: '/api/billing/subscription',
-        respond: () =>
-          jsonOk({
-            data: {
-              ...PRO_SUB,
-              subscription: PRO_SUB.subscription
-                ? { ...PRO_SUB.subscription, provider: 'razorpay' }
-                : null,
-            },
-          }),
-      },
-    ]);
-    renderScreen();
-
-    await openPlanOptions();
-    fireEvent.click(await screen.findByRole('button', { name: 'Switch to Plus' }));
-    const panel = screen.getByTestId('razorpay-switch-panel');
-    expect(panel).toHaveTextContent(/aren’t self-serve yet for subscriptions paid via Razorpay/);
-    expect(
-      within(panel)
-        .getByRole('link', { name: /Email support/ })
-        .getAttribute('href'),
-    ).toContain('mailto:support@declutrmail.com');
-    expect(screen.queryByTestId('change-plan-panel')).not.toBeInTheDocument();
-    // No cycle-switch CTA on the current card either — nothing that
-    // routes a Razorpay sub into the unsupported endpoint.
-    expect(
-      screen.queryByRole('button', { name: /Switch to (monthly|annual) billing/ }),
-    ).not.toBeInTheDocument();
   });
 
   it('a paused subscription shows the honest paused notice; Resume POSTs and enters pending', async () => {

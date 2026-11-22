@@ -82,7 +82,6 @@ function renderConfirm(
   return render(
     <ConfirmPanel
       target="plus"
-      provider="paddle"
       offer={offer}
       country={locale.country}
       indiaCheckoutOpen={locale.indiaCheckoutOpen}
@@ -100,7 +99,7 @@ function PlanChips({ locale }: { locale: 'usd' | 'inr' }) {
     <div data-testid="plan-chips">
       <span>{fillStory(WS1_COPY['cap.plus.sublabel'], locale)}</span>
       <span>{fillStory(WS1_COPY['cap.pass.sublabel'], locale)}</span>
-      <span>{launchPlusQuote('paddle', locale)}</span>
+      <span>{launchPlusQuote(locale)}</span>
     </div>
   );
 }
@@ -163,7 +162,7 @@ describe('visitor price surfaces — US stays the #1020 strings', () => {
     expect(screen.getByTestId('plan-chips')).toHaveTextContent('$19 once');
 
     render(
-      <BillingCurrencyProvider provider="paddle" locale="usd">
+      <BillingCurrencyProvider locale="usd">
         <TierGate capability="screener" title="Screener" pitch="Review new senders.">
           <div>unlocked</div>
         </TierGate>
@@ -255,7 +254,7 @@ describe('visitor price surfaces — India uses one currency', () => {
     expect(chips.textContent).not.toContain('$');
 
     render(
-      <BillingCurrencyProvider provider="paddle" locale="inr">
+      <BillingCurrencyProvider locale="inr">
         <TierGate capability="screener" title="Screener" pitch="Review new senders.">
           <div>unlocked</div>
         </TierGate>

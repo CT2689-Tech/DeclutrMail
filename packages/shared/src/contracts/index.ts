@@ -270,7 +270,6 @@ export {
   PlanChangePreviewSchema,
   PlanChangeRequestSchema,
   PurchasableTierSchema,
-  RazorpayCheckoutSessionSchema,
   SubscriptionStatusSchema,
 } from './billing';
 export { INR_CHECKOUT_PAUSED_MESSAGE, inrNewPurchasePaused } from './billing-availability';
@@ -293,7 +292,6 @@ export type {
   PlanChangePreviewRequest,
   PlanChangeRequest,
   PurchasableTier,
-  RazorpayCheckoutSession,
   SubscriptionStatus,
   CleanupSummaryDto,
 } from './billing';

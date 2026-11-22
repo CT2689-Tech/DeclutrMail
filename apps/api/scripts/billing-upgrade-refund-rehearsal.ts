@@ -27,7 +27,6 @@ import {
 import { buildRehearsalClient } from './helpers/sandbox-rehearsal-client.js';
 import { BillingCatalog } from '../src/billing/billing-catalog.js';
 import { PaddleAdapter } from '../src/billing/paddle.adapter.js';
-import { RazorpayAdapter } from '../src/billing/razorpay.adapter.js';
 import { BillingService } from '../src/billing/billing.service.js';
 import { BillingWebhookService } from '../src/billing/billing-webhook.service.js';
 import { BillingUpgradeRefundService } from '../src/billing/billing-upgrade-refund.service.js';
@@ -698,7 +697,6 @@ try {
       founding: false,
       usdCents: 900,
       paddlePriceId: prices.plus,
-      razorpayPlanId: null,
     },
     {
       planCode: 'pro_monthly',
@@ -707,7 +705,6 @@ try {
       founding: false,
       usdCents: 1900,
       paddlePriceId: prices.pro,
-      razorpayPlanId: null,
     },
     {
       planCode: 'pro_annual',
@@ -716,14 +713,12 @@ try {
       founding: false,
       usdCents: 19000,
       paddlePriceId: prices.annual,
-      razorpayPlanId: null,
     },
   ]);
   const upgrades = new BillingUpgradeRefundService(db, catalog, paddle);
   projector = new BillingWebhookService(db, catalog, new AutopilotReadService(db), upgrades);
-  const razorpay = new RazorpayAdapter({});
-  reconciler = new BillingReconciliationService(db, catalog, projector, paddle, razorpay);
-  service = new BillingService(db, catalog, paddle, razorpay, reconciler, upgrades);
+  reconciler = new BillingReconciliationService(db, catalog, projector, paddle);
+  service = new BillingService(db, catalog, paddle, reconciler, upgrades);
   evidence.phase = 'fixtures';
   for (const name of ['monthly', 'cycle'] as const) {
     const [w] = await db

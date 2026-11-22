@@ -81,7 +81,6 @@ jobs:
               - 'apps/api/src/webhooks/**'
               - 'apps/api/**/*-webhook.controller.ts'
               - 'apps/api/src/billing/paddle.adapter.ts'
-              - 'apps/api/src/billing/razorpay.adapter.ts'
 
   # Placeholder gate that documents which agents WOULD run for this PR.
   # Replaced with real Claude API invocations once ANTHROPIC_API_KEY is

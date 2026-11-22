@@ -98,7 +98,6 @@ describe('AccountDeletionOrchestrator', () => {
       new BillingDeletionGuard(
         db as never,
         { deletionBillingState: async () => 'stopped' } as never,
-        { deletionBillingState: async () => 'stopped' } as never,
       ),
       fake.queue,
     );

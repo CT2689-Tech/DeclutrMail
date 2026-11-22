@@ -10,7 +10,7 @@
  * appears.
  */
 
-import { RAILS, TIER_IDS, type Capability, type TierId } from '@declutrmail/shared/entitlements';
+import { TIER_IDS, type Capability, type TierId } from '@declutrmail/shared/entitlements';
 
 /** Manifest order IS display order (free → enterprise, per D19). */
 export const PRICING_TIER_ORDER: readonly TierId[] = TIER_IDS;
@@ -47,48 +47,28 @@ export function formatInr(paise: number): string {
 /**
  * The currency a price is actually CHARGED in (D117).
  *
- * Not a display preference — it is a fact about the provider: Paddle
- * settles USD as merchant-of-record for the rest of the world, Razorpay
- * settles INR for India. Rendering one while charging the other is the
- * defect this type exists to make unrepresentable, so every price
- * surface takes a Currency rather than assuming USD.
+ * Not a display preference — rendering one currency while charging the
+ * other is the defect this type exists to make unrepresentable, so every
+ * price surface takes a Currency rather than assuming USD.
  */
 export type Currency = 'USD' | 'INR';
 
-/** Which currency a provider settles in. */
-export function currencyForProvider(provider: 'paddle' | 'razorpay'): Currency {
-  return provider === 'razorpay' ? 'INR' : 'USD';
-}
-
 /**
- * The currency a SPECIFIC price point would actually be charged in on a
- * given rail.
+ * The currency a SPECIFIC price point would actually be charged in.
  *
- * Region preference alone is not enough to quote INR, because provisioning
- * is per PRICE POINT, not per provider. Razorpay went live for India on
- * 2026-07-25 and every paid point currently carries a `razorpayPlanId`
- * (Free is null — it is $0 and never reaches checkout), but that is a fact
- * about today's catalog, not an invariant: a new tier or promo can ship on
- * Paddle first, and a point whose Razorpay id is missing must clamp back to
- * USD rather than quote a price no checkout will honour.
- *
- * Quoting ₹1,599 to an India visitor whose checkout charges $19 is the same
- * defect as the reverse, and region-only resolution makes it easy to
- * reintroduce. Taking the POINT — not just the provider — makes an
- * unpurchasable currency unrepresentable: INR requires that this exact
- * point is purchasable on Razorpay.
+ * Paddle charges INR only to a visitor whose verified country is India
+ * while India checkout is open, and only for a point with an INR amount.
+ * Everything else is USD.
  */
 export function currencyForPricePoint(
   point: {
-    razorpayPlanId: string | null;
     inrPaise?: number;
     inr?: { paise: number };
     usdCents?: number;
   },
-  provider: 'paddle' | 'razorpay',
   geo?: { country?: string | null; indiaCheckoutOpen?: boolean },
 ): Currency {
-  if (geo !== undefined && !RAILS.razorpay.enabled) {
+  if (geo !== undefined) {
     if (geo.country?.toUpperCase() !== 'IN' || geo.indiaCheckoutOpen !== true) return 'USD';
     const paise = point.inr?.paise ?? point.inrPaise ?? 0;
     const usd = point.usdCents ?? 0;
@@ -96,7 +76,7 @@ export function currencyForPricePoint(
     // (usd > 0, no INR amount) stays USD so we never quote ₹0 for a charge.
     return paise > 0 || usd === 0 ? 'INR' : 'USD';
   }
-  return provider === 'razorpay' && point.razorpayPlanId !== null ? 'INR' : 'USD';
+  return 'USD';
 }
 
 /**

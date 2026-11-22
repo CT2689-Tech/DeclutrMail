@@ -432,7 +432,7 @@ jobs:
             --command="node" \
             --args="src/worker.ts" \
             --set-env-vars="^|^NODE_OPTIONS=--enable-source-maps --import @sentry/node/import --import @swc-node/register/esm-register|NODE_ENV=production|KMS_KEY_RESOURCE=$KMS_KEY_RESOURCE|GOOGLE_CLOUD_PROJECT_ID=$PROJECT|GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID|GMAIL_PUBSUB_TOPIC=$GMAIL_PUBSUB_TOPIC|GMAIL_QUOTA_UNITS_PER_MIN=12000|GMAIL_QUOTA_METRIC=gmail.googleapis.com/default|SENTRY_RELEASE=$GITHUB_SHA|WEB_URL=https://app.declutrmail.com|EMAIL_REPLY_TO=support@declutrmail.com|REASONING_RATE_PER_MIN=400|REASONING_TIMEOUT_MS=12000|WORKER_SENTRY_ENABLED=true|WORKER_DB_POOL_MAX=3|WORKER_LOCK_POOL_MAX=3|WORKER_SWEEP_STATEMENT_TIMEOUT_MS=25000|WORKER_DRAIN_DELAY_SEC=10|WORKER_STALLED_INTERVAL_MS=60000|WORKER_CRON_DRAIN_DELAY_SEC=60|WORKER_CRON_STALLED_INTERVAL_MS=300000|DOMAIN_ICON_WEBSITE_FALLBACK_ENABLED=true|API_URL=https://api.declutrmail.com|PADDLE_ENV=production|BILLING_APP_NOTICES_ENABLED=$BILLING_APP_NOTICES_ENABLED|BILLING_APP_NOTICES_START_AT=$BILLING_APP_NOTICES_START_AT|UNSUB_SEND_ENABLED=true|PRICING_V2=true|METER_V2=true|BILLING_PASS_ENABLED=true" \
-            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,RESEND_API_KEY=resend-api-key-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,BRANDFETCH_API_KEY=brandfetch-api-key-prod:latest" \
+            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,RESEND_API_KEY=resend-api-key-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,BRANDFETCH_API_KEY=brandfetch-api-key-prod:latest" \
             --quiet
 
       - name: Route worker traffic to the new revision
@@ -548,46 +548,6 @@ jobs:
           # merge/deploy still requires one low-value purchase + refund
           # verification before public announcement.
           #
-          # Razorpay went LIVE 2026-07-25 — all three secrets exist and are
-          # bound below. The sequence is kept here because it is the order
-          # any future provider (or a re-key) has to follow, and because
-          # step 1 is the one that silently costs money when skipped:
-          #   1. Register the LIVE webhook in the Razorpay dashboard,
-          #      BEFORE binding anything. Endpoint (note the /billing
-          #      segment —
-          #      BillingRazorpayController is @Controller('webhooks/billing')
-          #      + @Post('razorpay')):
-          #        https://api.declutrmail.com/api/webhooks/billing/razorpay
-          #      Subscribe exactly the 9 events the handler consumes:
-          #        subscription.activated  subscription.cancelled
-          #        subscription.charged    subscription.completed
-          #        subscription.halted     subscription.paused
-          #        subscription.pending    subscription.resumed
-          #        subscription.updated
-          #      Entitlements are granted by WEBHOOK ONLY (§10
-          #      no-fake-completion) — a successful payment never updates
-          #      local state on its own. A missing or misrouted webhook
-          #      therefore means money taken and no plan granted. Omitting
-          #      `subscription.updated` specifically strands D120 scheduled
-          #      downgrades, which clear only on that event.
-          #   2. Founder creates all three secrets (see
-          #      docs/runbooks/secrets-inventory.md):
-          #      razorpay-key-id-prod, razorpay-key-secret-prod,
-          #      razorpay-webhook-secret-prod — the last one is the signing
-          #      secret entered in step 1, byte-identical.
-          #   3. ONE PR appends to --update-secrets below:
-          #      RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,
-          #      RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,
-          #      RAZORPAY_WEBHOOK_SECRET=razorpay-webhook-secret-prod:latest
-          #   4. Provision the Razorpay catalog + patch the manifest's
-          #      razorpayPlanId values — that is what actually opens India.
-          # Add all three together: an API holding a Razorpay key but no
-          # webhook secret would accept checkouts and then fail every
-          # signature verification (money taken, entitlement never
-          # granted). Keeping the list STATIC also preserves preflight's
-          # "live revision matches the deploy secret contract" drift check,
-          # which needs a declarative contract to compare against.
-          #
           # Resend (D162) is bound below, per-service and least-privilege:
           # RESEND_API_KEY on the WORKER only (it is the sender —
           # EmailService sits behind the worker's EmailDeliveryPort, and no
@@ -673,7 +633,7 @@ jobs:
             --startup-probe="httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=10,timeoutSeconds=5,failureThreshold=24" \
             --liveness-probe="httpGet.path=/api/healthz,httpGet.port=8080,periodSeconds=30,timeoutSeconds=5,failureThreshold=3" \
             --set-env-vars="$API_ENV" \
-            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest,RESEND_WEBHOOK_SECRET=resend-webhook-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,PADDLE_CLIENT_TOKEN=paddle-client-token-prod:latest,PADDLE_WEBHOOK_SECRET=paddle-webhook-secret-prod:latest,RAZORPAY_KEY_ID=razorpay-key-id-prod:latest,RAZORPAY_KEY_SECRET=razorpay-key-secret-prod:latest,RAZORPAY_WEBHOOK_SECRET=razorpay-webhook-secret-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest" \
+            --update-secrets="ANTHROPIC_API_KEY=anthropic-api-key-prod:latest,SENTRY_DSN=sentry-dsn-api:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret-prod:latest,JWT_ACCESS_SECRET=jwt-access-secret-prod:latest,JWT_REFRESH_SECRET=jwt-refresh-secret-prod:latest,DATABASE_URL=database-url-prod:latest,REDIS_URL=redis-url-prod:latest,ADMIN_EMAIL_ALLOWLIST=admin-email-allowlist-prod:latest,RESEND_WEBHOOK_SECRET=resend-webhook-secret-prod:latest,PADDLE_API_KEY=paddle-api-key-prod:latest,PADDLE_CLIENT_TOKEN=paddle-client-token-prod:latest,PADDLE_WEBHOOK_SECRET=paddle-webhook-secret-prod:latest,UNSUBSCRIBE_TOKEN_SECRET=unsubscribe-token-secret-prod:latest" \
             --quiet
 
       - name: Verify billing notice API producers
