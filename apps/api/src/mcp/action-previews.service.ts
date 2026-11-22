@@ -320,14 +320,23 @@ export class ActionPreviewsService {
   /**
    * The person pressed Accept on the prompt this server sent for this
    * preview, through the app that made it. The same ownership checks as
-   * `apply`, then the same transition as the confirm page's press.
+   * `apply`, then the same transition as the confirm page's press — but
+   * only from a fresh `pending`. The Accept's signed state lives ten
+   * minutes and a client can send it again, so it must never be what:
+   *  - re-confirms a press the plan or quota refused (that press is
+   *    spent: only a new one starts it), or
+   *  - continues a start that failed while `confirmed` (D233: a failed
+   *    start is continued only by a new press on the confirm page).
+   * Either way the row is reported as it is, like `apply`.
    */
   async confirmInChat(
     previewId: string,
     owner: PreviewOwner,
     mailboxAccountId: string | null,
   ): Promise<PreviewDetail> {
-    await this.apply(previewId, owner, mailboxAccountId);
+    const found = await this.apply(previewId, owner, mailboxAccountId);
+    const { state, refusedCode } = found.preview;
+    if (state !== 'pending' || refusedCode !== null) return found;
     return this.confirm(previewId, owner.userId);
   }
 

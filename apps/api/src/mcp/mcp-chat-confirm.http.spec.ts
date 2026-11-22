@@ -167,6 +167,40 @@ describe('MCP connector — confirm in the chat', () => {
     expect(await jobs(s.mailboxId)).toHaveLength(0);
   });
 
+  it('a replayed Accept never re-drives a refused press or a failed start', async () => {
+    const s = await scene();
+    const asked = await s.mcp.callModern('apply_cleanup', { preview_id: s.previewId });
+    const round = { inputResponses: accept, requestState: asked.result!.requestState };
+
+    // A press the quota refused is spent: back to pending, refusal recorded.
+    await harness.db
+      .update(actionPreviews)
+      .set({ refusedCode: 'QUOTA_EXHAUSTED' })
+      .where(eq(actionPreviews.id, s.previewId));
+    const afterRefusal = await s.mcp.callModern(
+      'apply_cleanup',
+      { preview_id: s.previewId },
+      round,
+    );
+    expect(afterRefusal.result?.structuredContent.status).toBe('needs_confirmation');
+    expect(await state(s.previewId)).toBe('pending');
+
+    // A start that failed: confirmed, its claim's lease long gone.
+    await harness.db
+      .update(actionPreviews)
+      .set({
+        refusedCode: null,
+        state: 'confirmed',
+        confirmedAt: new Date(Date.now() - 60 * 60_000),
+        claimedAt: new Date(Date.now() - 60 * 60_000),
+      })
+      .where(eq(actionPreviews.id, s.previewId));
+    const afterFault = await s.mcp.callModern('apply_cleanup', { preview_id: s.previewId }, round);
+    expect(afterFault.result?.structuredContent.status).toBe('needs_confirmation');
+    expect(await state(s.previewId)).toBe('confirmed');
+    expect(await jobs(s.mailboxId)).toHaveLength(0);
+  });
+
   it('a client that cannot show a form gets the confirm link, as before', async () => {
     const s = await scene();
     for (const capabilities of [{}, { elicitation: { url: {} } }]) {
