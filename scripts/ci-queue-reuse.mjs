@@ -137,7 +137,7 @@ export function makeApi(exec = ghApi, sleep = pause, delays = [1_000, 3_000]) {
       } catch (error) {
         const clientError = /\(HTTP 4\d\d\)/.test(String(error?.stderr ?? ''));
         if (clientError || attempt >= delays.length || error instanceof SyntaxError)
-          throw new Error('GitHub CI metadata could not be read');
+          throw new Error('GitHub CI metadata could not be read', { cause: error });
         sleep(delays[attempt]);
       }
     }
