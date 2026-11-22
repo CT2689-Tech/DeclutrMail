@@ -38,6 +38,13 @@ Define a verifiable success criterion before implementing ("fix the bug" →
 ### 1.5 How to talk to the founder
 
 - **Start every reply with a TLDR** of one to three short lines.
+- **End every reply with "Your next step"**: a numbered list, in order, of
+  only what he must do, each with the exact link, button, command or
+  paste-ready prompt — or "Nothing for you; next I will …". He should never
+  have to work out what comes next. If an open
+  `docs/log/founder-followups/` entry is his, name the most urgent one.
+- **Status in one line per PR**, in his words: "#1229 is waiting in the
+  merge queue", never just a check name.
 - Keep the rest short and precise. **Plain words, no jargon**: say what a
   person sees or what a system does, not the internal name for it. Code,
   commands and numbers stay exact.
@@ -63,6 +70,12 @@ Define a verifiable success criterion before implementing ("fix the bug" →
   pastes) and asks for his "yes" before any final Save, Create, Merge or
   Publish. Save the prompt in the session's notes folder too.
 - **When a change can be seen**, leave it running and give the links.
+- **Record a decision where it lives** the same day: the PR body for that
+  change, and §2.7, an ADR or a founder follow-up if it outlasts the PR. A
+  decision kept only in chat is lost.
+- **A thing only he can do** that will not happen this turn gets a
+  `docs/log/founder-followups/` file (§11) with the exact steps or the
+  Claude.ai prompt, so it survives the session.
 - **Blocked by a rule:** do not work around it and do not quietly settle for
   less. Write an exception request — what is blocked, by which rule, what
   you would do instead, what it gains, what it risks — and carry on with
@@ -235,6 +248,11 @@ trust.
 
 Nothing outside requires these; keep them until the founder changes one.
 
+- **An AI assistant may confirm any of the five actions in the chat**
+  (founder 2026-11-21, PR #1228), when its app shows DeclutrMail's prompt.
+  Accepted risk: an app that answers its own prompts could send an
+  unsubscribe, which cannot be undone. Other apps get the confirm link.
+
 - **A mailto unsubscribe is not sent as the user.** It opens a pre-filled
   Gmail draft the user sends.
 - **Protected is the only visible safety state.** Protected senders are
@@ -396,6 +414,12 @@ guard, fails on a violation, and fails loudly if it saw nothing. Accepted
 pre-existing findings live in `scripts/guard-hooks-allowlist.json`. If a
 guard fires, fix the cause — never bypass it.
 
+**Merge queue reuse.** When the queue's tree equals the tree a green PR run
+tested, the queue reuses that run's jobs instead of re-running them, and
+push-to-main reuses the queue's (`scripts/ci-queue-reuse.mjs`). Any doubt
+runs everything. A job list in that script must match `ci.yml` exactly; a
+test enforces it.
+
 ---
 
 ## 8. Done means verified
@@ -408,7 +432,9 @@ In PRs, issues and the merge history. `IMPLEMENTATION-LOG.md` and
 ### 8.2 Definition of done
 
 - `pnpm typecheck`, `pnpm lint`, affected unit/integration and E2E tests,
-  and `node --test scripts/*.test.mjs` pass. No unresolved `[BLOCKING]`. No
+  and `node --test scripts/*.test.mjs` pass — run by you on the final
+  commit. A subagent's "tests pass" is a claim, not a check (a lint error
+  reached CI that way on 2026-11-22). No unresolved `[BLOCKING]`. No
   new TODO without a linked issue.
 - A migration states its rollback path; an API change keeps contract tests
   green; a worker names its policy and idempotency key in the PR body.
@@ -580,6 +606,7 @@ out — don't stub it.
 
 Files are named `YYYY-MM-DD-<slug>.md`, one entry per file (shared files
 conflicted in the merge queue). Log signal, not noise — would the entry help
-a future session? A pattern that recurs 3+ times, or carries data-loss,
+a future session? Keep this file's section numbers stable — code comments
+cite them. A pattern that recurs 3+ times, or carries data-loss,
 privacy, security or billing risk, gets promoted into this file in a
 `chore/distill-*` PR. Agents edit this file only when the founder asks.
