@@ -293,6 +293,8 @@ jobs:
         run: node --test scripts/infra-observability.test.mjs scripts/infra-invoice-history.test.mjs scripts/gcp-billing-export.test.mjs scripts/infra-alerts.test.mjs scripts/alert-email-routing.test.mjs scripts/alert-promql-fixtures.test.mjs scripts/setup-llm-rejection-alert.test.mjs scripts/mailbox-lock-alert.test.mjs scripts/check-vendor-limits.test.mjs scripts/vercel-spend-guard.test.mjs scripts/paddle-webhook-monitor.test.mjs scripts/vendor-monitoring-followups.test.mjs scripts/gcp-budget-status.test.mjs scripts/private-finance-report.test.mjs scripts/validate-finance-snapshot-source.test.mjs
       - name: Encrypted Sentry triage contracts
         run: node --test scripts/sentry-private-triage.test.mjs
+      - name: Encrypted worker diagnostic contracts
+        run: node --test scripts/worker-readonly-diagnosis.test.mjs
       - name: Build selection and artifact retention contracts
         run: node --test scripts/vercel-ignore-build.test.mjs scripts/pin-production-images.test.mjs scripts/artifact-cleanup-policy.test.mjs scripts/deploy-api-safely.test.mjs scripts/live-india-billing-env.test.mjs scripts/check-billing-queue-runtime.test.mjs
       - name: ct-gates verdicts (a run that reviewed nothing never passes)

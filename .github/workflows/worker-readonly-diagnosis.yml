@@ -1,0 +1,65 @@
+name: Inspect worker revision and retry evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: 'Closed UTC interval start: YYYY-MM-DDTHH:MM:SSZ (within seven days)'
+        required: true
+        type: string
+      end:
+        description: 'Closed UTC interval end: YYYY-MM-DDTHH:MM:SSZ (at most four hours later)'
+        required: true
+        type: string
+      public_key:
+        description: 'RSA public key PEM only; retain the private key locally'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: declutrmail-worker-readonly-diagnosis
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Verify diagnostic contracts before authentication
+        run: node --test scripts/worker-readonly-diagnosis.test.mjs
+      - name: Validate public key and bounded interval before authentication
+        env:
+          WORKER_DIAG_PUBLIC_KEY: ${{ inputs.public_key }}
+          WORKER_DIAG_START: ${{ inputs.start }}
+          WORKER_DIAG_END: ${{ inputs.end }}
+        run: node scripts/worker-readonly-diagnosis.mjs --validate
+      - name: Authenticate using existing Workload Identity
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Read fixed worker scope into encrypted report
+        env:
+          WORKER_DIAG_PUBLIC_KEY: ${{ inputs.public_key }}
+          WORKER_DIAG_START: ${{ inputs.start }}
+          WORKER_DIAG_END: ${{ inputs.end }}
+          WORKER_DIAG_OUTPUT: ${{ runner.temp }}/worker-diagnosis.encrypted.json
+        run: node scripts/worker-readonly-diagnosis.mjs
+      - name: Retain encrypted evidence only
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: worker-diagnosis-encrypted-${{ github.run_id }}
+          path: ${{ runner.temp }}/worker-diagnosis.encrypted.json
+          retention-days: 1
+          if-no-files-found: error
