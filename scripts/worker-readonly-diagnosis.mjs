@@ -83,6 +83,60 @@ export function projectRevision(raw) {
   };
 }
 
+export function projectRouting(raw) {
+  if (raw?.name !== PARENT) return null;
+  const scopedRevision = (value) => {
+    const name = revision(value);
+    return name && (value === name || value === `${PARENT}/revisions/${name}`) ? name : null;
+  };
+  const targets = (values) => {
+    if (values === undefined) return null;
+    if (!Array.isArray(values) || values.length > 100) throw new Error('Invalid traffic targets');
+    const records = [];
+    let rejectedTargets = 0;
+    for (const target of values) {
+      const name = scopedRevision(target?.revision);
+      const tag = target?.tag;
+      const percent = target?.percent;
+      const allocation = target?.type;
+      if (
+        !target ||
+        typeof target !== 'object' ||
+        Array.isArray(target) ||
+        (!name && tag === undefined && allocation === undefined) ||
+        (target.revision !== undefined && !name) ||
+        (tag !== undefined && (typeof tag !== 'string' || !/^[a-z][a-z0-9-]{0,62}$/.test(tag))) ||
+        (percent !== undefined && (!Number.isInteger(percent) || percent < 0 || percent > 100)) ||
+        (allocation !== undefined &&
+          ![
+            'TRAFFIC_TARGET_ALLOCATION_TYPE_UNSPECIFIED',
+            'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST',
+            'TRAFFIC_TARGET_ALLOCATION_TYPE_REVISION',
+          ].includes(allocation))
+      ) {
+        rejectedTargets++;
+        continue;
+      }
+      records.push({
+        revision: name,
+        tag: tag ?? null,
+        percent: percent ?? null,
+        allocation: allocation ?? null,
+      });
+    }
+    return { records, rejectedTargets };
+  };
+  return {
+    generation: number(raw.generation),
+    observedGeneration: number(raw.observedGeneration),
+    reconciling: typeof raw.reconciling === 'boolean' ? raw.reconciling : null,
+    latestCreatedRevision: scopedRevision(raw.latestCreatedRevision),
+    latestReadyRevision: scopedRevision(raw.latestReadyRevision),
+    desiredTraffic: targets(raw.traffic),
+    observedTraffic: targets(raw.trafficStatuses),
+  };
+}
+
 function inScope(resource) {
   return (
     resource?.type === 'cloud_run_revision' &&
@@ -152,6 +206,7 @@ export function createRequest(token, fetchImpl = fetch) {
   return async (url, body) => {
     const target = new URL(url);
     const routes = new Map([
+      [`https://run.googleapis.com/v2/${PARENT}`, 'GET'],
       ['https://run.googleapis.com' + `/v2/${PARENT}/revisions`, 'GET'],
       ['https://logging.googleapis.com/v2/entries:list', 'POST'],
       [`https://monitoring.googleapis.com/v3/projects/${PROJECT}/timeSeries`, 'GET'],
@@ -230,9 +285,14 @@ export async function collectWorkerDiagnosis({ start, end, request, now = Date.n
     window,
     project: PROJECT,
     service: SERVICE,
-    limits: { pagesPerSource: MAX_PAGES, bytesPerResponse: MAX_BYTES, logRecordsPerPage: 500 },
+    limits: {
+      pagesPerSource: MAX_PAGES,
+      bytesPerResponse: MAX_BYTES,
+      logRecordsPerPage: 500,
+      maximumRequests: 10,
+    },
     interpretation:
-      'A bounded worker-service sample. HTTP traffic is not background-job ownership. Missing, rejected or truncated records do not establish absence. Revision metadata is current; metrics and logs cover only the requested interval. No customer/job correlation or provider quota reason is asserted.',
+      'A bounded worker-service sample. HTTP traffic is not background-job ownership. Missing, rejected or truncated records do not establish absence. Routing and revision metadata are current; metrics and logs cover only the requested interval. Omitted traffic percentages are preserved as null, without synthesizing provider defaults. No zero-instance, customer/job correlation or provider quota reason is asserted.',
   };
   const attempt = async (fn) => {
     try {
@@ -245,6 +305,11 @@ export async function collectWorkerDiagnosis({ start, end, request, now = Date.n
       };
     }
   };
+  report.routing = await attempt(async () => {
+    const value = projectRouting(await request(`https://run.googleapis.com/v2/${PARENT}`));
+    if (!value) throw new Error('Invalid service scope');
+    return { status: 'available', value };
+  });
   report.revisions = await attempt(() =>
     pages(
       request,
@@ -308,7 +373,11 @@ export async function main(env = process.env) {
       JSON.stringify(encryptReport(report, env.WORKER_DIAG_PUBLIC_KEY, 'infra-readonly')),
       { mode: 0o600, flag: 'wx' },
     );
-    if ([report.revisions, report.logs, report.instances].some((s) => s.status === 'unavailable'))
+    if (
+      [report.routing, report.revisions, report.logs, report.instances].some(
+        (s) => s.status === 'unavailable',
+      )
+    )
       process.exitCode = 1;
     console.log('Encrypted worker diagnostic written.');
   } catch {

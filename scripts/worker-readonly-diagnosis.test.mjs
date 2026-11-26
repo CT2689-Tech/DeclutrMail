@@ -12,6 +12,7 @@ import {
   createRequest,
   projectLog,
   projectRevision,
+  projectRouting,
   projectSeries,
   validateWindow,
 } from './worker-readonly-diagnosis.mjs';
@@ -69,6 +70,71 @@ const rawSeries = {
 const keys = generateKeyPairSync('rsa', {
   modulusLength: 2048,
   publicKeyEncoding: { type: 'spki', format: 'pem' },
+});
+
+const parent = 'projects/declutrmail-ai-prod/locations/us-west1/services/declutrmail-worker';
+const rawRouting = {
+  name: parent,
+  generation: '7',
+  observedGeneration: '7',
+  latestReadyRevision: rawRevision.name,
+  traffic: [{ type: 'TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST', percent: 100 }],
+  trafficStatuses: [
+    { revision: 'declutrmail-worker-00313-6d9', tag: 'old-worker', uri: secret },
+    { revision: 'declutrmail-worker-00339-t6d', percent: 100 },
+  ],
+  template: { containers: [{ env: [{ name: 'SECRET', value: secret }] }] },
+};
+
+test('collector retains current desired and observed routing separately from historical logs', async () => {
+  const calls = [];
+  const report = await collectWorkerDiagnosis({
+    ...window,
+    now,
+    request: async (url, body) => {
+      calls.push({ url, body });
+      return new URL(url).pathname === `/v2/${parent}` ? rawRouting : {};
+    },
+  });
+  assert.equal(report.routing?.status, 'available');
+  assert.equal(report.routing.value.observedTraffic.records[0].tag, 'old-worker');
+  assert.equal(report.routing.value.observedTraffic.records[0].percent, null);
+  assert.equal(report.routing.value.observedTraffic.records[1].percent, 100);
+  assert.equal(report.routing.value.desiredTraffic.records[0].revision, null);
+  assert.equal(calls.length, 4);
+  assert.ok(!JSON.stringify(report).includes(secret));
+});
+
+test('routing excludes environment, URLs and malformed targets; missing percentages are not zero', () => {
+  assert.equal(projectRouting({ ...rawRouting, name: 'projects/other/services/worker' }), null);
+  const value = projectRouting({
+    ...rawRouting,
+    traffic: undefined,
+    trafficStatuses: [
+      ...rawRouting.trafficStatuses,
+      { revision: rawRevision.name.replace('declutrmail-ai-prod', 'other-project'), percent: 1 },
+      { revision: 'declutrmail-worker-00313-6d9', tag: secret },
+      { revision: 'declutrmail-worker-00313-6d9', percent: 101 },
+      { revision: 'declutrmail-worker-00313-6d9', percent: true },
+      'invalid-target',
+      {},
+      { revision: `${parent}/revisions/unexpected/declutrmail-worker-00313-6d9` },
+    ],
+  });
+  assert.equal(value.desiredTraffic, null);
+  assert.equal(value.observedTraffic.rejectedTargets, 7);
+  assert.equal(value.observedTraffic.records.length, 2);
+  assert.equal(value.observedTraffic.records[0].percent, null);
+  assert.equal(
+    projectRouting({
+      ...rawRouting,
+      trafficStatuses: [{ revision: 'declutrmail-worker-00313-6d9', percent: 0 }],
+    }).observedTraffic.records[0].percent,
+    0,
+  );
+  assert.ok(!JSON.stringify(value).includes(secret));
+  assert.throws(() => projectRouting({ ...rawRouting, trafficStatuses: {} }));
+  assert.throws(() => projectRouting({ ...rawRouting, traffic: Array(101).fill({}) }));
 });
 
 test('closed bounded UTC interval rejects injection, invalid calendar dates and future or old data', () => {
@@ -204,9 +270,10 @@ test('collector makes only fixed reads and preserves unavailable sections rather
   assert.equal(report.revisions.records.length, 1);
   assert.deepEqual(report.logs, { status: 'unavailable', httpStatus: 403, reason: 'read_failed' });
   assert.equal(report.instances.records[0].points[0].instances, 2);
-  assert.equal(calls.length, 3);
-  assert.ok(calls[1].body.filter.includes('resource.labels.service_name="declutrmail-worker"'));
-  assert.deepEqual(calls[1].body.resourceNames, ['projects/declutrmail-ai-prod']);
+  assert.equal(calls.length, 4);
+  assert.ok(calls[2].body.filter.includes('resource.labels.service_name="declutrmail-worker"'));
+  assert.deepEqual(calls[2].body.resourceNames, ['projects/declutrmail-ai-prod']);
+  assert.equal(report.routing.status, 'unavailable');
   assert.ok(!JSON.stringify(report).includes(secret));
 });
 
@@ -228,6 +295,21 @@ test('pagination has a hard call budget and marks incomplete coverage', async ()
   assert.equal(logCalls, 3);
   assert.equal(report.logs.truncated, true);
   assert.equal(report.logs.records.length, 3);
+});
+
+test('routing adds only one GET to the three-source pagination budget', async () => {
+  let calls = 0;
+  const report = await collectWorkerDiagnosis({
+    ...window,
+    now,
+    request: async (url) => {
+      calls++;
+      return new URL(url).pathname === `/v2/${parent}` ? rawRouting : { nextPageToken: 'more' };
+    },
+  });
+  assert.equal(calls, 10);
+  assert.equal(report.routing.status, 'available');
+  assert.ok([report.revisions, report.logs, report.instances].every((s) => s.truncated));
 });
 
 test('malformed or partially failed API data is unavailable, not an empty successful read', async () => {
@@ -265,6 +347,9 @@ test('authenticated request refuses host, service and method drift before sendin
   assert.equal(calls, 0);
   await request('https://logging.googleapis.com/v2/entries:list', {});
   assert.equal(calls, 1);
+  await request(`https://run.googleapis.com/v2/${parent}`);
+  assert.equal(calls, 2);
+  await assert.rejects(() => request(`https://run.googleapis.com/v2/${parent}`, {}));
 });
 
 test('provider failures and oversized bodies never expose provider response text', async () => {
