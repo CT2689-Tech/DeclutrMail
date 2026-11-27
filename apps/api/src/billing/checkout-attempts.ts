@@ -18,6 +18,28 @@ export const durableCheckoutEnabled = () =>
   process.env.BILLING_CHECKOUT_ATTEMPTS_ENABLED === 'true';
 export const checkoutCancellationEnabled = () =>
   process.env.BILLING_CHECKOUT_CANCEL_ENABLED === 'true';
+/**
+ * Abandoned-checkout expiry. Off unless its own flag AND the cancellation
+ * flag are on, because every expiry is a live provider cancellation.
+ */
+export const checkoutExpiryEnabled = () =>
+  process.env.BILLING_CHECKOUT_EXPIRY_ENABLED === 'true' && checkoutCancellationEnabled();
+export const CHECKOUT_EXPIRY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * An attempt the recovery sweep may try to stop: still unpaid on our side,
+ * bound to a provider transaction, and older than a day. Age alone never
+ * frees the slot; `stopUnpaidCheckoutAttempt` still needs a fresh unpaid
+ * read before the cancel and a stopped read after it.
+ */
+export function isExpiredCheckoutAttempt(row: BillingCheckoutAttemptRow, now = new Date()) {
+  return (
+    (row.state === 'open' || row.state === 'stopping') &&
+    row.paidAt === null &&
+    row.providerTransactionId !== null &&
+    now.getTime() - row.createdAt.getTime() >= CHECKOUT_EXPIRY_MS
+  );
+}
 const unresolved = ['creating', 'open', 'payment_in_progress', 'stopping', 'paid', 'unknown'];
 
 export async function lockCheckoutWorkspace(db: Pick<DrizzleDb, 'select'>, workspaceId: string) {
@@ -365,4 +387,68 @@ export async function assertNoLegacyCheckout(db: Pick<DrizzleDb, 'select'>, work
     .where(eq(pendingCheckouts.workspaceId, workspaceId))
     .limit(1);
   if (claim) throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+}
+
+/**
+ * The one way an unpaid attempt is cancelled at the provider, shared by the
+ * customer's Cancel button and abandoned-checkout expiry (ADR-0047):
+ * a fresh owned unpaid read, a version-checked claim to `stopping`, the
+ * provider cancel, then a fresh stopped readback before the slot is freed.
+ * Paid evidence at any step wins; a failed cancel leaves `stopping`.
+ */
+export async function stopUnpaidCheckoutAttempt(
+  db: DrizzleDb,
+  paddle: PaddleAdapter,
+  row: BillingCheckoutAttemptRow,
+  version: number,
+): Promise<BillingCheckoutAttemptRow> {
+  if (!checkoutCancellationEnabled()) throw new AppException({ code: 'BILLING_NOT_PROVISIONED' });
+  const txn = row.providerTransactionId;
+  if (
+    row.version !== version ||
+    row.paidAt ||
+    (row.state !== 'open' && row.state !== 'stopping') ||
+    !txn
+  )
+    throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+  const facts = await paddle.readCheckoutAttempt(txn, row);
+  if (!facts || facts.state !== 'unpaid') throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+  const claimed = await db.transaction(async (tx) => {
+    await lockCheckoutWorkspace(tx, row.workspaceId);
+    return tx
+      .update(billingCheckoutAttempts)
+      .set({ state: 'stopping', version: version + 1, updatedAt: new Date() })
+      .where(
+        and(
+          eq(billingCheckoutAttempts.id, row.id),
+          eq(billingCheckoutAttempts.workspaceId, row.workspaceId),
+          eq(billingCheckoutAttempts.version, version),
+          inArray(billingCheckoutAttempts.state, ['open', 'stopping']),
+          sql`${billingCheckoutAttempts.paidAt} is null`,
+        ),
+      )
+      .returning();
+  });
+  if (!claimed.length) throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+  await paddle.stopCheckoutAttempt(txn);
+  const stopped = await paddle.readCheckoutAttempt(txn, row);
+  if (!stopped || stopped.state !== 'stopped')
+    throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
+  const [confirmed] = await db
+    .update(billingCheckoutAttempts)
+    .set({ state: 'stopped', stoppedAt: new Date(), updatedAt: new Date(), version: version + 2 })
+    .where(
+      and(
+        eq(billingCheckoutAttempts.id, row.id),
+        eq(billingCheckoutAttempts.version, version + 1),
+        sql`${billingCheckoutAttempts.paidAt} is null`,
+      ),
+    )
+    .returning();
+  if (!confirmed) {
+    const latest = await findCheckoutAttempt(db, row.workspaceId, row.id);
+    if (latest?.state === 'stopped' && !latest.paidAt) return latest;
+    throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
+  }
+  return confirmed;
 }

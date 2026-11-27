@@ -58,6 +58,7 @@ import {
   durableCheckoutEnabled,
   findCheckoutAttempt,
   lockCheckoutWorkspace,
+  stopUnpaidCheckoutAttempt,
 } from './checkout-attempts.js';
 import { AppException } from '../common/app-exception.js';
 import { highestLiveGrantForWorkspace } from '../common/entitlements/entitlement-grants.js';
@@ -680,53 +681,7 @@ export class BillingService {
       throw new AppException({ code: 'BAD_REQUEST' });
     const row = await findCheckoutAttempt(this.db, workspaceId, id);
     if (!row) throw new AppException({ code: 'NOT_FOUND' });
-    if (
-      row.version !== version ||
-      row.paidAt ||
-      (row.state !== 'open' && row.state !== 'stopping') ||
-      !row.providerTransactionId
-    )
-      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
-    const facts = await this.paddle.readCheckoutAttempt(row.providerTransactionId, row);
-    if (!facts || facts.state !== 'unpaid') throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
-    const claimed = await this.db.transaction(async (tx) => {
-      await lockCheckoutWorkspace(tx, workspaceId);
-      return tx
-        .update(billingCheckoutAttempts)
-        .set({ state: 'stopping', version: version + 1, updatedAt: new Date() })
-        .where(
-          and(
-            eq(billingCheckoutAttempts.id, id),
-            eq(billingCheckoutAttempts.workspaceId, workspaceId),
-            eq(billingCheckoutAttempts.version, version),
-            inArray(billingCheckoutAttempts.state, ['open', 'stopping']),
-            sql`${billingCheckoutAttempts.paidAt} is null`,
-          ),
-        )
-        .returning();
-    });
-    if (!claimed.length) throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
-    await this.paddle.stopCheckoutAttempt(row.providerTransactionId);
-    const stopped = await this.paddle.readCheckoutAttempt(row.providerTransactionId, row);
-    if (!stopped || stopped.state !== 'stopped')
-      throw new AppException({ code: 'BILLING_PROVIDER_ERROR' });
-    const [confirmed] = await this.db
-      .update(billingCheckoutAttempts)
-      .set({ state: 'stopped', stoppedAt: new Date(), updatedAt: new Date(), version: version + 2 })
-      .where(
-        and(
-          eq(billingCheckoutAttempts.id, id),
-          eq(billingCheckoutAttempts.version, version + 1),
-          sql`${billingCheckoutAttempts.paidAt} is null`,
-        ),
-      )
-      .returning();
-    if (!confirmed) {
-      const latest = await findCheckoutAttempt(this.db, workspaceId, id);
-      if (latest?.state === 'stopped' && !latest.paidAt) return checkoutAttemptView(latest);
-      throw new AppException({ code: 'CHECKOUT_IN_FLIGHT' });
-    }
-    return checkoutAttemptView(confirmed);
+    return checkoutAttemptView(await stopUnpaidCheckoutAttempt(this.db, this.paddle, row, version));
   }
 
   private async assertNoDeletion(
