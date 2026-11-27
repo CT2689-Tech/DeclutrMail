@@ -14,8 +14,10 @@ import { freshTestDb } from '@declutrmail/db/testing';
 import { AutopilotReadService } from '../../autopilot/autopilot.read-service.js';
 import type { DrizzleDb } from '../../db/db.module.js';
 import { BillingCatalog } from '../billing-catalog.js';
+import { BillingReconciliationService } from '../billing-reconciliation.service.js';
 import { BillingWebhookService } from '../billing-webhook.service.js';
 import { PaddleAdapter } from '../paddle.adapter.js';
+import type { RazorpayAdapter } from '../razorpay.adapter.js';
 import type {
   CheckoutTransactionFacts,
   NormalizedBillingEvent,
@@ -42,12 +44,13 @@ describe('durable checkout fulfillment and recovery', () => {
   let db: DrizzleDb;
   let workspaceId: string;
   let webhook: BillingWebhookService;
+  let catalog: BillingCatalog;
   beforeEach(async () => {
     db = (await freshTestDb()) as unknown as DrizzleDb;
     const [ws] = await db.insert(workspaces).values({ name: 'attempt workspace' }).returning();
     workspaceId = ws!.id;
     await db.insert(users).values({ workspaceId, email: 'attempt@example.test' });
-    const catalog = new BillingCatalog(
+    catalog = new BillingCatalog(
       [
         {
           planCode: 'plus_monthly',
@@ -471,5 +474,107 @@ describe('durable checkout fulfillment and recovery', () => {
     await controller.receive(request, signature);
     expect(await db.select().from(entitlementGrants)).toHaveLength(1);
     expect((await findCheckoutAttempt(db, workspaceId, ID))!.state).toBe('fulfilled');
+  });
+
+  describe('abandoned checkout expiry', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    function facts(state: CheckoutTransactionFacts['state']) {
+      return { state, transactionId: TXN, customerId: null, subscriptionId: null };
+    }
+    /** Paddle reads in order: the sweep's reconcile, then expiry's unpaid read and stopped readback. */
+    function paddleReads(...states: CheckoutTransactionFacts['state'][]) {
+      const readCheckoutAttempt = vi.fn();
+      for (const state of states) readCheckoutAttempt.mockResolvedValueOnce(facts(state));
+      readCheckoutAttempt.mockResolvedValue(facts(states.at(-1)!));
+      const stopCheckoutAttempt = vi.fn(async () => undefined);
+      const paddle = { readCheckoutAttempt, stopCheckoutAttempt } as unknown as PaddleAdapter;
+      return { paddle, stopCheckoutAttempt };
+    }
+    function sweep(paddle: PaddleAdapter) {
+      return new BillingReconciliationService(
+        db,
+        catalog,
+        webhook,
+        paddle,
+        {} as RazorpayAdapter,
+      ).reconcileCheckoutAttempts();
+    }
+    async function age(ms: number, state: 'open' | 'stopping' = 'open') {
+      await db.update(billingCheckoutAttempts).set({ createdAt: new Date(Date.now() - ms), state });
+    }
+    function enable() {
+      vi.stubEnv('BILLING_CHECKOUT_CANCEL_ENABLED', 'true');
+      vi.stubEnv('BILLING_CHECKOUT_EXPIRY_ENABLED', 'true');
+    }
+
+    it('stops an unpaid checkout left open for a day and frees the purchase', async () => {
+      enable();
+      await seed('pass_onetime');
+      await age(DAY + 60_000);
+      const { paddle, stopCheckoutAttempt } = paddleReads('unpaid', 'unpaid', 'stopped');
+      expect(await sweep(paddle)).toMatchObject({ checked: 1, expired: 1, unavailable: 0 });
+      expect(stopCheckoutAttempt).toHaveBeenCalledExactlyOnceWith(TXN);
+      const row = (await findCheckoutAttempt(db, workspaceId, ID))!;
+      expect(row.state).toBe('stopped');
+      expect(row.stoppedAt).not.toBeNull();
+      expect(await findCheckoutAttempt(db, workspaceId)).toBeNull();
+    });
+    it('does nothing at the provider unless both flags are on', async () => {
+      await seed();
+      await age(2 * DAY);
+      for (const [expiry, cancel] of [
+        ['false', 'true'],
+        ['true', 'false'],
+      ]) {
+        vi.stubEnv('BILLING_CHECKOUT_EXPIRY_ENABLED', expiry);
+        vi.stubEnv('BILLING_CHECKOUT_CANCEL_ENABLED', cancel);
+        await db.update(billingCheckoutAttempts).set({ lastCheckedAt: null });
+        const { paddle, stopCheckoutAttempt } = paddleReads('unpaid');
+        expect(await sweep(paddle)).toMatchObject({ expired: 0 });
+        expect(stopCheckoutAttempt).not.toHaveBeenCalled();
+      }
+      expect((await findCheckoutAttempt(db, workspaceId, ID))!.state).toBe('open');
+    });
+    it('leaves a checkout younger than a day open', async () => {
+      enable();
+      await seed();
+      await age(DAY - 60_000);
+      const { paddle, stopCheckoutAttempt } = paddleReads('unpaid', 'unpaid', 'stopped');
+      expect(await sweep(paddle)).toMatchObject({ expired: 0 });
+      expect(stopCheckoutAttempt).not.toHaveBeenCalled();
+      expect((await findCheckoutAttempt(db, workspaceId, ID))!.state).toBe('open');
+    });
+    it('never cancels when the fresh provider read shows a payment under way', async () => {
+      enable();
+      await seed();
+      await age(2 * DAY);
+      const { paddle, stopCheckoutAttempt } = paddleReads('unpaid', 'in_flight');
+      expect(await sweep(paddle)).toMatchObject({ expired: 0, unavailable: 1 });
+      expect(stopCheckoutAttempt).not.toHaveBeenCalled();
+      expect((await findCheckoutAttempt(db, workspaceId, ID))!.state).toBe('open');
+    });
+    it('a cancel the provider did not confirm stays held and is retried on a later sweep', async () => {
+      enable();
+      await seed();
+      await age(2 * DAY);
+      const first = paddleReads('unpaid', 'unpaid', 'unpaid');
+      expect(await sweep(first.paddle)).toMatchObject({ expired: 0, unavailable: 1 });
+      expect((await findCheckoutAttempt(db, workspaceId, ID))!.state).toBe('stopping');
+      expect(await findCheckoutAttempt(db, workspaceId)).not.toBeNull();
+      await db.update(billingCheckoutAttempts).set({ lastCheckedAt: null });
+      const second = paddleReads('unpaid', 'unpaid', 'stopped');
+      expect(await sweep(second.paddle)).toMatchObject({ expired: 1 });
+      expect(second.stopCheckoutAttempt).toHaveBeenCalledOnce();
+      expect((await findCheckoutAttempt(db, workspaceId, ID))!.state).toBe('stopped');
+    });
+    it('a payment that completed meanwhile fulfills instead of expiring', async () => {
+      enable();
+      await seed('pass_onetime');
+      await age(2 * DAY);
+      const { paddle, stopCheckoutAttempt } = paddleReads('completed');
+      await sweep(paddle);
+      expect(stopCheckoutAttempt).not.toHaveBeenCalled();
+      expect((await findCheckoutAttempt(db, workspaceId, ID))!.state).toBe('fulfilled');
+    });
   });
 });

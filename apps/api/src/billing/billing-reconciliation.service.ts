@@ -1,4 +1,10 @@
-import { reconcileCheckoutAttempt } from './checkout-attempts.js';
+import {
+  checkoutExpiryEnabled,
+  findCheckoutAttempt,
+  isExpiredCheckoutAttempt,
+  reconcileCheckoutAttempt,
+  stopUnpaidCheckoutAttempt,
+} from './checkout-attempts.js';
 // apps/api/src/billing/billing-reconciliation.service.ts — D249
 // provider-truth reconciliation.
 //
@@ -450,15 +456,31 @@ export class BillingReconciliationService {
       .limit(25);
     let recovered = 0;
     let unavailable = 0;
+    let expired = 0;
+    const expiry = checkoutExpiryEnabled();
     for (const row of rows) {
       try {
         const result = await this.reconcileDurableCheckout(row.workspaceId, row.id);
-        if (result.attempt.state === 'fulfilled' || result.attempt.state === 'stopped') recovered++;
+        if (result.attempt.state === 'fulfilled' || result.attempt.state === 'stopped') {
+          recovered++;
+          continue;
+        }
+        if (!expiry) continue;
+        // Reconcile above may have bound payment evidence; decide on the row as it is now.
+        const latest = await findCheckoutAttempt(this.db, row.workspaceId, row.id);
+        if (!latest || !isExpiredCheckoutAttempt(latest)) continue;
+        const stopped = await stopUnpaidCheckoutAttempt(
+          this.db,
+          this.paddle,
+          latest,
+          latest.version,
+        );
+        if (stopped.state === 'stopped') expired++;
       } catch {
         unavailable++;
       }
     }
-    return { checked: rows.length, recovered, unavailable, capped: rows.length === 25 };
+    return { checked: rows.length, recovered, expired, unavailable, capped: rows.length === 25 };
   }
 
   async reconcileDurableCheckout(workspaceId: string, attemptId: string) {

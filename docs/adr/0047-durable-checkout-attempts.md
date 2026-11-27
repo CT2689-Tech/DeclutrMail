@@ -64,3 +64,17 @@ Provider contract references checked during implementation:
 and [Paddle.Checkout.open](https://developer.paddle.com/paddle-js/methods/paddle-checkout-open/).
 These describe supported operations; they are not evidence of this account's
 sandbox permissions or saved-payload revocation behavior.
+
+## Amendment: abandoned-checkout expiry (2026-11-27)
+
+The recovery sweep may stop an attempt that is still `open` or `stopping`,
+unpaid, bound to a transaction and at least 24 hours old. It uses the same
+stop path as the customer's Cancel button: a fresh unpaid read, a
+version-checked claim to `stopping`, the provider cancel, and a fresh stopped
+readback before the slot is freed. Paid or in-flight evidence at any step
+wins, and an unconfirmed cancel stays `stopping` for a later sweep. Age is
+measured from creation, so a customer resuming near the 24-hour mark can lose
+that checkout unless a payment is already in flight. Expiry needs its own
+`BILLING_CHECKOUT_EXPIRY_ENABLED=true` on top of the cancellation flag; it is
+absent by default, and turning it on in production is a Paddle-live write that
+needs the founder's explicit approval.
